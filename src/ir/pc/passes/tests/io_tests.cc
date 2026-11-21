@@ -65,6 +65,25 @@ namespace {
         return static_cast<std::size_t>(std::ranges::count(model.op_codes(), pc::op_code::basic_event));
     }
 
+    // FTP has no NOT gates: a complemented edge into a basic event is a direct
+    // event complement, the atom events of every target (#190).
+    [[nodiscard]] auto direct_complements(pc::circuit const &model) -> std::vector<std::vector<pc::bool_node_id>> {
+        std::vector<pc::bool_node_id> events;
+        for (auto const &operand : model.edges()) {
+            if (operand.complement && model.op_codes()[operand.source.raw()] == pc::op_code::basic_event) {
+                events.push_back(operand.source);
+            }
+        }
+        std::ranges::sort(events);
+        events.erase(std::ranges::unique(events).begin(), events.end());
+        return std::vector(model.targets().size(), events);
+    }
+
+    [[nodiscard]] auto atom_split_hull(pc::circuit const &model) -> passes::pipeline_options {
+        return passes::pipeline_options{.semantics = std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+                                        .atom_events = direct_complements(model)};
+    }
+
     // The compiled circuit, written to .pcfb, has the input's exact probabilities.
     void require_pcfb_exact(pc::circuit const &input, pc::circuit const &compiled) {
         auto written = writer::write(compiled.to_handle(), writer::write_options{});
@@ -121,6 +140,13 @@ TEST_CASE("C1 on public FTP fixtures: fewer or equal edges, same probabilities",
                                               passes::pipeline_options{.semantics = std::vector(input->targets().size(),
                                                                                                 passes::target_semantics::monotone_hull)})
                                   .output));
+            const auto atoms = direct_complements(*input);
+            if (event_count(*input) + atoms.front().size() <= 20) {
+                const auto split = passes::compile(*input, passes::compile_level::c1, atom_split_hull(*input));
+                REQUIRE(split.ok());
+                require_close(split_hull_probabilities(*input, atoms),
+                              split_hull_probabilities(split.output, carried_atoms(split.output, split.node_map, atoms)));
+            }
             require_pcfb_exact(*input, compiled.output);
         }
     }
@@ -142,6 +168,10 @@ TEST_CASE("C1 on private FTP models reports aggregate node and edge counts", "[i
     std::uint64_t boolean_edges = 0;
     std::uint64_t hull_nodes = 0;
     std::uint64_t hull_edges = 0;
+    std::uint64_t split_nodes = 0;
+    std::uint64_t split_edges = 0;
+    std::uint64_t split_skipped = 0;
+    std::uint64_t atom_events = 0;
     double seconds = 0.0;
     for (auto const &file : ftp_files(directory)) {
         const auto input = read_ftp(file);
@@ -168,8 +198,20 @@ TEST_CASE("C1 on private FTP models reports aggregate node and edge counts", "[i
         REQUIRE(hull.edges_after <= hull.edges_before);
         hull_nodes += hull.nodes_after;
         hull_edges += hull.edges_after;
+
+        const auto split = passes::compile(*input, passes::compile_level::c1, atom_split_hull(*input));
+        REQUIRE(split.ok());
+        REQUIRE(split.edges_after <= split.edges_before);
+        atom_events += direct_complements(*input).front().size();
+        split_nodes += split.nodes_after;
+        split_edges += split.edges_after;
+        for (auto const &report : split.passes) {
+            split_skipped += report.skipped;
+        }
     }
     std::cout << "private FTP aggregate: models " << models << " (unreadable " << unread << "), raw nodes " << nodes << ", raw edges "
               << edges << "; C1 boolean nodes " << boolean_nodes << ", edges " << boolean_edges << " (" << seconds
-              << " s); C1 monotone_hull nodes " << hull_nodes << ", edges " << hull_edges << '\n';
+              << " s); C1 monotone_hull (no atoms) nodes " << hull_nodes << ", edges " << hull_edges << "; C1 monotone_hull (atom-split, "
+              << atom_events << " atom events) nodes " << split_nodes << ", edges " << split_edges << ", skipped rewrites " << split_skipped
+              << '\n';
 }

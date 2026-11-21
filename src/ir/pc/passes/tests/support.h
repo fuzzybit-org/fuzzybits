@@ -111,15 +111,33 @@ namespace pc_passes_test {
         }
 
         void run(std::span<word const> event_words, std::vector<word> &values) const {
+            run(event_words, {}, values);
+        }
+
+        // Complemented edges into atom event atom_events()[i] read atom_words[i]
+        // instead of the negated event (atom-split semantics, #190).
+        void set_atoms(std::span<pc::bool_node_id const> atom_events) {
+            atom_events_.assign(atom_events.begin(), atom_events.end());
+            atom_slot_.assign(model_.node_count(), -1);
+            for (std::size_t index = 0; index < atom_events_.size(); ++index) {
+                atom_slot_[atom_events_[index].raw()] = static_cast<std::int64_t>(index);
+            }
+        }
+
+        [[nodiscard]] auto atom_events() const noexcept -> std::span<pc::bool_node_id const> {
+            return atom_events_;
+        }
+
+        void run(std::span<word const> event_words, std::span<word const> atom_words, std::vector<word> &values) const {
             values.resize(model_.node_count());
             for (const auto node : order_) {
-                values[node] = value(node, event_words, values);
+                values[node] = value(node, event_words, atom_words, values);
             }
         }
 
       private:
-        [[nodiscard]] auto value(const std::uint32_t node, std::span<word const> event_words, std::vector<word> const &values) const
-            -> word {
+        [[nodiscard]] auto value(const std::uint32_t node, std::span<word const> event_words, std::span<word const> atom_words,
+                                 std::vector<word> const &values) const -> word {
             const auto code = model_.op_codes()[node];
             if (code == pc::op_code::basic_event) {
                 return event_words[event_slot_[node]];
@@ -128,7 +146,12 @@ namespace pc_passes_test {
                 return model_.constant_values()[node] != 0 ? all_lanes : 0;
             }
             const auto operands = model_.operands(pc::bool_node_id(node));
-            const auto operand = [&](edge const &e) { return values[e.source.raw()] ^ (e.complement ? all_lanes : 0); };
+            const auto operand = [&](edge const &e) {
+                if (e.complement && !atom_words.empty() && atom_slot_[e.source.raw()] >= 0) {
+                    return atom_words[static_cast<std::size_t>(atom_slot_[e.source.raw()])];
+                }
+                return values[e.source.raw()] ^ (e.complement ? all_lanes : 0);
+            };
             word conjunction = all_lanes;
             word disjunction = 0;
             word parity = 0;
@@ -176,6 +199,8 @@ namespace pc_passes_test {
         std::vector<std::uint32_t> order_;
         std::vector<std::uint32_t> events_;
         std::vector<std::uint32_t> event_slot_;
+        std::vector<pc::bool_node_id> atom_events_;
+        std::vector<std::int64_t> atom_slot_;
     };
 
     // Calls visit(base, valid_lanes, words) for blocks of 64 worlds over `count`
@@ -294,6 +319,90 @@ namespace pc_passes_test {
             result.push_back(sum.value());
         }
         return result;
+    }
+
+    // Atom-split hull (#190) of every target: P(up g_split(x, not x)), where
+    // g_split reads y+_v <= x_v on positive edges, an independent y-_v <= not x_v
+    // on complemented edges into the target's atom events, and not y_v on other
+    // complemented edges. Brute force: truth table over events and atoms,
+    // superset closure, then the weighted sum at the coupled point.
+    [[nodiscard]] inline auto split_hull_probabilities(pc::circuit const &model,
+                                                       std::vector<std::vector<pc::bool_node_id>> const &atom_events)
+        -> std::vector<double> {
+        const auto targets = model.targets();
+        REQUIRE(atom_events.size() == targets.size());
+        std::vector<double> result;
+        for (std::size_t target = 0; target < targets.size(); ++target) {
+            evaluator eval(model);
+            eval.set_atoms(atom_events[target]);
+            const auto events = eval.events();
+            const auto event_count = static_cast<std::uint32_t>(events.size());
+            const auto atom_count = static_cast<std::uint32_t>(atom_events[target].size());
+            const auto count = event_count + atom_count;
+            const auto points = std::uint64_t{1} << count;
+            std::vector<std::uint8_t> table(points, 0);
+            std::vector<word> values;
+            for_each_block(count, [&](const std::uint64_t base, const word lanes, std::span<word const> words) {
+                eval.run(words.first(event_count), words.subspan(event_count), values);
+                for (std::uint32_t lane = 0; lane < 64; ++lane) {
+                    if (((lanes >> lane) & 1U) != 0) {
+                        table[base + lane] = static_cast<std::uint8_t>((values[targets[target].node.raw()] >> lane) & 1U);
+                    }
+                }
+            });
+            for (std::uint32_t bit = 0; bit < count; ++bit) {
+                for (std::uint64_t point = 0; point < points; ++point) {
+                    if (((point >> bit) & 1U) != 0) {
+                        table[point] |= table[point ^ (std::uint64_t{1} << bit)];
+                    }
+                }
+            }
+            neumaier sum;
+            for (std::uint64_t world = 0; world < (std::uint64_t{1} << event_count); ++world) {
+                auto point = world;
+                for (std::uint32_t atom = 0; atom < atom_count; ++atom) {
+                    if (((world >> eval.slot(atom_events[target][atom].raw())) & 1U) == 0) {
+                        point |= std::uint64_t{1} << (event_count + atom);
+                    }
+                }
+                if (table[point] != 0) {
+                    sum.add(world_mass(model, events, world));
+                }
+            }
+            result.push_back(sum.value());
+        }
+        return result;
+    }
+
+    // Atom events carried through a node map. Events that were dropped (outside
+    // every cone) or folded (no atom edge) no longer affect any target.
+    [[nodiscard]] inline auto carried_atoms(pc::circuit const &output, std::span<passes::node_image const> node_map,
+                                            std::vector<std::vector<pc::bool_node_id>> const &atom_events)
+        -> std::vector<std::vector<pc::bool_node_id>> {
+        std::vector<std::vector<pc::bool_node_id>> carried(atom_events.size());
+        for (std::size_t target = 0; target < atom_events.size(); ++target) {
+            for (const auto event : atom_events[target]) {
+                auto const &image = node_map[event.raw()];
+                if (image.kind == passes::image_kind::reference && output.op_codes()[image.edge.source.raw()] == pc::op_code::basic_event) {
+                    REQUIRE_FALSE(image.edge.complement);
+                    carried[target].push_back(image.edge.source);
+                }
+            }
+        }
+        return carried;
+    }
+
+    // Union of the per-target atom events, as pass options for every target.
+    [[nodiscard]] inline auto atom_options(pc::circuit const &model, std::vector<std::vector<pc::bool_node_id>> const &atom_events)
+        -> passes::pass_options {
+        passes::pass_options options;
+        for (std::uint32_t target = 0; target < atom_events.size(); ++target) {
+            if (!atom_events[target].empty()) {
+                options.atoms.targets.push_back(model.targets()[target].id);
+                options.atoms.events.insert(options.atoms.events.end(), atom_events[target].begin(), atom_events[target].end());
+            }
+        }
+        return options;
     }
 
     inline void require_close(std::vector<double> const &expected, std::vector<double> const &actual, const double tolerance = 1.0e-12) {

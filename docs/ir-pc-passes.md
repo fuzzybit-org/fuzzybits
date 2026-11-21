@@ -52,12 +52,39 @@ child is inlined iff $(m - 1)(k - 1) \le 1$: always for a single parent, never f
 operands. Children are decided bottom-up, so $k$ includes what the child itself absorbed. Partial inlining (into some
 parents only) always adds edges and is not done. This is the guard against the edge blow-up measured in #147.
 
+## Atom-split hull targets
+
+For monotone-hull targets the default treatment of directly complemented basic events is the atom-split hull (#190):
+a complemented edge into such an event is its own atom $\bar v$, sampled as $\lnot x_v$ and droppable like any atom,
+while gate negations (NOT, NAND, NOR, XNOR, complemented gate edges) stay delete terms. The hull then depends on the
+circuit over atoms, not only on its Boolean function: over atoms $\lnot(B \lor \bar B)$ is satisfiable by dropping both.
+
+The caller passes the atom events (the lowering's `complemented_events` of each target in `atom_split` mode, #181):
+`pipeline_options::atom_events` by target id, or `pass_options::atoms` (target ids plus one event set) for a single
+pass. In the cone of those targets an *atom edge* is a complemented edge into one of the events. The passes preserve
+the function over atoms there, treating every listed event as an atom event in every such cone: that is sound, because
+an identity that holds for an independent variable $\bar v$ also holds at $\bar v = \lnot x_v$.
+
+- `fold_zero_probability` keeps an event that has an atom edge: its atom has $p = 1$ and stays droppable, while
+  constant TRUE cannot be dropped.
+- `propagate_constants` treats an atom edge as an operand of its own: no deduplication, $x / \lnot x$ or parity rule
+  combines it with its event, and parity never moves onto an atom edge or an atom event (an XOR becomes an XNOR
+  instead).
+- `eliminate_single_input` never turns a gate negation into an atom edge or an atom into a negation. Over atoms
+  $v$, $\bar v$, $\lnot v$ and $\lnot \bar v$ are four functions, and only $v$ and $\bar v$ are edges. So a gate that
+  would become a reference to an atom event is eliminated only if it equals $v$ or $\bar v$ (no net negation) and no
+  edge into it is complemented. A target that is an atom becomes `and(` $\bar v$ `)`, not `not(v)`.
+- `coalesce` moves edges verbatim and is unaffected.
+
+Each rewrite left out for this reason is counted in `transform_report::skipped` and reported as note
+`pc.pass.atom-split-skipped`. The pipeline carries the atom events through each pass's node map.
+
 ## Reports
 
 `transform_report`: `transform_id` (`ir.pc.<pass>`), `version`, `semantics`, `preserved_semantics`, `node_map` (by input
 node id: `removed`, `absorbed`, `constant` with its value, or `reference` to an output node with a complement flag),
 `target_map` (input target id to output target id), node and edge counts before and after, `rewrites` (events folded,
-gates simplified or eliminated, children absorbed), `scratch_bytes` (transform-local memory) and `diagnostics`.
+gates simplified or eliminated, children absorbed), `skipped` (rewrites left out for atom-split targets), `scratch_bytes` (transform-local memory) and `diagnostics`.
 
 `pipeline_result` composes the maps across passes and keeps the per-pass reports; per-pass maps are dropped unless
 `pipeline_options::keep_pass_maps` is set.
@@ -80,6 +107,9 @@ not preserve some target's semantics; C1 skips `fold_unit_probability` instead.
 | `pc.pass.invalid-input` | error | the input circuit is not sealed |
 | `pc.pass.no-targets` | warning | no targets; the circuit is returned unchanged |
 | `pc.pass.seal-failed` | error | internal: the rewritten circuit failed validation |
+| `pc.pass.invalid-atom-split` | error | an atom-split target does not exist or an atom event is not a basic event |
+| `pc.pass.atom-split-skipped` | note | rewrites left out to preserve atom-split hull targets, with their count |
+| `pc.pipeline.atom-events-mismatch` | error | the atom-event table is neither empty nor one entry per target |
 | `pc.pipeline.invalid-input` | error | the input circuit is not sealed |
 | `pc.pipeline.target-semantics-mismatch` | error | the semantics table is neither empty nor one entry per target |
 | `pc.pipeline.incompatible-pass` | error | a scheduled pass does not preserve some target's semantics |

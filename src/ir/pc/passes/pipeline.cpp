@@ -40,18 +40,18 @@ namespace fuzzybits::ir::pc::passes {
         return pass != pass_id::fold_unit_probability || kind == target_semantics::boolean;
     }
 
-    auto run_pass(const pass_id pass, circuit const &input) -> transform_result {
+    auto run_pass(const pass_id pass, circuit const &input, pass_options const &options) -> transform_result {
         switch (pass) {
         case pass_id::fold_zero_probability:
-            return fold_zero_probability(input);
+            return fold_zero_probability(input, options);
         case pass_id::fold_unit_probability:
-            return fold_unit_probability(input);
+            return fold_unit_probability(input, options);
         case pass_id::propagate_constants:
-            return propagate_constants(input);
+            return propagate_constants(input, options);
         case pass_id::eliminate_single_input:
-            return eliminate_single_input(input);
+            return eliminate_single_input(input, options);
         case pass_id::coalesce:
-            return coalesce(input);
+            return coalesce(input, options);
         }
         return {};
     }
@@ -89,6 +89,22 @@ namespace fuzzybits::ir::pc::passes {
                                                                  " entries for " + std::to_string(targets) + " targets"));
                     return false;
                 }
+                if (!options_.atom_events.empty() && options_.atom_events.size() != targets) {
+                    result_.diagnostics.push(api::make_error("pc.pipeline.atom-events-mismatch",
+                                                             "atom events has " + std::to_string(options_.atom_events.size()) +
+                                                                 " entries for " + std::to_string(targets) + " targets"));
+                    return false;
+                }
+                for (std::uint32_t target = 0; target < options_.atom_events.size(); ++target) {
+                    if (options_.atom_events[target].empty() || options_.semantics.empty() ||
+                        options_.semantics[target] != target_semantics::monotone_hull) {
+                        continue;
+                    }
+                    pass_options_.atoms.targets.push_back(target_id(target));
+                    pass_options_.atoms.events.insert(pass_options_.atoms.events.end(), options_.atom_events[target].begin(),
+                                                      options_.atom_events[target].end());
+                }
+                deduplicate(pass_options_.atoms.events);
                 bool ok = true;
                 for (const auto pass : schedule) {
                     const auto refused = refused_targets(pass);
@@ -122,11 +138,21 @@ namespace fuzzybits::ir::pc::passes {
             }
 
             [[nodiscard]] auto apply(const pass_id pass) -> bool {
-                auto applied = run_pass(pass, current_);
+                auto applied = run_pass(pass, current_, pass_options_);
                 result_.diagnostics.append(applied.report.diagnostics);
                 if (!applied.ok()) {
                     return false;
                 }
+                auto &events = pass_options_.atoms.events;
+                std::size_t kept = 0;
+                for (const auto event : events) {
+                    if (auto const &image = applied.report.node_map[event.raw()];
+                        image.kind == image_kind::reference && applied.output.op_codes()[image.edge.source.raw()] == op_code::basic_event) {
+                        events[kept++] = image.edge.source;
+                    }
+                }
+                events.resize(kept);
+                deduplicate(events);
                 for (auto &image : result_.node_map) {
                     image = compose(image, applied.report.node_map);
                 }
@@ -162,7 +188,14 @@ namespace fuzzybits::ir::pc::passes {
             }
 
           private:
+            static void deduplicate(std::vector<bool_node_id> &events) {
+                std::ranges::sort(events);
+                events.erase(std::ranges::unique(events).begin(), events.end());
+            }
+
             pipeline_options const &options_;
+            // Atom events in the current circuit's node ids.
+            pass_options pass_options_;
             circuit current_;
             pipeline_result result_;
         };

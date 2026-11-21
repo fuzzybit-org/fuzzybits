@@ -583,3 +583,190 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
         }
     }
 }
+
+namespace {
+
+    using atom_sets = std::vector<std::vector<pc::bool_node_id>>;
+
+    [[nodiscard]] auto random_atoms(pc::circuit const &model, std::mt19937_64 &rng) -> atom_sets {
+        std::vector<pc::bool_node_id> events;
+        for (std::uint32_t node = 0; node < model.node_count(); ++node) {
+            if (model.op_codes()[node] == pc::op_code::basic_event) {
+                events.push_back(pc::bool_node_id(node));
+            }
+        }
+        atom_sets atoms(model.targets().size());
+        for (auto &set : atoms) {
+            for (const auto event : events) {
+                if (std::bernoulli_distribution(0.5)(rng) && set.size() < 6) {
+                    set.push_back(event);
+                }
+            }
+        }
+        return atoms;
+    }
+
+    [[nodiscard]] auto hull_with_atoms(pc::circuit const &model, atom_sets const &atoms) -> passes::pipeline_options {
+        return passes::pipeline_options{.semantics = std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+                                        .atom_events = atoms};
+    }
+
+    [[nodiscard]] auto single_atom(pc::bool_node_id event) -> atom_sets {
+        return atom_sets{{event}};
+    }
+
+    // The pass keeps the atom-split hull of `input` and leaves at least one
+    // rewrite out.
+    void require_split_kept(const passes::pass_id pass, pc::circuit const &input, atom_sets const &atoms, const double expected) {
+        INFO("pass " << passes::pass_name(pass));
+        REQUIRE(std::abs(split_hull_probabilities(input, atoms)[0] - expected) <= 1.0e-15);
+        const auto result = passes::run_pass(pass, input, atom_options(input, atoms));
+        require_report(result, input);
+        REQUIRE(result.report.skipped > 0);
+        REQUIRE(has_code(result.report.diagnostics, "pc.pass.atom-split-skipped"));
+        const auto carried = carried_atoms(result.output, result.report.node_map, atoms);
+        REQUIRE(std::abs(split_hull_probabilities(result.output, carried)[0] - expected) <= 1.0e-15);
+        const auto compiled = passes::compile(input, passes::compile_level::c1, hull_with_atoms(input, atoms));
+        INFO(diagnostics_text(compiled.diagnostics));
+        REQUIRE(compiled.ok());
+        REQUIRE(std::abs(split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms))[0] -
+                         expected) <= 1.0e-15);
+    }
+
+} // namespace
+
+TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and atom sets", "[ir][pc][passes][atoms]") {
+    std::mt19937_64 rng(190);
+    std::uint64_t skipped = 0;
+    std::uint64_t rewrites = 0;
+    for (std::uint32_t iteration = 0; iteration < 400; ++iteration) {
+        INFO("iteration " << iteration);
+        const auto input = random_circuit(rng, random_options{.max_events = 8, .max_gates = 40});
+        const auto atoms = random_atoms(input, rng);
+        const auto boolean = exact_probabilities(input);
+        const auto split = split_hull_probabilities(input, atoms);
+        const auto options = atom_options(input, atoms);
+
+        for (const auto pass : all_passes) {
+            if (!passes::pass_preserves(pass, passes::target_semantics::monotone_hull)) {
+                continue;
+            }
+            INFO("pass " << passes::pass_name(pass));
+            const auto result = passes::run_pass(pass, input, options);
+            require_report(result, input);
+            require_images(input, result.output, result.report.node_map, result.report.target_map, mode_for(pass));
+            require_close(boolean, exact_probabilities(result.output));
+            require_close(split, split_hull_probabilities(result.output, carried_atoms(result.output, result.report.node_map, atoms)));
+            skipped += result.report.skipped;
+            rewrites += result.report.rewrites;
+        }
+
+        const auto compiled = passes::compile(input, passes::compile_level::c1, hull_with_atoms(input, atoms));
+        require_pipeline(compiled, input);
+        require_close(boolean, exact_probabilities(compiled.output));
+        require_close(split, split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms)));
+
+        auto mixed = hull_with_atoms(input, atoms);
+        mixed.semantics.front() = passes::target_semantics::boolean;
+        const auto partly = passes::compile(input, passes::compile_level::c1, mixed);
+        require_pipeline(partly, input);
+        const auto partly_split = split_hull_probabilities(partly.output, carried_atoms(partly.output, partly.node_map, atoms));
+        for (std::size_t target = 1; target < split.size(); ++target) {
+            REQUIRE(std::abs(split[target] - partly_split[target]) <= 1.0e-12);
+        }
+    }
+    REQUIRE(skipped > 0);
+    REQUIRE(rewrites > 0);
+}
+
+TEST_CASE("Atom-split regressions: each forbidden rewrite would change the hull", "[ir][pc][passes][atoms]") {
+    SECTION("T = (A and not(B or E)) or (D and not B): not(B) is a delete term, not the atom") {
+        // With the atom, the hull's minimal cut sets are {A} and {not B, D};
+        // with the gate negation not(B) they are {A} and {D}.
+        const auto build = [](const bool atom_edge) {
+            pc::builder builder;
+            const auto a = event(builder, 0.3);
+            const auto b = event(builder, 0.4);
+            const auto e = event(builder, 0.2);
+            const auto d = event(builder, 0.5);
+            const auto deleted = builder.add_or({edge{.source = b}, edge{.source = e}});
+            const auto left = builder.add_and({edge{.source = a}, edge{.source = deleted, .complement = true}});
+            const auto not_b = atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
+            const auto right = builder.add_and({edge{.source = d}, not_b});
+            const auto top = builder.add_or({edge{.source = left}, edge{.source = right}});
+            return std::pair{single_target(std::move(builder), top), b};
+        };
+        const auto [with_atom, b_atom] = build(true);
+        const auto [with_gate, b_gate] = build(false);
+        const auto atom_hull = split_hull_probabilities(with_atom, single_atom(b_atom))[0];
+        const auto gate_hull = split_hull_probabilities(with_gate, single_atom(b_gate))[0];
+        REQUIRE(std::abs(atom_hull - (1.0 - 0.7 * (1.0 - 0.5 * 0.6))) <= 1.0e-15);
+        REQUIRE(std::abs(gate_hull - (1.0 - 0.7 * 0.5)) <= 1.0e-15);
+        require_split_kept(passes::pass_id::eliminate_single_input, with_gate, single_atom(b_gate), gate_hull);
+    }
+    SECTION("A and not(A and not B): the atom gives A, the gate negation gives AB") {
+        const auto build = [](const bool atom_edge) {
+            pc::builder builder;
+            const auto a = event(builder, 0.3);
+            const auto b = event(builder, 0.6);
+            const auto not_b = atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
+            const auto inner = builder.add_and({edge{.source = a}, not_b});
+            const auto top = builder.add_and({edge{.source = a}, edge{.source = inner, .complement = true}});
+            return std::pair{single_target(std::move(builder), top), b};
+        };
+        const auto [with_atom, b_atom] = build(true);
+        const auto [with_gate, b_gate] = build(false);
+        REQUIRE(std::abs(split_hull_probabilities(with_atom, single_atom(b_atom))[0] - 0.3) <= 1.0e-15);
+        REQUIRE(std::abs(split_hull_probabilities(with_gate, single_atom(b_gate))[0] - 0.3 * 0.6) <= 1.0e-15);
+        require_split_kept(passes::pass_id::eliminate_single_input, with_gate, single_atom(b_gate), 0.3 * 0.6);
+        REQUIRE(std::abs(hull_probabilities(with_atom)[0] - 0.3 * 0.6) <= 1.0e-15);
+    }
+    SECTION("A and not(B or not B): no pair rule between B and its atom") {
+        pc::builder builder;
+        const auto a = event(builder, 0.3);
+        const auto b = event(builder, 0.6);
+        const auto both = builder.add_or({edge{.source = b}, edge{.source = b, .complement = true}});
+        const auto top = builder.add_and({edge{.source = a}, edge{.source = both, .complement = true}});
+        const auto input = single_target(std::move(builder), top);
+        REQUIRE(exact_probabilities(input)[0] == 0.0);
+        require_split_kept(passes::pass_id::propagate_constants, input, single_atom(b), 0.3);
+        const auto boolean = passes::propagate_constants(input);
+        REQUIRE(boolean.output.op_codes()[boolean.output.targets()[0].node.raw()] == pc::op_code::constant);
+    }
+    SECTION("A and not xor(B, not B, TRUE): parity never moves onto the atom") {
+        pc::builder builder;
+        const auto a = event(builder, 0.3);
+        const auto b = event(builder, 0.6);
+        const auto parity = builder.add_gate(
+            pc::op_code::xor_gate, {edge{.source = b}, edge{.source = b, .complement = true}, edge{.source = builder.add_constant(true)}});
+        const auto top = builder.add_and({edge{.source = a}, edge{.source = parity, .complement = true}});
+        const auto input = single_target(std::move(builder), top);
+        const auto expected = split_hull_probabilities(input, single_atom(b))[0];
+        REQUIRE(std::abs(expected - 0.3) <= 1.0e-15);
+        require_split_kept(passes::pass_id::propagate_constants, input, single_atom(b), expected);
+    }
+    SECTION("A and not(and(not Z)) with p_Z = 0: the atom of Z has p = 1 and stays droppable") {
+        pc::builder builder;
+        const auto a = event(builder, 0.3);
+        const auto z = event(builder, 0.0);
+        const auto atom = builder.add_and({edge{.source = z, .complement = true}});
+        const auto top = builder.add_and({edge{.source = a}, edge{.source = atom, .complement = true}});
+        const auto input = single_target(std::move(builder), top);
+        REQUIRE(hull_probabilities(input)[0] == 0.0);
+        require_split_kept(passes::pass_id::fold_zero_probability, input, single_atom(z), 0.3);
+        const auto folded = passes::fold_zero_probability(input);
+        REQUIRE(folded.report.rewrites == 1);
+        REQUIRE(split_hull_probabilities(folded.output, atom_sets{{}})[0] == 0.0);
+    }
+    SECTION("atom-split options are validated") {
+        pc::builder builder;
+        const auto gate = builder.add_and({edge{.source = event(builder)}});
+        const auto input = single_target(std::move(builder), gate);
+        passes::pass_options options{.atoms = {.targets = {pc::target_id(0)}, .events = {gate}}};
+        const auto folded = passes::fold_zero_probability(input, options);
+        REQUIRE(has_code(folded.report.diagnostics, "pc.pass.invalid-atom-split"));
+        REQUIRE_FALSE(folded.ok());
+        const auto mismatch = passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.atom_events = atom_sets(2)});
+        REQUIRE(has_code(mismatch.diagnostics, "pc.pipeline.atom-events-mismatch"));
+    }
+}

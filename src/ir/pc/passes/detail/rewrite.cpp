@@ -2,6 +2,7 @@
 
 #include "api/diagnostics.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -119,12 +120,20 @@ namespace fuzzybits::ir::pc::passes::detail {
             } else if (const auto found = negations.find(image.edge.source.raw()); found != negations.end()) {
                 node = found->second;
             } else {
-                node = counted(builder_.add_not(edge_ref{.source = image.edge.source}));
-                negations.emplace(image.edge.source.raw(), node);
+                const auto source = image.edge.source.raw();
+                const edge_ref negated[] = {edge_ref{.source = image.edge.source, .complement = true}};
+                node = counted(source < atoms_.size() && atoms_[source] != 0 ? builder_.add_and(negated)
+                                                                             : builder_.add_not(edge_ref{.source = image.edge.source}));
+                negations.emplace(source, node);
             }
             report.target_map[target.id.raw()] = builder_.add_target(node, target.role);
         }
         report.scratch_bytes += scratch_bytes();
+        if (report.skipped > 0) {
+            report.diagnostics.push(
+                api::make_note("pc.pass.atom-split-skipped", report.transform_id + " left " + std::to_string(report.skipped) +
+                                                                 " rewrite(s) out to preserve atom-split hull targets"));
+        }
 
         auto sealed = std::move(builder_).seal();
         report.diagnostics.append(std::move(sealed.diagnostics));
@@ -135,6 +144,74 @@ namespace fuzzybits::ir::pc::passes::detail {
         report.nodes_after = sealed.output.node_count();
         report.edges_after = sealed.output.edge_count();
         return transform_result{.output = std::move(sealed.output), .report = std::move(report)};
+    }
+
+    void emitter::mark_atom(const bool_node_id node) {
+        if (atoms_.size() <= node.raw()) {
+            atoms_.resize(std::max<std::size_t>(node.raw() + 1, input_.node_count()), 0);
+        }
+        atoms_[node.raw()] = 1;
+    }
+
+    auto split_context::make(circuit const &input, atom_split const &atoms, transform_report &report) -> std::optional<split_context> {
+        split_context context;
+        if (atoms.targets.empty() || atoms.events.empty()) {
+            return context;
+        }
+        const auto node_count = input.node_count();
+        const auto targets = input.targets();
+        for (const auto target : atoms.targets) {
+            if (!target.valid() || target.raw() >= targets.size()) {
+                report.diagnostics.push(
+                    api::make_error("pc.pass.invalid-atom-split",
+                                    report.transform_id + ": atom-split target " + std::to_string(target.raw()) + " does not exist"));
+                return std::nullopt;
+            }
+        }
+        for (const auto event : atoms.events) {
+            if (!event.valid() || event.raw() >= node_count || input.op_codes()[event.raw()] != op_code::basic_event) {
+                report.diagnostics.push(
+                    api::make_error("pc.pass.invalid-atom-split",
+                                    report.transform_id + ": atom event " + std::to_string(event.raw()) + " is not a basic event"));
+                return std::nullopt;
+            }
+        }
+
+        context.in_cone_.assign(node_count, 0);
+        context.member_.assign(node_count, 0);
+        context.has_atom_edge_.assign(node_count, 0);
+        std::vector<std::uint32_t> stack;
+        for (const auto target : atoms.targets) {
+            const auto root = targets[target.raw()].node.raw();
+            if (context.in_cone_[root] == 0) {
+                context.in_cone_[root] = 1;
+                stack.push_back(root);
+            }
+            while (!stack.empty()) {
+                const auto node = stack.back();
+                stack.pop_back();
+                for (auto const &operand : input.operands(bool_node_id(node))) {
+                    if (context.in_cone_[operand.source.raw()] == 0) {
+                        context.in_cone_[operand.source.raw()] = 1;
+                        stack.push_back(operand.source.raw());
+                    }
+                }
+            }
+        }
+        for (const auto event : atoms.events) {
+            context.member_[event.raw()] = context.in_cone_[event.raw()];
+        }
+        for (std::uint32_t node = 0; node < node_count; ++node) {
+            if (context.in_cone_[node] == 0) {
+                continue;
+            }
+            for (auto const &operand : input.operands(bool_node_id(node))) {
+                if (operand.complement && context.member_[operand.source.raw()] != 0) {
+                    context.has_atom_edge_[operand.source.raw()] = 1;
+                }
+            }
+        }
+        return context;
     }
 
     auto begin_report(circuit const &input, const pass_id pass) -> transform_report {

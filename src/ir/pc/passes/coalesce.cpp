@@ -29,7 +29,7 @@ namespace fuzzybits::ir::pc::passes {
 
     } // namespace
 
-    auto coalesce(circuit const &input) -> transform_result {
+    auto coalesce(circuit const &input, pass_options const &) -> transform_result {
         auto report = detail::begin_report(input, pass_id::coalesce);
         if (auto trivial = detail::trivial_result(input, report)) {
             return std::move(*trivial);

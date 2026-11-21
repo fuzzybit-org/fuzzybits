@@ -63,6 +63,9 @@ namespace fuzzybits::ir::pc::passes {
         // Pass-specific count: events folded, gates simplified or eliminated,
         // children absorbed.
         std::uint64_t rewrites = 0;
+        // Rewrites not applied because they would change an atom-split hull
+        // (#190); also reported as note pc.pass.atom-split-skipped.
+        std::uint64_t skipped = 0;
         // Transform-local scratch (excluding input and output circuits).
         std::size_t scratch_bytes = 0;
         api::diagnostic_list diagnostics;

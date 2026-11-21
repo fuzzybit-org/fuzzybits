@@ -181,8 +181,12 @@ namespace fuzzybits::ir::pc::passes {
             return simplified{.code = op_code::cardinality, .low = shifted_low, .high = shifted_high};
         }
 
+        // Edges with source >= atoms are atoms (see propagate_constants). Parity
+        // never moves onto an atom or an atom event: negating either edge
+        // would read the other variable.
         [[nodiscard]] auto reduce(operand_scratch &scratch, const op_code code, std::vector<edge_ref> &edges, const std::uint32_t trues,
-                                  const std::uint32_t falses, const std::uint32_t low, const std::uint32_t high) -> simplified {
+                                  const std::uint32_t falses, const std::uint32_t low, const std::uint32_t high, const std::uint32_t atoms,
+                                  detail::split_context const &split, const bool split_gate) -> simplified {
             switch (code) {
             case op_code::and_gate:
             case op_code::nand_gate:
@@ -209,7 +213,16 @@ namespace fuzzybits::ir::pc::passes {
                 if (edges.empty()) {
                     return simplified{.constant = parity != (code == op_code::xnor_gate), .code = code};
                 }
-                edges.front().complement = parity;
+                if (!parity) {
+                    return simplified{.code = code};
+                }
+                const auto negatable = std::ranges::find_if(edges, [&](edge_ref const &edge) {
+                    return edge.source.raw() < atoms && !(split_gate && split.member(edge.source.raw()));
+                });
+                if (negatable == edges.end()) {
+                    return simplified{.code = code == op_code::xor_gate ? op_code::xnor_gate : op_code::xor_gate};
+                }
+                negatable->complement = true;
                 return simplified{.code = code};
             }
             case op_code::cardinality:
@@ -219,12 +232,30 @@ namespace fuzzybits::ir::pc::passes {
             }
         }
 
+        // Whether an atom and its event both occur: the x / not x rules would
+        // apply under Boolean semantics.
+        [[nodiscard]] auto skips_pair(std::vector<edge_ref> const &edges, const std::uint32_t atoms, std::vector<std::uint32_t> &present,
+                                      const std::uint32_t generation) -> bool {
+            for (auto const &edge : edges) {
+                if (edge.source.raw() < atoms) {
+                    present[edge.source.raw()] = generation;
+                }
+            }
+            return std::ranges::any_of(edges, [&](edge_ref const &edge) {
+                return edge.source.raw() >= atoms && present[edge.source.raw() - atoms] == generation;
+            });
+        }
+
     } // namespace
 
-    auto propagate_constants(circuit const &input) -> transform_result {
+    auto propagate_constants(circuit const &input, pass_options const &options) -> transform_result {
         auto report = detail::begin_report(input, pass_id::propagate_constants);
         if (auto trivial = detail::trivial_result(input, report)) {
             return std::move(*trivial);
+        }
+        const auto split = detail::split_context::make(input, options.atoms, report);
+        if (!split) {
+            return transform_result{.output = {}, .report = std::move(report)};
         }
 
         // Phase 1 simplifies every node into `definitions`, keyed by input id: a
@@ -235,8 +266,14 @@ namespace fuzzybits::ir::pc::passes {
         const auto codes = input.op_codes();
         const auto node_count = input.node_count();
         auto &map = report.node_map;
+        // An atom edge (v, complement) becomes the uncomplemented edge
+        // (node_count + v, false): a variable of its own, so no rule pairs,
+        // cancels or deduplicates it with v.
+        const auto atoms = node_count;
         operand_scratch scratch;
-        scratch.next_gate(node_count);
+        scratch.next_gate(2 * node_count);
+        std::vector<std::uint32_t> present(split->active() ? node_count : 0, 0);
+        std::uint32_t generation = 0;
         std::vector<edge_ref> edges;
         std::vector<edge_ref> definitions;
         std::vector<std::uint32_t> definition_offset(node_count, 0);
@@ -260,19 +297,26 @@ namespace fuzzybits::ir::pc::passes {
             std::uint32_t trues = 0;
             std::uint32_t falses = 0;
             const auto operands = input.operands(bool_node_id(node));
-            for (auto const &[source, complement] : operands) {
-                const auto image = detail::through(map[source.raw()], complement);
+            bool has_atom = false;
+            for (auto const &edge : operands) {
+                const auto image = detail::through(map[edge.source.raw()], edge.complement);
                 if (image.kind == image_kind::constant) {
                     ++(image.constant_value ? trues : falses);
+                } else if (split->atom_edge(node, edge)) {
+                    edges.push_back(edge_ref{.source = bool_node_id(atoms + edge.source.raw())});
+                    has_atom = true;
                 } else {
                     edges.push_back(image.edge);
                 }
             }
+            if (has_atom && skips_pair(edges, atoms, present, ++generation)) {
+                ++report.skipped;
+            }
 
-            scratch.next_gate(node_count);
+            scratch.next_gate(2 * node_count);
             const auto low = input.cardinality_low()[node];
             const auto high = input.cardinality_high()[node];
-            const auto result = reduce(scratch, code, edges, trues, falses, low, high);
+            const auto result = reduce(scratch, code, edges, trues, falses, low, high, atoms, *split, split->in_cone(node));
             if (result.constant) {
                 map[node] = detail::constant(*result.constant);
                 ++report.rewrites;
@@ -286,7 +330,10 @@ namespace fuzzybits::ir::pc::passes {
             definition_code[node] = result.code;
             definition_low[node] = result.low;
             definition_high[node] = result.high;
-            definitions.insert(definitions.end(), edges.begin(), edges.end());
+            for (auto const &edge : edges) {
+                definitions.push_back(
+                    edge.source.raw() < atoms ? edge : edge_ref{.source = bool_node_id(edge.source.raw() - atoms), .complement = true});
+            }
             map[node] = detail::reference(bool_node_id(node));
         }
 
@@ -327,10 +374,10 @@ namespace fuzzybits::ir::pc::passes {
             image.edge.source = emitter.gate(definition_code[node], edges, definition_low[node], definition_high[node]);
         }
 
-        report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(edges) + scratch.bytes() + detail::bytes_of(definitions) +
-                               detail::bytes_of(definition_offset) + detail::bytes_of(definition_count) +
-                               detail::bytes_of(definition_code) + detail::bytes_of(definition_low) + detail::bytes_of(definition_high) +
-                               detail::bytes_of(live);
+        report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(edges) + scratch.bytes() + split->bytes() +
+                               detail::bytes_of(present) + detail::bytes_of(definitions) + detail::bytes_of(definition_offset) +
+                               detail::bytes_of(definition_count) + detail::bytes_of(definition_code) + detail::bytes_of(definition_low) +
+                               detail::bytes_of(definition_high) + detail::bytes_of(live);
         return std::move(emitter).finish(std::move(report));
     }
 
