@@ -10,7 +10,7 @@ in which samplers draw them.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Collection, Mapping
 
 from .ftp import AND, ATLEAST, OR, ModelError, Project
 
@@ -19,6 +19,14 @@ POS, NEG = 1, 2  # polarity bits: reachable from the root through an even / odd 
 
 # Which import values become constants when the circuit is built.
 CONSTANTS = ("boolean", "hull", "none")
+
+# Significant literals L of a hull query (RFC §3), per event: which of x_v and
+# not x_v are in L. A witness y <= x may use y_v in [lo, hi] (``bounds``).
+ONLY_POS, BOTH, ONLY_NEG, NEITHER = "pos", "both", "neg", "neither"
+# ``model``: L = positive literals plus the negative literal of every event
+# referenced with a direct complement in the target's cone; ``positive``: the
+# plain hull (positive literals only).
+LITERALS = ("model", "positive")
 
 
 @dataclass
@@ -72,31 +80,11 @@ def _fold(kind: str, k: int, lits: list[int]) -> int | tuple[str, int, tuple[int
     return (kind, k, tuple(lits))
 
 
-def build_circuit(
-    project: Project,
-    target: str,
-    probs: Mapping[str, float],
-    overrides: Mapping[str, int | bool] | None = None,
-    constants: str = "boolean",
-    fold: bool = True,
-) -> Circuit:
-    """Circuit for ``target`` restricted to its cone.
-
-    ``overrides`` replace gates or events by Boolean constants (in the function,
-    not in the measure). ``constants`` selects which import values are folded:
-    ``boolean`` folds p = 0 and p = 1, ``hull`` folds only p = 0 (p = 1 events
-    stay droppable), ``none`` keeps every event as a variable. ``fold`` enables
-    constant propagation, alias removal and structural hashing.
-    """
-    if constants not in CONSTANTS:
-        raise ValueError(f"constants must be one of {CONSTANTS}")
+def cone_gates(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Gates in the cone of ``target`` in topological order (children first);
+    overridden gates are leaves."""
     gates = project.gates
-    over = {name: int(bool(v)) for name, v in (overrides or {}).items()}
-    unknown = sorted(n for n in over if n not in gates and n not in probs)
-    if unknown:
-        raise ModelError(f"override names unknown nodes: {', '.join(unknown)}")
-    if target not in gates and target not in probs and target not in over:
-        raise ModelError(f"unknown target {target}")
+    over = overrides or {}
 
     def expandable(name: str) -> bool:
         return name in gates and name not in over
@@ -122,6 +110,95 @@ def build_circuit(
             state[name] = 2
             order.append(name)
             stack.pop()
+    return order
+
+
+def cone_events(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Events referenced in the cone of ``target`` (the target itself if it is
+    an event), in order of first reference, including overridden events."""
+    gates = project.gates
+    out = dict.fromkeys([target] if target not in gates else [])
+    for name in cone_gates(project, target, overrides):
+        out.update((c, None) for c, _ in gates[name].children if c not in gates)
+    return list(out)
+
+
+def complemented_events(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Events referenced with a direct complement (``-NAME``) by a gate in the
+    cone of ``target``, sorted. Their negative literals, with the positive
+    literals of all events, form L for ``literals="model"`` (RFC §3). Complements
+    of gates (also of single-input gates) are delete terms and add nothing."""
+    gates, over = project.gates, overrides or {}
+    return sorted({
+        c for name in cone_gates(project, target, over) for c, neg in gates[name].children
+        if neg and c not in gates and c not in over
+    })
+
+
+def significant_negative(project: Project, target: str, literals: str,
+                         overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Events whose negative literal is in L under ``literals``."""
+    if literals not in LITERALS:
+        raise ValueError(f"literals must be one of {LITERALS}, got {literals!r}")
+    return complemented_events(project, target, overrides) if literals == "model" else []
+
+
+def event_modes(names: list[str], n_vars: int, negative: Collection[str]) -> list:
+    """Per node (index 0 and gates unused): BOTH for events in ``negative``,
+    else ONLY_POS."""
+    neg = set(negative)
+    return [None] + [BOTH if names[v] in neg else ONLY_POS for v in range(1, n_vars + 1)]
+
+
+def bounds(mode: str, x, ones, zeros):
+    """Values a witness may give an event whose value in the world is ``x``:
+    the interval ``[lo, hi]`` (bitwise over lanes)."""
+    if mode == ONLY_POS:
+        return zeros, x
+    if mode == BOTH:
+        return x, x
+    if mode == ONLY_NEG:
+        return x, ones
+    return zeros, ones
+
+
+def build_circuit(
+    project: Project,
+    target: str,
+    probs: Mapping[str, float],
+    overrides: Mapping[str, int | bool] | None = None,
+    constants: str = "boolean",
+    fold: bool = True,
+    max_initiators: int | None = None,
+) -> Circuit:
+    """Circuit for ``target`` restricted to its cone.
+
+    ``overrides`` replace gates or events by Boolean constants (in the function,
+    not in the measure). ``constants`` selects which import values are folded:
+    ``boolean`` folds p = 0 and p = 1, ``hull`` folds only p = 0 (p = 1 events
+    stay droppable), ``none`` keeps every event as a variable. ``fold`` enables
+    constant propagation, alias removal and structural hashing.
+
+    ``max_initiators = m`` conjoins the delete term ``not atleast(m + 1; I)``,
+    with I the initiator-tagged events in the cone (RFC §4.8); it is omitted
+    when ``|I| <= m``.
+    """
+    if constants not in CONSTANTS:
+        raise ValueError(f"constants must be one of {CONSTANTS}")
+    if max_initiators is not None and max_initiators < 0:
+        raise ValueError("max_initiators must be non-negative")
+    gates = project.gates
+    over = {name: int(bool(v)) for name, v in (overrides or {}).items()}
+    unknown = sorted(n for n in over if n not in gates and n not in probs)
+    if unknown:
+        raise ModelError(f"override names unknown nodes: {', '.join(unknown)}")
+    if target not in gates and target not in probs and target not in over:
+        raise ModelError(f"unknown target {target}")
+
+    def expandable(name: str) -> bool:
+        return name in gates and name not in over
+
+    order = cone_gates(project, target, over)
 
     # Temporary nodes: 0 = FALSE, then events and gates as they are met.
     tmp: list[tuple] = [("const",)]
@@ -148,25 +225,31 @@ def build_circuit(
     def ref(name: str) -> int:
         return lit_of[name] if expandable(name) else leaf(name)
 
-    for name in order:
-        g = gates[name]
-        lits = [ref(c) ^ neg for c, neg in g.children]
+    def add(name: str, kind: str, k: int, lits: list[int]) -> int:
         if not fold:
-            lit_of[name] = 2 * len(tmp)
-            tmp.append(("gate", name, g.kind, g.k, tuple(lits)))
-            continue
-        res = _fold(g.kind, g.k, lits)
+            tmp.append(("gate", name, kind, k, tuple(lits)))
+            return 2 * (len(tmp) - 1)
+        res = _fold(kind, k, lits)
         if isinstance(res, int):
-            lit_of[name] = res
-            continue
+            return res
         kind, k, flits = res
         key = (kind, k, tuple(sorted(flits)))
         node = hashed.get(key)
         if node is None:
             node = hashed[key] = len(tmp)
             tmp.append(("gate", name, kind, k, flits))
-        lit_of[name] = 2 * node
+        return 2 * node
+
+    for name in order:
+        g = gates[name]
+        lit_of[name] = add(name, g.kind, g.k, [ref(c) ^ neg for c, neg in g.children])
     root = ref(target)
+    if max_initiators is not None:
+        tagged = project.initiators()
+        lits = [leaf(e) for e in cone_events(project, target, over) if e in tagged]
+        if len(lits) > max_initiators:
+            delete = add("$INITIATORS", ATLEAST, max_initiators + 1, lits)
+            root = add("$TARGET", AND, 0, [root, delete ^ 1])
     return _finalize(tmp, root)
 
 
@@ -257,10 +340,21 @@ def polarity(c: Circuit) -> list[int]:
     return pol
 
 
-def negation_below(c: Circuit) -> list[bool]:
-    """Per gate: whether a complemented edge occurs in its cone."""
+def relaxed(c: Circuit, modes: list, lit: int) -> bool:
+    """Whether the coherent bound g_coh^L replaces ``lit`` by TRUE: complemented
+    gates (and TRUE itself), and event literals that are not in L."""
+    node = lit >> 1
+    if node == 0 or node >= c.first_gate:
+        return bool(lit & 1)
+    if lit & 1:
+        return modes[node] in (ONLY_POS, NEITHER)
+    return modes[node] in (ONLY_NEG, NEITHER)
+
+
+def relaxed_below(c: Circuit, modes: list) -> list[bool]:
+    """Per gate: whether a relaxed literal occurs in its cone."""
     first = c.first_gate
     out = [False] * len(c.kinds)
     for g, kids in enumerate(c.kids):
-        out[g] = any((lit & 1) or (lit >> 1 >= first and out[(lit >> 1) - first]) for lit in kids)
+        out[g] = any(relaxed(c, modes, lit) or (lit >> 1 >= first and out[(lit >> 1) - first]) for lit in kids)
     return out

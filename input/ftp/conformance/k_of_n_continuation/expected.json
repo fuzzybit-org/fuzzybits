@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "At-least gates with k = 1, k = n and 1 < k < n, single-input AND and OR gates, gate children on continuation lines (one 564 characters long, tab and space separators).",
   "covers": [
     "k-of-n with k = 1",
@@ -58,6 +58,8 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_positive": 0.6372981032253088,
+          "negative_literals": [],
           "variables": 20
         }
       }
@@ -68,6 +70,8 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_positive": 0.6372981032253088,
+          "negative_literals": [],
           "variables": 20
         }
       }
@@ -78,6 +82,8 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_positive": 0.6372981032253088,
+          "negative_literals": [],
           "variables": 20
         }
       }

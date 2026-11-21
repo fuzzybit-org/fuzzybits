@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "SEQ = IE and FAIL and not(S or DEL) with DEL = FLAG-A and FLAG-B, both at p = 1: Boolean semantics gives exactly 0, the monotone hull drops the flags. Variants force DEL or one flag FALSE.",
   "covers": [
     "delete-term pair of two p = 1 flags",
@@ -52,6 +52,8 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_positive": 0.0107,
+          "negative_literals": [],
           "variables": 7
         }
       }
@@ -62,6 +64,8 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_positive": 0.0107,
+          "negative_literals": [],
           "variables": 7
         }
       }
@@ -72,6 +76,8 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_positive": 0.0107,
+          "negative_literals": [],
           "variables": 7
         }
       }
@@ -87,6 +93,8 @@
         "SEQ": {
           "boolean": 0.00802,
           "hull": 0.0107,
+          "hull_positive": 0.0107,
+          "negative_literals": [],
           "variables": 5
         }
       }
@@ -100,6 +108,8 @@
         "SEQ": {
           "boolean": 0.00802,
           "hull": 0.0107,
+          "hull_positive": 0.0107,
+          "negative_literals": [],
           "variables": 6
         }
       }

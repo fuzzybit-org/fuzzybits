@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "header_limit with ENDTREE but no IMPORT header. FTREX and ZEBRA do not read the records and set the probabilities of A, B and C to 1 (FTREX warns that they are undefined); here the records are errors and A, B and C are undefined references.",
   "covers": [
     "import-without-header",

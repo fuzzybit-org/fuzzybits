@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "A header line and LIMIT end the IMPORT section. FTREX and ZEBRA do not read the records after them (B and C) and set those probabilities to 1; here the records are errors and B and C are undefined references.",
   "covers": [
     "import-without-header after a header line",
