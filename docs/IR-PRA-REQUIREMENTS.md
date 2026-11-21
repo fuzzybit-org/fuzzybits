@@ -1,6 +1,7 @@
 # `fuzzybits::ir::pra` Requirements
 
-Status: R1 value model, builder and validation implemented (#175); readers, lowering and evaluation deferred  
+Status: R1 value model, builder and validation implemented (#175); CAFTA FTP reader implemented (#180); other readers,
+lowering and evaluation deferred  
 Scope: `src/ir/pra`, PRA IO adapters, PRA-to-PC lowering, projection, and PRA-domain result serialization
 
 ## Boundary
@@ -182,8 +183,27 @@ Still needed:
 
 - OpenPSA MEF input reader producing `ir::pra::model`;
 - SAPHIRE MAR-D reader mapping `.FTL`, `.ETL`, `.BEI`, `.BED`, `.GTD`, `.MTD`, `.FTA`, `.FTC`, `.SQC`, and `.ESC` records;
-- KUREAS native readers for `KNOW_FTL`, `KNOW_SYS`, and hazard-analysis files where they carry stable PRA semantics;
-- FTP/simple fault-tree adapter deciding whether to produce minimal PRA, PC directly, or both.
+- KUREAS native readers for `KNOW_FTL`, `KNOW_SYS`, and hazard-analysis files where they carry stable PRA semantics.
+
+Implemented: the CAFTA FTP project reader (#180, `src/io/ftp`, endpoint `io.fuzzybits.ftp.project_reader`,
+`ftp::read_project`). A project is one or more `.ftp` files (or a directory, all `*.ftp` sorted) read as their ordered
+union; sections do not continue from one file into the next. It is the only FTP parser; the older `read()` to `ir::pc`
+uses the same parser until #182.
+
+| FTP construct | `ir::pra` | Class |
+|---|---|---|
+| `NAME + ops`, `NAME * ops`, `NAME k ops` (indented lines continue the operands) | `or` / `and` / `cardinality(k, n)` gate, source file:line | core |
+| `-name` operand | complemented operand | core |
+| `ENDTREE` (the file's tree section comes first and must be closed) | — | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate` |
+| `IMPORT` records `value name [flags]` | basic event, `literal` probability, one source per record | core |
+| `I` flag | initiating event on the basic event; a value > 1 is a `frequency` literal | core |
+| other flags | element attribute `ftp.import_flag` | extension (warning) |
+| event imported twice | `io.ftp.duplicate_import = last` (default) / `first` (warning) / `error`; an `I` on any record is kept | diagnosable |
+| referenced name that is neither a gate nor imported | — (never an implicit p = 1) | `io.ftp.undefined-reference` |
+| `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
+| no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
+| `LIMIT x` | project attribute `ftp.limit` | extension |
+| `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:
 

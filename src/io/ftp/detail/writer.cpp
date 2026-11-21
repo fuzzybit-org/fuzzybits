@@ -133,6 +133,11 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
         for (std::uint32_t node = 0; node < model.node_count(); ++node) {
             writeGateLine(model, ir::pc::bool_node_id(node), output);
         }
+        output << kFtpEndTreeToken << '\n' << kFtpProcessToken;
+        for (auto const &target : model.targets()) {
+            output << ' ' << kFtpGeneratedTargetPrefix << target.id.raw();
+        }
+        output << '\n' << kFtpImportToken << '\n';
         for (std::uint32_t node = 0; node < model.node_count(); ++node) {
             writeProbabilityLine(model, ir::pc::bool_node_id(node), output);
         }

@@ -5,27 +5,33 @@
 #include "ir/pc/edge.h"
 #include "ir/pc/id.h"
 
-#include <cmath>
 #include <cstdint>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
     namespace {
 
+        // Nodes are numbered in depth-first post-order from the targets (events
+        // when first reached, gates after their operands), so a written and
+        // re-read circuit numbers its nodes identically.
         class PcBuilder final {
         public:
-            explicit PcBuilder(ParsedModel const &model) : model_(model) {}
+            explicit PcBuilder(ParsedProject const &model)
+                : model_(model), gateNodes_(model.definitions.size()), eventNodes_(model.events.size()),
+                  gateState_(model.definitions.size(), Visit::unvisited) {}
 
-            [[nodiscard]] auto build(std::vector<std::string> const &targets) -> ir::pc::finalize_result {
+            [[nodiscard]] auto build(std::vector<Target> const &targets) -> ir::pc::finalize_result {
                 for (auto const &target : targets) {
-                    if (const auto node = buildNode(target); node.valid()) {
-                        const auto targetId = builder_.add_target(node);
-                        (void)targetId;
+                    const auto resolved = collapse(target);
+                    const auto node = resolved.gate ? buildDefinition(resolved.index) : eventNode(resolved.index);
+                    if (!node.valid()) {
+                        break;
                     }
+                    const auto targetId = builder_.add_target(node);
+                    (void)targetId;
                 }
                 if (diagnostics_.has_errors()) {
                     return ir::pc::finalize_result{
@@ -39,88 +45,137 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
             }
 
         private:
-            [[nodiscard]] auto buildNode(std::string const &name) -> ir::pc::bool_node_id {
-                if (const auto built = builtNodes_.find(name); built != builtNodes_.end()) {
-                    return built->second;
-                }
-                if (visiting_.contains(name)) {
-                    diagnostics_.push(api::make_error("io.ftp.cycle", "FTP gate cycle involving '" + name + "'"));
-                    return ir::pc::bool_node_id::invalid();
-                }
+            enum class Visit : std::uint8_t {
+                unvisited,
+                active,
+                done,
+            };
 
-                if (const auto definition = model_.definitionByName.find(name); definition != model_.definitionByName.end()) {
-                    return buildDefinition(model_.definitions[definition->second]);
+            struct Frame final {
+                std::uint32_t gate = 0;
+                std::uint32_t next = 0;
+            };
+
+            [[nodiscard]] auto resolve(const std::string_view name) const -> Target {
+                if (const auto gate = model_.definitionByName.find(name); gate != model_.definitionByName.end()) {
+                    return Target{.name = name, .index = gate->second, .gate = true};
                 }
-                return buildBasicEvent(name);
+                return Target{.name = name, .index = model_.eventByName.at(name), .gate = false};
             }
 
-            [[nodiscard]] auto buildDefinition(Definition const &definition) -> ir::pc::bool_node_id {
-                visiting_.insert(definition.name);
-
-                std::vector<ir::pc::edge_ref> operands;
-                operands.reserve(definition.operands.size());
-                for (const auto &[name, complement] : definition.operands) {
-                    const auto operand = buildNode(name);
-                    if (!operand.valid()) {
-                        visiting_.erase(definition.name);
-                        return ir::pc::bool_node_id::invalid();
+            // A target on an identity gate (one plain operand) observes the operand:
+            // the writer's `T<k> + node` target lines read back to the same circuit.
+            [[nodiscard]] auto collapse(Target target) const -> Target {
+                for (std::size_t steps = 0; target.gate && steps < model_.definitions.size(); ++steps) {
+                    auto const &definition = model_.definitions[target.index];
+                    const auto identity = definition.kind != DefinitionKind::at_least || definition.threshold == 1;
+                    if (definition.operands.size() != 1 || definition.operands.front().complement || !identity) {
+                        break;
                     }
-                    operands.push_back(ir::pc::edge_ref{
-                        .source = operand,
-                        .complement = complement,
-                    });
+                    target = resolve(definition.operands.front().name);
                 }
-
-                ir::pc::bool_node_id node;
-                switch (definition.kind) {
-                case DefinitionKind::and_gate:
-                    node = builder_.add_and(operands);
-                    break;
-                case DefinitionKind::or_gate:
-                    node = builder_.add_or(operands);
-                    break;
-                case DefinitionKind::at_least:
-                    node = builder_.add_cardinality(definition.threshold, static_cast<std::uint32_t>(operands.size()), operands);
-                    break;
-                }
-
-                visiting_.erase(definition.name);
-                builtNodes_.emplace(definition.name, node);
-                return node;
+                return target;
             }
 
-            [[nodiscard]] auto buildBasicEvent(std::string const &name) -> ir::pc::bool_node_id {
+            [[nodiscard]] auto eventNode(const std::uint32_t index) -> ir::pc::bool_node_id {
+                if (eventNodes_[index].valid()) {
+                    return eventNodes_[index];
+                }
+                auto const &event = model_.events[index];
                 ir::pc::probability_source_id probability;
-                if (const auto found = model_.probabilities.find(name); found != model_.probabilities.end()) {
-                    if (std::isfinite(found->second) && found->second >= 0.0 && found->second <= 1.0) {
-                        probability = builder_.add_literal_probability(found->second);
-                    } else {
-                        probability = builder_.add_parameter_probability(name);
-                        diagnostics_.push(api::make_warning("io.ftp.non-probability-import",
-                                                            "imported value for basic event '" + name +
-                                                                "' is outside the literal probability range [0, 1]"));
-                    }
+                if (event.frequency) {
+                    probability = builder_.add_parameter_probability(std::string(event.name));
+                    diagnostics_.push(api::make_warning("io.ftp.non-probability-import",
+                                                        "imported value for basic event '" + std::string(event.name) +
+                                                            "' is a frequency outside the literal probability range [0, 1]"));
                 } else {
-                    probability = builder_.add_parameter_probability(name);
-                    diagnostics_.push(api::make_warning("io.ftp.missing-probability",
-                                                        "basic event '" + name + "' has no literal probability in the FTP file"));
+                    probability = builder_.add_literal_probability(event.value);
                 }
-
-                const auto node = builder_.add_basic_event(probability);
-                builtNodes_.emplace(name, node);
-                return node;
+                eventNodes_[index] = builder_.add_basic_event(probability);
+                return eventNodes_[index];
             }
 
-            ParsedModel const &model_;
+            [[nodiscard]] auto buildDefinition(const std::uint32_t root) -> ir::pc::bool_node_id {
+                if (gateState_[root] == Visit::done) {
+                    return gateNodes_[root];
+                }
+                std::vector<Frame> stack{Frame{.gate = root}};
+                gateState_[root] = Visit::active;
+                while (!stack.empty()) {
+                    auto &frame = stack.back();
+                    auto const &definition = model_.definitions[frame.gate];
+                    if (frame.next < definition.operands.size()) {
+                        const auto operand = resolve(definition.operands[frame.next++].name);
+                        if (!operand.gate) {
+                            (void)eventNode(operand.index);
+                            continue;
+                        }
+                        if (gateState_[operand.index] == Visit::active) {
+                            diagnostics_.push(api::make_error("io.ftp.cycle", "FTP gate cycle involving '" + std::string(operand.name) + "'"));
+                            return ir::pc::bool_node_id::invalid();
+                        }
+                        if (gateState_[operand.index] == Visit::unvisited) {
+                            gateState_[operand.index] = Visit::active;
+                            stack.push_back(Frame{.gate = operand.index});
+                        }
+                        continue;
+                    }
+
+                    std::vector<ir::pc::edge_ref> operands;
+                    operands.reserve(definition.operands.size());
+                    for (auto const &[name, complement] : definition.operands) {
+                        const auto operand = resolve(name);
+                        operands.push_back(ir::pc::edge_ref{
+                            .source = operand.gate ? gateNodes_[operand.index] : eventNodes_[operand.index],
+                            .complement = complement,
+                        });
+                    }
+                    ir::pc::bool_node_id node;
+                    switch (definition.kind) {
+                    case DefinitionKind::and_gate:
+                        node = builder_.add_and(operands);
+                        break;
+                    case DefinitionKind::or_gate:
+                        node = builder_.add_or(operands);
+                        break;
+                    case DefinitionKind::at_least:
+                        node = builder_.add_cardinality(definition.threshold, static_cast<std::uint32_t>(operands.size()), operands);
+                        break;
+                    }
+                    gateNodes_[frame.gate] = node;
+                    gateState_[frame.gate] = Visit::done;
+                    stack.pop_back();
+                }
+                return gateNodes_[root];
+            }
+
+            ParsedProject const &model_;
             ir::pc::builder builder_;
             api::diagnostic_list diagnostics_;
-            std::unordered_map<std::string, ir::pc::bool_node_id> builtNodes_;
-            std::unordered_set<std::string> visiting_;
+            std::vector<ir::pc::bool_node_id> gateNodes_;
+            std::vector<ir::pc::bool_node_id> eventNodes_;
+            std::vector<Visit> gateState_;
         };
 
     } // namespace
 
-    auto build_pc(ParsedModel const &model, std::vector<std::string> const &targets) -> ir::pc::finalize_result {
+    auto selected_targets(ParsedProject const &project, api::option_set const &options, api::diagnostic_list &diagnostics)
+        -> std::vector<Target> {
+        const auto requested = options.get<std::string>(target_option());
+        if (!requested || requested->empty()) {
+            return project.targets;
+        }
+        if (const auto gate = project.definitionByName.find(*requested); gate != project.definitionByName.end()) {
+            return {Target{.name = gate->first, .index = gate->second, .gate = true}};
+        }
+        if (const auto event = project.eventByName.find(*requested); event != project.eventByName.end()) {
+            return {Target{.name = event->first, .index = event->second, .gate = false}};
+        }
+        diagnostics.push(api::make_error("io.ftp.unknown-target", "requested target '" + *requested + "' is neither a gate nor an imported event"));
+        return {};
+    }
+
+    auto build_pc(ParsedProject const &model, std::vector<Target> const &targets) -> ir::pc::finalize_result {
         return PcBuilder(model).build(targets);
     }
 
