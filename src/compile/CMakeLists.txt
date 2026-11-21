@@ -1,8 +1,19 @@
+# Exhaustive exact evaluation of a .pcfb. Needs only pcfb, so SCRAM-free
+# consumers (IO writer tests) link it without libscram.
+add_library(fuzzybits_exact_eval STATIC
+  exact_eval.cc
+)
+set_target_properties(fuzzybits_exact_eval PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(fuzzybits_exact_eval
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+)
+target_link_libraries(fuzzybits_exact_eval PUBLIC pcfb)
+
 # Host-only OpenPSA → pcfb lowering. No SYCL.
 add_library(fuzzybits_compile STATIC
   pcfb_writer.cc
   nombrilo.cc
-  exact_eval.cc
   sha256.cc
 )
 set_target_properties(fuzzybits_compile PROPERTIES
@@ -17,6 +28,7 @@ target_link_libraries(fuzzybits_compile
   PUBLIC
     scram
     pcfb
+    fuzzybits_exact_eval
   PRIVATE
     ${LIBS}
 )
