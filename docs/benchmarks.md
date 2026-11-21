@@ -466,6 +466,151 @@ This shim is temporary. [#125](https://github.com/fuzzybit-org/fuzzybits/issues/
 read the sibling JSInp files directly. Delete
 `benchmarks/datasets/compat/generic_pwr.py` once #125 recovers those models.
 
+## Reference estimators and FTP conformance fixtures
+
+[#159](https://github.com/fuzzybit-org/fuzzybits/issues/159) requires every
+reference value to come from a method other than the tool being scored.
+`benchmarks/reference/` ([#179](https://github.com/fuzzybit-org/fuzzybits/issues/179))
+provides those methods for CAFTA/FTREX `.ftp` projects. Consumers: the FTP
+reader (#180), the lowering (#181), the monotone-hull work (#174, #178, #183)
+and the private large-model card (#185).
+
+### Independence
+
+The package needs only NumPy. It imports nothing from `fuzzybits`, `src/`,
+`python/` or the harness (`benchmarks/__init__.py` loads the manifest loader
+lazily for this reason); `test_independence_from_fuzzybits` enforces both
+the loaded modules and the import statements. It has its own minimal FTP
+parser (`benchmarks/reference/ftp.py`). That parser is **reference-only, not
+the product reader**: it follows `src/io/ftp/schema/ftrex_ftp.g4` and the
+conventions the grammar leaves implicit (indented continuation lines, a
+leading `-` complements a reference, imports may follow the last gate without
+an `IMPORT` header, `PROCESS` may continue on the next line, `*` lines are
+headers), and it reports diagnostics instead of guessing.
+
+### Semantics
+
+- **Boolean:** $P(g)$ of the literal logic. Events at p = 0 and p = 1 are
+  constants.
+- **Monotone hull** (#174): $P(\uparrow g)$ with
+  $\uparrow g(x) = \exists\, y \le x : g(y)$, so
+  $g \le \uparrow g \le g_{coh}$, where $g_{coh}$ replaces every complemented
+  input by TRUE. Events at p = 1 are droppable, not constants; events at
+  p = 0 are constants.
+- **Overrides** `NAME=0|1` replace a gate or an event by a constant *in the
+  function*. They are not probabilities: under the hull, an event overridden
+  to 1 is a constant TRUE, while an imported p = 1 event stays droppable.
+- **Duplicate imports:** `--duplicate-import error|first|last`, default
+  `error` (evaluation refuses; `first`/`last` report a warning).
+
+### Methods
+
+| command | method | scope |
+|---|---|---|
+| `exact --semantics boolean\|hull` | enumeration of every event in the cone (≤ 22), weights include p = 0 and p = 1; the hull is the subset-OR (zeta) transform of the truth table. No folding or polarity reasoning, so it checks the estimators independently. | small models |
+| `estimate --semantics boolean` | bit-parallel Monte Carlo, PCG64 seeded, 64 lanes per word; Binomial-position draws for p < 1/32, uniforms otherwise. The circuit is folded first (constants, aliases, structural hashing); a target that folds to a constant is reported exactly (`method: constant-folding`). | any size |
+| `estimate --semantics hull` | two-stage estimator below | any size |
+
+Hull estimator, per pass:
+
+1. Evaluate $g$ and $g_{coh}$ together. Lanes with $g = 1$ are in the hull,
+   lanes with $g_{coh} = 0$ are not.
+2. Redraw the pass (saved generator state), gather the candidate lanes and run
+   a Kleene (three-valued) evaluation in dual rail. Events false in the lane
+   are 0; true events reachable from the target only through an even number
+   of complements are fixed to 1, only through an odd number to 0 (optimal
+   for satisfiability, which drops p = 1 flags under a complement); true
+   binate events are free.
+3. Lanes still undetermined (up to `--max-checks`) get an exact check on the
+   residual circuit of undetermined nodes: repeated pure-literal fixing, then
+   a truth table (≤ 16 free events), a BDD with a node budget
+   (`--bdd-budget`), or a complete branching search.
+
+With $N$ trials, $n_T$ lanes decided true, $n_C$ undetermined lanes of which
+$m$ were checked and $h$ were in the hull, the estimate
+$\hat P = (n_T + n_C h / m) / N$ is unbiased, and with $\pi_T = n_T/N$,
+$\pi_C = n_C/N$, $f = h/m$,
+
+$$\widehat{\mathrm{Var}}(\hat P) = \frac{\pi_T + f^2 \pi_C - \hat P^2}{N} + \frac{\pi_C^2 f (1 - f)}{m},$$
+
+which is $\hat P(1-\hat P)/N$ when every undetermined lane is checked. The
+result reports `estimate`, `se`, `ci95`, the per-run bounds
+$\hat P(g) \le \hat P \le \hat P(g_{coh})$, lane counts per stage, the checked
+fraction, `lanes_per_second` of the exact check, residual sizes and which
+decision procedure was used.
+
+Results are deterministic for a given seed, trial count and `--memory-mib`
+(which fixes the pass size). Trials are rounded up to a multiple of 64.
+
+### CLI
+
+```bash
+python -m benchmarks.reference structure input/ftp/conformance/multi_file_project
+python -m benchmarks.reference exact --semantics hull input/ftp/conformance/delete_term_flags
+python -m benchmarks.reference exact --semantics boolean --override DEL=0 \
+    input/ftp/conformance/delete_term_flags
+python -m benchmarks.reference estimate --semantics hull --trials 1e6 --seed 1 \
+    --max-checks 2000 --target SEQ-3 --json input/ftp/conformance/success_branch_delete_term
+```
+
+`FILES` are `.ftp` files or directories (all `*.ftp`, sorted) read as one
+model, in order; order matters for `first`/`last`. Without `--target`, the
+targets are the defined `PROCESS` targets, else the roots. Exit status 1
+means error diagnostics (printed to stderr; `--json` puts them in the document).
+
+### Conformance fixtures (`input/ftp/conformance/`)
+
+One directory per fixture, ≤ 20 events each, with `expected.json`:
+hand-written `description`, `covers`, `files` (project order), optional
+`targets` and override `variants`; computed `default_targets`, `structure`
+(policy-independent counts; an event counts as I-tagged or at a value when
+any of its import lines is), and per duplicate-import policy the expected
+diagnostics (`severity`, `code`, `name`, `locations`) and the exact Boolean
+and hull probabilities (`null` when the policy is an error).
+
+| fixture | covers | target | Boolean | hull |
+|---|---|---|---|---|
+| `multi_file_project` | three files, cross-file gate references, separate IMPORT file | TOP | 0.00192544813 | 0.00192544813 |
+| `process_multi_target` | PROCESS with three targets over two lines, non-target root | T1 / T2 / T3 | 0.622 / 0.464 / 0.098 | 0.622 / 0.58 / 0.098 |
+| `no_process` | no PROCESS, two roots, no header lines | R1 / R2 | 0.208 / 0.024 | 0.208 / 0.024 |
+| `imports_tags_duplicates` | I tags, values 0 and 1, duplicated import | TOP (first / last) | 0.1108 / 0.1072 | 0.1108 / 0.1072 |
+| `header_limit` | `**CHAR32`, `**DBNAME:`, `**FTITLE:`, `*XEQ`, LIMIT, imports without header | TOP | 0.224 | 0.224 |
+| `success_branch_delete_term` | complemented gate references, SEQ = F ∧ ¬(S ∨ DEL) | TOP / SEQ-2 / SEQ-3 | 0.023 / 0.01785 / 0.00515 | 0.028 / 0.028 / 0.006325 |
+| `delete_term_flags` | DEL = two p = 1 flags; variants `DEL=0`, `FLAG-A=0` | SEQ | 0 (variants 0.00802) | 0.0107 |
+| `k_of_n_continuation` | k = 1, k = n, 1 < k < n, single-input gates, 564-character continuation line | TOP | 0.6372981032253088 | same |
+| `names_special` | names starting with digits, containing `/` or `--` | 1-TOP | 0.507 | 0.51 |
+
+`imports_tags_duplicates` under `error` has no results and one
+`duplicate-import` error. Check or regenerate the computed fields:
+
+```bash
+python -m benchmarks.reference.fixtures          # check
+python -m benchmarks.reference.fixtures --write  # after editing a fixture
+```
+
+`tests/python/test_reference_estimators.py` checks the fixtures, closed-form
+values for several of them, Boolean and hull estimates within 4 standard
+errors, the per-lane hull check against the exact upward closure (truth
+table, BDD and search paths), seed determinism and the CLI.
+
+### Private models
+
+When `FUZZYBITS_PRIVATE_FIXTURES_DIR` is set, the `private` tests check every
+`ftp/<MODEL>/` directory that has `<MODEL>.card.json`: the card's structure
+counts, and each variant (`semantics`, `overrides`, `policy`, `expected`)
+within 4 combined standard errors (Boolean: `FUZZYBITS_PRIVATE_TRIALS`,
+default 2^22; hull: 2^18 trials, at most 400 checked lanes). Variants that
+need a file edit are skipped; variants with only an observed value are
+reported, not asserted. Output is pass/fail and aggregates only: no
+identifiers, per-event values or card values (#38).
+`scripts/ci/docker-toolchain-run.sh` mounts the directory read-only at
+`/private` and passes `FUZZYBITS_PRIVATE_FIXTURES_DIR=/private`.
+
+```bash
+FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/private-fixtures \
+  pytest tests/python/test_reference_estimators.py -m private -s
+```
+
 ## Published history and the Benchmarks tab
 
 [#123](https://github.com/fuzzybit-org/fuzzybits/issues/123) publishes
