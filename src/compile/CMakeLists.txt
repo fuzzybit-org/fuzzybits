@@ -10,6 +10,8 @@ target_include_directories(fuzzybits_exact_eval
 )
 target_link_libraries(fuzzybits_exact_eval PUBLIC pcfb)
 
+add_subdirectory(pra_to_pc)
+
 # Host-only OpenPSA → pcfb lowering. No SYCL.
 add_library(fuzzybits_compile STATIC
   pcfb_writer.cc
