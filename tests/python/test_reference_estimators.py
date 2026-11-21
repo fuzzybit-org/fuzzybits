@@ -630,12 +630,12 @@ def _subsets(mask: int):
         sub = (sub - 1) & mask
 
 
-@pytest.mark.parametrize("seed", range(40))
+@pytest.mark.parametrize("seed", range(120))
 def test_random_projects_match_brute_force(seed):
     """End to end on random projects, complements inside and outside negated
     gates, all three literal modes, with and without the initiator rule: the
     exact value, the minimal cut sets, the per-lane check (every reachable
-    world) and, for every fourth seed, the estimator equal brute force. split:
+    world) and, for every sixth seed, the estimator equal brute force. split:
     the plain hull over atoms on the coupled valuation; omega: omega_L; positive:
     the plain hull."""
     rng = random.Random(seed)
@@ -699,7 +699,7 @@ def test_random_projects_match_brute_force(seed):
 
             x_bits = [0] + [sum(value(c.names[v], x) << j for j, x in enumerate(live)) for v in range(1, c.first_gate)]
             assert checker.check(x_bits, len(live)) == [bool(want[x]) for x in live], (literals, rule)
-        if seed % 4 == 0 and rule in (None, 1):
+        if seed % 6 == 0 and rule in (None, 1):
             r = estimate_hull(project, target, probs, trials=1 << 13, seed=seed, literals=literals,
                               max_initiators=rule)
             p_live = min(1.0, max(0.0, math.fsum(weight[x] for x in live if want[x])))
