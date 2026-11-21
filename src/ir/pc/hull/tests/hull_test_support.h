@@ -21,21 +21,33 @@
 namespace fuzzybits::ir::pc::hull::testing {
 
     // Plain two-valued evaluation of every node; node ids are topological in
-    // circuits built through pc::builder.
-    inline auto evaluate_nodes(circuit const &model, std::span<std::uint8_t const> event_values)
-        -> std::vector<std::uint8_t> {
+    // circuits built through pc::builder. A complemented edge into an event e
+    // with complement_values[e] != unset reads that value instead of not x_e
+    // (the atom-split reading).
+    inline constexpr std::uint8_t unset = 2;
+
+    inline auto evaluate_nodes(circuit const &model, std::span<std::uint8_t const> event_values,
+                               std::span<std::uint8_t const> complement_values = {}) -> std::vector<std::uint8_t> {
         std::vector<std::uint8_t> value(model.node_count(), 0);
+        std::vector<std::uint32_t> event_of(model.node_count(), 0);
         std::uint32_t event = 0;
         for (std::uint32_t node = 0; node < model.node_count(); ++node) {
             const auto code = model.op_codes()[node];
             std::uint32_t ones = 0;
             std::uint32_t count = 0;
             for (auto const &edge : model.operands(bool_node_id(node))) {
-                ones += value[edge.source.raw()] ^ (edge.complement ? 1U : 0U);
+                const auto source = edge.source.raw();
+                if (edge.complement && model.op_codes()[source] == op_code::basic_event && !complement_values.empty() &&
+                    complement_values[event_of[source]] != unset) {
+                    ones += complement_values[event_of[source]];
+                } else {
+                    ones += value[source] ^ (edge.complement ? 1U : 0U);
+                }
                 ++count;
             }
             switch (code) {
             case op_code::basic_event:
+                event_of[node] = event;
                 value[node] = event_values[event++];
                 break;
             case op_code::constant:

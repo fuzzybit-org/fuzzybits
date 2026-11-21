@@ -29,6 +29,7 @@ namespace {
         pc::bool_node_id target;
         std::uint32_t events = 0;
         std::uint32_t zero_mask = 0;
+        std::uint32_t one_mask = 0;
     };
 
     // Random DAG over at most 14 events with every op code, complemented edges,
@@ -48,6 +49,9 @@ namespace {
             const double probability = roll < 10 ? 0.0 : roll < 20 ? 1.0 : 0.05 + 0.9 * (percent(random) / 100.0);
             if (probability == 0.0) {
                 out.zero_mask |= 1U << event;
+            }
+            if (probability == 1.0) {
+                out.one_mask |= 1U << event;
             }
             nodes.push_back(builder.add_basic_event(builder.add_literal_probability(probability)));
         }
@@ -89,35 +93,82 @@ namespace {
         return out;
     }
 
-    // Truth table of the target over all worlds (bit e of the index is event e).
-    auto truth_table(generated const &case_) -> std::vector<std::uint8_t> {
-        const std::size_t worlds = std::size_t{1} << case_.events;
-        std::vector<std::uint8_t> table(worlds);
-        std::vector<std::uint8_t> values(case_.events);
-        for (std::size_t world = 0; world < worlds; ++world) {
-            for (std::uint32_t event = 0; event < case_.events; ++event) {
-                values[event] = static_cast<std::uint8_t>((world >> event) & 1U);
+    // Reference for one mode vector: a truth table over the atoms (bit e is
+    // y+_e for every event, bit n + k is y-_e for the k-th split event), and an
+    // enumeration of every atom assignment allowed for sample x.
+    class reference final {
+    public:
+        reference(generated const &case_, std::span<event_mode const> modes) : events_(case_.events) {
+            const auto mode = [&](std::uint32_t event) { return modes.empty() ? event_mode::down : modes[event]; };
+            std::vector<std::uint32_t> split_bit(events_, 0);
+            for (std::uint32_t event = 0; event < events_; ++event) {
+                const auto bit = 1U << event;
+                switch (mode(event)) {
+                case event_mode::down:
+                    down_ |= bit;
+                    break;
+                case event_mode::up:
+                    up_ |= bit;
+                    break;
+                case event_mode::fixed:
+                    break;
+                case event_mode::split:
+                    down_ |= bit;
+                    split_bit[event] = 1U << (events_ + static_cast<std::uint32_t>(split_.size()));
+                    split_.push_back(event);
+                    break;
+                }
             }
-            table[world] = hull::testing::evaluate_nodes(case_.model, values)[case_.target.raw()];
+            zero_ = case_.zero_mask;
+            one_ = case_.one_mask;
+            const auto bits = events_ + static_cast<std::uint32_t>(split_.size());
+            table_.resize(std::size_t{1} << bits);
+            std::vector<std::uint8_t> values(events_);
+            std::vector<std::uint8_t> complements(events_, hull::testing::unset);
+            for (std::size_t world = 0; world < table_.size(); ++world) {
+                for (std::uint32_t event = 0; event < events_; ++event) {
+                    values[event] = static_cast<std::uint8_t>((world >> event) & 1U);
+                    if (split_bit[event] != 0) {
+                        complements[event] = (world & split_bit[event]) != 0 ? 1 : 0;
+                    }
+                }
+                table_[world] = hull::testing::evaluate_nodes(case_.model, values, complements)[case_.target.raw()];
+            }
         }
-        return table;
-    }
 
-    // Enumerates every y allowed by the modes for sample x and looks it up.
-    auto brute_force(std::vector<std::uint8_t> const &table, std::uint32_t events, std::uint32_t x,
-                     std::uint32_t down, std::uint32_t up, std::uint32_t zero) -> bool {
-        const auto all = (1U << events) - 1;
-        const auto fixed_part = x & ~down & ~zero & all;
-        const auto free = ((x & down) | (~x & up)) & ~zero & all;
-        for (std::uint32_t subset = free;; subset = (subset - 1) & free) {
-            if (table[fixed_part | subset] != 0) {
-                return true;
+        [[nodiscard]] auto split_count() const -> std::size_t {
+            return split_.size();
+        }
+
+        [[nodiscard]] auto operator()(std::uint32_t x) const -> bool {
+            const auto all = (1U << events_) - 1;
+            const auto fixed_part = x & ~down_ & ~zero_ & all;
+            auto free = ((x & down_) | (~x & up_)) & ~zero_ & all;
+            for (std::size_t k = 0; k < split_.size(); ++k) {
+                const auto event = split_[k];
+                if (((x >> event) & 1U) == 0 && ((one_ >> event) & 1U) == 0) {
+                    free |= 1U << (events_ + k);
+                }
             }
-            if (subset == 0) {
-                return false;
+            for (std::uint32_t subset = free;; subset = (subset - 1) & free) {
+                if (table_[fixed_part | subset] != 0) {
+                    return true;
+                }
+                if (subset == 0) {
+                    return false;
+                }
             }
         }
-    }
+
+    private:
+        std::uint32_t events_ = 0;
+        std::uint32_t down_ = 0;
+        std::uint32_t up_ = 0;
+        std::uint32_t zero_ = 0;
+        std::uint32_t one_ = 0;
+        std::vector<std::uint32_t> split_;
+        std::vector<std::uint8_t> table_;
+    };
 
     struct named_options final {
         std::string name;
@@ -147,19 +198,31 @@ namespace {
     auto random_modes(std::mt19937_64 &random, std::uint32_t events) -> std::vector<event_mode> {
         std::vector<event_mode> modes(events);
         for (auto &mode : modes) {
-            mode = static_cast<event_mode>(random() % 3);
+            mode = static_cast<event_mode>(random() % 4);
         }
         return modes;
     }
 
-    auto mode_mask(std::span<event_mode const> modes, event_mode wanted) -> std::uint32_t {
-        std::uint32_t mask = 0;
-        for (std::size_t event = 0; event < modes.size(); ++event) {
-            if (modes[event] == wanted) {
-                mask |= 1U << event;
+    // The lowering's default (#190): split for events referenced through a
+    // complemented edge, down otherwise. Generated events are nodes 0..n-1.
+    auto split_complemented(pc::circuit const &model, std::uint32_t events) -> std::vector<event_mode> {
+        std::vector<event_mode> modes(events, event_mode::down);
+        for (auto const &edge : model.edges()) {
+            if (edge.complement && model.op_codes()[edge.source.raw()] == pc::op_code::basic_event) {
+                modes[edge.source.raw()] = event_mode::split;
             }
         }
-        return mask;
+        return modes;
+    }
+
+    // Keeps the reference table at most 2^18 entries.
+    void limit_splits(std::vector<event_mode> &modes, std::uint32_t events) {
+        auto budget = 18 - static_cast<std::int32_t>(events);
+        for (auto &mode : modes) {
+            if (mode == event_mode::split && budget-- <= 0) {
+                mode = event_mode::down;
+            }
+        }
     }
 
     auto build(std::initializer_list<double> probabilities, pc::builder &builder) -> std::vector<pc::bool_node_id> {
@@ -225,18 +288,20 @@ TEST_CASE("hull check equals brute force on random circuits", "[ir][pc][hull]") 
     std::mt19937_64 random(0x5eed178);
     const auto configurations = option_sets();
     std::vector<hull::check_stats> totals(configurations.size());
+    std::size_t splits = 0;
     for (int round = 0; round < 160; ++round) {
         const auto case_ = generate(random);
-        const auto table = truth_table(case_);
-        const std::vector<std::vector<event_mode>> mode_vectors{
-            {}, random_modes(random, case_.events), std::vector<event_mode>(case_.events, event_mode::fixed)};
-        for (auto const &modes : mode_vectors) {
-            const auto down = modes.empty() ? (1U << case_.events) - 1 : mode_mask(modes, event_mode::down);
-            const auto up = modes.empty() ? 0U : mode_mask(modes, event_mode::up);
+        std::vector<std::vector<event_mode>> mode_vectors{
+            {}, random_modes(random, case_.events), std::vector<event_mode>(case_.events, event_mode::fixed),
+            split_complemented(case_.model, case_.events)};
+        for (auto &modes : mode_vectors) {
+            limit_splits(modes, case_.events);
+            const reference expected_value(case_, modes);
+            splits += expected_value.split_count();
             const std::size_t lanes = std::size_t{1} << case_.events;
             std::vector<std::uint8_t> expected(lanes);
             for (std::size_t x = 0; x < lanes; ++x) {
-                expected[x] = brute_force(table, case_.events, static_cast<std::uint32_t>(x), down, up, case_.zero_mask);
+                expected[x] = expected_value(static_cast<std::uint32_t>(x));
             }
             for (std::size_t index = 0; index < configurations.size(); ++index) {
                 auto const &configuration = configurations[index];
@@ -262,6 +327,7 @@ TEST_CASE("hull check equals brute force on random circuits", "[ir][pc][hull]") 
             }
         }
     }
+    REQUIRE(splits > 100);
     // Every tier must have decided some lanes.
     REQUIRE(totals[0].bounds > 0);
     REQUIRE(totals[0].reduction > 0);
@@ -499,5 +565,59 @@ TEST_CASE("hull check decides the Theorem 8 reduction of pigeonhole formulas", "
         if (!satisfiable) {
             REQUIRE(stats.search + stats.bdd == 1);
         }
+    }
+}
+
+// #190 decision: atom-split hull. Each case is checked for every sample.
+TEST_CASE("hull check implements the atom-split hull", "[ir][pc][hull]") {
+    const auto every_sample = [](pc::circuit const &model, pc::bool_node_id target, std::vector<event_mode> const &modes,
+                                 std::uint32_t events, auto expected) {
+        auto made = hull::checker::make(model, target, modes);
+        REQUIRE(made);
+        for (std::uint64_t x = 0; x < (1U << events); ++x) {
+            const std::array<std::uint64_t, 1> sample{x};
+            INFO("sample " << x);
+            REQUIRE(made.value().check(sample) == expected(x));
+        }
+    };
+    const auto bit = [](std::uint64_t x, int event) { return ((x >> event) & 1U) != 0; };
+    SECTION("T = A not(B or E) or D not B with B split gives A or D not B") {
+        // A B D E
+        pc::builder builder;
+        const auto e = build({0.5, 0.5, 0.5, 0.5}, builder);
+        const auto t = builder.add_or({pos(builder.add_and({pos(e[0]), neg(builder.add_or({pos(e[1]), pos(e[3])}))})),
+                                       pos(builder.add_and({pos(e[2]), neg(e[1])}))});
+        const auto model = seal(builder);
+        const std::vector<event_mode> modes{event_mode::down, event_mode::split, event_mode::down, event_mode::down};
+        every_sample(model, t, modes, 4, [&](std::uint64_t x) { return bit(x, 0) || (bit(x, 2) && !bit(x, 1)); });
+    }
+    SECTION("A and not(A and not B) with B split gives A") {
+        pc::builder builder;
+        const auto e = build({0.5, 0.5}, builder);
+        const auto g = builder.add_and({pos(e[0]), neg(builder.add_and({pos(e[0]), neg(e[1])}))});
+        const auto model = seal(builder);
+        const std::vector<event_mode> modes{event_mode::down, event_mode::split};
+        every_sample(model, g, modes, 2, [&](std::uint64_t x) { return bit(x, 0); });
+        // The plain hull differs: AB.
+        every_sample(model, g, {}, 2, [&](std::uint64_t x) { return bit(x, 0) && bit(x, 1); });
+    }
+    SECTION("AB or C not B with B split has no consensus term AC") {
+        // A B C
+        pc::builder builder;
+        const auto e = build({0.5, 0.5, 0.5}, builder);
+        const auto g = builder.add_or(
+            {pos(builder.add_and({pos(e[0]), pos(e[1])})), pos(builder.add_and({pos(e[2]), neg(e[1])}))});
+        const auto model = seal(builder);
+        const std::vector<event_mode> modes{event_mode::down, event_mode::split, event_mode::down};
+        every_sample(model, g, modes, 3,
+                     [&](std::uint64_t x) { return (bit(x, 0) && bit(x, 1)) || (bit(x, 2) && !bit(x, 1)); });
+    }
+    SECTION("probability of the #190 fixtures under split") {
+        pc::builder builder;
+        const auto e = build({0.1, 0.2, 0.3, 0.4}, builder);
+        const auto t2 = builder.add_and({pos(builder.add_or({pos(e[2]), pos(e[3])})), neg(e[1])});
+        const auto model = seal(builder);
+        const std::vector<event_mode> modes{event_mode::down, event_mode::split, event_mode::down, event_mode::down};
+        REQUIRE(hull_probability(model, t2, modes) == Catch::Approx(0.464).epsilon(1e-12));
     }
 }

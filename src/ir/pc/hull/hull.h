@@ -19,18 +19,23 @@
 //   down   y_v <= x_v   only the positive literal is significant (plain hull ↑g)
 //   fixed  y_v == x_v   both literals are significant
 //   up     y_v >= x_v   only the negative literal is significant
+//   split  complemented edges into v read their own atom y-_v <= not x_v;
+//          other edges read y+_v <= x_v (atom-split hull, #190)
 //
-// With every event `down` this is ↑g(x); a mixed mode vector gives Rauzy's
-// widening ω_L(g)(x) for the corresponding set L of significant literals.
-// Events whose probability source is the literal 0 are FALSE in every y
-// regardless of mode; probability-1 events are ordinary events. Constants and
-// house events keep their value.
+// With every event `down` this is ↑g(x). `down`, `fixed` and `up` mixed give
+// Rauzy's widening ω_L(g)(x) for the corresponding set L of significant
+// literals; `split` for the directly complemented events gives the atom-split
+// hull ↑g_split(x, not x). Atoms whose probability is 0 (an event with literal
+// probability 0, or the complement atom of one with probability 1) are FALSE
+// in every y; other probability-1 atoms are ordinary. Constants and house
+// events keep their value.
 namespace fuzzybits::ir::pc::hull {
 
     enum class event_mode : std::uint8_t {
         down,
         fixed,
         up,
+        split,
     };
 
     // Budgets are counted in deterministic units, so they change cost, never
@@ -101,7 +106,8 @@ namespace fuzzybits::ir::pc::hull {
         [[nodiscard]] static auto make(circuit const &model, bool_node_id target, std::span<event_mode const> modes = {},
                                        check_options const &options = {}) -> api::result<checker>;
 
-        // Basic events of the circuit in node-id order; lane bit e is event_node(e).
+        // Basic events of the circuit in node-id order; lane bit e is event_node(e),
+        // and callers (#183) gather lanes in this order.
         [[nodiscard]] auto event_count() const noexcept -> std::uint32_t;
         [[nodiscard]] auto event_node(std::uint32_t event) const noexcept -> bool_node_id;
         // Events in the target's cone, ascending; other lane bits are ignored.

@@ -1,7 +1,7 @@
 // Throughput of the hull check, single-threaded and on all threads.
 //
 //   fuzzybits_ir_pc_hull_bench [--nodes N] [--lanes N] [--candidates N] [--seed N]
-//                              [--exclusive P] [--ftp FILE ... --target NAME] [--literal-complements]
+//                              [--exclusive P] [--ftp FILE ... --target NAME] [--split-complements]
 //                              [--verify]
 //
 // Lanes are sampled from the event probabilities. "Candidates" are lanes where
@@ -445,7 +445,7 @@ auto main(int argc, char **argv) -> int {
     std::size_t candidates_wanted = std::size_t{1} << 14;
     std::uint64_t seed = 178;
     double exclusive_probability = 0.0;
-    bool literal_complements = false;
+    bool split_complements = false;
     bool verify = false;
     std::vector<std::string> files;
     std::string target_name;
@@ -472,8 +472,8 @@ auto main(int argc, char **argv) -> int {
             files.push_back(next());
         } else if (argument == "--target") {
             target_name = next();
-        } else if (argument == "--literal-complements") {
-            literal_complements = true;
+        } else if (argument == "--split-complements") {
+            split_complements = true;
         } else if (argument == "--verify") {
             verify = true;
         } else {
@@ -489,7 +489,7 @@ auto main(int argc, char **argv) -> int {
     const auto events = static_cast<std::uint32_t>(probability.size());
 
     std::vector<hull::event_mode> modes;
-    if (literal_complements) {
+    if (split_complements) {
         modes.assign(events, hull::event_mode::down);
         std::vector<std::uint32_t> event_of(subject.circuit.node_count(), 0);
         for (std::uint32_t node = 0, event = 0; node < subject.circuit.node_count(); ++node) {
@@ -499,7 +499,7 @@ auto main(int argc, char **argv) -> int {
         }
         for (auto const &edge : subject.circuit.edges()) {
             if (edge.complement && subject.circuit.op_codes()[edge.source.raw()] == pc::op_code::basic_event) {
-                modes[event_of[edge.source.raw()]] = hull::event_mode::fixed;
+                modes[event_of[edge.source.raw()]] = hull::event_mode::split;
             }
         }
     }

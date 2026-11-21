@@ -80,7 +80,11 @@ namespace fuzzybits::ir::pc::hull {
         struct cone final {
             check_options options;
             std::vector<bool_node_id> event_nodes;
+            std::vector<std::uint32_t> cone_events;
+            // Per atom (ordinal): the event, whether the atom samples its
+            // complement, its position, leaf rule and base value.
             std::vector<std::uint32_t> events;
+            std::vector<std::uint8_t> complemented;
             std::vector<std::uint32_t> event_positions;
             std::vector<leaf_rule> rules;
             std::vector<std::uint64_t> base_events;
@@ -525,8 +529,9 @@ namespace fuzzybits::ir::pc::hull {
                     for (std::size_t ordinal = 0; ordinal < shape.events.size(); ++ordinal) {
                         auto const *row = lanes.words.data() + std::size_t{shape.events[ordinal]} * lanes.stride;
                         for (std::size_t word = 0; word < block_words; ++word) {
+                            const auto sample = first_word + word < words ? row[first_word + word] : 0;
                             space.event_words[ordinal * block_words + word] =
-                                first_word + word < words ? row[first_word + word] & valid[word] : 0;
+                                (shape.complemented[ordinal] != 0 ? ~sample : sample) & valid[word];
                         }
                     }
                     return;
@@ -541,8 +546,9 @@ namespace fuzzybits::ir::pc::hull {
                         }
                         transpose64(space.rows);
                         for (auto ordinal = group.begin; ordinal < group.end; ++ordinal) {
+                            const auto sample = space.rows[shape.events[ordinal] & 63U];
                             space.event_words[std::size_t{ordinal} * block_words + word] =
-                                space.rows[shape.events[ordinal] & 63U];
+                                shape.complemented[ordinal] != 0 ? ~sample : sample;
                         }
                     }
                 }
@@ -671,6 +677,7 @@ namespace fuzzybits::ir::pc::hull {
                 case event_mode::fixed:
                     return same;
                 case event_mode::down:
+                case event_mode::split:
                     return polarity == polarity_positive   ? same
                            : polarity == polarity_negative ? always_false
                                                            : free_if_true;
@@ -728,21 +735,33 @@ namespace fuzzybits::ir::pc::hull {
                                           std::to_string(shape->event_nodes.size()) + " basic events"));
         }
 
-        // Cone in post-order (a topological order), by iterative depth-first search.
+        // Cone in post-order (a topological order), by iterative depth-first
+        // search. Keys are nodes, and node_count + e for the complement atom of
+        // a `split` event e, which complemented edges into e read instead.
+        const auto mode_of = [&](const std::uint32_t event) { return modes.empty() ? event_mode::down : modes[event]; };
+        const auto key_of = [&](edge_ref const &edge) {
+            const auto source = edge.source.raw();
+            const auto event = event_of[source];
+            return edge.complement && event != detail::no_event && mode_of(event) == event_mode::split
+                       ? node_count + event
+                       : source;
+        };
+        const auto key_count = std::size_t{node_count} + shape->event_nodes.size();
         constexpr auto unplaced = std::numeric_limits<std::uint32_t>::max();
-        std::vector<std::uint32_t> position_of(node_count, unplaced);
-        std::vector<std::uint8_t> visited(node_count, 0);
+        std::vector<std::uint32_t> position_of(key_count, unplaced);
+        std::vector<std::uint8_t> visited(key_count, 0);
         std::vector<std::uint32_t> order;
         std::vector<std::pair<std::uint32_t, std::uint32_t>> stack;
         stack.emplace_back(target.raw(), 0);
         visited[target.raw()] = 1;
         while (!stack.empty()) {
             const auto node = stack.back().first;
-            const auto operands = model.operands(bool_node_id(node));
+            const auto operands =
+                node < node_count ? model.operands(bool_node_id(node)) : std::span<edge_ref const>{};
             auto next = stack.back().second;
             bool descended = false;
             while (next < operands.size()) {
-                const auto operand = operands[next++].source.raw();
+                const auto operand = key_of(operands[next++]);
                 if (visited[operand] == 0) {
                     visited[operand] = 1;
                     stack.back().second = next;
@@ -770,7 +789,7 @@ namespace fuzzybits::ir::pc::hull {
         std::vector<std::uint8_t> constants(size, 0);
         for (std::uint32_t position = 0; position < size; ++position) {
             const auto node = order[position];
-            const auto code = op_codes[node];
+            const auto code = node < node_count ? op_codes[node] : op_code::basic_event;
             auto kind = cone_kind::and_gate;
             switch (code) {
             case op_code::basic_event:
@@ -808,8 +827,9 @@ namespace fuzzybits::ir::pc::hull {
                 break;
             }
             shape->kinds[position] = kind;
-            for (auto const &edge : model.operands(bool_node_id(node))) {
-                shape->inputs.push_back((position_of[edge.source.raw()] << 1) | (edge.complement ? 1U : 0U));
+            for (auto const &edge : node < node_count ? model.operands(bool_node_id(node)) : std::span<edge_ref const>{}) {
+                const auto key = key_of(edge);
+                shape->inputs.push_back((position_of[key] << 1) | (edge.complement && key < node_count ? 1U : 0U));
             }
             shape->input_offsets[position + 1] = static_cast<std::uint32_t>(shape->inputs.size());
         }
@@ -861,26 +881,41 @@ namespace fuzzybits::ir::pc::hull {
             }
         }
 
+        // Atoms ordered by (event, complement); a complement atom samples not x_e.
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> atoms;
         for (std::uint32_t position = 0; position < size; ++position) {
             if (shape->kinds[position] == cone_kind::event) {
-                shape->events.push_back(event_of[order[position]]);
+                const auto key = order[position];
+                atoms.emplace_back(key < node_count ? 2 * event_of[key] : 2 * (key - node_count) + 1, position);
             }
         }
-        std::ranges::sort(shape->events);
-        shape->event_positions.resize(shape->events.size());
-        shape->rules.resize(shape->events.size());
-        shape->base_events.resize(shape->events.size());
-        for (std::uint32_t ordinal = 0; ordinal < shape->events.size(); ++ordinal) {
-            const auto event = shape->events[ordinal];
+        std::ranges::sort(atoms);
+        for (auto const &[atom, position] : atoms) {
+            if (shape->cone_events.empty() || shape->cone_events.back() != atom / 2) {
+                shape->cone_events.push_back(atom / 2);
+            }
+        }
+        shape->events.resize(atoms.size());
+        shape->complemented.resize(atoms.size());
+        shape->event_positions.resize(atoms.size());
+        shape->rules.resize(atoms.size());
+        shape->base_events.resize(atoms.size());
+        for (std::uint32_t ordinal = 0; ordinal < atoms.size(); ++ordinal) {
+            const auto [atom, position] = atoms[ordinal];
+            const auto event = atom / 2;
+            const bool complemented = (atom & 1U) != 0;
             const auto node = shape->event_nodes[event].raw();
-            const auto position = position_of[node];
             const auto probability = detail::literal_probability(model, node);
+            const auto mode = mode_of(event);
+            // A complement atom has probability 1 - p and is FALSE when that is 0.
+            const bool zero = complemented ? probability == 1.0 : probability == 0.0;
+            const bool likely = complemented ? probability < 0.5 : probability > 0.5;
+            shape->events[ordinal] = event;
+            shape->complemented[ordinal] = complemented ? 1 : 0;
             shape->event_positions[ordinal] = position;
             shape->sources[position] = ordinal;
-            shape->rules[ordinal] =
-                detail::rule_for(modes.empty() ? event_mode::down : modes[event], polarity[position],
-                                 probability == 0.0, options.pure_literals);
-            shape->base_events[ordinal] = probability > 0.5 ? detail::all_ones : 0;
+            shape->rules[ordinal] = detail::rule_for(mode, polarity[position], zero, options.pure_literals);
+            shape->base_events[ordinal] = probability.has_value() && likely ? detail::all_ones : 0;
             const auto word = event >> 6;
             if (shape->groups.empty() || shape->groups.back().word != word) {
                 shape->groups.push_back(detail::event_group{.word = word, .begin = ordinal, .end = ordinal});
@@ -921,7 +956,7 @@ namespace fuzzybits::ir::pc::hull {
     }
 
     auto checker::cone_events() const noexcept -> std::span<std::uint32_t const> {
-        return cone_->events;
+        return cone_->cone_events;
     }
 
     auto checker::cone_size() const noexcept -> std::uint32_t {
