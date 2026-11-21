@@ -241,7 +241,7 @@ TEST_CASE("PRA validation: gate dependency cycles", "[ir][pra][validation]") {
 
 TEST_CASE("PRA validation: n-ary gates need operands", "[ir][pra][validation]") {
     for (const auto kind : std::array{pra::gate_kind::and_gate, pra::gate_kind::or_gate, pra::gate_kind::xor_gate,
-                                      pra::gate_kind::nand_gate, pra::gate_kind::nor_gate}) {
+                                      pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate}) {
         pra::builder builder;
         (void)builder.add_gate({.stable_name = "G"}, kind, {});
         CHECK(mentions(rejected_with(std::move(builder), "ir.pra.empty-gate"), "gate without operands"));

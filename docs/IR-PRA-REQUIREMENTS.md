@@ -98,7 +98,7 @@ expand CCF.
 | `basic_event` | element, expression | |
 | `house_event` | element, value | |
 | `initiating_event` | element, basic event | the basic event carries the value, which may be a frequency |
-| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`; operands reference a basic event, house event or gate, each with a complement flag |
+| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`, `xnor` (even parity); operands reference a basic event, house event or gate, each with a complement flag |
 | `fault_tree` | element, gates, top gates | gates are those whose owner is the tree; top gates must be owned by the tree |
 | `domain_target` | element, kind, role (`primary`, `watch`), subject | kinds `fault_tree_top` (subject: a fault tree with exactly one top gate), `gate`, `basic_event`; `sequence` and `end_state` are reserved |
 
@@ -128,7 +128,7 @@ Hard IR validity errors, all with severity `error`:
 | `ir.pra.ambiguous-reference` | an unqualified name matches several admissible kinds |
 | `ir.pra.invalid-reference` | a reference resolves to a kind the use site does not admit |
 | `ir.pra.cycle` | gates depend on themselves; one diagnostic per cycle found, naming its gates |
-| `ir.pra.empty-gate` | an `and`, `or`, `xor`, `nand`, `nor` or `cardinality` gate without operands |
+| `ir.pra.empty-gate` | an `and`, `or`, `xor`, `nand`, `nor`, `xnor` or `cardinality` gate without operands |
 | `ir.pra.invalid-arity` | a `not` gate without exactly one operand |
 | `ir.pra.invalid-cardinality` | bounds outside `0 <= low <= high <= n` |
 | `ir.pra.invalid-literal` | a non-finite literal, a probability outside [0, 1] or a negative frequency |

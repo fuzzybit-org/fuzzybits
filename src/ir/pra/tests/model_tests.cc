@@ -62,8 +62,11 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
     const auto nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate,
                                        {{.event = left}, {.event = right, .complement = true}}, tree);
     const auto nor = builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate, {{.event = left}, {.event = right}}, tree);
+    const auto xnor = builder.add_gate({.stable_name = "G_XNOR"}, pra::gate_kind::xnor_gate,
+                                       {{.event = left}, {.event = right, .complement = true}}, tree);
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                                      {{.event = either}, {.event = negation}, {.event = parity}, {.event = nand}, {.event = nor}}, tree);
+                                      {{.event = either}, {.event = negation}, {.event = parity}, {.event = nand}, {.event = nor}, {.event = xnor}},
+                                      tree);
     builder.add_fault_tree_top(tree, top);
 
     const auto top_target = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
@@ -83,13 +86,13 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
         CHECK(model.basic_events().size() == 6);
         CHECK(model.house_events().size() == 1);
         CHECK(model.initiating_events().size() == 1);
-        CHECK(model.gates().size() == 8);
+        CHECK(model.gates().size() == 9);
         CHECK(model.fault_trees().size() == 1);
         CHECK(model.targets().size() == 3);
         CHECK(model.expressions().size() == 5);
-        CHECK(model.elements().size() == 20);
+        CHECK(model.elements().size() == 21);
         CHECK(pump == pra::basic_event_id(0));
-        CHECK(top == pra::gate_id(7));
+        CHECK(top == pra::gate_id(8));
         for (std::uint32_t index = 0; index < model.elements().size(); ++index) {
             CHECK(model.element_of(model.elements()[index].owner) == pra::element_id(index));
         }
@@ -130,7 +133,9 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
         CHECK(model.gates()[parity.raw()].kind == pra::gate_kind::xor_gate);
         CHECK(model.gates()[nand.raw()].kind == pra::gate_kind::nand_gate);
         CHECK(model.gates()[nor.raw()].kind == pra::gate_kind::nor_gate);
-        CHECK(model.operands(top).size() == 5);
+        CHECK(model.gates()[xnor.raw()].kind == pra::gate_kind::xnor_gate);
+        CHECK(model.operands(xnor)[1].complement);
+        CHECK(model.operands(top).size() == 6);
         CHECK(topologically_ordered(model));
     }
 
@@ -157,7 +162,7 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
     }
 
     SECTION("fault trees group gates and name their top gate") {
-        CHECK(model.gates(tree).size() == 8);
+        CHECK(model.gates(tree).size() == 9);
         CHECK(std::ranges::is_sorted(model.gates(tree)));
         REQUIRE(model.top_gates(tree).size() == 1);
         CHECK(model.top_gates(tree)[0] == top);
@@ -208,9 +213,9 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
 
     SECTION("summary describes the shape") {
         auto const &summary = model.summary();
-        CHECK(summary.gate_count == 8);
-        CHECK(summary.operand_count == 19);
-        CHECK(summary.complemented_operand_count == 2);
+        CHECK(summary.gate_count == 9);
+        CHECK(summary.operand_count == 22);
+        CHECK(summary.complemented_operand_count == 3);
         CHECK(summary.gate_depth == 3);
         CHECK(summary.gate_kinds_present.size() == pra::gate_kind_count);
         CHECK(contains(summary.gate_kinds_present, pra::gate_kind::cardinality));
