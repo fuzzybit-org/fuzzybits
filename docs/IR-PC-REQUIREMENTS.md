@@ -486,6 +486,8 @@ struct transform_result {
 
 For probability targets, "semantics-preserving" must separate function-preserving from distribution-preserving transforms and name the query kinds a distribution-preserving transform preserves (folding probability-1 events preserves the Boolean probability but not the monotone hull; see [`rfc/monotone-hull-queries.md`](rfc/monotone-hull-queries.md#75-transform-compatibility)).
 
+The first passes and the C0/C1 levels implement this report shape: [`ir-pc-passes.md`](ir-pc-passes.md).
+
 Transforms that may materially alter graph identity include:
 
 - constant propagation;
