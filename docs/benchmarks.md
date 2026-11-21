@@ -484,9 +484,36 @@ the loaded modules and the import statements. It has its own minimal FTP
 parser (`benchmarks/reference/ftp.py`). That parser is **reference-only, not
 the product reader**: it follows `src/io/ftp/schema/ftrex_ftp.g4` and the
 conventions the grammar leaves implicit (indented continuation lines, a
-leading `-` complements a reference, imports may follow the last gate without
-an `IMPORT` header, `PROCESS` may continue on the next line, `*` lines are
-headers), and it reports diagnostics instead of guessing.
+leading `-` complements a reference, `PROCESS` may continue on the next line,
+`*` lines are headers), and it reports diagnostics instead of guessing.
+
+### FTP grammar checks
+
+FTREX 2.0 and ZEBRA 1.0b were run on small models to settle what the grammar
+requires ([#191](https://github.com/fuzzybit-org/fuzzybits/issues/191)). Where
+both reject a file, or skip lines and give the events those lines would define
+p = 1, the reference parser reports an error, so a misread file never produces
+a value. Sections never continue from one file into the next.
+
+| diagnostic | severity | rule | FTREX and ZEBRA |
+|---|---|---|---|
+| `missing-endtree` | error | gate lines not followed by `ENDTREE` before `PROCESS`, `IMPORT`, `LIMIT` or the end of the file | reject the file |
+| `import-without-header` | error | a record `value name [I]` outside an `IMPORT` section | skip it (the event gets p = 1); after `PROCESS`, reject the file |
+| `undefined-reference` | error | a referenced name is neither a gate nor imported | p = 1, with a warning from FTREX |
+| `misplaced-gate` | error | a gate line after the tree section of its file | skip it (second tree section) or reject the file (tree after `IMPORT`) |
+| `undefined-process-target` | error | a `PROCESS` name is neither a gate nor imported | reject the file |
+| `missing-process` | warning | no `PROCESS`: the targets are the root gates | pick the root, with a warning from FTREX |
+| `duplicate-import` | warning (`last`, `first`), error (`error`) | an event imported more than once | the last value, with a warning; the `I` tag is kept |
+
+A file has at most one tree section, and it comes first. An `IMPORT` section
+ends at the next keyword, header line or line that is not a record, so records
+after `LIMIT` or after a header line are not read. Header lines may appear
+between gate lines. Skipped lines define nothing, so `import-without-header`
+and `misplaced-gate` are usually followed by `undefined-reference` for the
+names they would have defined. FTREX and ZEBRA read one file; a multi-file
+project is a convention of this parser and #180, and its files are not
+equivalent to their concatenation (the second tree section would not be read).
+Vendor outputs are not committed.
 
 ### Semantics
 
@@ -501,7 +528,9 @@ headers), and it reports diagnostics instead of guessing.
   function*. They are not probabilities: under the hull, an event overridden
   to 1 is a constant TRUE, while an imported p = 1 event stays droppable.
 - **Duplicate imports:** `--duplicate-import error|first|last`, default
-  `error` (evaluation refuses; `first`/`last` report a warning).
+  `last` with a warning, as FTREX and ZEBRA do; `first` also warns, `error`
+  refuses evaluation. An `I` tag on any of the records keeps the event an
+  initiator.
 
 ### Methods
 
@@ -574,7 +603,7 @@ and hull probabilities (`null` when the policy is an error).
 | `process_multi_target` | PROCESS with three targets over two lines, non-target root | T1 / T2 / T3 | 0.622 / 0.464 / 0.098 | 0.622 / 0.58 / 0.098 |
 | `no_process` | no PROCESS, two roots, no header lines | R1 / R2 | 0.208 / 0.024 | 0.208 / 0.024 |
 | `imports_tags_duplicates` | I tags, values 0 and 1, duplicated import | TOP (first / last) | 0.1108 / 0.1072 | 0.1108 / 0.1072 |
-| `header_limit` | `**CHAR32`, `**DBNAME:`, `**FTITLE:`, `*XEQ`, LIMIT, imports without header | TOP | 0.224 | 0.224 |
+| `header_limit` | `**CHAR32`, `**DBNAME:`, `**FTITLE:`, `*XEQ`, LIMIT, no PROCESS | TOP | 0.224 | 0.224 |
 | `success_branch_delete_term` | complemented gate references, SEQ = F ∧ ¬(S ∨ DEL) | TOP / SEQ-2 / SEQ-3 | 0.023 / 0.01785 / 0.00515 | 0.028 / 0.028 / 0.006325 |
 | `delete_term_flags` | DEL = two p = 1 flags; variants `DEL=0`, `FLAG-A=0` | SEQ | 0 (variants 0.00802) | 0.0107 |
 | `k_of_n_continuation` | k = 1, k = n, 1 < k < n, single-input gates, 564-character continuation line | TOP | 0.6372981032253088 | same |
@@ -584,14 +613,29 @@ and hull probabilities (`null` when the policy is an error).
 `duplicate-import` error. Check or regenerate the computed fields:
 
 ```bash
-python -m benchmarks.reference.fixtures          # check
-python -m benchmarks.reference.fixtures --write  # after editing a fixture
+python -m benchmarks.reference.fixtures                   # check
+python -m benchmarks.reference.fixtures --write [NAME...] # after editing fixtures
 ```
 
-`tests/python/test_reference_estimators.py` checks the fixtures, closed-form
-values for several of them, Boolean and hull estimates within 4 standard
-errors, the per-lane hull check against the exact upward closure (truth
-table, BDD and search paths), seed determinism and the CLI.
+Fixtures named `invalid_*` are diagnostic-only: every policy has errors, so
+`expected.json` records the diagnostics per policy (results `null`) and no
+`default_targets` or `structure`. FTREX and ZEBRA reject or misread each of
+them as described in its `description`.
+
+| fixture | input | diagnostics |
+|---|---|---|
+| `invalid_no_endtree` | gate lines followed by `PROCESS` | `missing-endtree` |
+| `invalid_import_without_header` | `header_limit` without the `IMPORT` line | `import-without-header` ×3, `undefined-reference` ×3, `missing-process` (warning) |
+| `invalid_import_section_end` | records after a header line and after `LIMIT` | `import-without-header` ×2, `undefined-reference` ×2 |
+| `invalid_undefined_event` | an event referenced but not imported | `undefined-reference` |
+| `invalid_second_tree_section` | gate lines after `ENDTREE` | `misplaced-gate` ×2, `undefined-reference` ×2 |
+
+`tests/python/test_reference_estimators.py` checks the fixtures (the
+diagnostics of the `invalid_*` fixtures are also written out by hand in the
+test), closed-form values for several of them, Boolean and hull estimates
+within 4 standard errors, the per-lane hull check against the exact upward
+closure (truth table, BDD and search paths), the parser rules and their
+diagnostics, seed determinism and the CLI.
 
 ### Private models
 
