@@ -13,7 +13,6 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -66,10 +65,10 @@ TEST_CASE("hull check reproduces the FTP conformance fixtures", "[ir][pc][hull][
     std::size_t targets = 0;
     for (auto const &fixture : fixtures) {
         const auto expected = hull::testing::json_reader(read_text(fixture / "expected.json")).parse();
-        std::string text;
+        std::vector<ftp::source_text> sources;
         for (auto const &file : expected.find("files")->items) {
-            text += read_text(fixture / file.text);
-            text += '\n';
+            const auto path = fixture / file.text;
+            sources.push_back(ftp::source_text{.path = path.generic_string(), .text = read_text(path)});
         }
         // The FTP reader keeps the last of duplicated imports. Fixtures that the
         // reference tools reject have no results.
@@ -85,8 +84,8 @@ TEST_CASE("hull check reproduces the FTP conformance fixtures", "[ir][pc][hull][
             INFO(fixture.filename().string() << " / " << target);
             fuzzybits::api::option_set options;
             options.set(ftp::target_option(), target);
-            std::istringstream input(text);
-            auto read = ftp::read(input, options);
+            options.set(ftp::duplicate_import_option(), std::string("last"));
+            auto read = ftp::read(sources, options);
             REQUIRE(read);
             auto const *model = pc::circuit_from(read.value().model);
             REQUIRE(model != nullptr);

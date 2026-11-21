@@ -33,7 +33,6 @@
 #include <fstream>
 #include <iterator>
 #include <random>
-#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -219,20 +218,21 @@ namespace {
     }
 
     auto read_ftp(std::vector<std::string> const &files, std::string const &target) -> model {
-        std::string text;
+        namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
+        std::vector<ftp::source_text> sources;
         for (auto const &file : files) {
             std::ifstream input(file, std::ios::binary);
             if (!input) {
                 std::fprintf(stderr, "cannot open an input file\n");
                 std::exit(1);
             }
-            text.append(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
-            text.push_back('\n');
+            sources.push_back(ftp::source_text{
+                .path = file, .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
         }
         fuzzybits::api::option_set options;
-        options.set(fuzzybits::io::backend::fuzzybits::ftp::target_option(), target);
-        std::istringstream stream(text);
-        auto read = fuzzybits::io::backend::fuzzybits::ftp::read(stream, options);
+        options.set(ftp::target_option(), target);
+        options.set(ftp::duplicate_import_option(), std::string("last"));
+        auto read = ftp::read(sources, options);
         if (!read) {
             std::fprintf(stderr, "FTP read failed (%zu diagnostics)\n", read.diagnostics().size());
             std::exit(1);
