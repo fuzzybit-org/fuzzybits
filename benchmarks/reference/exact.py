@@ -4,14 +4,16 @@ Implements the definitions directly on the unfolded circuit: every event in
 the cone is a variable weighted by its import value (including 0 and 1), and
 
     P(g)          = sum_x g(x) w(x)
+    P(h)          = sum_a [exists b <= a : g_split(b)] w(a)       (atom-split)
     P(omega_L g)  = sum_x [exists y <=_L x : g(y)] w(x)
 
-where ``y <=_L x`` constrains each event separately (``y_v <= x_v`` if only its
-positive literal is in L, ``y_v = x_v`` if both are), so the closure is one
-OR-transform per droppable event axis of the truth table (the subset-OR, or
-zeta, transform for the plain hull). Nothing here relies on the folding,
-polarity or Kleene steps used by the estimators, so the estimators are checked
-against an independent path.
+For the atom-split hull the variables are atoms (events, and one atom ``-B``
+per direct complement of B), the closure is the subset-OR (zeta) transform over
+all atoms, and the weight of an atom assignment is zero unless every coupled
+pair ``B``, ``-B`` takes opposite values. For omega_L, ``y <=_L x`` constrains
+each event separately, so the closure is one OR-transform per droppable event
+axis. Nothing here relies on the folding, polarity or Kleene steps used by the
+estimators, so the estimators are checked against an independent path.
 """
 
 from __future__ import annotations
@@ -30,8 +32,9 @@ from .circuit import (
     Circuit,
     build_circuit,
     event_modes,
+    hull_record,
+    literal_sets,
     plan,
-    significant_negative,
 )
 from .ftp import ModelError, Project
 
@@ -45,6 +48,7 @@ class TruthTable:
     probs: list[float]
     table: np.ndarray  # bool, length 2**n
     modes: list[str] | None = None  # per variable, set for hull tables
+    twins: dict[int, int] | None = None  # complement atom -> its event (variable indices)
 
 
 def _patterns(n: int) -> tuple[list[np.ndarray], int]:
@@ -71,7 +75,8 @@ def truth_table(c: Circuit) -> TruthTable:
     zeros = np.zeros(n_words, dtype=np.uint64)
     root, _ = evaluate(c, plan(c), lambda v: pats[v - 1], ones, zeros)
     bits = np.unpackbits(np.asarray(root, dtype=np.uint64).view(np.uint8), bitorder="little")[: 1 << n]
-    return TruthTable(c.names[1 : 1 + n], c.probs[1 : 1 + n], bits.astype(bool))
+    twins = {a - 1: e - 1 for a, e in c.twins.items()}
+    return TruthTable(c.names[1 : 1 + n], c.probs[1 : 1 + n], bits.astype(bool), twins=twins)
 
 
 def closure(table: np.ndarray, modes: list[str]) -> np.ndarray:
@@ -93,10 +98,19 @@ def closure(table: np.ndarray, modes: list[str]) -> np.ndarray:
     return up
 
 
-def weights(probs: list[float]) -> np.ndarray:
+def weights(probs: list[float], twins: Mapping[int, int] | None = None) -> np.ndarray:
+    """Probability of every assignment (bit i = variable i). Coupled pairs
+    (``twins``, either direction) take opposite values: the later variable of a
+    pair carries no factor of its own."""
+    partner = {**(twins or {}), **{e: a for a, e in (twins or {}).items()}}
     w = np.ones(1, dtype=np.float64)
-    for p in probs:
-        w = np.concatenate([w * (1.0 - p), w * p])
+    for i, p in enumerate(probs):
+        j = partner.get(i, i)
+        if j < i:
+            earlier = ((np.arange(len(w)) >> j) & 1).astype(np.float64)
+            w = np.concatenate([w * earlier, w * (1.0 - earlier)])
+        else:
+            w = np.concatenate([w * (1.0 - p), w * p])
     return w
 
 
@@ -106,18 +120,20 @@ def exact_table(
     probs: Mapping[str, float],
     semantics: str,
     overrides: Mapping[str, int | bool] | None = None,
-    literals: str = "model",
+    literals: str = "split",
     max_initiators: int | None = None,
 ) -> TruthTable:
-    """Truth table of g (``boolean``) or of omega_L(g) (``hull``) over the cone's
-    events; ``max_initiators`` conjoins the initiator delete term first."""
+    """Truth table of g (``boolean``) or of the hull (``hull``, in the literal
+    mode ``literals``) over the cone's events, or over its atoms for ``split``;
+    ``max_initiators`` conjoins the initiator delete term first."""
     if semantics not in ("boolean", "hull"):
         raise ValueError("semantics must be 'boolean' or 'hull'")
-    negative = significant_negative(project, target, literals, overrides)
-    c = build_circuit(project, target, probs, overrides, constants="none", fold=False, max_initiators=max_initiators)
+    fixed, split = literal_sets(project, target, literals, overrides) if semantics == "hull" else ([], [])
+    c = build_circuit(project, target, probs, overrides, constants="none", fold=False, max_initiators=max_initiators,
+                      split=split)
     tt = truth_table(c)
     if semantics == "hull":
-        tt.modes = event_modes(c.names, c.n_vars, negative)[1:]
+        tt.modes = event_modes(c.names, c.n_vars, fixed)[1:]
         tt.table = closure(tt.table, tt.modes)
     return tt
 
@@ -128,15 +144,15 @@ def exact_probability(
     probs: Mapping[str, float],
     semantics: str,
     overrides: Mapping[str, int | bool] | None = None,
-    literals: str = "model",
+    literals: str = "split",
     max_initiators: int | None = None,
 ) -> dict:
     tt = exact_table(project, target, probs, semantics, overrides, literals, max_initiators)
-    w = weights(tt.probs)
+    w = weights(tt.probs, tt.twins)
     p = math.fsum(w[tt.table].tolist())
     out = {"target": target, "semantics": semantics}
     if semantics == "hull":
-        out.update(literals=literals, negative_literals=significant_negative(project, target, literals, overrides))
+        out.update(literals=literals, **hull_record(project, target, overrides, max_initiators))
     out.update(
         max_initiators_per_cutset=max_initiators,
         method="enumeration",
@@ -151,13 +167,16 @@ def exact_cut_sets(
     target: str,
     probs: Mapping[str, float],
     overrides: Mapping[str, int | bool] | None = None,
-    literals: str = "model",
+    literals: str = "split",
     max_initiators: int | None = None,
 ) -> list[dict]:
-    """Minimal L-cut sets MC_L(g) = PI(omega_L g) (RFC §4.2): the minimal terms
-    over L-literals that imply omega_L g. Negative literals are written
-    ``-NAME``; ``probability`` is the product of p (positive) and 1 - p
-    (negative). Sorted by order, then names."""
+    """Minimal cut sets of the hull. ``split``: the minimal cut sets of the plain
+    hull over atoms, without those that contain an event and its complement
+    atom (RFC Theorem 10(a)); ``omega``: MC_L(g) = PI(omega_L g), the minimal
+    terms over L-literals that imply omega_L g (RFC §4.2); ``positive``:
+    mcs(up g). Complement atoms and negative literals are written ``-NAME``;
+    ``probability`` is the product of p (positive) and 1 - p (negative). Sorted
+    by order, then names."""
     tt = exact_table(project, target, probs, "hull", overrides, literals, max_initiators)
     n = len(tt.names)
     fixed = [i for i, m in enumerate(tt.modes) if m == BOTH]
@@ -187,5 +206,7 @@ def exact_cut_sets(
             elif s == 0 and i in fixed:
                 lits.append("-" + tt.names[i])
                 p *= 1.0 - tt.probs[i]
+        if any(name.startswith("-") and name[1:] in lits for name in lits):
+            continue  # an event and its complement atom: probability 0
         out.append({"literals": sorted(lits, key=lambda s: s.lstrip("-")), "probability": p})
     return sorted(out, key=lambda cs: (len(cs["literals"]), cs["literals"]))

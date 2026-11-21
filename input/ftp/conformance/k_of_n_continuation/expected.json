@@ -58,8 +58,10 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_omega": 0.6372981032253088,
           "hull_positive": 0.6372981032253088,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 20
         }
       }
@@ -70,8 +72,10 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_omega": 0.6372981032253088,
           "hull_positive": 0.6372981032253088,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 20
         }
       }
@@ -82,8 +86,10 @@
         "TOP": {
           "boolean": 0.6372981032253088,
           "hull": 0.6372981032253088,
+          "hull_omega": 0.6372981032253088,
           "hull_positive": 0.6372981032253088,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 20
         }
       }

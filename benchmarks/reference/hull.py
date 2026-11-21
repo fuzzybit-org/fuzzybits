@@ -1,19 +1,24 @@
-"""Monte Carlo estimator of the hull P(omega_L g) (#174, #190).
+"""Monte Carlo estimator of hull probabilities (#174, #190).
 
-``omega_L g (x) = exists y <=_L x : g(y)``, where L is a set of significant
-literals: an event with only its positive literal in L may be dropped
-(``y_v <= x_v``), an event with both literals in L is fixed (``y_v = x_v``).
-``literals="model"`` puts the negative literal of every event referenced with a
-direct complement in the target's cone into L; ``literals="positive"`` gives the
-plain monotone hull ``up g``. ``omega_L g`` lies between ``g`` and ``g_coh^L``
-(complemented gate inputs and event literals not in L replaced by TRUE), so per
-pass:
+The query is a hull of the target, ``exists y below x : g(y)``, for one of three
+literal modes (RFC §3):
 
-1. Sample events bit-parallel and evaluate ``g`` and ``g_coh^L`` together.
-   Lanes with ``g = 1`` are in the hull; lanes with ``g_coh^L = 0`` are not.
+- ``split`` (default): every direct complement ``-B`` of an event in the
+  target's cone is an atom of its own (variable ``-B``, valued ``not x_B`` and
+  droppable on its own); the hull is taken over the split circuit on the
+  coupled sample (``Circuit.twins``).
+- ``omega``: those events are fixed (``y_B = x_B``): Rauzy's omega_L.
+- ``positive``: every event droppable, the plain hull of the literal target.
+
+The hull lies between ``g`` and the coherent bound (complemented gate inputs,
+and event literals that are not kept, replaced by TRUE), so per pass:
+
+1. Sample events (and coupled atoms) bit-parallel and evaluate ``g`` and the
+   coherent bound together. Lanes with ``g = 1`` are in the hull; lanes with
+   coherent bound 0 are not.
 2. On the remaining candidates, redraw the pass, gather their lanes and run a
-   Kleene (three-valued) evaluation in dual rail: events false in the lane are
-   0 and fixed events keep their value; true droppable events reachable only
+   Kleene (three-valued) evaluation in dual rail: variables false in the lane
+   are 0 and fixed events keep their value; true droppable variables reachable only
    positively are 1 and only negatively 0 (the optimal choice, so p = 1 flags
    under a complement are dropped), true binate droppable events are free.
    Lanes whose root is decided are counted directly.
@@ -29,7 +34,7 @@ With ``n_T`` lanes decided true, ``n_C`` undecided lanes of which ``m`` were
 checked and ``h`` found true, the estimate ``(n_T + n_C h / m) / N`` is unbiased
 and its variance is ``[pi_T + f^2 pi_C - P^2] / N + pi_C^2 f (1 - f) / m``
 (law of total variance; equals ``P (1 - P) / N`` when every undecided lane is
-checked). Weights are unaffected by importance sampling because ``up g`` is a
+checked). Weights are unaffected by importance sampling because the hull is a
 function of the lane.
 """
 
@@ -45,6 +50,7 @@ import numpy as np
 from .bdd import BudgetExceeded, circuit_bdd
 from .bitpar import (
     ALL,
+    atom_sampler,
     coherent_specs,
     combine,
     evaluate,
@@ -53,7 +59,6 @@ from .bitpar import (
     pack,
     popcount,
     rails,
-    sample_event,
     to_int,
 )
 from .circuit import (
@@ -62,9 +67,10 @@ from .circuit import (
     Circuit,
     build_circuit,
     event_modes,
+    hull_record,
+    literal_sets,
     plan,
     polarity,
-    significant_negative,
 )
 from .ftp import AND, ATLEAST, OR, Project
 from .montecarlo import DEFAULT_MEMORY_MIB, interval, pass_words, run_passes
@@ -265,15 +271,16 @@ def estimate_hull(
     max_checks: int | None = None,
     bdd_budget: int = DEFAULT_BDD_BUDGET,
     memory_mib: int = DEFAULT_MEMORY_MIB,
-    literals: str = "model",
+    literals: str = "split",
     max_initiators: int | None = None,
 ) -> dict:
     t0 = time.perf_counter()
-    negative = significant_negative(project, target, literals, overrides)
-    c = build_circuit(project, target, probs, overrides, constants="hull", fold=True, max_initiators=max_initiators)
+    fixed, split = literal_sets(project, target, literals, overrides)
+    c = build_circuit(project, target, probs, overrides, constants="hull", fold=True, max_initiators=max_initiators,
+                      split=split)
     n = 64 * -(-trials // 64)
-    base = {"target": target, "semantics": "hull", "literals": literals, "negative_literals": negative,
-            "max_initiators_per_cutset": max_initiators, "seed": seed}
+    base = {"target": target, "semantics": "hull", "literals": literals, **hull_record(project, target, overrides,
+            max_initiators), "max_initiators_per_cutset": max_initiators, "seed": seed}
     const = c.constant()
     if const is not None:
         v = float(const)
@@ -281,7 +288,7 @@ def estimate_hull(
                 "bounds": {"lower": v, "upper": v}, "seconds": time.perf_counter() - t0}
     pl = plan(c)
     pol = polarity(c)
-    modes = event_modes(c.names, c.n_vars, negative)
+    modes = event_modes(c.names, c.n_vars, fixed)
     coh = coherent_specs(c, modes)
     checker = LaneChecker(c, pol, bdd_budget, modes)
     words = pass_words(pl, memory_mib, arrays_per_node=2)
@@ -299,9 +306,8 @@ def estimate_hull(
             continue
         redraw = np.random.Generator(np.random.PCG64())
         redraw.bit_generator.state = state
-        xs: list = [None] + [
-            pack(gather(sample_event(redraw, c.probs[v], w), cand)) for v in range(1, c.first_gate)
-        ]
+        resample = atom_sampler(c, redraw, w, ones)
+        xs: list = [None] + [pack(gather(resample(v), cand)) for v in range(1, c.first_gate)]
         cw = len(xs[1]) if len(xs) > 1 else 1
         cones = np.full(cw, ALL, dtype=np.uint64)
         czeros = np.zeros(cw, dtype=np.uint64)

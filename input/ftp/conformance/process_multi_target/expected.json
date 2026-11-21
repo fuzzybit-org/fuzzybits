@@ -60,24 +60,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
           "hull_positive": 0.622,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
           "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
           "hull_positive": 0.58,
-          "negative_literals": [
+          "complemented_events": [
             "B"
           ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
           "hull_positive": 0.09800000000000002,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -88,24 +94,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
           "hull_positive": 0.622,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
           "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
           "hull_positive": 0.58,
-          "negative_literals": [
+          "complemented_events": [
             "B"
           ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
           "hull_positive": 0.09800000000000002,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -116,24 +128,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
           "hull_positive": 0.622,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
           "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
           "hull_positive": 0.58,
-          "negative_literals": [
+          "complemented_events": [
             "B"
           ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
           "hull_positive": 0.09800000000000002,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }

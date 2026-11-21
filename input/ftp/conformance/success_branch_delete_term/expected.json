@@ -57,22 +57,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
           "hull_positive": 0.006325000000000001,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }
@@ -83,22 +89,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
           "hull_positive": 0.006325000000000001,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }
@@ -109,22 +121,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
           "hull_positive": 0.028000000000000004,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
           "hull_positive": 0.006325000000000001,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }

@@ -103,8 +103,10 @@
         "TOP": {
           "boolean": 0.11080000000000001,
           "hull": 0.11080000000000001,
+          "hull_omega": 0.11080000000000001,
           "hull_positive": 0.11080000000000001,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 9
         }
       }
@@ -131,8 +133,10 @@
         "TOP": {
           "boolean": 0.10720000000000002,
           "hull": 0.10720000000000002,
+          "hull_omega": 0.10720000000000002,
           "hull_positive": 0.10720000000000002,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 9
         }
       }

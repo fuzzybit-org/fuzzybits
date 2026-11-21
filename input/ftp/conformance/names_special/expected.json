@@ -53,10 +53,12 @@
         "1-TOP": {
           "boolean": 0.507,
           "hull": 0.507,
+          "hull_omega": 0.507,
           "hull_positive": 0.51,
-          "negative_literals": [
+          "complemented_events": [
             "6H--I"
           ],
+          "complement_under_negation": [],
           "variables": 6
         }
       }
@@ -67,10 +69,12 @@
         "1-TOP": {
           "boolean": 0.507,
           "hull": 0.507,
+          "hull_omega": 0.507,
           "hull_positive": 0.51,
-          "negative_literals": [
+          "complemented_events": [
             "6H--I"
           ],
+          "complement_under_negation": [],
           "variables": 6
         }
       }
@@ -81,10 +85,12 @@
         "1-TOP": {
           "boolean": 0.507,
           "hull": 0.507,
+          "hull_omega": 0.507,
           "hull_positive": 0.51,
-          "negative_literals": [
+          "complemented_events": [
             "6H--I"
           ],
+          "complement_under_negation": [],
           "variables": 6
         }
       }

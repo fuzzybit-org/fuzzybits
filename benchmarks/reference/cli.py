@@ -8,7 +8,7 @@ import math
 import sys
 from typing import Mapping, Sequence
 
-from .circuit import LITERALS
+from .circuit import LITERALS, complement_under_negation
 from .exact import exact_cut_sets, exact_probability
 from .ftp import DEFAULT_POLICY, POLICIES, ModelError, parse_project
 from .hull import DEFAULT_BDD_BUDGET, estimate_hull
@@ -53,7 +53,7 @@ def run(
     max_checks: int | None = None,
     bdd_budget: int = DEFAULT_BDD_BUDGET,
     memory_mib: int = DEFAULT_MEMORY_MIB,
-    literals: str = "model",
+    literals: str = "split",
     max_initiators: int | None = None,
     cut_sets: bool = False,
 ) -> dict:
@@ -85,6 +85,10 @@ def run(
     out.update(semantics=semantics, overrides=dict(overrides or {}), targets=chosen)
     if semantics == "hull":
         out["literals"] = literals
+        if literals != "positive":
+            for target in chosen:
+                out["diagnostics"] += [d.to_json() for d in
+                                       complement_under_negation(project, target, overrides, max_initiators)]
     out["max_initiators_per_cutset"] = max_initiators
     results = []
     for target in chosen:
@@ -116,8 +120,9 @@ def _print_text(doc: dict) -> None:
         return
     for r in doc["results"]:
         head = f"{r['target']}  {r['semantics']}"
-        if r["semantics"] == "hull" and r.get("negative_literals"):
-            head += f"  L- = {{{', '.join(r['negative_literals'])}}}"
+        if r["semantics"] == "hull" and r["literals"] != "positive" and r.get("complemented_events"):
+            kind = "atoms" if r["literals"] == "split" else "fixed"
+            head += f"  {r['literals']} ({kind}: {', '.join(r['complemented_events'])})"
         if r.get("max_initiators_per_cutset") is not None:
             head += f"  max-initiators {r['max_initiators_per_cutset']}"
         if "probability" in r:
@@ -150,17 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("structure", parents=[common], help="structure counts and diagnostics")
     evaluate = argparse.ArgumentParser(add_help=False, parents=[common])
     evaluate.add_argument("--semantics", choices=("boolean", "hull"), default="boolean")
-    evaluate.add_argument("--literals", choices=LITERALS, default="model",
-                          help="hull significant literals: 'model' adds the negative literal of every event "
-                               "referenced with a direct complement in the target's cone; 'positive' is the "
-                               "plain monotone hull")
+    evaluate.add_argument("--literals", choices=LITERALS, default="split",
+                          help="hull literal mode for events referenced with a direct complement in the "
+                               "target's cone: 'split' (atom-split hull: each complement is a droppable atom), "
+                               "'omega' (omega_L: those events are fixed), 'positive' (plain monotone hull)")
     evaluate.add_argument("--max-initiators-per-cutset", type=parse_count, default=None, metavar="N",
                           help="conjoin the delete term not atleast(N+1; initiator-tagged events in the cone)")
     evaluate.add_argument("--target", action="append", default=[], help="target name (repeatable)")
     evaluate.add_argument("--override", action="append", type=parse_override, default=[], metavar="NAME=V",
                           help="replace a gate or event by a constant (repeatable)")
     exact = sub.add_parser("exact", parents=[evaluate], help="exact probability by enumeration (<= 22 events)")
-    exact.add_argument("--cut-sets", action="store_true", help="also list the minimal L-cut sets (hull only)")
+    exact.add_argument("--cut-sets", action="store_true", help="also list the minimal cut sets (hull only)")
     est = sub.add_parser("estimate", parents=[evaluate], help="bit-parallel Monte Carlo estimate")
     est.add_argument("--trials", type=parse_trials, default=1 << 20)
     est.add_argument("--seed", type=int, default=0)

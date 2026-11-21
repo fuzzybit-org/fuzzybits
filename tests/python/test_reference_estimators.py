@@ -40,7 +40,7 @@ from benchmarks.reference import (  # noqa: E402
     structure_counts,
 )
 from benchmarks.reference import hull as hull_mod  # noqa: E402
-from benchmarks.reference.bitpar import coherent_specs, evaluate  # noqa: E402
+from benchmarks.reference.bitpar import ALL, atom_sampler, coherent_specs, evaluate  # noqa: E402
 from benchmarks.reference.circuit import (  # noqa: E402
     BOTH,
     NEITHER,
@@ -50,7 +50,7 @@ from benchmarks.reference.circuit import (  # noqa: E402
     event_modes,
     plan,
     polarity,
-    significant_negative,
+    literal_sets,
 )
 from benchmarks.reference.exact import closure, truth_table  # noqa: E402
 from benchmarks.reference.fixtures import (  # noqa: E402
@@ -65,6 +65,7 @@ from benchmarks.reference.fixtures import (  # noqa: E402
 from benchmarks.reference.ftp import AND, ATLEAST, OR, POLICIES, Gate, Import, Location, Project  # noqa: E402
 
 FIXTURE_NAMES = [
+    "complement_under_negation",
     "delete_term_flags",
     "header_limit",
     "imports_tags_duplicates",
@@ -172,7 +173,7 @@ def test_invalid_fixture_diagnostics(name):
     assert errors <= set(re.findall(r"^error: ([a-z-]+):", out.stderr, re.MULTILINE))
 
 
-def _exact(name: str, target: str, semantics: str, policy: str = "first", overrides=None, literals="model",
+def _exact(name: str, target: str, semantics: str, policy: str = "first", overrides=None, literals="split",
            rule=None) -> float:
     fx = FIXTURES / name
     project = project_of(fx, load(fx))
@@ -184,7 +185,7 @@ def _two_of_three(a: float, b: float, c: float) -> float:
     return a * b + a * c + b * c - 2 * a * b * c
 
 
-# "hull" is omega_L with the model's literals, "plain" the monotone hull (literals=positive).
+# "hull" is the atom-split hull (default), "omega" omega_L, "positive" the plain monotone hull.
 HAND = [
     # (fixture, target, semantics, policy, overrides, max_initiators, closed form)
     ("header_limit", "TOP", "boolean", "first", None, None, 0.2 + 0.8 * 0.1 * 0.3),
@@ -204,13 +205,14 @@ HAND = [
      1 - (1 - 0.1 * 0.2 * 0.7) * (1 - _two_of_three(0.4, 0.5, 0.6))),
     ("names_special", "1-TOP", "hull", "first", None, None,
      1 - (1 - 0.1 * 0.2 * 0.7) * (1 - _two_of_three(0.4, 0.5, 0.6))),
-    ("names_special", "1-TOP", "plain", "first", None, None,
+    ("names_special", "1-TOP", "positive", "first", None, None,
      1 - (1 - 0.1 * 0.2) * (1 - _two_of_three(0.4, 0.5, 0.6))),
     ("k_of_n_continuation", "TOP", "boolean", "first", None, None,
      1 - (0.9 * 0.8 * 0.7) * (1 - 0.5**3) * (0.9**4 + 4 * 0.1 * 0.9**3) * 0.95 * 0.99**9),
     ("process_multi_target", "T2", "boolean", "first", None, None, (1 - 0.7 * 0.6) * 0.8),
     ("process_multi_target", "T2", "hull", "first", None, None, (1 - 0.7 * 0.6) * 0.8),
-    ("process_multi_target", "T2", "plain", "first", None, None, 1 - 0.7 * 0.6),
+    ("process_multi_target", "T2", "omega", "first", None, None, (1 - 0.7 * 0.6) * 0.8),
+    ("process_multi_target", "T2", "positive", "first", None, None, 1 - 0.7 * 0.6),
     ("process_multi_target", "T3", "boolean", "first", None, None, _two_of_three(0.1, 0.2, 0.3)),
     ("success_branch_delete_term", "SEQ-2", "boolean", "first", None, None, 0.1 * (1 - 0.8 * 0.9) * 0.75 * 0.85),
     ("success_branch_delete_term", "SEQ-2", "hull", "first", None, None, 0.1 * (1 - 0.8 * 0.9)),
@@ -221,25 +223,38 @@ HAND = [
     ("initiator_rule", "TOP", "boolean", "error", None, None,
      0.2 * 0.3 + 0.1 * 0.4 * 0.7 * 0.5 + 0.5 * 0.8 - 0.2 * 0.3 * 0.5 * 0.8),
     ("initiator_rule", "TOP", "hull", "error", None, None, 1 - (1 - 0.1 * 0.4) * (1 - 0.5 * 0.8) * (1 - 0.2 * 0.3)),
-    ("initiator_rule", "TOP", "plain", "error", None, None, 1 - (1 - 0.1 * 0.4) * (1 - 0.5) * (1 - 0.2 * 0.3)),
+    ("initiator_rule", "TOP", "positive", "error", None, None, 1 - (1 - 0.1 * 0.4) * (1 - 0.5) * (1 - 0.2 * 0.3)),
     ("initiator_rule", "TOP", "boolean", "error", None, 1, 0.9 * 0.8 * 0.5 * 0.8),
     ("initiator_rule", "TOP", "hull", "error", None, 1, 1 - (1 - 0.1 * 0.4) * (1 - 0.5 * 0.8)),
-    ("initiator_rule", "TOP", "plain", "error", None, 1, 1 - (1 - 0.1 * 0.4) * (1 - 0.5)),
+    ("initiator_rule", "TOP", "positive", "error", None, 1, 1 - (1 - 0.1 * 0.4) * (1 - 0.5)),
     ("initiator_rule", "TOP", "hull", "error", None, 0, 0.0),
     ("initiator_rule", "SEQ-4", "hull", "error", None, 1, 0.0),
     ("initiator_rule", "SEQ-4", "hull", "error", None, 2, 0.2 * 0.3),
+    # Direct complements under negated gates (RFC §8.11): P1 = A not(B or E) or D not B, P4 = C not(C not F).
+    ("complement_under_negation", "P1", "boolean", "first", None, None, 0.8 * (1 - (1 - 0.1 * 0.6) * 0.7)),
+    ("complement_under_negation", "P1", "hull", "first", None, None, 0.1 + 0.9 * 0.3 * 0.8),
+    ("complement_under_negation", "P1", "omega", "first", None, None, 0.8 * (1 - 0.9 * 0.7)),
+    ("complement_under_negation", "P1", "positive", "first", None, None, 1 - 0.9 * 0.7),
+    ("complement_under_negation", "P4", "boolean", "first", None, None, 0.5 * 0.6),
+    ("complement_under_negation", "P4", "hull", "first", None, None, 0.5),
+    ("complement_under_negation", "P4", "omega", "first", None, None, 0.5 * 0.6),
+    ("complement_under_negation", "P4", "positive", "first", None, None, 0.5 * 0.6),
+    ("complement_under_negation", "TOP", "hull", "first", None, None, 1 - (1 - 0.316) * (1 - 0.5)),
+    ("complement_under_negation", "P3", "hull", "first", None, None, 0.5 * 0.25 + 0.5 * 0.75),
+    ("complement_under_negation", "P3", "omega", "first", None, None, 0.5 * 0.25 + 0.5 * 0.75),
+    ("complement_under_negation", "P3", "positive", "first", None, None, 1 - (1 - 0.25 * 0.5) * (1 - 0.75)),
 ]
 
 
 @pytest.mark.parametrize("name,target,semantics,policy,overrides,rule,want", HAND)
 def test_exact_matches_closed_form(name, target, semantics, policy, overrides, rule, want):
-    literals = "positive" if semantics == "plain" else "model"
-    semantics = "hull" if semantics == "plain" else semantics
+    literals = {"hull": "split", "omega": "omega", "positive": "positive"}.get(semantics, "split")
+    semantics = "boolean" if semantics == "boolean" else "hull"
     got = _exact(name, target, semantics, policy, overrides, literals, rule)
     assert got == pytest.approx(want, rel=1e-12, abs=1e-15)
 
 
-def _cut_sets(name: str, target: str, policy: str = "first", literals: str = "model", rule=None) -> set:
+def _cut_sets(name: str, target: str, policy: str = "first", literals: str = "split", rule=None) -> set:
     fx = FIXTURES / name
     project = project_of(fx, load(fx))
     probs, _ = project.probabilities(policy)
@@ -255,6 +270,46 @@ def test_cut_sets_keep_direct_complements():
     pairs = {"7J/1 8K--2", "7J/1 9L_X", "8K--2 9L_X"}
     assert _cut_sets("names_special", "1-TOP") == pairs | {"4E 5F/G -6H--I"}
     assert _cut_sets("names_special", "1-TOP", literals="positive") == pairs | {"4E 5F/G"}
+    assert _cut_sets("names_special", "1-TOP", literals="omega") == pairs | {"4E 5F/G -6H--I"}
+
+
+def test_cut_sets_where_the_modes_differ():
+    """RFC §8.11: over atoms the vendor cut sets; omega_L and the plain hull differ."""
+    fx = "complement_under_negation"
+    assert _cut_sets(fx, "TOP") == {"A", "C", "-B D"}
+    assert _cut_sets(fx, "TOP", literals="omega") == {"A -B", "-B D", "C F"}
+    assert _cut_sets(fx, "TOP", literals="positive") == {"A", "D", "C F"}
+    assert _cut_sets(fx, "P4") == {"C"} and _cut_sets(fx, "P4", literals="omega") == {"C F"}
+    # No consensus over atoms: {K, N} is not an implicant when M and -M are separate atoms.
+    assert _cut_sets(fx, "P3") == {"K M", "-M N"}
+    assert _cut_sets(fx, "P3", literals="omega") == {"K M", "-M N", "K N"}
+
+
+def _project(tmp_path: Path, text: str):
+    p = parse_project([_write(tmp_path, text)])
+    assert not [d for d in p.diagnostics if d.severity == "error"], p.diagnostics
+    probs, _ = p.probabilities()
+    return p, probs
+
+
+def test_split_excludes_event_with_its_complement_atom(tmp_path):
+    """Cut sets over atoms that contain B and -B have probability 0 and are not listed."""
+    p, probs = _project(tmp_path, "T * B -B\nENDTREE\nPROCESS T\nIMPORT\n0.3 B\n")
+    assert exact_cut_sets(p, "T", probs) == []
+    assert exact_probability(p, "T", probs, "hull")["probability"] == 0.0
+    p, probs = _project(tmp_path, "T * G1 G2\nG1 + A B\nG2 + C -B\nENDTREE\nPROCESS T\nIMPORT\n"
+                                  "0.1 A\n0.2 B\n0.3 C\n")
+    assert {" ".join(cs["literals"]) for cs in exact_cut_sets(p, "T", probs)} == {"A C", "A -B", "B C"}
+
+
+def test_split_complement_atom_of_probability_zero_event(tmp_path):
+    """RFC Theorem 10(g): the atom -B of a p = 0 event is 1 in every lane and stays
+    droppable; under the negated gate H, folding it to TRUE would give 0."""
+    p, probs = _project(tmp_path, "T * A -H\nH * A -B\nENDTREE\nPROCESS T\nIMPORT\n0.5 A\n0.0 B\n")
+    assert exact_probability(p, "T", probs, "hull")["probability"] == 0.5
+    assert exact_probability(p, "T", probs, "hull", literals="omega")["probability"] == 0.0
+    r = estimate_hull(p, "T", probs, trials=MC_TRIALS, seed=4)
+    assert abs(r["estimate"] - 0.5) <= Z_MAX * _null_se(0.5, r["trials"])
 
 
 def test_cut_sets_initiator_rule():
@@ -282,7 +337,7 @@ def test_initiator_rule_deletes_cut_sets(fixture, rule):
         if base_rule is not None:
             continue
         probs, _ = project.probabilities(policy)
-        for literals in ("model", "positive"):
+        for literals in ("split", "omega", "positive"):
             without = exact_cut_sets(project, target, probs, overrides, literals)
             kept = [cs for cs in without if _initiator_count(cs, tagged) <= rule]
             assert exact_cut_sets(project, target, probs, overrides, literals, rule) == kept, (target, literals)
@@ -322,14 +377,14 @@ def test_boolean_mc_within_4se(fixture):
         assert abs(r["estimate"] - p) <= Z_MAX * _null_se(p, r["trials"]), (target, overrides, r["estimate"], p)
 
 
-@pytest.mark.parametrize("literals,key", [("model", "hull"), ("positive", "hull_positive")])
+@pytest.mark.parametrize("literals,key", [("split", "hull"), ("omega", "hull_omega"), ("positive", "hull_positive")])
 def test_hull_estimate_within_4se(fixture, literals, key):
     project = project_of(fixture, load(fixture))
     for policy, overrides, rule, target, values in _cases(fixture):
         probs, _ = project.probabilities(policy)
         r = estimate_hull(project, target, probs, overrides, trials=MC_TRIALS, seed=11, literals=literals,
                           max_initiators=rule)
-        assert r["negative_literals"] == (values["negative_literals"] if literals == "model" else [])
+        assert r["complemented_events"] == values["complemented_events"]
         p = values[key]
         if p in (0.0, 1.0):
             assert r["estimate"] == p, (target, overrides)
@@ -341,18 +396,59 @@ def test_hull_estimate_within_4se(fixture, literals, key):
             assert r["lanes"]["checked"] == r["lanes"]["undecided"]
 
 
-def test_model_literals_tighten_the_coherent_bound():
-    """With the complemented event kept as a literal, g_coh^L = g on T2 and
-    1-TOP: no lane is a candidate (RFC §4.4)."""
+def test_kept_complements_tighten_the_coherent_bound():
+    """With the direct complement kept (an atom, or a fixed event), the coherent
+    bound equals g on T2 and 1-TOP: no lane is a candidate (RFC §4.4, Theorem 10(e))."""
     for name, target in (("process_multi_target", "T2"), ("names_special", "1-TOP")):
         fx = FIXTURES / name
         project = project_of(fx, load(fx))
         probs, _ = project.probabilities("first")
-        model = estimate_hull(project, target, probs, trials=MC_TRIALS, seed=2)
+        for literals in ("split", "omega"):
+            r = estimate_hull(project, target, probs, trials=MC_TRIALS, seed=2, literals=literals)
+            assert r["bounds"]["lower"] == r["bounds"]["upper"] == r["estimate"]
+            assert r["lanes"]["undecided"] == 0
         plain = estimate_hull(project, target, probs, trials=MC_TRIALS, seed=2, literals="positive")
-        assert model["bounds"]["lower"] == model["bounds"]["upper"] == model["estimate"]
-        assert model["lanes"]["undecided"] == 0
         assert plain["bounds"]["upper"] > plain["bounds"]["lower"]
+
+
+def test_fixtures_where_split_and_omega_agree():
+    """RFC Theorem 10(c): without a complement-under-negation warning the
+    atom-split hull equals omega_L; the divergence fixture has warnings and
+    differs (and exceeds the plain hull on P4, Theorem 10(d))."""
+    for fx in fixture_dirs():
+        spec = load(fx)
+        if diagnostic_only(spec):
+            continue
+        blocks = [b["results"] for b in spec["policies"].values() if b["results"]]
+        blocks += [v["results"] for v in spec.get("variants", [])]
+        for results in blocks:
+            for target, r in results.items():
+                if not r["complement_under_negation"]:
+                    assert r["hull"] == r["hull_omega"], (fx.name, target)
+                assert set(r["complement_under_negation"]) <= set(r["complemented_events"])
+                assert r["boolean"] <= r["hull"] + 1e-15 and r["hull_omega"] <= r["hull"] + 1e-15
+        if fx.name != "complement_under_negation":
+            assert all(not r["complement_under_negation"] for results in blocks for r in results.values()), fx.name
+    r = load(FIXTURES / "complement_under_negation")["policies"]["last"]["results"]
+    assert r["P1"]["complement_under_negation"] == ["B"] and r["P4"]["complement_under_negation"] == ["F"]
+    assert r["P1"]["hull"] != r["P1"]["hull_omega"] and r["P4"]["hull"] > r["P4"]["hull_positive"]
+
+
+def test_atom_sampler_couples_event_and_complement_atom():
+    """The complement atom -B and B are drawn once and are exact complements in
+    every lane, in the pass and in the candidate redraw."""
+    fx = FIXTURES / "complement_under_negation"
+    project = project_of(fx, load(fx))
+    probs, _ = project.probabilities()
+    c = build_circuit(project, "P1", probs, constants="hull", split=["B"])
+    a = c.names.index("-B")
+    assert c.twins == {a: c.names.index("B")} and c.probs[a] == pytest.approx(0.8)
+    for state_seed in (1, 2):
+        rng = np.random.Generator(np.random.PCG64(state_seed))
+        ones = np.full(4, ALL, dtype=np.uint64)
+        sample = atom_sampler(c, rng, 4, ones)
+        vals = {v: sample(v) for v in range(1, c.first_gate)}
+        assert np.array_equal(vals[a], vals[c.twins[a]] ^ ones)
 
 
 def test_hull_subsampled_checks_within_4se():
@@ -406,19 +502,23 @@ def _lane_check_agrees(fixture: Path, max_lanes: int = 4096, bdd_budget: int = 1
     project = project_of(fixture, spec)
     rng = np.random.default_rng(0)
     methods: Counter = Counter()
-    for (policy, overrides, rule, target, _), literals in itertools.product(_cases(fixture), ("model", "positive")):
+    modes_all = ("split", "omega", "positive")
+    for (policy, overrides, rule, target, _), literals in itertools.product(_cases(fixture), modes_all):
         probs, _ = project.probabilities(policy)
         tt = exact_table(project, target, probs, "hull", overrides, literals, rule)
-        c = build_circuit(project, target, probs, overrides, constants="hull", max_initiators=rule)
+        fixed_events, split = literal_sets(project, target, literals, overrides)
+        c = build_circuit(project, target, probs, overrides, constants="hull", max_initiators=rule, split=split)
         if c.constant() is not None:
             continue
-        modes = event_modes(c.names, c.n_vars, significant_negative(project, target, literals, overrides))
+        modes = event_modes(c.names, c.n_vars, fixed_events)
         checker = LaneChecker(c, polarity(c), bdd_budget, modes)
         n = len(tt.names)
         fixed = [i for i, p in enumerate(tt.probs) if p in (0.0, 1.0)]
         idx = np.arange(1 << n)
-        for i in fixed:  # lanes are reachable only with p = 0 events false and p = 1 events true
+        for i in fixed:  # lanes are reachable only with p = 0 variables false and p = 1 variables true
             idx = idx[((idx >> i) & 1) == int(tt.probs[i])]
+        for a, e in (tt.twins or {}).items():  # and with every complement atom opposite to its event
+            idx = idx[((idx >> a) & 1) != ((idx >> e) & 1)]
         if len(idx) > max_lanes:
             idx = rng.choice(idx, size=max_lanes, replace=False)
         col = {name: i for i, name in enumerate(tt.names)}
@@ -507,11 +607,37 @@ def _brute_cone(project: Project, target: str) -> tuple[list[str], set[str]]:
     return sorted(set(events)), negative
 
 
+def _eval_split(project: Project, name: str, atoms: dict, delta: set, memo: dict) -> int:
+    """Value of ``name`` over atoms: a direct complement of an event of ``delta``
+    reads the atom ``-NAME``; every other edge is Boolean."""
+    if name not in project.gates:
+        return atoms[name]
+    if name not in memo:
+        g = project.gates[name]
+        vals = [atoms["-" + c] if neg and c in delta else _eval_split(project, c, atoms, delta, memo) ^ neg
+                for c, neg in g.children]
+        k = len(vals) if g.kind == AND else 1 if g.kind == OR else g.k
+        memo[name] = int(sum(vals) >= k)
+    return memo[name]
+
+
+def _subsets(mask: int):
+    sub = mask
+    while True:
+        yield sub
+        if sub == 0:
+            return
+        sub = (sub - 1) & mask
+
+
 @pytest.mark.parametrize("seed", range(40))
 def test_random_projects_match_brute_force(seed):
-    """End to end on random projects: the exact evaluator, the per-lane check and
-    the minimal cut sets equal brute-force omega_L (L = positive literals plus
-    the direct complements in the cone), with and without the initiator rule."""
+    """End to end on random projects, complements inside and outside negated
+    gates, all three literal modes, with and without the initiator rule: the
+    exact value, the minimal cut sets, the per-lane check (every reachable
+    world) and, for every fourth seed, the estimator equal brute force. split:
+    the plain hull over atoms on the coupled valuation; omega: omega_L; positive:
+    the plain hull."""
     rng = random.Random(seed)
     project = _random_project(rng, rng.randint(2, 7), rng.randint(1, 7))
     target = project.process[0]
@@ -521,32 +647,66 @@ def test_random_projects_match_brute_force(seed):
     n = len(events)
     index = {e: i for i, e in enumerate(events)}
     worlds = list(itertools.product((0, 1), repeat=n))
-    live = [x for x in worlds if all(x[i] == 0 for i, e in enumerate(events) if probs[e] == 0.0)]
+    live = [x for x in worlds if all(x[i] == probs[e] for i, e in enumerate(events) if probs[e] in (0.0, 1.0))]
     g = {x: _eval_project(project, target, dict(zip(events, x, strict=True)), {}) for x in worlds}
     weight = {x: math.prod(probs[e] if b else 1 - probs[e] for e, b in zip(events, x, strict=True)) for x in worlds}
-    for literals, rule in itertools.product(("model", "positive"), (None, 0, 1)):
-        assert significant_negative(project, target, literals) == (sorted(negative) if literals == "model" else [])
-        neg = negative if literals == "model" else set()
-        modes = [BOTH if e in neg else ONLY_POS for e in events]
-        gr = {x: g[x] & int(rule is None or sum(x[i] for i, e in enumerate(events) if e in tagged) <= rule)
-              for x in worlds}
-        want = _brute_omega(gr, n, modes)
+    atoms = events + ["-" + e for e in sorted(negative)]
+    bit = {a: 1 << i for i, a in enumerate(atoms)}
+    g_split = [_eval_split(project, target, {a: (m >> i) & 1 for i, a in enumerate(atoms)}, negative, {})
+               for m in range(1 << len(atoms))]
+
+    def kappa(x) -> int:
+        return sum(bit[e] for e, b in zip(events, x, strict=True) if b) + sum(
+            bit["-" + e] for e in negative if not x[index[e]])
+
+    for literals, rule in itertools.product(("split", "omega", "positive"), (None, 0, 1)):
+        expect = {"omega": (sorted(negative), []), "split": ([], sorted(negative)), "positive": ([], [])}
+        assert literal_sets(project, target, literals) == expect[literals]
+        ok_rule = [int(rule is None or sum(1 for e in tagged if m & bit[e]) <= rule) for m in range(1 << len(atoms))]
+        if literals == "split":
+            gm = [g_split[m] & ok_rule[m] for m in range(len(g_split))]
+            want = {x: int(any(gm[sub] for sub in _subsets(kappa(x)))) for x in worlds}
+            sets = [m for m in range(len(gm)) if gm[m]]
+            prime = {frozenset(a for a in atoms if m & bit[a]) for m in sets
+                     if not any(gm[m ^ bit[a]] for a in atoms if m & bit[a])
+                     and not any(m & bit[a] and m & bit[a[1:]] for a in atoms if a.startswith("-"))}
+            # gm is up-closed over atoms only after the hull; minimal sets of gm are mcs of up(gm).
+            prime = {c for c in prime if not any(set(d) < set(c) for d in prime)}
+        else:
+            neg = negative if literals == "omega" else set()
+            modes = [BOTH if e in neg else ONLY_POS for e in events]
+            gr = {x: g[x] & int(rule is None or sum(x[i] for i, e in enumerate(events) if e in tagged) <= rule)
+                  for x in worlds}
+            want = _brute_omega(gr, n, modes)
+            lits = [(e, 1) for e in events] + [(e, 0) for e in events if e in neg]
+            prime = {frozenset(("-" if b == 0 else "") + e for e, b in t)
+                     for t in _brute_prime_l_terms(want, worlds, index, lits)}
         p_want = math.fsum(weight[x] for x in worlds if want[x])
         got = exact_probability(project, target, probs, "hull", None, literals, rule)["probability"]
         assert got == pytest.approx(p_want, rel=1e-12, abs=1e-15), (literals, rule)
-        lits = [(e, 1) for e in events] + [(e, 0) for e in events if e in neg]
         cut_sets = exact_cut_sets(project, target, probs, None, literals, rule)
-        assert {frozenset((s.lstrip("-"), int(not s.startswith("-"))) for s in cs["literals"])
-                for cs in cut_sets} == _brute_prime_l_terms(want, worlds, index, lits), (literals, rule)
+        assert {frozenset(cs["literals"]) for cs in cut_sets} == prime, (literals, rule)
         # Per-lane check on the folded estimator circuit, every reachable world.
-        c = build_circuit(project, target, probs, constants="hull", max_initiators=rule)
+        fixed, split = literal_sets(project, target, literals)
+        c = build_circuit(project, target, probs, constants="hull", max_initiators=rule, split=split)
         if c.constant() is not None:
-            assert all(want[x] == c.constant() for x in live)
-            continue
-        cmodes = event_modes(c.names, c.n_vars, neg)
-        checker = LaneChecker(c, polarity(c), modes=cmodes)
-        x_bits = [0] + [sum(x[index[c.names[v]]] << j for j, x in enumerate(live)) for v in range(1, c.first_gate)]
-        assert checker.check(x_bits, len(live)) == [bool(want[x]) for x in live], (literals, rule)
+            assert all(want[x] == c.constant() for x in live), (literals, rule)
+        else:
+            checker = LaneChecker(c, polarity(c), modes=event_modes(c.names, c.n_vars, fixed))
+
+            def value(name: str, x) -> int:
+                return 1 - x[index[name[1:]]] if name.startswith("-") else x[index[name]]
+
+            x_bits = [0] + [sum(value(c.names[v], x) << j for j, x in enumerate(live)) for v in range(1, c.first_gate)]
+            assert checker.check(x_bits, len(live)) == [bool(want[x]) for x in live], (literals, rule)
+        if seed % 4 == 0 and rule in (None, 1):
+            r = estimate_hull(project, target, probs, trials=1 << 13, seed=seed, literals=literals,
+                              max_initiators=rule)
+            p_live = min(1.0, max(0.0, math.fsum(weight[x] for x in live if want[x])))
+            if min(p_live, 1.0 - p_live) < 1e-12:
+                assert r["estimate"] == pytest.approx(p_live, abs=1e-12), (literals, rule)
+            else:
+                assert abs(r["estimate"] - p_live) <= Z_MAX * _null_se(p_live, r["trials"]), (literals, rule)
 
 
 def _eval_circuit(c, x: tuple) -> int:
@@ -770,9 +930,9 @@ def test_cli_duplicate_import_policy():
 
 def test_cli_literals_rule_and_cut_sets():
     fx = str(FIXTURES / "process_multi_target")
-    model = json.loads(_cli("exact", "--semantics", "hull", "--target", "T2", "--cut-sets", "--json", fx).stdout)
-    r = model["results"][0]
-    assert model["literals"] == "model" and r["negative_literals"] == ["B"]
+    split = json.loads(_cli("exact", "--semantics", "hull", "--target", "T2", "--cut-sets", "--json", fx).stdout)
+    r = split["results"][0]
+    assert split["literals"] == "split" and r["complemented_events"] == ["B"]
     assert r["probability"] == pytest.approx(0.464, rel=1e-12)
     assert [cs["literals"] for cs in r["cut_sets"]] == [["-B", "C"], ["-B", "D"]]
     plain = json.loads(_cli("exact", "--semantics", "hull", "--literals", "positive", "--target", "T2", "--json",
@@ -789,6 +949,23 @@ def test_cli_literals_rule_and_cut_sets():
     r = json.loads(out.stdout)["results"][0]
     assert abs(r["estimate"] - 0.424) <= Z_MAX * _null_se(0.424, r["trials"])
     assert _cli("exact", "--max-initiators-per-cutset", "-1", fx).returncode == 2
+
+
+def test_cli_complement_under_negation_warning():
+    """One warning per directly complemented event under a negated gate, in the
+    hull modes that keep complements; none on the other fixtures."""
+    fx = str(FIXTURES / "complement_under_negation")
+    want = {"split": 0.658, "omega": 1 - (1 - 0.296) * 0.7, "positive": 1 - 0.63 * 0.7}
+    for literals, value in want.items():
+        out = _cli("exact", "--semantics", "hull", "--literals", literals, "--target", "TOP", "--json", fx)
+        doc = json.loads(out.stdout)
+        warned = [d["name"] for d in doc["diagnostics"] if d["code"] == "complement-under-negation"]
+        assert warned == ([] if literals == "positive" else ["B", "F"]), literals
+        assert doc["results"][0]["probability"] == pytest.approx(value, rel=1e-12), literals
+    assert "warning: complement-under-negation" in _cli("exact", "--semantics", "hull", fx).stderr
+    for name in FIXTURE_NAMES:
+        if name != "complement_under_negation":
+            assert "complement-under-negation" not in _cli("exact", "--semantics", "hull", str(FIXTURES / name)).stderr
 
 
 def test_independence_from_fuzzybits():
@@ -871,9 +1048,6 @@ def test_private_structure(i):
     assert not bad, f"model{i}: structure keys differ: {bad}"
 
 
-_EXTRA_INITIATOR_TERM = re.compile(r"at least (\d+) of the I-tagged events\b")
-
-
 def _policy(var: dict, card: dict) -> str:
     """Duplicate-import policy; cards may annotate it ("last (...)")."""
     raw = var.get("policy", card.get("policy", {})).get("duplicate_import", "error")
@@ -881,18 +1055,19 @@ def _policy(var: dict, card: dict) -> str:
     return word.group(0) if word and word.group(0) in POLICIES else raw
 
 
+# Variant keys that change the target's logic other than the structured
+# initiator rule: such a variant is skipped, never run without its rule.
+_UNSUPPORTED_RULE_KEYS = ("extra_delete_term",)
+
+
 def _initiator_rule(var: dict, label: str) -> int | None:
-    """``max_initiators_per_cutset``, or a card's ``extra_delete_term`` written
-    as "at least k of the I-tagged events" (the rule with k - 1)."""
+    """The variant's ``max_initiators_per_cutset``; a variant that states a rule
+    only in another form (``extra_delete_term``) is skipped."""
     if "max_initiators_per_cutset" in var:
-        return var["max_initiators_per_cutset"]
-    text = var.get("extra_delete_term")
-    if text is None:
-        return None
-    m = _EXTRA_INITIATOR_TERM.match(text)
-    if not m:
-        pytest.skip(f"{label}: extra delete term not expressible as max_initiators_per_cutset")
-    return int(m.group(1)) - 1
+        return int(var["max_initiators_per_cutset"])
+    if any(k in var for k in _UNSUPPORTED_RULE_KEYS):
+        pytest.skip(f"{label}: rule not given as max_initiators_per_cutset")
+    return None
 
 
 @pytest.mark.private
@@ -918,7 +1093,8 @@ def test_private_variant(ij):
     else:
         r = estimate_hull(project, target, probs, overrides, trials=PRIVATE_HULL_TRIALS, seed=1,
                           max_checks=PRIVATE_HULL_CHECKS, max_initiators=rule)
-        extra = (f"|L-|={len(r['negative_literals'])} rule={rule} checked={r.get('lanes', {}).get('checked', 0)} "
+        extra = (f"complemented={len(r['complemented_events'])} rule={rule} "
+                 f"checked={r.get('lanes', {}).get('checked', 0)} "
                  f"lanes/s={r.get('lanes_per_second') or 0:.0f}")
     est, se, n = r["estimate"], r["se"], r["trials"]
     expected = var.get("expected")

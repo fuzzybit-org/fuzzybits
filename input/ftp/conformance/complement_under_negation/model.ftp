@@ -1,0 +1,26 @@
+**CHAR32
+TOP + P1 P4
+P1 + G1 G2
+G1 * A -G
+G2 * D -B
+G + B E
+P4 * C -H
+H * C -F
+P3 + G3 G4
+G3 * K M
+G4 * N -M
+ENDTREE
+PROCESS TOP P3
+IMPORT
+  1.000000E-01 A
+  2.000000E-01 B
+  3.000000E-01 D
+  4.000000E-01 E
+  5.000000E-01 C
+  6.000000E-01 F
+  2.500000E-01 K
+  5.000000E-01 M
+  7.500000E-01 N
+LIMIT 1.000000E-12
+**FTITLE: direct complements under a negated gate: atom-split hull, omega_L and plain hull differ
+*XEQ

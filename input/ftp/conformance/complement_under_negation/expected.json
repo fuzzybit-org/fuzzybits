@@ -1,0 +1,230 @@
+{
+  "schema_version": 2,
+  "description": "B is complemented directly (G2) and also occurs under the negated gate G (P1); F is complemented directly inside the negated gate H (P4). There the atom-split hull (hull), omega_L (hull_omega) and the plain hull (hull_positive) differ, and the plain hull is below the atom-split hull for P4. P3 = KM or N not M has a direct complement outside any negated gate: its atom-split cut sets have no consensus term {K, N}.",
+  "covers": [
+    "direct complement of an event that also occurs under a negated gate",
+    "direct complement inside a negated gate",
+    "atom-split hull above the plain hull",
+    "complement-under-negation warning",
+    "no consensus cut set over atoms"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "targets": [
+    "TOP",
+    "P1",
+    "P4",
+    "P3"
+  ],
+  "default_targets": [
+    "TOP",
+    "P3"
+  ],
+  "structure": {
+    "gates": 10,
+    "gates_by_kind": {
+      "or": 4,
+      "and": 6,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 20,
+    "single_input_gates": 0,
+    "max_fan_in": 2,
+    "depth": 4,
+    "basic_events": 9,
+    "import_lines": 9,
+    "complemented_edges": 5,
+    "complemented_edges_to_basic_events": 3,
+    "roots": [
+      "TOP",
+      "P3"
+    ],
+    "process_targets": [
+      "TOP",
+      "P3"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.49152,
+          "hull": 0.658,
+          "hull_omega": 0.5072,
+          "hull_positive": 0.559,
+          "complemented_events": [
+            "B",
+            "F"
+          ],
+          "complement_under_negation": [
+            "B",
+            "F"
+          ],
+          "variables": 6
+        },
+        "P1": {
+          "boolean": 0.2736,
+          "hull": 0.316,
+          "hull_omega": 0.29600000000000004,
+          "hull_positive": 0.37,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [
+            "B"
+          ],
+          "variables": 4
+        },
+        "P4": {
+          "boolean": 0.3,
+          "hull": 0.5,
+          "hull_omega": 0.3,
+          "hull_positive": 0.3,
+          "complemented_events": [
+            "F"
+          ],
+          "complement_under_negation": [
+            "F"
+          ],
+          "variables": 2
+        },
+        "P3": {
+          "boolean": 0.5,
+          "hull": 0.5,
+          "hull_omega": 0.5,
+          "hull_positive": 0.78125,
+          "complemented_events": [
+            "M"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.49152,
+          "hull": 0.658,
+          "hull_omega": 0.5072,
+          "hull_positive": 0.559,
+          "complemented_events": [
+            "B",
+            "F"
+          ],
+          "complement_under_negation": [
+            "B",
+            "F"
+          ],
+          "variables": 6
+        },
+        "P1": {
+          "boolean": 0.2736,
+          "hull": 0.316,
+          "hull_omega": 0.29600000000000004,
+          "hull_positive": 0.37,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [
+            "B"
+          ],
+          "variables": 4
+        },
+        "P4": {
+          "boolean": 0.3,
+          "hull": 0.5,
+          "hull_omega": 0.3,
+          "hull_positive": 0.3,
+          "complemented_events": [
+            "F"
+          ],
+          "complement_under_negation": [
+            "F"
+          ],
+          "variables": 2
+        },
+        "P3": {
+          "boolean": 0.5,
+          "hull": 0.5,
+          "hull_omega": 0.5,
+          "hull_positive": 0.78125,
+          "complemented_events": [
+            "M"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.49152,
+          "hull": 0.658,
+          "hull_omega": 0.5072,
+          "hull_positive": 0.559,
+          "complemented_events": [
+            "B",
+            "F"
+          ],
+          "complement_under_negation": [
+            "B",
+            "F"
+          ],
+          "variables": 6
+        },
+        "P1": {
+          "boolean": 0.2736,
+          "hull": 0.316,
+          "hull_omega": 0.29600000000000004,
+          "hull_positive": 0.37,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [
+            "B"
+          ],
+          "variables": 4
+        },
+        "P4": {
+          "boolean": 0.3,
+          "hull": 0.5,
+          "hull_omega": 0.3,
+          "hull_positive": 0.3,
+          "complemented_events": [
+            "F"
+          ],
+          "complement_under_negation": [
+            "F"
+          ],
+          "variables": 2
+        },
+        "P3": {
+          "boolean": 0.5,
+          "hull": 0.5,
+          "hull_omega": 0.5,
+          "hull_positive": 0.78125,
+          "complemented_events": [
+            "M"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    }
+  }
+}

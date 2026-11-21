@@ -52,8 +52,10 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_omega": 0.0107,
           "hull_positive": 0.0107,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 7
         }
       }
@@ -64,8 +66,10 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_omega": 0.0107,
           "hull_positive": 0.0107,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 7
         }
       }
@@ -76,8 +80,10 @@
         "SEQ": {
           "boolean": 0.0,
           "hull": 0.0107,
+          "hull_omega": 0.0107,
           "hull_positive": 0.0107,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 7
         }
       }
@@ -93,8 +99,10 @@
         "SEQ": {
           "boolean": 0.00802,
           "hull": 0.0107,
+          "hull_omega": 0.0107,
           "hull_positive": 0.0107,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }
@@ -108,8 +116,10 @@
         "SEQ": {
           "boolean": 0.00802,
           "hull": 0.0107,
+          "hull_omega": 0.0107,
           "hull_positive": 0.0107,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 6
         }
       }

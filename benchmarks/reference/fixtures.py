@@ -6,12 +6,14 @@
 Hand-written fields (``description``, ``covers``, ``files``, ``targets``,
 ``variants[].policy`` / ``overrides`` / ``max_initiators_per_cutset``) are
 kept; structure counts, diagnostics and exact probabilities are recomputed with
-the exact evaluators. Per target: ``boolean`` P(g), ``hull`` P(omega_L g) with
-the model's significant literals (``negative_literals``: events referenced with
-a direct complement in the target's cone), ``hull_positive`` the plain monotone
-hull P(up g). A fixture with errors under every duplicate-import policy is
-diagnostic-only: it records the diagnostics per policy (results ``null``) and
-no ``default_targets`` or ``structure``.
+the exact evaluators. Per target: ``boolean`` P(g), ``hull`` the atom-split hull
+(default), ``hull_omega`` P(omega_L g), ``hull_positive`` the plain monotone hull
+P(up g), ``complemented_events`` (events referenced with a direct complement in
+the target's cone) and ``complement_under_negation`` (those of them that also
+occur under a complemented gate, where ``hull`` and ``hull_omega`` can differ).
+A fixture with errors under every duplicate-import policy is diagnostic-only:
+it records the diagnostics per policy (results ``null``) and no
+``default_targets`` or ``structure``.
 """
 
 from __future__ import annotations
@@ -56,13 +58,15 @@ def exact_results(
     out = {}
     for target in targets:
         b = exact_probability(project, target, probs, "boolean", overrides, max_initiators=max_initiators)
-        h = exact_probability(project, target, probs, "hull", overrides, "model", max_initiators)
-        hp = exact_probability(project, target, probs, "hull", overrides, "positive", max_initiators)
+        h = {lit: exact_probability(project, target, probs, "hull", overrides, lit, max_initiators)
+             for lit in ("split", "omega", "positive")}
         out[target] = {
             "boolean": b["probability"],
-            "hull": h["probability"],
-            "hull_positive": hp["probability"],
-            "negative_literals": h["negative_literals"],
+            "hull": h["split"]["probability"],
+            "hull_omega": h["omega"]["probability"],
+            "hull_positive": h["positive"]["probability"],
+            "complemented_events": h["split"]["complemented_events"],
+            "complement_under_negation": h["split"]["complement_under_negation"],
             "variables": b["variables"],
         }
     return out

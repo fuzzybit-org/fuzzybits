@@ -9,10 +9,10 @@ in which samplers draw them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Collection, Mapping
 
-from .ftp import AND, ATLEAST, OR, ModelError, Project
+from .ftp import AND, ATLEAST, OR, Diagnostic, Location, ModelError, Project
 
 FALSE, TRUE = 0, 1
 POS, NEG = 1, 2  # polarity bits: reachable from the root through an even / odd number of complements
@@ -20,13 +20,15 @@ POS, NEG = 1, 2  # polarity bits: reachable from the root through an even / odd 
 # Which import values become constants when the circuit is built.
 CONSTANTS = ("boolean", "hull", "none")
 
-# Significant literals L of a hull query (RFC §3), per event: which of x_v and
-# not x_v are in L. A witness y <= x may use y_v in [lo, hi] (``bounds``).
+# Literal modes of a hull query (RFC §3) for the events referenced with a direct
+# complement (``-NAME`` on an event) in the target's cone: ``split`` (default)
+# makes each such complement an atom of its own, ``-NAME``, droppable and valued
+# not x (the atom-split hull); ``omega`` fixes those events (Rauzy's omega_L);
+# ``positive`` gives the plain hull, every event droppable.
+LITERALS = ("split", "omega", "positive")
+# Per event under omega_L: which of x_v and not x_v are in L. A witness y may
+# use y_v in [lo, hi] (``bounds``).
 ONLY_POS, BOTH, ONLY_NEG, NEITHER = "pos", "both", "neg", "neither"
-# ``model``: L = positive literals plus the negative literal of every event
-# referenced with a direct complement in the target's cone; ``positive``: the
-# plain hull (positive literals only).
-LITERALS = ("model", "positive")
 
 
 @dataclass
@@ -38,6 +40,7 @@ class Circuit:
     ks: list[int]
     kids: list[tuple[int, ...]]
     root: int  # literal
+    twins: dict[int, int] = field(default_factory=dict)  # complement atom -> its event, when both are variables
 
     @property
     def first_gate(self) -> int:
@@ -125,9 +128,9 @@ def cone_events(project: Project, target: str, overrides: Mapping[str, int | boo
 
 def complemented_events(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
     """Events referenced with a direct complement (``-NAME``) by a gate in the
-    cone of ``target``, sorted. Their negative literals, with the positive
-    literals of all events, form L for ``literals="model"`` (RFC §3). Complements
-    of gates (also of single-input gates) are delete terms and add nothing."""
+    cone of ``target``, sorted: the events whose complements are atoms for
+    ``literals="split"`` and fixed for ``"omega"`` (RFC §3). Complements of gates
+    (also of single-input gates) are delete terms and add nothing."""
     gates, over = project.gates, overrides or {}
     return sorted({
         c for name in cone_gates(project, target, over) for c, neg in gates[name].children
@@ -135,12 +138,64 @@ def complemented_events(project: Project, target: str, overrides: Mapping[str, i
     })
 
 
-def significant_negative(project: Project, target: str, literals: str,
-                         overrides: Mapping[str, int | bool] | None = None) -> list[str]:
-    """Events whose negative literal is in L under ``literals``."""
+def literal_sets(project: Project, target: str, literals: str,
+                 overrides: Mapping[str, int | bool] | None = None) -> tuple[list[str], list[str]]:
+    """(fixed, split) events under ``literals``: the directly complemented events
+    are fixed for ``omega``, split into atoms for ``split``, neither for
+    ``positive``."""
     if literals not in LITERALS:
         raise ValueError(f"literals must be one of {LITERALS}, got {literals!r}")
-    return complemented_events(project, target, overrides) if literals == "model" else []
+    events = complemented_events(project, target, overrides) if literals != "positive" else []
+    return (events, []) if literals == "omega" else ([], events)
+
+
+def complement_under_negation(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None,
+                              max_initiators: int | None = None) -> list[Diagnostic]:
+    """Warnings ``complement-under-negation``: directly complemented events of the
+    target's cone that also occur in the cone of a complemented gate (or, with
+    the initiator rule, are initiators). The atom-split hull and omega_L can
+    differ only there (RFC Theorem 10(c))."""
+    gates, over = project.gates, overrides or {}
+    cone = cone_gates(project, target, over)
+    direct: dict[str, Location] = {}
+    for name in cone:
+        for c, neg in gates[name].children:
+            if neg and c not in gates and c not in over:
+                direct.setdefault(c, gates[name].location)
+    if not direct:
+        return []
+    under: dict[str, Location | None] = {}
+    for name in cone:
+        for c, neg in gates[name].children:
+            if neg and c in gates and c not in over:
+                for e in cone_events(project, c, over):
+                    under.setdefault(e, gates[name].location)
+    if max_initiators is not None:
+        for e in project.initiators() & set(direct):
+            under.setdefault(e, None)
+    out = []
+    for e in sorted(direct):
+        if e not in under:
+            continue
+        where = "the initiator rule" if under[e] is None else "a complemented gate"
+        locs = (direct[e],) if under[e] is None else (direct[e], under[e])
+        out.append(Diagnostic("warning", "complement-under-negation",
+                              f"{e} is complemented directly and also occurs under {where} in the cone of {target}; "
+                              "the atom-split hull and omega_L can differ", e, locs))
+    return out
+
+
+def hull_record(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None,
+                max_initiators: int | None = None) -> dict:
+    """The directly complemented events of the target's cone (atoms under
+    ``split``, fixed under ``omega``) and those that also occur under a
+    complemented gate (the ``complement-under-negation`` warnings)."""
+    return {
+        "complemented_events": complemented_events(project, target, overrides),
+        "complement_under_negation": [
+            d.name for d in complement_under_negation(project, target, overrides, max_initiators)
+        ],
+    }
 
 
 def event_modes(names: list[str], n_vars: int, negative: Collection[str]) -> list:
@@ -170,6 +225,7 @@ def build_circuit(
     constants: str = "boolean",
     fold: bool = True,
     max_initiators: int | None = None,
+    split: Collection[str] = (),
 ) -> Circuit:
     """Circuit for ``target`` restricted to its cone.
 
@@ -182,6 +238,11 @@ def build_circuit(
     ``max_initiators = m`` conjoins the delete term ``not atleast(m + 1; I)``,
     with I the initiator-tagged events in the cone (RFC §4.8); it is omitted
     when ``|I| <= m``.
+
+    ``split``: events whose direct complements become atoms of their own (the
+    split circuit of RFC §3): a complemented edge into such an event reads a
+    variable ``-NAME`` with probability 1 - p, and ``Circuit.twins`` couples it
+    to ``NAME`` when both occur. Gate complements are unchanged.
     """
     if constants not in CONSTANTS:
         raise ValueError(f"constants must be one of {CONSTANTS}")
@@ -225,6 +286,28 @@ def build_circuit(
     def ref(name: str) -> int:
         return lit_of[name] if expandable(name) else leaf(name)
 
+    split_set = set(split)
+
+    def atom(name: str) -> int:
+        """The complement atom of event ``name`` (folded like an event of
+        probability 1 - p)."""
+        if name not in probs:
+            raise ModelError(f"no probability for event {name}")
+        q = 1.0 - probs[name]
+        if constants != "none" and q == 0.0:
+            return FALSE
+        key = "-" + name
+        node = var_of.get(key)
+        if node is None:
+            node = var_of[key] = len(tmp)
+            tmp.append(("var", key, q))
+        return 2 * node
+
+    def child(c: str, neg: bool) -> int:
+        if neg and c in split_set and not expandable(c) and c not in over:
+            return atom(c)
+        return ref(c) ^ neg
+
     def add(name: str, kind: str, k: int, lits: list[int]) -> int:
         if not fold:
             tmp.append(("gate", name, kind, k, tuple(lits)))
@@ -242,7 +325,7 @@ def build_circuit(
 
     for name in order:
         g = gates[name]
-        lit_of[name] = add(name, g.kind, g.k, [ref(c) ^ neg for c, neg in g.children])
+        lit_of[name] = add(name, g.kind, g.k, [child(c, neg) for c, neg in g.children])
     root = ref(target)
     if max_initiators is not None:
         tagged = project.initiators()
@@ -277,6 +360,9 @@ def _finalize(tmp: list[tuple], root: int) -> Circuit:
         new[i] = len(new)
     names = ["$FALSE"] + [tmp[i][1] for i in var_ids] + [tmp[i][1] for i in gate_ids]
     probs = [0.0] + [tmp[i][2] for i in var_ids] + [0.0] * len(gate_ids)
+    var_index = {names[v]: v for v in range(1, 1 + len(var_ids))}
+    twins = {v: var_index[names[v][1:]] for v in var_index.values()
+             if names[v].startswith("-") and names[v][1:] in var_index}
     return Circuit(
         names=names,
         n_vars=len(var_ids),
@@ -285,6 +371,7 @@ def _finalize(tmp: list[tuple], root: int) -> Circuit:
         ks=[tmp[i][3] for i in gate_ids],
         kids=[tuple(2 * new[lit >> 1] + (lit & 1) for lit in tmp[i][4]) for i in gate_ids],
         root=2 * new[root >> 1] + (root & 1),
+        twins=twins,
     )
 
 

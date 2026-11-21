@@ -58,8 +58,10 @@
         "TOP": {
           "boolean": 0.224,
           "hull": 0.224,
+          "hull_omega": 0.224,
           "hull_positive": 0.224,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -77,8 +79,10 @@
         "TOP": {
           "boolean": 0.224,
           "hull": 0.224,
+          "hull_omega": 0.224,
           "hull_positive": 0.224,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -96,8 +100,10 @@
         "TOP": {
           "boolean": 0.224,
           "hull": 0.224,
+          "hull_omega": 0.224,
           "hull_positive": 0.224,
-          "negative_literals": [],
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }

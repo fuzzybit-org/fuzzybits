@@ -101,6 +101,25 @@ def sample_event(rng: np.random.Generator, p: float, n_words: int) -> np.ndarray
     return np.packbits(rng.random(n) < p, bitorder="little").view(np.uint64)
 
 
+def atom_sampler(c: Circuit, rng: np.random.Generator, n_words: int, ones: np.ndarray) -> Callable[[int], np.ndarray]:
+    """Lane values of the variables of ``c``, to be requested in increasing
+    order. A complement atom and its event (``c.twins``) are coupled: the event
+    is drawn once, at the first of the two, and the other gets its complement."""
+    partner = {**c.twins, **{e: a for a, e in c.twins.items()}}
+    drawn: dict[int, np.ndarray] = {}
+
+    def sample(v: int) -> np.ndarray:
+        u = partner.get(v)
+        if u is None:
+            return sample_event(rng, c.probs[v], n_words)
+        if u in drawn:
+            return drawn.pop(u) ^ ones
+        drawn[v] = sample_event(rng, c.probs[v], n_words)
+        return drawn[v]
+
+    return sample
+
+
 def evaluate(
     c: Circuit,
     pl: Plan,
