@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "description": "header_limit with ENDTREE but no IMPORT header. FTREX and ZEBRA do not read the records and set the probabilities of A, B and C to 1 (FTREX warns that they are undefined); here the records are errors and A, B and C are undefined references.",
+  "covers": [
+    "import-without-header",
+    "undefined-reference",
+    "missing-process"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              9
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              9
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
+      "results": null
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              9
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
+      "results": null
+    }
+  }
+}

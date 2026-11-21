@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "description": "A second tree section after ENDTREE. FTREX and ZEBRA do not read its gates (G1, G2), treat them as undefined events and set their probabilities to 1; here the gate lines are errors and G1 and G2 are undefined references.",
+  "covers": [
+    "misplaced-gate",
+    "undefined-reference"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "misplaced-gate",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G1",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "G2",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    }
+  }
+}

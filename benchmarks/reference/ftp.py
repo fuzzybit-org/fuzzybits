@@ -2,24 +2,38 @@
 
 This is **not** the product reader (``src/io/ftp``, #180). It exists so that
 reference values never depend on fuzzybits code (#159), and it is kept small
-enough to audit by eye. A project is an ordered set of files read as one model.
+enough to audit by eye. A project is an ordered set of files read as one model;
+sections do not continue from one file into the next.
 
 Line rules (``src/io/ftp/schema/ftrex_ftp.g4`` plus the conventions it leaves
-implicit):
+implicit). Where FTREX 2.0 and ZEBRA 1.0b reject a file, or skip a line and
+assume p = 1 for the events it would define, this parser reports an error
+(#191):
 
 - Names are ``[A-Za-z0-9_/-]+`` and may start with a digit. A leading ``-`` on
   a child reference complements it, so defined names may not start with ``-``.
 - ``NAME + c...`` is OR, ``NAME * c...`` is AND, ``NAME k c...`` is at-least-k.
   An indented line continues the child list of the gate above it.
-- ``ENDTREE`` closes a tree section; a later gate line opens another one.
+- The gate lines of a file are its tree section: it comes first and ends with
+  ``ENDTREE`` (``missing-endtree`` when a ``PROCESS``, ``IMPORT`` or ``LIMIT``
+  line or the end of the file comes first). A gate line after it is not read
+  (``misplaced-gate``).
 - ``PROCESS t...`` names targets; following lines of names only (no gate
-  operator in second position) add more targets.
-- ``IMPORT`` starts lines ``value name [I]``. A line whose first token is a
-  number containing ``.`` also starts an import block (CAFTA writes imports
-  without the ``IMPORT`` header after the last gate).
+  operator in second position) add more targets. A target that is neither a
+  gate nor imported is an error (``undefined-process-target``). Without
+  ``PROCESS`` the targets are the roots (``missing-process`` warning).
+- ``IMPORT`` starts records ``value name [I]``. A record outside an ``IMPORT``
+  section is not read (``import-without-header``). A referenced name that is
+  neither a gate nor imported is an error (``undefined-reference``), never an
+  implicit p = 1.
 - ``LIMIT x`` is the truncation limit (recorded, not used).
 - Lines starting with ``*`` are header lines (``**CHAR32``, ``**FTITLE: ...``,
-  ``**DBNAME: ...``, ``*XEQ``); they are recorded and otherwise ignored.
+  ``**DBNAME: ...``, ``*XEQ``); they are recorded and otherwise ignored. They
+  may appear between gate lines, but they end a ``PROCESS`` or ``IMPORT``
+  section.
+- An event imported more than once takes its last value by default, with a
+  warning (``first`` and ``error`` are options); an ``I`` on any of its
+  records makes it an initiator.
 """
 
 from __future__ import annotations
@@ -31,6 +45,7 @@ from typing import Iterable, Sequence
 
 OR, AND, ATLEAST = "or", "and", "atleast"
 POLICIES = ("error", "first", "last")
+DEFAULT_POLICY = "last"
 
 _NAME = re.compile(r"[A-Za-z0-9_/-]+\Z")
 _NUMBER = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[Ee][+-]?[0-9]+)?\Z")
@@ -121,7 +136,7 @@ class Project:
             seen.setdefault(imp.name, []).append(imp)
         return {name: occ for name, occ in seen.items() if len(occ) > 1}
 
-    def probabilities(self, policy: str = "error") -> tuple[dict[str, float], list[Diagnostic]]:
+    def probabilities(self, policy: str = DEFAULT_POLICY) -> tuple[dict[str, float], list[Diagnostic]]:
         """Resolve import values. ``error`` reports duplicates as errors and
         resolves them like ``first``; ``first``/``last`` report warnings."""
         if policy not in POLICIES:
@@ -149,7 +164,7 @@ class Project:
     def initiators(self) -> set[str]:
         return {imp.name for imp in self.imports if imp.initiator}
 
-    def all_diagnostics(self, policy: str) -> list[Diagnostic]:
+    def all_diagnostics(self, policy: str = DEFAULT_POLICY) -> list[Diagnostic]:
         return list(self.diagnostics) + self.probabilities(policy)[1]
 
 
@@ -171,8 +186,15 @@ def _is_op(tok: str) -> bool:
     return tok in ("+", "*") or tok.isdigit()
 
 
-def _is_implicit_import(toks: list[str]) -> bool:
-    return "." in toks[0] and bool(_NUMBER.match(toks[0]))
+def _is_record(toks: list[str]) -> bool:
+    """``value name [I]`` with a value that cannot be a name (it contains ``.``)."""
+    return (
+        2 <= len(toks) <= 3
+        and "." in toks[0]
+        and bool(_NUMBER.match(toks[0]))
+        and _is_name(toks[1])
+        and toks[2:] in ([], ["I"])
+    )
 
 
 class _Reader:
@@ -183,8 +205,10 @@ class _Reader:
         self.p.diagnostics.append(Diagnostic("error", code, message, name, (loc,)))
 
     def read(self, path: Path, label: str) -> None:
-        mode = "tree"  # tree | import | process
+        section: str | None = None  # "process" | "import" | None
         gate: Gate | None = None
+        tree: Location | None = None  # first gate line of the open tree section
+        after_tree = False
         text = path.read_text(encoding="latin-1")
         for lineno, raw in enumerate(text.splitlines(), 1):
             loc = Location(label, lineno)
@@ -194,40 +218,52 @@ class _Reader:
             head = toks[0]
             if head.startswith("*"):
                 self.p.headers.append(raw.strip())
+                section = None
                 continue
             if head in _KEYWORDS:
-                gate = None
-                mode = self.keyword(head, toks, loc)
+                if tree is not None and head != "ENDTREE":
+                    self.missing_endtree(tree, head)
+                tree, gate, after_tree = None, None, True
+                section = self.keyword(head, toks, loc)
                 continue
             indented = raw[0] in " \t"
-            if mode == "process":
+            if section == "process":
                 if all(_is_name(t) for t in toks) and not (len(toks) > 1 and _is_op(toks[1])):
                     self.p.process.extend(toks)
                     continue
-                mode = "tree"
-            if mode == "import" or _is_implicit_import(toks):
+                section = None
+            if section == "import":
                 if self.import_line(toks, loc):
-                    mode = "import"
-                    gate = None
                     continue
-                if mode == "import" and not indented and len(toks) >= 2 and _is_op(toks[1]):
-                    mode = "tree"
-                else:
+                if indented or len(toks) < 2 or not _is_op(toks[1]):
                     self.error("invalid-line", "expected 'value name [I]'", loc)
                     continue
+                section = None
+            if _is_record(toks):
+                self.error("import-without-header", "import record outside an IMPORT section is not read", loc,
+                           toks[1])
+                continue
             if indented:
                 if gate is None:
                     self.error("invalid-line", "continuation line without an open gate", loc)
                     continue
                 self.children(gate, toks, loc)
                 continue
-            gate = self.gate_line(toks, loc)
+            gate = self.gate_line(toks, loc, misplaced=after_tree)
+            if gate is not None and tree is None and not after_tree:
+                tree = loc
+        if tree is not None:
+            self.missing_endtree(tree, "the end of the file")
 
-    def keyword(self, head: str, toks: list[str], loc: Location) -> str:
+    def missing_endtree(self, start: Location, before: str) -> None:
+        message = f"the tree section starting at line {start.line} has no ENDTREE before {before}"
+        self.error("missing-endtree", message, start)
+
+    def keyword(self, head: str, toks: list[str], loc: Location) -> str | None:
         if head == "ENDTREE":
             if len(toks) > 1:
                 self.error("invalid-line", "unexpected tokens after ENDTREE", loc)
-            return "tree"
+            return None
         if head == "PROCESS":
             bad = [t for t in toks[1:] if not _is_name(t)]
             if bad:
@@ -243,7 +279,7 @@ class _Reader:
             self.error("invalid-line", "expected 'LIMIT value'", loc)
         else:
             self.p.limit = float(toks[1])
-        return "tree"
+        return None
 
     def import_line(self, toks: list[str], loc: Location) -> bool:
         if not (2 <= len(toks) <= 3 and _NUMBER.match(toks[0]) and _is_name(toks[1])):
@@ -256,7 +292,7 @@ class _Reader:
         self.p.imports.append(Import(toks[1], value, len(toks) == 3, loc))
         return True
 
-    def gate_line(self, toks: list[str], loc: Location) -> Gate | None:
+    def gate_line(self, toks: list[str], loc: Location, misplaced: bool = False) -> Gate | None:
         if len(toks) < 2 or not _is_name(toks[0]) or not _is_op(toks[1]):
             self.error("invalid-line", "expected 'NAME (+|*|k) children...'", loc)
             return None
@@ -269,6 +305,9 @@ class _Reader:
             kind, k = ATLEAST, int(op)
         gate = Gate(name, kind, k, [], loc)
         self.children(gate, toks[2:], loc)
+        if misplaced:
+            self.error("misplaced-gate", "gate line after the tree section of its file is not read", loc, name)
+            return gate  # continuation lines still belong to it; it is not registered
         if name in self.p.gates:
             first = self.p.gates[name].location
             self.p.diagnostics.append(
@@ -317,8 +356,13 @@ def _check(project: Project) -> None:
     for target in dict.fromkeys(project.process):
         if target not in project.gates and target not in imported:
             project.diagnostics.append(
-                Diagnostic("warning", "undefined-process-target", "PROCESS names an undefined gate", target)
+                Diagnostic("error", "undefined-process-target", "PROCESS names neither a gate nor an imported event",
+                           target)
             )
+    if not project.process:
+        project.diagnostics.append(
+            Diagnostic("warning", "missing-process", "no PROCESS targets; the targets are the root gates")
+        )
 
 
 def project_files(paths: Iterable[str | Path]) -> list[Path]:

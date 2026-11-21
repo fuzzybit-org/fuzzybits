@@ -1,11 +1,14 @@
 """Check or regenerate ``input/ftp/conformance/*/expected.json``.
 
-    python -m benchmarks.reference.fixtures            # check
-    python -m benchmarks.reference.fixtures --write    # regenerate computed fields
+    python -m benchmarks.reference.fixtures                       # check all
+    python -m benchmarks.reference.fixtures --write [NAME...]     # regenerate computed fields
 
 Hand-written fields (``description``, ``covers``, ``files``, ``targets``,
 ``variants[].policy`` / ``overrides``) are kept; structure counts, diagnostics
-and exact probabilities are recomputed with the exact evaluators.
+and exact probabilities are recomputed with the exact evaluators. A fixture
+with errors under every duplicate-import policy is diagnostic-only: it records
+the diagnostics per policy (results ``null``) and no ``default_targets`` or
+``structure``.
 """
 
 from __future__ import annotations
@@ -50,13 +53,16 @@ def exact_results(
     return out
 
 
+def diagnostic_only(spec: Mapping[str, Any]) -> bool:
+    """True when the fixture has errors under every policy (no results)."""
+    return all(block["results"] is None for block in spec["policies"].values())
+
+
 def compute(fixture: Path, spec: Mapping[str, Any]) -> dict:
     project = project_of(fixture, spec)
     targets = list(spec.get("targets") or project.default_targets())
     out: dict = {"schema_version": SCHEMA_VERSION}
     out.update({k: spec[k] for k in INPUT_KEYS if k in spec})
-    out["default_targets"] = project.default_targets()
-    out["structure"] = structure_counts(project)
     policies = {}
     for policy in POLICIES:
         diags = project.all_diagnostics(policy)
@@ -65,6 +71,13 @@ def compute(fixture: Path, spec: Mapping[str, Any]) -> dict:
             "diagnostics": [d.key() for d in diags],
             "results": exact_results(project, policy, targets) if ok else None,
         }
+    if diagnostic_only({"policies": policies}):
+        if spec.get("variants"):
+            raise ValueError(f"{fixture.name}: variants need a project without errors")
+        out["policies"] = policies
+        return out
+    out["default_targets"] = project.default_targets()
+    out["structure"] = structure_counts(project)
     out["policies"] = policies
     variants = []
     for v in spec.get("variants", []):
@@ -106,9 +119,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m benchmarks.reference.fixtures")
     ap.add_argument("--write", action="store_true", help="rewrite computed fields")
     ap.add_argument("--root", type=Path, default=FIXTURES)
+    ap.add_argument("names", nargs="*", metavar="NAME", help="fixture directory names (default: all)")
     args = ap.parse_args(argv)
+    fixtures = fixture_dirs(args.root)
+    unknown = sorted(set(args.names) - {f.name for f in fixtures})
+    if unknown:
+        ap.error(f"unknown fixtures: {', '.join(unknown)}")
     bad = 0
-    for fixture in fixture_dirs(args.root):
+    for fixture in fixtures:
+        if args.names and fixture.name not in args.names:
+            continue
         spec = load(fixture)
         got = compute(fixture, spec)
         if args.write:

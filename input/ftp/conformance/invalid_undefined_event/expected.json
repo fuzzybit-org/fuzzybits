@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "description": "C is referenced but neither a gate nor imported. FTREX and ZEBRA set its probability to 1 (FTREX warns that it is undefined); here it is an error.",
+  "covers": [
+    "undefined-reference"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    }
+  }
+}

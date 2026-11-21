@@ -9,7 +9,7 @@ import sys
 from typing import Mapping, Sequence
 
 from .exact import exact_probability
-from .ftp import POLICIES, ModelError, parse_project
+from .ftp import DEFAULT_POLICY, POLICIES, ModelError, parse_project
 from .hull import DEFAULT_BDD_BUDGET, estimate_hull
 from .montecarlo import DEFAULT_MEMORY_MIB, estimate_boolean
 from .structure import structure_counts
@@ -40,7 +40,7 @@ def run(
     semantics: str = "boolean",
     targets: Sequence[str] = (),
     overrides: Mapping[str, int] | None = None,
-    policy: str = "error",
+    policy: str = DEFAULT_POLICY,
     trials: int = 1 << 20,
     seed: int = 0,
     max_checks: int | None = None,
@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = ap.add_subparsers(dest="command", required=True)
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("files", nargs="+", help=".ftp files or directories (one model, in order)")
-    common.add_argument("--duplicate-import", choices=POLICIES, default="error")
+    common.add_argument("--duplicate-import", choices=POLICIES, default=DEFAULT_POLICY)
     common.add_argument("--json", action="store_true", help="print the JSON document")
     sub.add_parser("structure", parents=[common], help="structure counts and diagnostics")
     evaluate = argparse.ArgumentParser(add_help=False, parents=[common])
