@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "description": "Gate lines followed by PROCESS without ENDTREE. FTREX and ZEBRA reject the file ([ENDTREE] is missing).",
+  "covers": [
+    "missing-endtree"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "missing-endtree",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "missing-endtree",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "missing-endtree",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": null
+    }
+  }
+}

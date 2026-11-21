@@ -36,7 +36,15 @@ from benchmarks.reference import (  # noqa: E402
 )
 from benchmarks.reference import hull as hull_mod  # noqa: E402
 from benchmarks.reference.circuit import build_circuit, polarity  # noqa: E402
-from benchmarks.reference.fixtures import FIXTURES, compute, differences, fixture_dirs, load, project_of  # noqa: E402
+from benchmarks.reference.fixtures import (  # noqa: E402
+    FIXTURES,
+    compute,
+    diagnostic_only,
+    differences,
+    fixture_dirs,
+    load,
+    project_of,
+)
 
 FIXTURE_NAMES = [
     "delete_term_flags",
@@ -49,6 +57,33 @@ FIXTURE_NAMES = [
     "process_multi_target",
     "success_branch_delete_term",
 ]
+# Diagnostic-only fixtures (#191): (severity, code, name, line) in report order,
+# the same under every duplicate-import policy.
+INVALID_FIXTURES = {
+    "invalid_import_section_end": [
+        ("error", "import-without-header", "B", 10),
+        ("error", "import-without-header", "C", 12),
+        ("error", "undefined-reference", "B", 3),
+        ("error", "undefined-reference", "C", 4),
+    ],
+    "invalid_import_without_header": [
+        ("error", "import-without-header", "A", 7),
+        ("error", "import-without-header", "B", 8),
+        ("error", "import-without-header", "C", 9),
+        ("error", "undefined-reference", "A", 4),
+        ("error", "undefined-reference", "B", 4),
+        ("error", "undefined-reference", "C", 5),
+        ("warning", "missing-process", None, None),
+    ],
+    "invalid_no_endtree": [("error", "missing-endtree", None, 2)],
+    "invalid_second_tree_section": [
+        ("error", "misplaced-gate", "G1", 4),
+        ("error", "misplaced-gate", "G2", 5),
+        ("error", "undefined-reference", "G1", 2),
+        ("error", "undefined-reference", "G2", 2),
+    ],
+    "invalid_undefined_event": [("error", "undefined-reference", "C", 4)],
+}
 TIMING = {"seconds", "trials_per_second", "check_seconds", "lanes_per_second"}
 MC_TRIALS = 1 << 16
 Z_MAX = 4.0
@@ -77,19 +112,45 @@ def fixture(request) -> Path:
 
 
 def test_fixture_inventory():
-    assert [p.name for p in fixture_dirs()] == FIXTURE_NAMES
+    assert [p.name for p in fixture_dirs()] == sorted(FIXTURE_NAMES + list(INVALID_FIXTURES))
     for fx in fixture_dirs():
         spec = load(fx)
         assert spec["schema_version"] == 1
-        assert spec["structure"]["basic_events"] <= 20, fx.name
         assert all((fx / name).is_file() for name in spec["files"])
+        assert diagnostic_only(spec) == fx.name.startswith("invalid_"), fx.name
+        if not diagnostic_only(spec):
+            assert spec["structure"]["basic_events"] <= 20, fx.name
 
 
-def test_fixture_expected_is_current(fixture):
+@pytest.mark.parametrize("name", FIXTURE_NAMES + list(INVALID_FIXTURES))
+def test_fixture_expected_is_current(name):
     """Structure counts, diagnostics per duplicate-import policy and exact
     probabilities recomputed from the .ftp files match expected.json."""
-    spec = load(fixture)
-    assert differences(spec, compute(fixture, spec)) == []
+    fx = FIXTURES / name
+    spec = load(fx)
+    assert differences(spec, compute(fx, spec)) == []
+
+
+@pytest.mark.parametrize("name", list(INVALID_FIXTURES))
+def test_invalid_fixture_diagnostics(name):
+    """Diagnostic-only fixtures: the hand-written diagnostics under every
+    policy, no results, no structure, and the CLI refuses to evaluate."""
+    fx = FIXTURES / name
+    spec = load(fx)
+    assert set(spec) == {"schema_version", "description", "covers", "files", "policies"}
+    want = INVALID_FIXTURES[name]
+    for policy, block in spec["policies"].items():
+        got = [
+            (d["severity"], d["code"], d["name"], d["locations"][0][1] if d["locations"] else None)
+            for d in block["diagnostics"]
+        ]
+        assert got == want, policy
+        assert all(len(d["locations"]) <= 1 for d in block["diagnostics"])
+        assert block["results"] is None
+    out = _cli("exact", str(fx))
+    assert out.returncode == 1
+    errors = {code for severity, code, _, _ in want if severity == "error"}
+    assert errors <= set(re.findall(r"^error: ([a-z-]+):", out.stderr, re.MULTILINE))
 
 
 def _exact(name: str, target: str, semantics: str, policy: str = "first", overrides=None) -> float:
@@ -320,25 +381,84 @@ def test_parser_crlf_matches_lf(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "text,code",
+    "text,codes",
     [
-        ("  A B\nG + A\n0.1 A\n", "invalid-line"),
-        ("G ? A\n0.1 A\n", "invalid-line"),
-        ("G 3 A B\n0.1 A\n0.2 B\n", "invalid-gate"),
-        ("G + A X\n0.1 A\n", "undefined-reference"),
-        ("G + A\nG + A\n0.1 A\n", "duplicate-gate"),
-        ("G + A\nIMPORT\n0.1 A\n0.2 G\n", "gate-imported"),
-        ("G + A\nIMPORT\n1.5 A\n", "invalid-probability"),
-        ("G + --A\n0.1 A\n", "invalid-line"),
+        ("  A B\nG + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"invalid-line"}),
+        ("G ? A\nG + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"invalid-line"}),
+        ("G 3 A B\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n0.2 B\n", {"invalid-gate"}),
+        ("G + A X\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"undefined-reference"}),
+        ("G + A\nG + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"duplicate-gate"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n0.2 G\n", {"gate-imported"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n1.5 A\n", {"invalid-probability"}),
+        ("G + --A B\nENDTREE\nPROCESS G\nIMPORT\n0.1 B\n", {"invalid-line"}),
+        # #191: ENDTREE and IMPORT are required; undefined names are errors.
+        ("G + A\nPROCESS G\nIMPORT\n0.1 A\n", {"missing-endtree"}),
+        ("G + A\nIMPORT\n0.1 A\nPROCESS G\n", {"missing-endtree"}),
+        ("G + A\nLIMIT 1E-8\nPROCESS G\nIMPORT\n0.1 A\n", {"missing-endtree"}),
+        ("G + A\n", {"missing-endtree", "undefined-reference"}),
+        ("G + A\n  0.1 A\nENDTREE\nPROCESS G\n", {"import-without-header", "undefined-reference"}),
+        ("G + A\nENDTREE\n0.1 A\nPROCESS G\n", {"import-without-header", "undefined-reference"}),
+        ("G + A\nENDTREE\nPROCESS G\n0.1 A I\n", {"import-without-header", "undefined-reference"}),
+        ("G + A B\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\nLIMIT 1E-8\n0.2 B\n",
+         {"import-without-header", "undefined-reference"}),
+        ("G + A B\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n**FTITLE: x\n0.2 B\n",
+         {"import-without-header", "undefined-reference"}),
+        ("G + H\nENDTREE\nH + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"misplaced-gate", "undefined-reference"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\nH + A\n  A\n", {"misplaced-gate"}),
+        ("G + A\nENDTREE\nPROCESS G X\nIMPORT\n0.1 A\n", {"undefined-process-target"}),
+        ("G + A\nENDTREE\nPROCESS G\n**FTITLE: x\nG\nIMPORT\n0.1 A\n", {"invalid-line"}),
     ],
 )
-def test_parser_errors(tmp_path, text, code):
+def test_parser_errors(tmp_path, text, codes):
     p = parse_project([_write(tmp_path, text)])
-    assert code in {d.code for d in p.diagnostics if d.severity == "error"}
+    assert {d.code for d in p.diagnostics if d.severity == "error"} == codes
+
+
+def test_parser_diagnostic_locations(tmp_path):
+    p = parse_project([_write(tmp_path, "**CHAR32\nG + A\n  B\nPROCESS G\nIMPORT\n0.1 A\n0.2 B\n", "a.ftp"),
+                       _write(tmp_path, "H * A B\n", "b.ftp")])
+    endtree = [(d.key()["locations"], d.message) for d in p.diagnostics if d.code == "missing-endtree"]
+    assert endtree == [
+        ([["a.ftp", 2]], "the tree section starting at line 2 has no ENDTREE before PROCESS"),
+        ([["b.ftp", 1]], "the tree section starting at line 1 has no ENDTREE before the end of the file"),
+    ]
+    assert p.gates["G"].children == [("A", False), ("B", False)] and "H" in p.gates
+
+
+def test_header_lines_between_gate_lines(tmp_path):
+    """FTREX and ZEBRA accept header lines inside the tree section."""
+    p = parse_project([_write(tmp_path, "TOP * G1 G2\n**FTITLE: t\nG1 + A B\n*XEQ\nG2 + B C\nENDTREE\nPROCESS TOP\n"
+                                        "IMPORT\n0.1 A\n0.2 B\n0.3 C\n")])
+    assert p.diagnostics == [] and list(p.gates) == ["TOP", "G1", "G2"]
+
+
+def test_missing_process_warns_and_targets_roots(tmp_path):
+    path = _write(tmp_path, "R1 + A G\nR2 * B G\nG * A B\nENDTREE\nIMPORT\n0.1 A\n0.2 B\n")
+    p = parse_project([path])
+    assert [(d.severity, d.code) for d in p.diagnostics] == [("warning", "missing-process")]
+    assert p.default_targets() == p.roots() == ["R1", "R2"]
+    doc = run("exact", [str(path)])
+    assert [r["target"] for r in doc["results"]] == ["R1", "R2"]
+
+
+def test_duplicate_import_default_last_keeps_initiator(tmp_path):
+    """FTREX and ZEBRA: the last value wins (with a warning) and an I tag on
+    any record keeps the event an initiator."""
+    path = _write(tmp_path, "TOP * IE A\nENDTREE\nPROCESS TOP\nIMPORT\n0.1 IE I\n0.3 A\n0.5 IE\n")
+    p = parse_project([path])
+    probs, diags = p.probabilities()
+    assert probs == {"IE": 0.5, "A": 0.3} and p.initiators() == {"IE"}
+    assert [(d.severity, d.code, d.name) for d in diags] == [("warning", "duplicate-import", "IE")]
+    assert diags[0].key()["locations"] == [["m.ftp", 5], ["m.ftp", 7]]
+    assert p.probabilities("first")[0]["IE"] == 0.1
+    assert p.probabilities("error")[1][0].severity == "error"
+    doc = run("exact", [str(path)])
+    assert doc["duplicate_import"] == "last"
+    assert doc["results"][0]["probability"] == pytest.approx(0.5 * 0.3, rel=1e-12)
 
 
 def test_cycle_is_an_error(tmp_path):
-    p = parse_project([_write(tmp_path, "G + H A\nH * G A\nIMPORT\n0.1 A\n")])
+    p = parse_project([_write(tmp_path, "G + H A\nH * G A\nENDTREE\nIMPORT\n0.1 A\n")])
     probs, _ = p.probabilities()
     with pytest.raises(ModelError, match="cycle"):
         build_circuit(p, "G", probs)
@@ -371,10 +491,17 @@ def test_cli_exact_and_estimate_json():
 def test_cli_duplicate_import_policy():
     fx = str(FIXTURES / "imports_tags_duplicates")
     out = _cli("exact", fx)
-    assert out.returncode == 1 and "duplicate-import" in out.stderr
-    out = _cli("exact", "--duplicate-import", "last", "--target", "TOP", "--json", fx)
+    assert out.returncode == 0 and "warning: duplicate-import" in out.stderr
+    out = _cli("exact", "--target", "TOP", "--json", fx)
     assert out.returncode == 0
-    assert json.loads(out.stdout)["results"][0]["probability"] == pytest.approx(0.1072, rel=1e-12)
+    doc = json.loads(out.stdout)
+    assert doc["duplicate_import"] == "last"
+    assert [(d["severity"], d["code"]) for d in doc["diagnostics"]] == [("warning", "duplicate-import")]
+    assert doc["results"][0]["probability"] == pytest.approx(0.1072, rel=1e-12)
+    out = _cli("exact", "--duplicate-import", "first", "--target", "TOP", "--json", fx)
+    assert json.loads(out.stdout)["results"][0]["probability"] == pytest.approx(0.1108, rel=1e-12)
+    out = _cli("exact", "--duplicate-import", "error", fx)
+    assert out.returncode == 1 and "error: duplicate-import" in out.stderr
 
 
 def test_independence_from_fuzzybits():

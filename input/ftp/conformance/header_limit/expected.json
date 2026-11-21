@@ -1,13 +1,12 @@
 {
   "schema_version": 1,
-  "description": "Header lines (**CHAR32, **DBNAME:, **FTITLE:, *XEQ), LIMIT, no ENDTREE, and imports without an IMPORT header (as CAFTA writes them).",
+  "description": "Header lines (**CHAR32, **DBNAME:, **FTITLE:, *XEQ) and LIMIT around a tree closed by ENDTREE and an IMPORT section (FTREX and ZEBRA require both); no PROCESS, so the target is the root.",
   "covers": [
     "LIMIT",
     "**CHAR32",
     "**FTITLE:",
     "*XEQ",
-    "**DBNAME:",
-    "implicit import block"
+    "**DBNAME:"
   ],
   "files": [
     "model.ftp"
@@ -46,7 +45,14 @@
   },
   "policies": {
     "error": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "TOP": {
           "boolean": 0.224,
@@ -56,7 +62,14 @@
       }
     },
     "first": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "TOP": {
           "boolean": 0.224,
@@ -66,7 +79,14 @@
       }
     },
     "last": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "TOP": {
           "boolean": 0.224,

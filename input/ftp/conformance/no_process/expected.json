@@ -45,7 +45,14 @@
   },
   "policies": {
     "error": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "R1": {
           "boolean": 0.208,
@@ -60,7 +67,14 @@
       }
     },
     "first": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "R1": {
           "boolean": 0.208,
@@ -75,7 +89,14 @@
       }
     },
     "last": {
-      "diagnostics": [],
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "missing-process",
+          "name": null,
+          "locations": []
+        }
+      ],
       "results": {
         "R1": {
           "boolean": 0.208,

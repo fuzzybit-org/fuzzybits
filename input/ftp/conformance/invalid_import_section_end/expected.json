@@ -1,0 +1,161 @@
+{
+  "schema_version": 1,
+  "description": "A header line and LIMIT end the IMPORT section. FTREX and ZEBRA do not read the records after them (B and C) and set those probabilities to 1; here the records are errors and B and C are undefined references.",
+  "covers": [
+    "import-without-header after a header line",
+    "import-without-header after LIMIT",
+    "undefined-reference"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              10
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              10
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              10
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "import-without-header",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "B",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ]
+          ]
+        },
+        {
+          "severity": "error",
+          "code": "undefined-reference",
+          "name": "C",
+          "locations": [
+            [
+              "model.ftp",
+              4
+            ]
+          ]
+        }
+      ],
+      "results": null
+    }
+  }
+}
