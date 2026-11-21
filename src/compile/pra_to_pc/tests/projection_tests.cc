@@ -26,7 +26,7 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
     const auto house = builder.add_house_event({.stable_name = "H"}, false);
     const auto tree = builder.add_fault_tree({.stable_name = "FT"});
     const auto left = builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = a}, {.event = i}}, tree);
-    const auto right = builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = b, .complement = true}, {.event = j}}, tree);
+    const auto right = builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = b, .complement = true, .literal = true}, {.event = j}}, tree);
     const auto flag = builder.add_gate({.stable_name = "FLAG"}, pra::gate_kind::or_gate, {{.event = house}, {.event = a}}, tree);
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}, {.event = flag}}, tree);
     builder.add_fault_tree_top(tree, top);
@@ -89,8 +89,8 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
     CHECK(targets[0].initiator_delete_term.valid());
     CHECK_FALSE(targets[1].initiator_delete_term.valid());
     CHECK(events_of_span(projection.initiators(targets[0])) == std::vector<pra::basic_event_id>{i, j});
-    CHECK(events_of_span(projection.complemented_events(targets[0])) == std::vector<pra::basic_event_id>{b});
-    CHECK(events_of_span(projection.complemented_events(targets[2])).empty());
+    CHECK(events_of_span(projection.literal_events(targets[0])) == std::vector<pra::basic_event_id>{b});
+    CHECK(events_of_span(projection.literal_events(targets[2])).empty());
 }
 
 TEST_CASE("pc_projection default is empty", "[compile][pra_to_pc][projection]") {

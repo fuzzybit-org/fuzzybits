@@ -17,7 +17,7 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_compile_pra_to_pc_tests
-    SOURCES tests/lower_tests.cc tests/projection_tests.cc tests/pcfb_tests.cc tests/scale_tests.cc
+    SOURCES tests/lower_tests.cc tests/projection_tests.cc tests/pcfb_tests.cc tests/scale_tests.cc tests/literal_tests.cc
     LINK_LIBRARIES fuzzybits_compile_pra_to_pc fuzzybits_exact_eval pcfb
   )
 endif()

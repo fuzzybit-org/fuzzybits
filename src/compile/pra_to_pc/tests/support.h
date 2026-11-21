@@ -133,14 +133,14 @@ namespace pra_to_pc_test {
         }
 
         // Basic events reachable from `subject` without entering an overridden
-        // element; with `complemented`, only those referenced with a direct complement.
-        [[nodiscard]] auto cone_events(const pra::domain_ref subject, const bool complemented) const -> std::vector<pra::basic_event_id> {
+        // element; with `literals`, only those referenced through an operand marked `literal`.
+        [[nodiscard]] auto cone_events(const pra::domain_ref subject, const bool literals) const -> std::vector<pra::basic_event_id> {
             std::vector<std::uint8_t> seen_gate(model_.gates().size(), 0);
             std::vector<std::uint8_t> seen_event(model_.basic_events().size(), 0);
             std::vector<pra::basic_event_id> out;
             std::vector<std::pair<pra::domain_ref, bool>> stack{{subject, false}};
             while (!stack.empty()) {
-                const auto [element, complement] = stack.back();
+                const auto [element, literal] = stack.back();
                 stack.pop_back();
                 if (override_of(element)) {
                     continue;
@@ -149,13 +149,13 @@ namespace pra_to_pc_test {
                     if (seen_gate[gate.raw()] == 0) {
                         seen_gate[gate.raw()] = 1;
                         for (auto const &operand : model_.operands(gate)) {
-                            stack.emplace_back(operand.event, operand.complement);
+                            stack.emplace_back(operand.event, operand.literal);
                         }
                     }
                     continue;
                 }
                 const auto event = element.as<pra::basic_event_id>();
-                if (event.valid() && (!complemented || complement) && seen_event[event.raw()] == 0) {
+                if (event.valid() && (!literals || literal) && seen_event[event.raw()] == 0) {
                     seen_event[event.raw()] = 1;
                     out.push_back(event);
                 }

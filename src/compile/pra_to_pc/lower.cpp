@@ -118,7 +118,26 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
             pra::domain_ref subject;
             pc::observable_role role = pc::observable_role::primary;
             pra::negation_set negation;
+            pra::literal_mode literals = pra::literal_mode::atom_split;
         };
+
+        // Operands of these gates are not monotone in the gate's value.
+        [[nodiscard]] auto non_monotone(pra::gate const &row, const std::size_t operands) noexcept -> bool {
+            switch (row.kind) {
+            case pra::gate_kind::not_gate:
+            case pra::gate_kind::nand_gate:
+            case pra::gate_kind::nor_gate:
+            case pra::gate_kind::xor_gate:
+            case pra::gate_kind::xnor_gate:
+                return true;
+            case pra::gate_kind::cardinality:
+                return row.bounds.high < operands;
+            default:
+                return false;
+            }
+        }
+
+        constexpr std::size_t listed_warning_limit = 32;
 
         constexpr std::uint64_t id_limit = std::numeric_limits<std::uint32_t>::max() - 1U;
 
@@ -173,7 +192,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                         error("compile.pra_to_pc.empty-negation", "target " + in_quotes(request.name) + " requests no negation semantics");
                         return;
                     }
-                    resolved_target out{.negation = request.negation};
+                    resolved_target out{.negation = request.negation, .literals = request.literals.value_or(config_.default_literals)};
                     pra::domain_ref key;
                     if (!request.element) {
                         const auto target = model_.find_target(request.name);
@@ -358,32 +377,49 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                 }
             }
 
-            // Per target: the initiating events and directly complemented basic
-            // events of its cone. Each target walks its own cone, so the sets do
-            // not depend on what else is packed into the circuit.
+            // Per target: the initiating events of its cone, the basic events it
+            // reaches through operands marked `literal`, and which events occur
+            // below a non-monotone step (a complemented gate reference, a
+            // non_monotone() operand, or an unmarked complemented event operand).
+            // Literals come only from the marker, never from a complement alone.
+            // Each target walks its own cone, so the sets do not depend on what
+            // else is packed into the circuit. A gate is expanded at most twice
+            // per target: once when reached, once more if later reached below a
+            // non-monotone step.
             void collect_target_events() {
                 initiator_ranges_.assign(targets_.size(), {});
-                complement_ranges_.assign(targets_.size(), {});
-                if (model_.initiating_events().empty() && model_.summary().complemented_operand_count == 0) {
+                literal_ranges_.assign(targets_.size(), {});
+                if (model_.initiating_events().empty() && model_.summary().literal_operand_count == 0) {
                     return;
                 }
                 const auto event_count = model_.basic_events().size();
                 std::vector<std::uint32_t> gate_stamp(model_.gates().size(), 0);
+                std::vector<std::uint32_t> gate_below_stamp(model_.gates().size(), 0);
                 std::vector<std::uint32_t> initiator_stamp(event_count, 0);
-                std::vector<std::uint32_t> complement_stamp(event_count, 0);
-                std::vector<pra::gate_id> stack;
+                std::vector<std::uint32_t> literal_stamp(event_count, 0);
+                std::vector<std::uint32_t> event_below_stamp(event_count, 0);
+                std::vector<std::pair<pra::gate_id, bool>> stack;
+                std::vector<pra::basic_event_id> divergent;
+                std::vector<std::uint32_t> warned_initiator(event_count, 0);
+                std::size_t literal_warnings = 0;
+                std::size_t initiator_warnings = 0;
                 for (std::uint32_t target = 0; target < targets_.size(); ++target) {
                     const auto stamp = target + 1;
                     const auto initiators_begin = initiator_events_.size();
-                    const auto complements_begin = complemented_events_.size();
-                    const auto visit = [&](const pra::domain_ref element, const bool complement) {
+                    const auto literals_begin = literal_events_.size();
+                    const auto visit = [&](const pra::domain_ref element, const bool complement, const bool literal, const bool below) {
                         if (is_overridden(element)) {
                             return;
                         }
                         if (const auto gate = element.as<pra::gate_id>(); gate.valid()) {
+                            const bool gate_below = below || complement;
                             if (gate_stamp[gate.raw()] != stamp) {
                                 gate_stamp[gate.raw()] = stamp;
-                                stack.push_back(gate);
+                                gate_below_stamp[gate.raw()] = gate_below ? stamp : 0;
+                                stack.emplace_back(gate, gate_below);
+                            } else if (gate_below && gate_below_stamp[gate.raw()] != stamp) {
+                                gate_below_stamp[gate.raw()] = stamp;
+                                stack.emplace_back(gate, true);
                             }
                             return;
                         }
@@ -395,22 +431,68 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                             initiator_stamp[event.raw()] = stamp;
                             initiator_events_.push_back(event);
                         }
-                        if (complement && complement_stamp[event.raw()] != stamp) {
-                            complement_stamp[event.raw()] = stamp;
-                            complemented_events_.push_back(event);
+                        if (literal && literal_stamp[event.raw()] != stamp) {
+                            literal_stamp[event.raw()] = stamp;
+                            literal_events_.push_back(event);
+                        }
+                        if (below || (complement && !literal)) {
+                            event_below_stamp[event.raw()] = stamp;
                         }
                     };
-                    visit(targets_[target].subject, false);
+                    visit(targets_[target].subject, false, false, false);
                     while (!stack.empty()) {
-                        const auto gate = stack.back();
+                        const auto [gate, below] = stack.back();
                         stack.pop_back();
-                        for (auto const &operand : model_.operands(gate)) {
-                            visit(operand.event, operand.complement);
+                        if (!below && gate_below_stamp[gate.raw()] == stamp) {
+                            continue;
+                        }
+                        const auto operands = model_.operands(gate);
+                        const bool operands_below = below || non_monotone(model_.gates()[gate.raw()], operands.size());
+                        for (auto const &operand : operands) {
+                            visit(operand.event, operand.complement, operand.literal, operands_below);
                         }
                     }
                     initiator_ranges_[target] = sorted_range(initiator_events_, initiators_begin);
-                    complement_ranges_[target] = sorted_range(complemented_events_, complements_begin);
+                    literal_ranges_[target] = sorted_range(literal_events_, literals_begin);
+
+                    auto const &request = targets_[target];
+                    auto const &range = literal_ranges_[target];
+                    divergent.clear();
+                    for (std::uint32_t offset = 0; offset < range.count; ++offset) {
+                        const auto event = literal_events_[range.offset + offset];
+                        if (request.negation.monotone_hull && event_below_stamp[event.raw()] == stamp) {
+                            divergent.push_back(event);
+                        }
+                        if (config_.max_initiators_per_cutset && is_initiator_[event.raw()] != 0 && warned_initiator[event.raw()] == 0) {
+                            warned_initiator[event.raw()] = 1;
+                            if (initiator_warnings++ < listed_warning_limit) {
+                                diagnostics_.push(api::make_warning(
+                                    "compile.pra_to_pc.complemented-initiator",
+                                    "initiating event " + name(event) +
+                                        " has a literal complement; max_initiators_per_cutset is exact only for uncomplemented initiators"));
+                            }
+                        }
+                    }
+                    for (const auto event : divergent) {
+                        if (literal_warnings++ < listed_warning_limit) {
+                            diagnostics_.push(api::make_warning("compile.pra_to_pc.complement-under-negation",
+                                                                "target " + target_name(request) + ": basic event " + name(event) +
+                                                                    " is a literal and also occurs below a negation, "
+                                                                    "xor or upper-bounded cardinality; the literal modes can differ"));
+                        }
+                    }
                 }
+                const auto summarize = [&](const std::size_t total, const char *code, const char *what) {
+                    if (total > listed_warning_limit) {
+                        diagnostics_.push(api::make_warning(code, std::to_string(total - listed_warning_limit) + " further " + what + " not listed"));
+                    }
+                };
+                summarize(literal_warnings, "compile.pra_to_pc.complement-under-negation", "literal events below a negation");
+                summarize(initiator_warnings, "compile.pra_to_pc.complemented-initiator", "initiating events with a literal complement");
+            }
+
+            [[nodiscard]] auto target_name(resolved_target const &target) const -> std::string {
+                return target.domain_target.valid() ? name(target.domain_target) : name(target.subject);
             }
 
             [[nodiscard]] static auto sorted_range(std::vector<pra::basic_event_id> &column, const std::size_t begin)
@@ -454,7 +536,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                         edges += std::uint64_t{size} + 2;
                     }
                 }
-                if (nodes > id_limit || edges > id_limit || initiator_events_.size() > id_limit || complemented_events_.size() > id_limit) {
+                if (nodes > id_limit || edges > id_limit || initiator_events_.size() > id_limit || literal_events_.size() > id_limit) {
                     error("compile.pra_to_pc.capacity-exceeded", "the lowered circuit exceeds the R1 limit of 2^32 - 2 nodes or edges");
                 }
             }
@@ -525,8 +607,9 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                         .role = request.role,
                         .root = nodes_[request.subject],
                         .negation = request.negation,
+                        .literals = request.literals,
                         .initiators = initiator_ranges_[index],
-                        .complemented_events = complement_ranges_[index],
+                        .literal_events = literal_ranges_[index],
                     };
                     binding.node = binding.root;
                     if (const auto size = delete_term_size(index); size != 0) {
@@ -564,7 +647,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                         .pra_model = std::move(handle_),
                         .circuit = std::move(sealed.output),
                         .projection = pra::pc_projection(std::move(targets), std::move(events), std::move(overrides), std::move(generated),
-                                                         std::move(initiator_events_), std::move(complemented_events_)),
+                                                         std::move(initiator_events_), std::move(literal_events_)),
                         .report = report,
                     },
                     std::move(diagnostics_));
@@ -585,9 +668,9 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
             // By expression id: one PC probability source per shared PRA expression.
             std::vector<pc::probability_source_id> sources_;
             std::vector<pra::basic_event_id> initiator_events_;
-            std::vector<pra::basic_event_id> complemented_events_;
+            std::vector<pra::basic_event_id> literal_events_;
             std::vector<pra::table_range<pra::basic_event_id>> initiator_ranges_;
-            std::vector<pra::table_range<pra::basic_event_id>> complement_ranges_;
+            std::vector<pra::table_range<pra::basic_event_id>> literal_ranges_;
         };
 
     } // namespace

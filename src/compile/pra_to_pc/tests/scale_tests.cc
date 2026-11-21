@@ -58,7 +58,7 @@ TEST_CASE("pra_to_pc lowers a 1e5-gate DAG in linear time", "[compile][pra_to_pc
         operands.push_back(pra::operand_spec{.event = gate});
     }
     for (std::uint32_t event = 0; event < events; event += 3) {
-        operands.push_back(pra::operand_spec{.event = leaves[event], .complement = event % 2 == 0});
+        operands.push_back(pra::operand_spec{.event = leaves[event], .complement = event % 2 == 0, .literal = event % 2 == 0});
     }
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, operands);
     (void)builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, top);
@@ -77,7 +77,7 @@ TEST_CASE("pra_to_pc lowers a 1e5-gate DAG in linear time", "[compile][pra_to_pc
     auto const &binding = artifact.projection.target_bindings()[0];
     CHECK(binding.initiators.count > 1);
     CHECK(binding.initiators.count <= initiators);
-    CHECK(binding.complemented_events.count > 0);
+    CHECK(binding.literal_events.count > 0);
 
     const auto milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
     CAPTURE(milliseconds);
@@ -94,13 +94,13 @@ TEST_CASE("pra_to_pc lowers a 1e5-gate chain without recursion", "[compile][pra_
     pra::domain_ref below = event;
     for (std::uint32_t index = 0; index < length; ++index) {
         below = builder.add_gate({.stable_name = "G" + std::to_string(index)}, pra::gate_kind::or_gate,
-                                 {{.event = below, .complement = index % 2 == 0}, {.event = event}});
+                                 {{.event = below, .complement = index % 2 == 0, .literal = index == 0}, {.event = event}});
     }
     (void)builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, below);
     const auto model = seal(std::move(builder));
     const auto artifact = require_lower(model);
     CHECK(artifact.circuit.node_count() == length + 1);
     CHECK(artifact.circuit.edge_count() == 2 * length);
-    CHECK(events_of_span(artifact.projection.complemented_events(artifact.projection.target_bindings()[0])) ==
+    CHECK(events_of_span(artifact.projection.literal_events(artifact.projection.target_bindings()[0])) ==
           std::vector<pra::basic_event_id>{event});
 }

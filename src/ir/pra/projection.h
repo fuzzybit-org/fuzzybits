@@ -43,6 +43,21 @@ namespace fuzzybits::ir::pra {
         friend constexpr auto operator==(negation_set const &, negation_set const &) noexcept -> bool = default;
     };
 
+    // How a monotone-hull target reads a complemented basic-event operand
+    // marked `literal` (see target_binding::literal_events). Unmarked
+    // complements and negated gates stay delete terms in every mode; Boolean
+    // targets ignore the mode.
+    enum class literal_mode : std::uint8_t {
+        // Each marked operand is its own atom, sampled as not x_B; the query is
+        // the plain hull over atoms (the hull check's `split` treatment).
+        atom_split,
+        // The widening omega_L with L the positive literals plus not B for each
+        // event in literal_events (those events fixed in the hull check).
+        omega_l,
+        // Marked operands are ordinary complements: the plain hull.
+        negation,
+    };
+
     enum class event_binding_kind : std::uint8_t {
         basic_event,
         house_event,
@@ -94,22 +109,23 @@ namespace fuzzybits::ir::pra {
         pc::bool_node_id root;
         pc::bool_node_id node;
         negation_set negation;
+        literal_mode literals = literal_mode::atom_split;
         // Invalid unless the config sets max_initiators_per_cutset and the cone
         // holds more initiating events than it allows.
         pc::bool_node_id initiator_delete_term;
         // Slices of pc_projection::initiator_events() and
-        // pc_projection::complemented_events(), ascending basic-event ids.
+        // pc_projection::literal_events(), ascending basic-event ids.
         // `initiators`: basic events of initiating events in the cone.
-        // `complemented_events`: the significant negative literals (#190), i.e.
-        // basic events that some gate in the cone references with a direct
-        // complement (`-B`). An event that is negated only through a gate (an
-        // operand of a complemented gate reference, `not`, `nand` or `nor`) is
-        // not in the set. Both sets come from the PRA model, so passes over the
-        // circuit need not keep complemented edges where they were. Elements a
-        // config override replaced are constants, not events, and are in
-        // neither set; their operands are outside the cone.
+        // `literal_events`: basic events that some gate in the cone references
+        // through an operand marked `literal` (#199). The marker is the only
+        // source: an unmarked complemented operand is never a literal,
+        // whatever the source format, and an event negated only through a gate
+        // is not in the set. Both sets come from the PRA model, so passes over
+        // the circuit need not keep complemented edges where they were.
+        // Elements a config override replaced are constants, not events, and
+        // are in neither set; their operands are outside the cone.
         table_range<basic_event_id> initiators;
-        table_range<basic_event_id> complemented_events;
+        table_range<basic_event_id> literal_events;
     };
 
     // Sparse maps between a PRA model and the PC circuit lowered from it
@@ -121,9 +137,9 @@ namespace fuzzybits::ir::pra {
 
         pc_projection(std::vector<target_binding> targets, std::vector<event_binding> events, std::vector<override_binding> overrides,
                       std::vector<generated_binding> generated, std::vector<basic_event_id> initiator_events,
-                      std::vector<basic_event_id> complemented_events)
+                      std::vector<basic_event_id> literal_events)
             : targets_(std::move(targets)), events_(std::move(events)), overrides_(std::move(overrides)), generated_(std::move(generated)),
-              initiator_events_(std::move(initiator_events)), complemented_events_(std::move(complemented_events)) {
+              initiator_events_(std::move(initiator_events)), literal_events_(std::move(literal_events)) {
             std::ranges::stable_sort(targets_, {}, &target_binding::pc_target);
             std::ranges::stable_sort(events_, {}, &event_binding::node);
             std::ranges::stable_sort(generated_, {}, &generated_binding::node);
@@ -150,15 +166,15 @@ namespace fuzzybits::ir::pra {
         [[nodiscard]] auto initiator_events() const noexcept -> std::span<basic_event_id const> {
             return initiator_events_;
         }
-        [[nodiscard]] auto complemented_events() const noexcept -> std::span<basic_event_id const> {
-            return complemented_events_;
+        [[nodiscard]] auto literal_events() const noexcept -> std::span<basic_event_id const> {
+            return literal_events_;
         }
 
         [[nodiscard]] auto initiators(target_binding const &target) const noexcept -> std::span<basic_event_id const> {
             return slice(initiator_events_, target.initiators);
         }
-        [[nodiscard]] auto complemented_events(target_binding const &target) const noexcept -> std::span<basic_event_id const> {
-            return slice(complemented_events_, target.complemented_events);
+        [[nodiscard]] auto literal_events(target_binding const &target) const noexcept -> std::span<basic_event_id const> {
+            return slice(literal_events_, target.literal_events);
         }
 
         [[nodiscard]] auto find_target(const pc::target_id target) const noexcept -> target_binding const * {
@@ -217,7 +233,7 @@ namespace fuzzybits::ir::pra {
         std::vector<override_binding> overrides_;
         std::vector<generated_binding> generated_;
         std::vector<basic_event_id> initiator_events_;
-        std::vector<basic_event_id> complemented_events_;
+        std::vector<basic_event_id> literal_events_;
         std::vector<std::uint32_t> targets_by_domain_;
         std::vector<std::uint32_t> events_by_element_;
     };

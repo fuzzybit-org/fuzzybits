@@ -67,7 +67,9 @@ namespace {
             for (std::uint32_t operand = 0; operand < fan_in; ++operand) {
                 const auto recent = std::min<std::uint32_t>(static_cast<std::uint32_t>(elements.size()), 4);
                 const auto source = chance(0.5) ? static_cast<std::uint32_t>(elements.size()) - 1 - uniform(0, recent - 1) : pick(elements);
-                operands.push_back(pra::operand_spec{.event = elements[source], .complement = chance(0.35)});
+                const auto complement = chance(0.35);
+                const auto literal = complement && elements[source].kind() == pra::element_kind::basic_event && chance(0.5);
+                operands.push_back(pra::operand_spec{.event = elements[source], .complement = complement, .literal = literal});
             }
             const auto gate_name = "G" + std::to_string(index);
             const pra::element_spec spec{.stable_name = gate_name};
@@ -228,10 +230,10 @@ TEST_CASE("pra_to_pc matches brute-force PRA semantics on random models", "[comp
 
         const pra_reference reference(sample.model, sample.overrides);
         for (auto const &target : lowered.projection.target_bindings()) {
-            CHECK(events_of_span(lowered.projection.complemented_events(target)) == reference.cone_events(target.subject, true));
+            CHECK(events_of_span(lowered.projection.literal_events(target)) == reference.cone_events(target.subject, true));
             CHECK(events_of_span(lowered.projection.initiators(target)) == reference.cone_initiators(target.subject));
             with_delete_terms += target.initiator_delete_term.valid() ? 1 : 0;
-            with_complements += target.complemented_events.count != 0 ? 1 : 0;
+            with_complements += target.literal_events.count != 0 ? 1 : 0;
         }
         with_rule += sample.config.max_initiators_per_cutset ? 1 : 0;
         with_overrides += sample.overrides.empty() ? 0 : 1;
@@ -293,7 +295,7 @@ TEST_CASE("pra_to_pc overrides become constants and cut the cone", "[compile][pr
         CHECK_FALSE(projection.override_bindings()[3].node.valid());
         CHECK(artifact.report.overridden_elements == 3);
         // An overridden event is a constant, not a significant literal.
-        CHECK(projection.complemented_events(projection.target_bindings()[0]).empty());
+        CHECK(projection.literal_events(projection.target_bindings()[0]).empty());
     }
 
     SECTION("kinds disambiguate names and resolution errors are reported") {
@@ -437,18 +439,20 @@ TEST_CASE("pra_to_pc records significant literals per target", "[compile][pra_to
         b.push_back(builder.add_basic_event({.stable_name = "B" + std::to_string(index)}, pra::expression_spec::literal(0.5)));
     }
     const auto house = builder.add_house_event({.stable_name = "H"}, true);
-    // B1: directly complemented.
-    const auto direct = builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate, {{.event = b[1], .complement = true}, {.event = b[0]}});
+    // B1: a marked literal. B2: also directly complemented, unmarked: a negation, never a literal.
+    const auto direct = builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate,
+                                         {{.event = b[1], .complement = true, .literal = true}, {.event = b[0]}, {.event = b[2], .complement = true}});
     // B2: positive inside a complemented gate reference. B3: under not. B4: under nor. B5: under nand.
     const auto negated = builder.add_gate({.stable_name = "NEGATED"}, pra::gate_kind::or_gate, {{.event = b[2]}, {.event = b[0]}});
     const auto g_not = builder.add_gate({.stable_name = "NOT_B3"}, pra::gate_kind::not_gate, {{.event = b[3]}});
     const auto g_nor = builder.add_gate({.stable_name = "NOR_B4"}, pra::gate_kind::nor_gate, {{.event = b[4]}, {.event = b[0]}});
     const auto g_nand = builder.add_gate({.stable_name = "NAND_B5"}, pra::gate_kind::nand_gate, {{.event = b[5]}});
-    // B6: directly complemented inside a gate that is itself complemented; still a direct complement.
-    const auto inner = builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::and_gate, {{.event = b[6], .complement = true}, {.event = b[0]}});
-    // B7: complemented and overridden. B8: complemented only in OTHER's cone. B9 twice, both polarities.
-    const auto overridden = builder.add_gate({.stable_name = "OVERRIDDEN"}, pra::gate_kind::or_gate, {{.event = b[7], .complement = true}});
-    const auto both = builder.add_gate({.stable_name = "BOTH"}, pra::gate_kind::xor_gate, {{.event = b[9]}, {.event = b[9], .complement = true}});
+    // B6: a marked literal inside a gate that is itself complemented; still a literal.
+    const auto inner =
+        builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::and_gate, {{.event = b[6], .complement = true, .literal = true}, {.event = b[0]}});
+    // B7: a literal, overridden. B8: a literal only in OTHER's cone. B9 twice, both polarities.
+    const auto overridden = builder.add_gate({.stable_name = "OVERRIDDEN"}, pra::gate_kind::or_gate, {{.event = b[7], .complement = true, .literal = true}});
+    const auto both = builder.add_gate({.stable_name = "BOTH"}, pra::gate_kind::xor_gate, {{.event = b[9]}, {.event = b[9], .complement = true, .literal = true}});
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
                                       {{.event = direct},
                                        {.event = negated, .complement = true},
@@ -459,7 +463,7 @@ TEST_CASE("pra_to_pc records significant literals per target", "[compile][pra_to
                                        {.event = overridden},
                                        {.event = both},
                                        {.event = house, .complement = true}});
-    const auto other = builder.add_gate({.stable_name = "OTHER"}, pra::gate_kind::and_gate, {{.event = b[8], .complement = true}, {.event = direct}});
+    const auto other = builder.add_gate({.stable_name = "OTHER"}, pra::gate_kind::and_gate, {{.event = b[8], .complement = true, .literal = true}, {.event = direct}});
     (void)builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, top);
     (void)builder.add_target({.stable_name = "OTHER"}, pra::domain_target_kind::gate, other);
     (void)builder.add_target({.stable_name = "B10"}, pra::domain_target_kind::basic_event, b[10]);
@@ -472,10 +476,10 @@ TEST_CASE("pra_to_pc records significant literals per target", "[compile][pra_to
 
     auto const &projection = artifact.projection;
     REQUIRE(projection.target_bindings().size() == 3);
-    CHECK(events_of_span(projection.complemented_events(projection.target_bindings()[0])) == std::vector<pra::basic_event_id>{b[1], b[6], b[9]});
-    CHECK(events_of_span(projection.complemented_events(projection.target_bindings()[1])) == std::vector<pra::basic_event_id>{b[1], b[8]});
-    CHECK(projection.complemented_events(projection.target_bindings()[2]).empty());
-    CHECK(projection.complemented_events().size() == 5);
+    CHECK(events_of_span(projection.literal_events(projection.target_bindings()[0])) == std::vector<pra::basic_event_id>{b[1], b[6], b[9]});
+    CHECK(events_of_span(projection.literal_events(projection.target_bindings()[1])) == std::vector<pra::basic_event_id>{b[1], b[8]});
+    CHECK(projection.literal_events(projection.target_bindings()[2]).empty());
+    CHECK(projection.literal_events().size() == 5);
 }
 
 TEST_CASE("pra_to_pc probability policy", "[compile][pra_to_pc][probability]") {

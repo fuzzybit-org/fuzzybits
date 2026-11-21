@@ -24,6 +24,8 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
         // placed directly on the element of that kind and name.
         std::optional<ir::pra::element_kind> element;
         ir::pra::negation_set negation;
+        // Unset: quantification_config::default_literals.
+        std::optional<ir::pra::literal_mode> literals;
     };
 
     // `element := TRUE | FALSE`. The element becomes a constant under every
@@ -48,6 +50,12 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
         // `default_negation`.
         std::vector<target_request> targets;
         ir::pra::negation_set default_negation;
+        // How monotone-hull targets read operands marked `literal` in the PRA
+        // model; recorded on every target, ignored by Boolean targets and by
+        // models without marked operands. A hull target warns
+        // (compile.pra_to_pc.complement-under-negation) for each literal event
+        // that also occurs below a non-monotone step, where the modes can differ.
+        ir::pra::literal_mode default_literals = ir::pra::literal_mode::atom_split;
         // Added after `targets`, with pc::observable_role::watch.
         std::vector<target_request> watch_targets;
         std::vector<override_request> overrides;
@@ -101,7 +109,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
     // Lowers the targets' cones of a sealed model, gate for gate. Every
     // diagnostic is reported; the artifact is returned only without errors.
     // Linear in the union cone, plus one walk of each target's cone when the
-    // model has initiating events or complemented operands.
+    // model has initiating events or operands marked `literal`.
     [[nodiscard]] auto lower(ir::pra::model const &model, quantification_config const &config = {}) -> lowering_result;
     [[nodiscard]] auto lower(ir::handle const &model, quantification_config const &config = {}) -> lowering_result;
 
