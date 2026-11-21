@@ -9,7 +9,8 @@ Related: [#177](https://github.com/fuzzybit-org/fuzzybits/issues/177) (pass sema
 [#183](https://github.com/fuzzybit-org/fuzzybits/issues/183) (runtime),
 [#6](https://github.com/fuzzybit-org/fuzzybits/issues/6) (importance sampling)  
 Format: `.pcfb` `QueryKind.MONOTONE_HULL_PROBABILITY`, pcfb 1.2
-([`SPEC-v1.2.md`](https://github.com/fuzzybit-org/pcfb/blob/main/docs/SPEC-v1.2.md))
+([`SPEC-v1.2.md`](https://github.com/fuzzybit-org/pcfb/blob/main/docs/SPEC-v1.2.md),
+[pcfb#10](https://github.com/fuzzybit-org/pcfb/pull/10))
 
 ## 0. Summary
 
