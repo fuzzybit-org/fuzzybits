@@ -93,6 +93,8 @@ namespace fuzzybits::ir::pra {
                 return "nand";
             case gate_kind::nor_gate:
                 return "nor";
+            case gate_kind::xnor_gate:
+                return "xnor";
             }
             return "unknown";
         }
@@ -439,6 +441,7 @@ namespace fuzzybits::ir::pra {
                     case gate_kind::xor_gate:
                     case gate_kind::nand_gate:
                     case gate_kind::nor_gate:
+                    case gate_kind::xnor_gate:
                         if (count == 0) {
                             error("ir.pra.empty-gate",
                                   describe(row.element) + " is " + with_article(gate_kind_name(row.kind)) + " gate without operands");

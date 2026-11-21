@@ -51,7 +51,8 @@ TEST_CASE("PRA builder seals a 1e5-gate DAG of depth >= 200 without recursion", 
     constexpr std::uint32_t width = 400;
     constexpr std::uint32_t events = 2000;
     constexpr std::array kinds{pra::gate_kind::or_gate,  pra::gate_kind::and_gate, pra::gate_kind::cardinality, pra::gate_kind::xor_gate,
-                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::not_gate};
+                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate,
+                               pra::gate_kind::not_gate};
 
     const auto start = std::chrono::steady_clock::now();
     pra::builder builder;
