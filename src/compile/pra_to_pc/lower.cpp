@@ -61,6 +61,8 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                 return pc::op_code::nand_gate;
             case pra::gate_kind::nor_gate:
                 return pc::op_code::nor_gate;
+            case pra::gate_kind::xnor_gate:
+                return pc::op_code::xnor_gate;
             }
             return pc::op_code::and_gate;
         }

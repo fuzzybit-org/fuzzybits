@@ -38,7 +38,7 @@ namespace {
         const auto chance = [&](const double p) { return std::bernoulli_distribution(p)(rng); };
         const auto pick = [&](auto const &values) { return uniform(0, static_cast<std::uint32_t>(values.size()) - 1); };
         constexpr std::array kinds{pra::gate_kind::and_gate, pra::gate_kind::or_gate,   pra::gate_kind::cardinality, pra::gate_kind::not_gate,
-                                   pra::gate_kind::xor_gate, pra::gate_kind::nand_gate, pra::gate_kind::nor_gate};
+                                   pra::gate_kind::xor_gate, pra::gate_kind::nand_gate, pra::gate_kind::nor_gate,  pra::gate_kind::xnor_gate};
         constexpr std::array probabilities{0.0, 1.0, 0.5, 0.1, 0.9, 0.25};
 
         pra::builder builder;
@@ -144,10 +144,12 @@ TEST_CASE("pra_to_pc lowers every connective function-preservingly", "[compile][
                                         {{.event = c}, {.event = d}, {.event = e, .complement = true}}, tree);
     const auto g_nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate, {{.event = a}, {.event = g_or, .complement = true}}, tree);
     const auto g_nor = builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate, {{.event = d}, {.event = off}}, tree);
+    const auto g_xnor = builder.add_gate({.stable_name = "G_XNOR"}, pra::gate_kind::xnor_gate,
+                                         {{.event = b}, {.event = c, .complement = true}, {.event = g_nand}}, tree);
     const auto g_shared = builder.add_gate({.stable_name = "G_SHARED"}, pra::gate_kind::and_gate, {{.event = g_xor}, {.event = g_range}}, tree);
     const auto g_single = builder.add_gate({.stable_name = "G_SINGLE"}, pra::gate_kind::or_gate, {{.event = e, .complement = true}}, tree);
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                                      {{.event = g_or}, {.event = g_not}, {.event = g_nand}, {.event = g_nor}, {.event = g_shared}}, tree);
+                                      {{.event = g_or}, {.event = g_not}, {.event = g_nand}, {.event = g_nor}, {.event = g_xnor}, {.event = g_shared}}, tree);
     builder.add_fault_tree_top(tree, top);
     const auto side = builder.add_gate({.stable_name = "SIDE"}, pra::gate_kind::and_gate, {{.event = g_shared}, {.event = g_single, .complement = true}});
     const auto unused = builder.add_gate({.stable_name = "UNUSED"}, pra::gate_kind::or_gate, {{.event = a}});
@@ -173,10 +175,10 @@ TEST_CASE("pra_to_pc lowers every connective function-preservingly", "[compile][
     CHECK(projection.target_bindings()[2].subject == pra::domain_ref(side));
     CHECK(require_lower(model).circuit.targets().size() == 2);
 
-    // One node per element of the union cone: 6 events, 2 house events, 12 gates.
-    CHECK(circuit.node_count() == 20);
+    // One node per element of the union cone: 6 events, 2 house events, 13 gates.
+    CHECK(circuit.node_count() == 21);
     CHECK(projection.node_of(unused) == pc::bool_node_id::invalid());
-    CHECK(lowered.report.source_gates == 12);
+    CHECK(lowered.report.source_gates == 13);
     CHECK(lowered.report.source_basic_events == 6);
     CHECK(lowered.report.source_house_events == 2);
     CHECK(lowered.report.pc_nodes == circuit.node_count());
@@ -197,6 +199,7 @@ TEST_CASE("pra_to_pc lowers every connective function-preservingly", "[compile][
     CHECK(code(g_xor) == pc::op_code::xor_gate);
     CHECK(code(g_nand) == pc::op_code::nand_gate);
     CHECK(code(g_nor) == pc::op_code::nor_gate);
+    CHECK(code(g_xnor) == pc::op_code::xnor_gate);
     CHECK(code(g_single) == pc::op_code::or_gate);
     CHECK(code(on) == pc::op_code::house_event);
     CHECK(code(a) == pc::op_code::basic_event);

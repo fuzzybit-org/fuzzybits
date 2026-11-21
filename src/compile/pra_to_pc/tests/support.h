@@ -119,6 +119,9 @@ namespace pra_to_pc_test {
                 case pra::gate_kind::nor_gate:
                     value = trues == 0;
                     break;
+                case pra::gate_kind::xnor_gate:
+                    value = (trues % 2) == 0;
+                    break;
                 }
                 gate_values[gate.raw()] = value ? 1 : 0;
             }

@@ -20,7 +20,7 @@ TEST_CASE("pra_to_pc lowers a 1e5-gate DAG in linear time", "[compile][pra_to_pc
     constexpr std::uint32_t events = 2000;
     constexpr std::uint32_t initiators = 50;
     constexpr std::array kinds{pra::gate_kind::or_gate,  pra::gate_kind::and_gate, pra::gate_kind::cardinality, pra::gate_kind::xor_gate,
-                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::not_gate};
+                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate, pra::gate_kind::not_gate};
 
     pra::builder builder;
     builder.reserve_gates(layers * width + 1, layers * width * 3 + width);
