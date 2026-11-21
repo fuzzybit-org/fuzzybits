@@ -330,6 +330,8 @@ CCF group attribution -> generated basic events + original member/group roll-up
 
 The aggregation binding is the place to represent those relationships, not `pc::target_view`.
 
+The result kind of a target (Boolean probability or monotone-hull probability, [`rfc/monotone-hull-queries.md`](rfc/monotone-hull-queries.md)) is a quantification-config choice recorded on the lowering artifact and serialized as `.pcfb` `Query.kind`, because `pc::target_view` carries no result kind.
+
 ## Result Projection
 
 Solvers should not know about OpenPSA, SAPHIRE, or PRA report structure. They should compute result values over their computational input.
