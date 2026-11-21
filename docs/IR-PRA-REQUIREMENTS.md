@@ -1,6 +1,6 @@
 # `fuzzybits::ir::pra` Requirements
 
-Status: initial domain contract  
+Status: R1 value model, builder and validation implemented (#175); readers, lowering and evaluation deferred  
 Scope: `src/ir/pra`, PRA IO adapters, PRA-to-PC lowering, projection, and PRA-domain result serialization
 
 ## Boundary
@@ -63,26 +63,117 @@ targets, domain basic events needed for products/importance, generated CCF event
 sequences/end states/hazard or system roll-ups. Intermediate PC nodes remain compiler artifacts unless they are needed
 for projection, diagnostics, or provenance.
 
+## Implemented: R1 Fault-Tree Subset (#175)
+
+`src/ir/pra` (CMake target `fuzzybits_ir_pra`, umbrella header `ir/pra/pra.h`) implements the fault-tree subset of the
+value contract, a builder and structural validation. It does not parse files, evaluate expressions, lower to PC or
+expand CCF.
+
+### Storage
+
+- **Ids:** dense, 32-bit, strongly typed per table (`element_id`, `source_file_id`, `expression_id`, `basic_event_id`,
+  `house_event_id`, `initiating_event_id`, `gate_id`, `fault_tree_id`, `domain_target_id`), assigned in insertion
+  order. `domain_ref` is a typed reference (`element_kind` plus row) to any element table.
+- **Tables:** one `std::vector` of trivially copyable rows per entity kind. Per-entity lists (gate operands, attributes,
+  source locations, fault-tree gates and top gates) are `table_range` slices of shared columns. Strings live in one text
+  pool and rows hold `text_ref` slices, so there are no per-entity heap objects.
+- **Sealed model:** `pra::model` is immutable, shares its storage between copies and exposes spans. Lookup by stable
+  name within a kind (`find`, `find_gate`, ...) uses an open-addressing index built at seal time (expected O(1)).
+  `topological_gates()` lists every gate after the gates among its operands. `summary()` records gate and operand
+  counts, complemented operands, gate depth, and the gate and expression kinds present.
+- **Handle:** `to_handle()` wraps the model in `ir::handle` with storage type and form `ir.pra.model` (endpoint
+  `ir.pra`); the form profile also satisfies `ir.probabilistic_risk_model`. `pra::is_pra(handle)` and
+  `pra::model_from(handle)` extract it.
+
+### Entities
+
+| Entity | Fields | Notes |
+|---|---|---|
+| `element_metadata` | owner, `stable_name`, `qualified_name`, `label`, attributes, sources | one row per entity of every kind below |
+| `source_file` | `path`, `sha256`, `format` | |
+| `source_location` | file, line | line 0 means unknown; an entity may have several locations |
+| `attribute` | name, value | source hints that are not model semantics (FTP `LIMIT`, header lines, unknown flags) |
+| `project_metadata` | name, label, attributes | |
+| `expression` | kind (`literal`, `parameter`, `unsupported`), quantity (`probability`, `frequency`), value, parameter name, diagnostic id, detail | stored, never evaluated; basic events may share one |
+| `basic_event` | element, expression | |
+| `house_event` | element, value | |
+| `initiating_event` | element, basic event | the basic event carries the value, which may be a frequency |
+| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`; operands reference a basic event, house event or gate, each with a complement flag |
+| `fault_tree` | element, gates, top gates | gates are those whose owner is the tree; top gates must be owned by the tree |
+| `domain_target` | element, kind, role (`primary`, `watch`), subject | kinds `fault_tree_top` (subject: a fault tree with exactly one top gate), `gate`, `basic_event`; `sequence` and `end_state` are reserved |
+
+At-least-k over n operands is `cardinality(k, n)`.
+
+### Construction
+
+`pra::builder` returns ids as entities are added and resolves references when it seals. A reference is an id or a
+stable name, so a gate may name a gate, event or target subject that is added later or comes from another source file
+of the same project. An unqualified name resolves against the kinds the use site admits (gate operands: gates, basic
+events, house events) and must match exactly one; `reference::named(kind, name)` restricts it to one kind. Stable names
+are compared exactly and may be any non-empty byte string (`1A`, `X/Y`, `A--B`). Attributes and source locations can be
+attached when an entity is added or later.
+
+`std::move(builder).seal()` returns `finalize_result { model output; api::diagnostic_list diagnostics; }`. Every error
+found is reported; the model is returned only when there are none.
+
+### Validation
+
+Hard IR validity errors, all with severity `error`:
+
+| Diagnostic id | Condition |
+|---|---|
+| `ir.pra.missing-name` | an entity has an empty stable name |
+| `ir.pra.duplicate-name` | a stable name is used twice within one entity kind; the message lists the source locations |
+| `ir.pra.dangling-reference` | a name or id resolves to nothing: gate operands, the basic event of an initiating event, fault-tree top gates and owners, target subjects, expression ids, source files of locations, owners of late attributes and locations |
+| `ir.pra.ambiguous-reference` | an unqualified name matches several admissible kinds |
+| `ir.pra.invalid-reference` | a reference resolves to a kind the use site does not admit |
+| `ir.pra.cycle` | gates depend on themselves; one diagnostic per cycle found, naming its gates |
+| `ir.pra.empty-gate` | an `and`, `or`, `xor`, `nand`, `nor` or `cardinality` gate without operands |
+| `ir.pra.invalid-arity` | a `not` gate without exactly one operand |
+| `ir.pra.invalid-cardinality` | bounds outside `0 <= low <= high <= n` |
+| `ir.pra.invalid-literal` | a non-finite literal, a probability outside [0, 1] or a negative frequency |
+| `ir.pra.invalid-expression` | a parameter expression without a name or an unsupported expression without a diagnostic id |
+| `ir.pra.invalid-fault-tree-top` | a top gate not owned by its fault tree, or listed twice |
+| `ir.pra.invalid-target` | a `fault_tree_top` target on a fault tree without exactly one top gate |
+| `ir.pra.unsupported-target-kind` | a `sequence` or `end_state` target |
+| `ir.pra.capacity-exceeded` | a table or the text pool exceeds the 32-bit range |
+
+Endpoint-specific rules stay in the endpoints: for example the FTP reader's duplicate-import policy, its `k = 0`
+diagnostic and its handling of out-of-range initiator values (#180), and the lowering's probability policy (#181).
+
+Every pass is linear, or expected linear for name lookups, and iterative: Kahn's algorithm orders gates and an
+iterative walk over the gates it cannot order extracts the cycles. Nothing recurses on graph depth. A synthetic
+100,001-gate DAG of depth 251 builds and seals in about 0.1 s in Release, and a 100,000-gate chain is ordered, or its
+cycle reported, with a 128 KiB stack.
+
+### Extension Points Left Open
+
+- `expression_kind` grows with rates, mission-time conversion and deviates once the evaluator gate below is met.
+- `domain_target_kind` already reserves `sequence` and `end_state`; `element_kind` grows with event-tree entities.
+- Nested formulas (OpenPSA gates with formula children, event-tree branch conditions) need a formula arena; R1 gates
+  hold one connective over event operands, and constants are house events.
+- Parameter definitions are not entities yet; a `parameter` expression names its parameter.
+
 ## Deferred Implementation Gates
 
-The current code defines the public PRA value contract only. The following executable pieces remain intentionally
+R1 implements the value model, builder and validation above. The following executable pieces remain intentionally
 unimplemented until their input/output semantics and compatibility obligations are precise enough to avoid baking
 schema-specific behavior into `ir::pra`.
 
 ### Model Construction And Validation
 
+Implemented for the R1 subset: dense ids, `table_range` slices, reference resolution and the diagnostics listed above.
+
 Still needed:
 
-- a builder or construction API that assigns dense ids, fills `table_range` slices, validates references, and emits
-  diagnostics;
-- invariant checks for missing metadata, invalid ranges, dangling references, duplicate stable names where uniqueness is
-  required, malformed formula/expression operands, and invalid target subjects.
+- construction and validation of formula arenas, event-tree entities, parameters and CCF declarations as those
+  entities are added;
+- invariant checks for malformed formula/expression operands once formulas and expression operands exist.
 
 Implementation gate:
 
-- implement only after the first reader or compiler endpoint has concrete construction needs that cannot be met by plain
-  value initialization;
-- define which invariants are hard IR validity requirements and which are endpoint-specific compatibility constraints;
+- extend the builder only with the entity kinds a reader or compiler endpoint needs;
+- keep hard IR validity requirements (the `ir.pra.*` errors) separate from endpoint-specific compatibility constraints;
 - define diagnostics ids for structural errors before adding silent normalization or repair behavior.
 
 ### External Readers
