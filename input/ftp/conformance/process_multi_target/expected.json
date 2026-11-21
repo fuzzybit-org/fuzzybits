@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "description": "PROCESS names three targets over two lines; UNUSED is a root that is not a target. T2 complements an event.",
+  "covers": [
+    "PROCESS with several targets",
+    "PROCESS continued on the next line",
+    "root that is not a PROCESS target",
+    "complemented event reference"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "T1",
+    "T2",
+    "T3"
+  ],
+  "structure": {
+    "gates": 5,
+    "gates_by_kind": {
+      "or": 2,
+      "and": 2,
+      "atleast": 1
+    },
+    "atleast_k_of_n": {
+      "2/3": 1
+    },
+    "edges": 11,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 2,
+    "basic_events": 4,
+    "import_lines": 4,
+    "complemented_edges": 1,
+    "complemented_edges_to_basic_events": 1,
+    "roots": [
+      "T1",
+      "T2",
+      "T3",
+      "UNUSED"
+    ],
+    "process_targets": [
+      "T1",
+      "T2",
+      "T3"
+    ],
+    "limit": 1e-10,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "T1": {
+          "boolean": 0.622,
+          "hull": 0.622,
+          "variables": 3
+        },
+        "T2": {
+          "boolean": 0.46399999999999997,
+          "hull": 0.58,
+          "variables": 3
+        },
+        "T3": {
+          "boolean": 0.09800000000000002,
+          "hull": 0.09800000000000002,
+          "variables": 3
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "T1": {
+          "boolean": 0.622,
+          "hull": 0.622,
+          "variables": 3
+        },
+        "T2": {
+          "boolean": 0.46399999999999997,
+          "hull": 0.58,
+          "variables": 3
+        },
+        "T3": {
+          "boolean": 0.09800000000000002,
+          "hull": 0.09800000000000002,
+          "variables": 3
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "T1": {
+          "boolean": 0.622,
+          "hull": 0.622,
+          "variables": 3
+        },
+        "T2": {
+          "boolean": 0.46399999999999997,
+          "hull": 0.58,
+          "variables": 3
+        },
+        "T3": {
+          "boolean": 0.09800000000000002,
+          "hull": 0.09800000000000002,
+          "variables": 3
+        }
+      }
+    }
+  }
+}

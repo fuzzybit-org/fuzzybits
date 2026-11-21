@@ -102,6 +102,15 @@ if [[ -n "${gpus}" ]]; then
   echo "docker --gpus ${gpus}"
   run_args+=(--gpus "${gpus}")
 fi
+# Private models (#38, #185) stay on the host: mount read-only, never copy.
+if [[ -n "${FUZZYBITS_PRIVATE_FIXTURES_DIR:-}" ]]; then
+  if [[ ! -d "${FUZZYBITS_PRIVATE_FIXTURES_DIR}" ]]; then
+    echo "error: FUZZYBITS_PRIVATE_FIXTURES_DIR is not a directory" >&2
+    exit 2
+  fi
+  echo "private fixtures mounted read-only at /private"
+  run_args+=(-v "${FUZZYBITS_PRIVATE_FIXTURES_DIR}:/private:ro" -e FUZZYBITS_PRIVATE_FIXTURES_DIR=/private)
+fi
 
 # --rm so a job timeout does not leave a GPU-resident container. Inner MC
 # runs still use `timeout 60` (CTest TIMEOUT / smoke.sh / spine.sh) inside
