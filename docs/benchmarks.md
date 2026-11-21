@@ -534,10 +534,11 @@ Vendor outputs are not committed.
     target.
 
   A complemented gate, also a single-input one, is a delete term in every mode.
-  The three modes agree with each other wherever no directly complemented event
-  also occurs under a complemented gate; elsewhere the tools report a warning
-  `complement-under-negation` (split and omega can differ there, and split can
-  exceed the plain hull). Droppable variables at p = 1 are not constants;
+  `split` and `omega` agree wherever no directly complemented event also
+  occurs under a complemented gate; elsewhere the tools report a warning
+  `complement-under-negation` (they can differ there, and `split` can exceed
+  the plain hull). `positive` drops the complements and differs whenever one
+  matters (T2 below). Droppable variables at p = 1 are not constants;
   variables at p = 0 are constants. The atom `-NAME` of an event at p = 0 is a
   droppable variable at p = 1, not TRUE.
 - **Initiator rule** (#190): `--max-initiators-per-cutset N` conjoins

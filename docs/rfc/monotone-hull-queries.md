@@ -44,7 +44,7 @@ Decisions proposed here:
    `ir::pra` quantification config (§7.1, §7.2).
 6. **Literal mode** (§3), per hull target: `atom_split` (default), `omega_l`, or `positive`. The lowering records the
    directly complemented events of the target's cone and warns (`complement-under-negation`) where one also occurs
-   under a negated gate, the only place the modes can differ (Theorem 10(c)).
+   under a negated gate, the only place `atom_split` and `omega_l` can differ (Theorem 10(c)).
 7. **Initiator rule** (§4.8): `max_initiators_per_cutset = m` is lowered as the delete term
    $\neg\,\mathrm{atleast}(m+1;\ \text{initiating events})$; under the hull it deletes exactly the minimal cut sets with
    more than $m$ initiators (Corollary 3.4, Theorem 10(f)).
