@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "description": "Gate and event names that start with digits or contain '/' or '--' (not XML NCNames), including a complemented reference to such a name.",
+  "covers": [
+    "names starting with digits",
+    "names containing '/'",
+    "names containing '--'",
+    "complemented reference to a name with '--'"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "1-TOP"
+  ],
+  "structure": {
+    "gates": 3,
+    "gates_by_kind": {
+      "or": 1,
+      "and": 1,
+      "atleast": 1
+    },
+    "atleast_k_of_n": {
+      "2/3": 1
+    },
+    "edges": 8,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 2,
+    "basic_events": 6,
+    "import_lines": 6,
+    "complemented_edges": 1,
+    "complemented_edges_to_basic_events": 1,
+    "roots": [
+      "1-TOP"
+    ],
+    "process_targets": [
+      "1-TOP"
+    ],
+    "limit": 1e-10,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 9,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "1-TOP": {
+          "boolean": 0.507,
+          "hull": 0.51,
+          "variables": 6
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "1-TOP": {
+          "boolean": 0.507,
+          "hull": 0.51,
+          "variables": 6
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "1-TOP": {
+          "boolean": 0.507,
+          "hull": 0.51,
+          "variables": 6
+        }
+      }
+    }
+  }
+}

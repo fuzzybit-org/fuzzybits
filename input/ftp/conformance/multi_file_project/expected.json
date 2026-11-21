@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "description": "One model split over three files: top logic, system logic (gates referenced across files) and a separate IMPORT file.",
+  "covers": [
+    "multi-file project",
+    "cross-file gate references",
+    "separate IMPORT file",
+    "shared event (reconvergence)",
+    "I tags"
+  ],
+  "files": [
+    "01_top.ftp",
+    "02_systems.ftp",
+    "03_imports.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 7,
+    "gates_by_kind": {
+      "or": 3,
+      "and": 4,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 16,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 4,
+    "basic_events": 8,
+    "import_lines": 8,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 2,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.0019254481299999999,
+          "hull": 0.0019254481299999999,
+          "variables": 8
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.0019254481299999999,
+          "hull": 0.0019254481299999999,
+          "variables": 8
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.0019254481299999999,
+          "hull": 0.0019254481299999999,
+          "variables": 8
+        }
+      }
+    }
+  }
+}

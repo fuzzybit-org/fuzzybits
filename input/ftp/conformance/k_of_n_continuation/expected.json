@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "description": "At-least gates with k = 1, k = n and 1 < k < n, single-input AND and OR gates, gate children on continuation lines (one 564 characters long, tab and space separators).",
+  "covers": [
+    "k-of-n with k = 1",
+    "k-of-n with k = n",
+    "k-of-n with 1 < k < n",
+    "single-input gates",
+    "long continuation lines",
+    "gate line without children (children on continuation lines)",
+    "tab separators"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 7,
+    "gates_by_kind": {
+      "or": 3,
+      "and": 1,
+      "atleast": 3
+    },
+    "atleast_k_of_n": {
+      "1/3": 1,
+      "2/4": 1,
+      "3/3": 1
+    },
+    "edges": 26,
+    "single_input_gates": 2,
+    "max_fan_in": 9,
+    "depth": 3,
+    "basic_events": 20,
+    "import_lines": 20,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.6372981032253088,
+          "hull": 0.6372981032253088,
+          "variables": 20
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.6372981032253088,
+          "hull": 0.6372981032253088,
+          "variables": 20
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.6372981032253088,
+          "hull": 0.6372981032253088,
+          "variables": 20
+        }
+      }
+    }
+  }
+}

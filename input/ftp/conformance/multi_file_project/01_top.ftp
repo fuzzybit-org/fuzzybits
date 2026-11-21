@@ -1,0 +1,8 @@
+**CHAR32
+**FTITLE: multi-file project, top logic
+TOP + SEQ-A SEQ-B
+SEQ-A * IE-A SYS-A
+SEQ-B * IE-B SYS-A SYS-B
+ENDTREE
+PROCESS TOP
+*XEQ

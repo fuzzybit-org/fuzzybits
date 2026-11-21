@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "description": "I-tagged imports, events with value 0 and 1 (one I-tagged at 1), and an event imported twice with different values.",
+  "covers": [
+    "IMPORT with I tags",
+    "import value 0",
+    "import value 1",
+    "duplicated import",
+    "duplicate-import policy error|first|last"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 4,
+    "gates_by_kind": {
+      "or": 1,
+      "and": 3,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 12,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 2,
+    "basic_events": 9,
+    "import_lines": 10,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 3,
+    "initiator_tagged_events_with_p_1": 1,
+    "events_p_eq_1": 2,
+    "events_p_eq_0": 1,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {
+      "A": [
+        {
+          "value": 0.3,
+          "initiator": false,
+          "file": "model.ftp",
+          "line": 12
+        },
+        {
+          "value": 0.2,
+          "initiator": false,
+          "file": "model.ftp",
+          "line": 18
+        }
+      ]
+    }
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "error",
+          "code": "duplicate-import",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ],
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": null
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "duplicate-import",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ],
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.11080000000000001,
+          "hull": 0.11080000000000001,
+          "variables": 9
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "duplicate-import",
+          "name": "A",
+          "locations": [
+            [
+              "model.ftp",
+              12
+            ],
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.10720000000000002,
+          "hull": 0.10720000000000002,
+          "variables": 9
+        }
+      }
+    }
+  }
+}

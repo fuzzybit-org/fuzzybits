@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "description": "Header lines (**CHAR32, **DBNAME:, **FTITLE:, *XEQ), LIMIT, no ENDTREE, and imports without an IMPORT header (as CAFTA writes them).",
+  "covers": [
+    "LIMIT",
+    "**CHAR32",
+    "**FTITLE:",
+    "*XEQ",
+    "**DBNAME:",
+    "implicit import block"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 3,
+    "gates_by_kind": {
+      "or": 2,
+      "and": 1,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 6,
+    "single_input_gates": 0,
+    "max_fan_in": 2,
+    "depth": 2,
+    "basic_events": 3,
+    "import_lines": 3,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [],
+    "limit": 1e-08,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.224,
+          "hull": 0.224,
+          "variables": 3
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.224,
+          "hull": 0.224,
+          "variables": 3
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.224,
+          "hull": 0.224,
+          "variables": 3
+        }
+      }
+    }
+  }
+}

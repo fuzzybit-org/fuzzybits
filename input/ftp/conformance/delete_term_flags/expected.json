@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "description": "SEQ = IE and FAIL and not(S or DEL) with DEL = FLAG-A and FLAG-B, both at p = 1: Boolean semantics gives exactly 0, the monotone hull drops the flags. Variants force DEL or one flag FALSE.",
+  "covers": [
+    "delete-term pair of two p = 1 flags",
+    "Boolean 0, hull > 0",
+    "gate override",
+    "event override",
+    "binate event"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "SEQ"
+  ],
+  "structure": {
+    "gates": 6,
+    "gates_by_kind": {
+      "or": 2,
+      "and": 4,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 13,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 3,
+    "basic_events": 7,
+    "import_lines": 7,
+    "complemented_edges": 1,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "SEQ"
+    ],
+    "process_targets": [
+      "SEQ"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 1,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 2,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "SEQ": {
+          "boolean": 0.0,
+          "hull": 0.0107,
+          "variables": 7
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "SEQ": {
+          "boolean": 0.0,
+          "hull": 0.0107,
+          "variables": 7
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "SEQ": {
+          "boolean": 0.0,
+          "hull": 0.0107,
+          "variables": 7
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "policy": "error",
+      "overrides": {
+        "DEL": 0
+      },
+      "results": {
+        "SEQ": {
+          "boolean": 0.00802,
+          "hull": 0.0107,
+          "variables": 5
+        }
+      }
+    },
+    {
+      "policy": "error",
+      "overrides": {
+        "FLAG-A": 0
+      },
+      "results": {
+        "SEQ": {
+          "boolean": 0.00802,
+          "hull": 0.0107,
+          "variables": 6
+        }
+      }
+    }
+  ]
+}

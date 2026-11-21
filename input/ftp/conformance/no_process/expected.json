@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "description": "A project without PROCESS and without header lines; the targets are the two roots.",
+  "covers": [
+    "project without PROCESS",
+    "several roots",
+    "no header lines"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "R1",
+    "R2"
+  ],
+  "structure": {
+    "gates": 3,
+    "gates_by_kind": {
+      "or": 1,
+      "and": 2,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 6,
+    "single_input_gates": 0,
+    "max_fan_in": 2,
+    "depth": 2,
+    "basic_events": 4,
+    "import_lines": 4,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "R1",
+      "R2"
+    ],
+    "process_targets": [],
+    "limit": null,
+    "initiator_tagged_events": 0,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "R1": {
+          "boolean": 0.208,
+          "hull": 0.208,
+          "variables": 3
+        },
+        "R2": {
+          "boolean": 0.024,
+          "hull": 0.024,
+          "variables": 3
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "R1": {
+          "boolean": 0.208,
+          "hull": 0.208,
+          "variables": 3
+        },
+        "R2": {
+          "boolean": 0.024,
+          "hull": 0.024,
+          "variables": 3
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "R1": {
+          "boolean": 0.208,
+          "hull": 0.208,
+          "variables": 3
+        },
+        "R2": {
+          "boolean": 0.024,
+          "hull": 0.024,
+          "variables": 3
+        }
+      }
+    }
+  }
+}
