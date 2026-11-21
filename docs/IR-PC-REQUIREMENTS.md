@@ -484,6 +484,8 @@ struct transform_result {
 - memory amplification estimate or measurement;
 - whether the transform was semantics-preserving, normalizing, lossy, or projection-affecting.
 
+For probability targets, "semantics-preserving" must separate function-preserving from distribution-preserving transforms and name the query kinds a distribution-preserving transform preserves (folding probability-1 events preserves the Boolean probability but not the monotone hull; see [`rfc/monotone-hull-queries.md`](rfc/monotone-hull-queries.md#75-transform-compatibility)).
+
 Transforms that may materially alter graph identity include:
 
 - constant propagation;
