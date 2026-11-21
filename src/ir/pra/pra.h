@@ -11,4 +11,5 @@
 #include "ir/pra/id.h"
 #include "ir/pra/metadata.h"
 #include "ir/pra/model.h"
+#include "ir/pra/projection.h"
 #include "ir/pra/target.h"
