@@ -6,6 +6,7 @@
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/edge.h"
+#include "ir/pc/probability.h"
 
 #include <algorithm>
 #include <cctype>
@@ -13,6 +14,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -52,22 +55,6 @@ namespace {
         return std::filesystem::path(PROJECT_SOURCE_DIR);
     }
 
-    // Public corpus: generated trees under input/ftp/synthetic/ plus the
-    // hand-written snippets in tests/testdata/. Vendor CAFTA/MHTGR/G-PWR FTP
-    // models are not in this public tree (#38). Point
-    // FUZZYBITS_PRIVATE_FIXTURES_DIR at a local checkout of those files to
-    // include them in the round-trip corpus.
-    [[nodiscard]] auto ftpCorpusRoots() -> std::vector<std::filesystem::path> {
-        std::vector<std::filesystem::path> roots{
-            projectRoot() / "input" / "ftp" / "synthetic",
-            projectRoot() / "src" / "io" / "ftp" / "tests" / "testdata",
-        };
-        if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR"); privateDir != nullptr && privateDir[0] != '\0') {
-            roots.emplace_back(privateDir);
-        }
-        return roots;
-    }
-
     void collectFtpFiles(std::filesystem::path const &root, std::vector<std::filesystem::path> &files) {
         std::error_code error;
         auto iterator = std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error);
@@ -96,21 +83,48 @@ namespace {
         }
     }
 
-    [[nodiscard]] auto ftpCorpusFiles() -> std::vector<std::filesystem::path> {
+    struct corpus_project final {
+        std::string label;
         std::vector<std::filesystem::path> files;
-        for (auto const &root : ftpCorpusRoots()) {
-            collectFtpFiles(root, files);
+    };
+
+    // Public corpus: every file under input/ftp/synthetic/ and tests/testdata/
+    // is a project. Vendor CAFTA/MHTGR/G-PWR FTP models are not in this public
+    // tree (#38); every directory with .ftp files under
+    // FUZZYBITS_PRIVATE_FIXTURES_DIR is read as one project, labelled by index only.
+    [[nodiscard]] auto ftpCorpus() -> std::vector<corpus_project> {
+        std::vector<std::filesystem::path> files;
+        collectFtpFiles(projectRoot() / "input" / "ftp" / "synthetic", files);
+        collectFtpFiles(projectRoot() / "src" / "io" / "ftp" / "tests" / "testdata", files);
+        std::ranges::sort(files);
+        std::vector<corpus_project> projects;
+        for (auto const &file : files) {
+            projects.push_back(corpus_project{.label = file.lexically_relative(projectRoot()).generic_string(), .files = {file}});
         }
-        std::ranges::sort(files, [](auto const &lhs, auto const &rhs) {
-            return lhs.generic_string() < rhs.generic_string();
-        });
-        return files;
+
+        if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR"); privateDir != nullptr && privateDir[0] != '\0') {
+            files.clear();
+            collectFtpFiles(privateDir, files);
+            std::map<std::filesystem::path, std::vector<std::filesystem::path>> byDirectory;
+            for (auto const &file : files) {
+                byDirectory[file.parent_path()].push_back(file);
+            }
+            for (auto &[directory, members] : byDirectory) {
+                std::ranges::sort(members);
+                projects.push_back(corpus_project{.label = "private project " + std::to_string(projects.size()), .files = members});
+            }
+        }
+        return projects;
     }
 
-    [[nodiscard]] auto readFile(std::filesystem::path const &path) -> fuzzybits::io::backend::fuzzybits::ftp::ftp_read_result {
-        std::ifstream input(path);
-        REQUIRE(input);
-        return fuzzybits::io::backend::fuzzybits::ftp::read(input);
+    [[nodiscard]] auto readProject(corpus_project const &project) -> fuzzybits::io::backend::fuzzybits::ftp::ftp_read_result {
+        std::vector<fuzzybits::io::backend::fuzzybits::ftp::source_text> sources;
+        for (auto const &file : project.files) {
+            std::ifstream input(file, std::ios::binary);
+            REQUIRE(input);
+            sources.push_back({.path = file.generic_string(), .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
+        }
+        return fuzzybits::io::backend::fuzzybits::ftp::read(sources);
     }
 
     [[nodiscard]] auto requirePcModel(fuzzybits::io::backend::fuzzybits::ftp::read_output const &read)
@@ -186,18 +200,24 @@ TEST_CASE("FTP writer round-trips the writable PC subset", "[io][ftp]") {
 }
 
 TEST_CASE("FTP input corpus round-trips to stable write checksums", "[io][ftp][corpus]") {
-    const auto files = ftpCorpusFiles();
-    if (files.empty()) {
+    const auto projects = ftpCorpus();
+    if (projects.empty()) {
         SKIP("No public FTP fixtures; set FUZZYBITS_PRIVATE_FIXTURES_DIR to a directory of .ftp files");
     }
 
-    for (auto const &file : files) {
-        DYNAMIC_SECTION(file.lexically_relative(projectRoot()).generic_string()) {
-            auto firstRead = readFile(file);
+    for (auto const &project : projects) {
+        DYNAMIC_SECTION(project.label) {
+            auto firstRead = readProject(project);
             INFO(diagnosticsText(firstRead.diagnostics()));
             REQUIRE(firstRead);
 
             auto const &firstPc = requirePcModel(firstRead.value());
+            if (!std::ranges::all_of(firstPc.probability_sources(), [](auto const &source) {
+                    return source.kind == fuzzybits::ir::pc::probability_source_kind::literal;
+                })) {
+                SUCCEED("frequencies are not literal probabilities; the FTP writer cannot round-trip them");
+                continue;
+            }
             const auto firstOutput = writeOutput(firstPc, firstRead.value().metadata.truncation_limit);
             std::istringstream reparsedInput(firstOutput);
             auto secondRead = fuzzybits::io::backend::fuzzybits::ftp::read(reparsedInput);

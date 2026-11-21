@@ -21,6 +21,9 @@ TEST_CASE("FTP reader imports a simple circuit", "[io][ftp]") {
     std::istringstream input(R"ftp(**CHAR32
 TOP + A MID
 MID * B C
+ENDTREE
+PROCESS TOP
+IMPORT
          1.000000E-01 A
          2.000000E-01 B
          3.000000E-01 C
@@ -48,6 +51,9 @@ LIMIT    1.000000E-05
 TEST_CASE("FTP reader imports a k-of-n gate", "[io][ftp]") {
     std::istringstream input(R"ftp(**CHAR32
 TOP 2 A B C
+ENDTREE
+PROCESS TOP
+IMPORT
          1.000000E-01 A
          2.000000E-01 B
          3.000000E-01 C
@@ -72,6 +78,9 @@ LIMIT    1.000000E-05
 TEST_CASE("FTP reader preserves complemented child references", "[io][ftp]") {
     std::istringstream input(R"ftp(**CHAR32
 TOP * A -B
+ENDTREE
+PROCESS TOP
+IMPORT
          1.000000E-01 A
          2.000000E-01 B
 LIMIT    1.000000E-05

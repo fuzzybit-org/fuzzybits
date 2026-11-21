@@ -1,16 +1,21 @@
 # FTP IO tests
 
-Public fixtures live in `tests/testdata/` (hand-written snippets covering AND/OR,
-complement, k-of-n, LIMIT, ENDTREE, and ignored PROCESS/IMPORT lines) and
-`input/ftp/synthetic/` (generated trees). They are round-tripped by
-`fuzzybits_io_ftp_tests`.
+- `conformance_tests.cc`: every fixture under `input/ftp/conformance/` (#179, #191) is read with
+  `ftp::read_project` under each duplicate-import policy; diagnostics, structure counts, default targets
+  and the exact Boolean probability of every listed target must match `expected.json`.
+- `project_tests.cc`: the `ir::pra` model (gates, events, initiators, targets, attributes, source
+  locations), multi-file projects, one negative case per `io.ftp.*` diagnostic, and a 1e5-gate chain.
+- `read_tests.cc`, `write_tests.cc`: the `ir::pc` path and the writer. Public fixtures live in
+  `tests/testdata/` and `input/ftp/synthetic/`; each is read, written and re-read to a stable checksum.
 
-CAFTA / MHTGR / G-PWR / other vendor FTP models are **not** in this repository
-(see fuzzybits#38). To run the corpus against a private copy of those files:
+CAFTA / MHTGR / G-PWR / other vendor FTP models are **not** in this repository (see fuzzybits#38).
+With `FUZZYBITS_PRIVATE_FIXTURES_DIR` set, every directory below it holding `.ftp` files joins the
+round-trip corpus as one project, and every `ftp/<MODEL>/` with a `<MODEL>.card.json` is read and
+compared with the card's `structure` under its `policy.duplicate_import`. Only pass/fail, mismatching
+field names and read times are printed:
 
 ```
-FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/ftp ctest -R fuzzybits_io_ftp_tests
+FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/private-fixtures ctest -R fuzzybits_io_ftp_tests
 ```
 
-The directory is scanned recursively for `*.ftp`. If no public or private
-fixtures are found, the corpus case `SKIP`s rather than failing.
+Without the variable the private case `SKIP`s.

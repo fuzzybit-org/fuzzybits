@@ -1,6 +1,6 @@
 TOP * A B C
 ENDTREE
-PROCESS ignored
+PROCESS TOP
 IMPORT
          1.000000E-01 A
          2.000000E-01 B
