@@ -147,14 +147,6 @@ TEST_CASE("pra_to_pc warns where the literal modes can differ", "[compile][pra_t
         CHECK(count(lower_ok(negated_and_direct(false), config), divergence) == 0);
     }
 
-    SECTION("an unmarked complement of a literal event is a negation") {
-        small_model m;
-        const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
-        const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.b, .complement = true}});
-        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
-        CHECK(divergent(lower_ok(std::move(m).seal_with_target(top), config)) == std::vector<std::string>{"B"});
-    }
-
     SECTION("AB or C not B does not warn") {
         small_model m;
         const auto both = m.builder.add_gate({.stable_name = "AB"}, pra::gate_kind::and_gate, {{.event = m.a}, {.event = m.b}});
@@ -341,4 +333,25 @@ TEST_CASE("pra_to_pc takes literal events only from marked operands", "[compile]
     // C is an initiator with an unmarked complement only.
     CHECK(count(lowered.diagnostics(), complemented_initiator) == 0);
     CHECK(count(lowered.diagnostics(), divergence) == 0);
+}
+
+TEST_CASE("pra_to_pc rejects literal and unmarked complements of one event in a hull target", "[compile][pra_to_pc][literals]") {
+    small_model m;
+    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
+    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.b, .complement = true}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+    const auto model = std::move(m).seal_with_target(top);
+
+    lowering::quantification_config config;
+    config.targets = {hull("T")};
+    for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l}) {
+        config.default_literals = mode;
+        auto lowered = lowering::lower(model, config);
+        REQUIRE_FALSE(lowered);
+        CHECK(count(lowered.diagnostics(), "compile.pra_to_pc.mixed-literal") == 1);
+    }
+
+    config.default_literals = pra::literal_mode::negation;
+    CHECK(count(lower_ok(model, config), "compile.pra_to_pc.mixed-literal") == 0);
+    CHECK(count(lower_ok(model, lowering::quantification_config{}), "compile.pra_to_pc.mixed-literal") == 0);
 }

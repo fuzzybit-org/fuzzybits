@@ -398,6 +398,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                 std::vector<std::uint32_t> initiator_stamp(event_count, 0);
                 std::vector<std::uint32_t> literal_stamp(event_count, 0);
                 std::vector<std::uint32_t> event_below_stamp(event_count, 0);
+                std::vector<std::uint32_t> unmarked_stamp(event_count, 0);
                 std::vector<std::pair<pra::gate_id, bool>> stack;
                 std::vector<pra::basic_event_id> divergent;
                 std::vector<std::uint32_t> warned_initiator(event_count, 0);
@@ -438,6 +439,9 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                         if (below || (complement && !literal)) {
                             event_below_stamp[event.raw()] = stamp;
                         }
+                        if (complement && !literal) {
+                            unmarked_stamp[event.raw()] = stamp;
+                        }
                     };
                     visit(targets_[target].subject, false, false, false);
                     while (!stack.empty()) {
@@ -460,7 +464,14 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                     divergent.clear();
                     for (std::uint32_t offset = 0; offset < range.count; ++offset) {
                         const auto event = literal_events_[range.offset + offset];
-                        if (request.negation.monotone_hull && event_below_stamp[event.raw()] == stamp) {
+                        // The hull check reads every complemented edge into an atom-split or
+                        // omega_L event as the literal, so an unmarked complement of the same
+                        // event cannot keep its negation reading.
+                        if (request.negation.monotone_hull && request.literals != pra::literal_mode::negation &&
+                            unmarked_stamp[event.raw()] == stamp) {
+                            error("compile.pra_to_pc.mixed-literal", "target " + target_name(request) + ": basic event " + name(event) +
+                                                                         " has both literal and unmarked complemented operands");
+                        } else if (request.negation.monotone_hull && event_below_stamp[event.raw()] == stamp) {
                             divergent.push_back(event);
                         }
                         if (config_.max_initiators_per_cutset && is_initiator_[event.raw()] != 0 && warned_initiator[event.raw()] == 0) {
