@@ -259,9 +259,15 @@ with the same recipe and timed alternately on the same host** (lesson from
 | `bench-perf-isolated` | same runner, environment `gpu-isolated` | A/B, `sample_s`, 12 rounds × 1.0 s, exclusive (`rtx3070-isolated`) | runs only after a double flag and a manual approval; blocks when `ci_lo > 1.03` |
 | `bench-perf-v100s` | `public-ci` V100S (`sm_70,v100s`, NVML GPU 0) | A/B, `sample_s`, 6 rounds × 1.5 s | **report-only**; shares the GPU with the live and dev fuzzybits-server |
 | `bench-perf-rtx5060ti` | `public-ci` RTX 5060 Ti (`sm_120,rtx_5060ti_8gb`, NVML GPU 0 on shelly) | same as V100S | **report-only**; ~0.5 GiB free beside VLLM |
-| `bench-perf-gfx1012` | `gpu-runners` `amd-gpu` (mbp-1 on bubs) | A/B on the Radeon Pro 5500M via HIP, `sample_s`, 6 rounds × 1.5 s; skipped while either image predates the HIP backend | **report-only**, `continue-on-error`; `FUZZYBITS_AMD_GPU=disabled` (repository variable) skips it while mbp-1 is offline |
+| `bench-perf-gfx1012` | `public-ci` `amd-gpu` (mbp-1 on bubs) | A/B on the Radeon Pro 5500M via HIP, `sample_s`, 6 rounds × 1.5 s; skipped while either image predates the HIP backend | **report-only**, `continue-on-error` |
 | `bench-perf-cpu` | `fuzzybits-bench` (gateway) | A/B, `cpu_sample_s` | **report-only** (#124) |
 | `bench-summary` | hosted | sticky PR comment + overall verdict | the one required check |
+
+Repository variables `SKIP_SM70`, `SKIP_SM86`, `SKIP_SM120` and `SKIP_GFX1012`
+set to `true` skip the V100S, RTX 3070, RTX 5060 Ti and gfx1012 jobs (see
+[ci-toolchain.md](ci-toolchain.md#hardware-targets-and-skip_-variables)); the
+comment shows "hardware disabled" and the verdict ignores them. `SKIP_SM86`
+also removes the only GPU gate that can block (the screen and isolated run).
 
 Each GPU A/B spends at most `BUDGET_S` seconds timing samples per attempt
 (90 s for the screen and the report-only jobs, 110 s for the isolated run):

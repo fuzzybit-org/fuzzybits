@@ -5,7 +5,8 @@
 # GitHub Pages is not enabled on this repository yet. Until Settings → Pages
 # → Source is "GitHub Actions", the deploy job is skipped on dispatch
 # (default) and allowed to fail on tags/schedule. Data still lands on
-# bench-results.
+# bench-results. Repository variables SKIP_SM70 / SKIP_SM86 / SKIP_SM120 = true
+# skip the matching GPU measurement (.github/hardware.json); publish still runs.
 name: Bench history
 
 on:
@@ -52,7 +53,7 @@ env:
 jobs:
   measure-v100s:
     name: measure-v100s
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true' }}
+    if: ${{ vars.SKIP_SM70 != 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
     runs-on:
       group: public-ci
       labels: [self-hosted, Linux, X64, nvidia, sm_70, v100s]
@@ -195,7 +196,7 @@ jobs:
 
   measure-rtx3070:
     name: measure-rtx3070
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true' }}
+    if: ${{ vars.SKIP_SM86 != 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
     runs-on:
       group: public-ci
       labels: [self-hosted, Linux, X64, nvidia, sm_86, rtx_3070]
@@ -211,7 +212,7 @@ jobs:
 
   measure-rtx5060ti:
     name: measure-rtx5060ti
-    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true' }}
+    if: ${{ vars.SKIP_SM120 != 'true' && (github.event_name != 'workflow_dispatch' || github.event.inputs.dry_run != 'true') }}
     runs-on:
       group: public-ci
       labels: [self-hosted, Linux, X64, nvidia, fast, sm_120, rtx_5060ti_8gb]

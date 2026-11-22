@@ -207,15 +207,53 @@ NVML** ordinals (same as the harness table). CUDA's default FASTEST_FIRST
 ordering is the reverse on this host — never derive `device=N` from CUDA
 ordinals:
 
-| Job | Runner labels | `--gpus` | Device inside the container |
+| Job | Runner (group `public-ci`) | `--gpus` | Device inside the container |
 | --- | --- | --- | --- |
-| `sm70` (generic then cuda-sm70) | `sm_70`, `v100s` (`fzb-xerxes-1/2/5`) | `device=0` | Tesla V100S-PCIE-32GB |
-| `sm86-generic` | `sm_86`, `rtx_3070` (`fzb-xerxes-3`) | `device=1` | NVIDIA GeForce RTX 3070 |
-| `sm120-generic` | `sm_120`, `fast`, `rtx_5060ti_8gb` (`shelly-1`) | `device=0` | NVIDIA GeForce RTX 5060 Ti |
-| sm_75 / `fzb-xerxes-4` | excluded | — | runner never picked up jobs |
+| `sm70` (generic then cuda-sm70) | `sm_70`, `v100s` (`fzb-xerxes-5`) | `device=0` | Tesla V100S-PCIE-32GB |
+| `sm86` | `sm_86`, `rtx_3070` (`fzb-xerxes-3`) | `device=1` | NVIDIA GeForce RTX 3070 |
+| `sm120` | `sm_120`, `fast`, `rtx_5060ti_8gb` (`shelly-1`) | `device=0` | NVIDIA GeForce RTX 5060 Ti |
+| sm_75 / `fzb-xerxes-4` | excluded (`gpu-runners`) | — | that group does not serve public repositories |
 
-Concurrency groups are per physical GPU (`gpu-xerxes-v100s`,
-`gpu-xerxes-3070`, `gpu-shelly-5060ti`) with `cancel-in-progress: false`.
+`public-ci` holds exactly one runner per physical device (xerxes-5, xerxes-3,
+shelly-1, mbp-1), so the runner serialises jobs on its GPU. `gpu-runners`
+(xerxes-1/2/4) also carries `sm_70`/`v100s` labels for other repositories on
+the same V100S; every job here pins `group: public-ci`, and `gpu-runners` must
+keep "Allow public repositories" off. GPU jobs have no concurrency groups: a
+group keeps only one pending job and cancels the rest.
+
+## Hardware targets and `SKIP_*` variables
+
+[`.github/hardware.json`](../.github/hardware.json) lists every
+hardware-accelerated target (runner group and labels, Docker device, image
+variant). Setting the repository variable named by its `skip_var` to `true`
+disables every job or step that executes on that device, on every branch,
+without a commit:
+
+```bash
+gh variable set SKIP_SM120 --body true    # disable
+gh variable delete SKIP_SM120             # re-enable
+```
+
+| Variable | Device | Skips |
+| --- | --- | --- |
+| `SKIP_SM70` | V100S (xerxes) | `gpu.yml` sm70, `images.yml` smoke-sm70, `bench-perf-v100s`, `measure-v100s`, diagnostics |
+| `SKIP_SM75` | GTX 1660 Super (xerxes-4) | `gpu-diagnostics.yml` only |
+| `SKIP_SM86` | RTX 3070 (xerxes) | `gpu.yml` sm86, smoke-sm86, `bench-perf-rtx3070` (and so `bench-perf-isolated`), `measure-rtx3070`, diagnostics |
+| `SKIP_SM120` | RTX 5060 Ti (shelly) | `gpu.yml` sm120, smoke-sm120, `bench-perf-rtx5060ti`, `measure-rtx5060ti`, diagnostics |
+| `SKIP_GFX1012` | Radeon Pro 5500M (bubs, mbp-1) | `smoke-amd-gfx1012`, `bench-perf-gfx1012` |
+| `SKIP_METAL_ARM` | hosted `macos-26` Metal GPU | Metal ctest in `macos-metal`, Metal run in the arm64 wheel smoke |
+| `SKIP_METAL_INTEL` | hosted `macos-15-intel` GPU | Metal run in the Intel wheel smoke (none today: those wheels are OpenMP-only) |
+
+Builds that only *target* a device (runtime images, wheels, the
+`linux-cuda-sm70-build` check) still run, so releases are unaffected. Skipped
+jobs report success, so required checks (`macos-metal`) and dependent jobs
+(`bench-summary`, bench-history `publish`) proceed; the bench comment marks the
+job "hardware disabled". Matrix jobs (`gpu.yml`, the `images.yml` GPU smoke,
+`gpu-diagnostics.yml`) take their rows from the reusable
+[`hw-targets.yml`](../.github/workflows/hw-targets.yml); other jobs test
+`vars.SKIP_<TARGET> != 'true'` directly. A new target needs a registry entry, a
+line in `hw-targets.yml`'s `env`, and its variable in
+`.github/actionlint.yaml`.
 
 ## How to bump pins
 

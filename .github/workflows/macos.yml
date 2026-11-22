@@ -2,6 +2,10 @@
 # Apple Silicon (macos-26): AdaptiveCpp from ACPP_REF_METAL with Metal+OpenMP.
 # Intel (macos-15-intel, release only): OpenMP + generic SSCP, no Metal.
 # PR CI builds the arm64 cp312 wheel only; release.yml passes 3.12–3.15 + Intel.
+# Repository variables SKIP_METAL_ARM / SKIP_METAL_INTEL = true keep jobs off
+# that runner's GPU (.github/hardware.json): Metal ctest and the Metal wheel
+# smoke are skipped; builds, CPU tests and wheels still run, so release.yml
+# keeps its macOS wheels.
 name: macOS
 
 on:
@@ -227,7 +231,7 @@ jobs:
           echo "cpu_ctest_seconds=$(( $(date +%s) - start ))" >> "${GITHUB_ENV}"
 
       - name: ctest Metal (label mc)
-        if: ${{ always() && steps.probe.outputs.metal_device == 'yes' && steps.product.outcome == 'success' }}
+        if: ${{ always() && vars.SKIP_METAL_ARM != 'true' && steps.probe.outputs.metal_device == 'yes' && steps.product.outcome == 'success' }}
         timeout-minutes: 15
         env:
           ACPP_VISIBILITY_MASK: metal
@@ -245,7 +249,7 @@ jobs:
           echo "metal_ctest_seconds=$(( $(date +%s) - start ))" >> "${GITHUB_ENV}"
 
       - name: ctest Metal known failures (#171, #172, report only)
-        if: ${{ always() && steps.probe.outputs.metal_device == 'yes' && steps.product.outcome == 'success' }}
+        if: ${{ always() && vars.SKIP_METAL_ARM != 'true' && steps.probe.outputs.metal_device == 'yes' && steps.product.outcome == 'success' }}
         timeout-minutes: 10
         continue-on-error: true
         env:
@@ -271,7 +275,7 @@ jobs:
             echo "- fuzzybits build seconds: ${fuzzybits_build_seconds:-n/a}"
             echo "- CPU ctest seconds: ${cpu_ctest_seconds:-n/a}"
             echo "- Metal ctest seconds: ${metal_ctest_seconds:-n/a}"
-            echo "- Metal device: ${{ steps.probe.outputs.metal_device }}"
+            echo "- Metal device: ${{ steps.probe.outputs.metal_device }}${{ vars.SKIP_METAL_ARM == 'true' && ' (Metal ctest skipped: SKIP_METAL_ARM=true)' || '' }}"
             echo "- ACPP_REF_METAL: ${ACPP_REF_METAL}"
             echo "- METAL_CPP_VERSION: ${METAL_CPP_VERSION}"
           } | tee -a "${GITHUB_STEP_SUMMARY}"
@@ -295,6 +299,7 @@ jobs:
       CCACHE_NOHASHDIR: 1
       MACOSX_DEPLOYMENT_TARGET: "26.0"
       PYTHON_VERSIONS: ${{ inputs.python_versions || '3.12' }}
+      SMOKE_SKIP_METAL: ${{ vars.SKIP_METAL_ARM == 'true' && '1' || '0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -482,6 +487,7 @@ jobs:
       MACOSX_DEPLOYMENT_TARGET: "15.0"
       WITH_METAL_BACKEND: "OFF"
       PYTHON_VERSIONS: ${{ inputs.python_versions || '3.12' }}
+      SMOKE_SKIP_METAL: ${{ vars.SKIP_METAL_INTEL == 'true' && '1' || '0' }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

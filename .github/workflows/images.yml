@@ -2,7 +2,8 @@
 #
 # Publish: self-hosted fuzzybits-ci (packages:write via GITHUB_TOKEN, isolated
 # DOCKER_CONFIG). Smoke: self-hosted NVIDIA GPUs, plus the optional AMD gfx1012
-# (gpu-runners / amd-gpu); trusted triggers only. Runtime and toolchain images
+# (public-ci / amd-gpu); trusted triggers only. GPU smoke targets come from
+# .github/hardware.json; SKIP_<TARGET>=true (repository variable) drops one. Runtime and toolchain images
 # are public — smoke pulls anonymously and must not log in or hold
 # packages:read.
 # Never pull_request / pull_request_target / workflow_run — self-hosted jobs
@@ -339,43 +340,30 @@ jobs:
             /orgs/fuzzybit-org/packages/container/fuzzybits-runtime/visibility \
             -f visibility=public
 
+  hw:
+    name: hw
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    uses: ./.github/workflows/hw-targets.yml
+    with:
+      targets: sm70 sm86 sm120
+
+  # Generic + the target's SMCP image in one job per GPU. No concurrency
+  # group: public-ci has one runner per physical GPU (it serialises), and a
+  # group shared with other workflows cancels this job while it is pending.
   smoke:
-    name: smoke-${{ matrix.name }}
-    needs: publish
-    if: needs.publish.result == 'success'
+    name: smoke-${{ matrix.target }}
+    needs: [publish, hw]
+    if: needs.publish.result == 'success' && needs.hw.outputs.any == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # xerxes Docker: physical GPU 0 = Tesla V100S (shared by sm_70 runners).
-          # Both variants in one job: two matrix rows with the same
-          # concurrency group cancel each other as "higher priority waiting
-          # request" before either starts.
-          - name: sm70
-            variants: "generic cuda12.8-sm70"
-            runs_on: [self-hosted, Linux, X64, nvidia, sm_70, v100s]
-            concurrency_group: gpu-xerxes-v100s
-            docker_gpus: device=0
-          # physical GPU 1 = RTX 3070
-          - name: sm86
-            variants: "generic cuda12.8-sm86"
-            runs_on: [self-hosted, Linux, X64, nvidia, sm_86, rtx_3070]
-            concurrency_group: gpu-xerxes-3070
-            docker_gpus: device=1
-          - name: sm120
-            variants: "generic cuda12.8-sm120"
-            runs_on: [self-hosted, Linux, X64, nvidia, fast, sm_120, rtx_5060ti_8gb]
-            concurrency_group: gpu-shelly-5060ti
-            docker_gpus: device=0
+      matrix: ${{ fromJSON(needs.hw.outputs.matrix) }}
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 30
-    concurrency:
-      group: ${{ matrix.concurrency_group }}
-      cancel-in-progress: false
     env:
       DOCKER_GPUS: ${{ matrix.docker_gpus }}
-      VARIANTS: ${{ matrix.variants }}
-      SMOKE_PREFIX: fuzzybits-runtime-smoke-${{ github.run_id }}-${{ matrix.name }}-${{ github.run_attempt }}
+      VARIANTS: generic ${{ matrix.cuda_variant }}
+      SMOKE_PREFIX: fuzzybits-runtime-smoke-${{ github.run_id }}-${{ matrix.target }}-${{ github.run_attempt }}
     steps:
       - name: Resolve image tags
         run: |
@@ -508,14 +496,14 @@ jobs:
   # default mask (cuda;hip) is kept on purpose: that is what users get. No
   # concurrency group: mbp-1 is the only amd-gpu runner, and a group would let
   # GitHub cancel a pending run when a newer one queues. Set repository
-  # variable FUZZYBITS_AMD_GPU=disabled while mbp-1 is down (a queued job waits
-  # up to 24 h for it).
+  # variable SKIP_GFX1012=true while mbp-1 is down (a queued job waits up to
+  # 24 h for it). runs-on matches .github/hardware.json gfx1012.
   smoke-amd:
     name: smoke-amd-gfx1012 (optional)
     needs: publish
-    if: needs.publish.result == 'success' && vars.FUZZYBITS_AMD_GPU != 'disabled'
+    if: needs.publish.result == 'success' && vars.SKIP_GFX1012 != 'true'
     continue-on-error: true
-    runs-on: { group: gpu-runners, labels: [self-hosted, Linux, X64, amd-gpu] }
+    runs-on: { group: public-ci, labels: [self-hosted, Linux, X64, amd-gpu] }
     timeout-minutes: 30
     env:
       VARIANT: generic

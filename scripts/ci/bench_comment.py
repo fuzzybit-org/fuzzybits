@@ -122,9 +122,15 @@ def render(
     trusted: bool = True,
     run_benches: bool = True,
     screen_flagged: bool = False,
+    disabled: Mapping[str, str] | None = None,
 ) -> tuple[str, str]:
-    """Return ``(markdown, overall_verdict)``."""
-    loaded = {name: _load(path) for name, path in jobs.items()}
+    """Return ``(markdown, overall_verdict)``.
+
+    ``disabled`` maps a job to the SKIP_* repository variable that turned its
+    hardware off; such jobs render as skipped and never affect the verdict.
+    """
+    disabled = dict(disabled or {})
+    loaded = {name: None if name in disabled else _load(path) for name, path in jobs.items()}
     overall = overall_verdict(loaded)
     if screen_flagged and loaded.get("rtx3070_isolated") is None:
         overall = "error"
@@ -203,6 +209,9 @@ def render(
         payload = loaded.get(name)
         path = jobs.get(name)
         lines += ["", f"## {title}", ""]
+        if name in disabled:
+            lines.append(f"- skipped: hardware disabled (`{disabled[name]}=true`)")
+            continue
         if payload is None:
             if name == "rtx3070_isolated" and not screen_flagged:
                 lines.append("_not needed: the screen did not flag a model twice_")
@@ -306,6 +315,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cpu", type=Path, default=None)
     parser.add_argument("--run-url", default="")
     parser.add_argument("--notice", action="append", default=[])
+    parser.add_argument(
+        "--disabled",
+        action="append",
+        default=[],
+        metavar="JOB=SKIP_VAR",
+        help="Job whose hardware is disabled by a SKIP_* repository variable",
+    )
     parser.add_argument("--inject", default=None)
     parser.add_argument("--trusted", action="store_true", default=False)
     parser.add_argument("--run-benches", action="store_true", default=False)
@@ -354,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
         trusted=args.trusted,
         run_benches=args.run_benches,
         screen_flagged=args.screen_flagged,
+        disabled=dict(item.split("=", 1) for item in args.disabled),
     )
     if args.require and args.trusted and args.run_benches:
         required = ["accuracy"] + (["rtx3070_isolated"] if args.screen_flagged else [])

@@ -1,4 +1,4 @@
-# Labels on org runners enabled for this repo (gpu-runners + Default).
+# Labels on org runners enabled for this repo (public-ci + gpu-runners).
 self-hosted-runner:
   labels:
     - nvidia
@@ -13,3 +13,15 @@ self-hosted-runner:
     - fast
     - gfx1012
     - amd-gpu
+# Every repository variable a workflow may read; actionlint rejects others
+# (catches typos such as vars.SKIP_SM12O). SKIP_* come from .github/hardware.json.
+config-variables:
+  - PYPI_MAX_FILE_MB
+  - RELEASE_INCLUDE_WINDOWS
+  - SKIP_SM70
+  - SKIP_SM75
+  - SKIP_SM86
+  - SKIP_SM120
+  - SKIP_GFX1012
+  - SKIP_METAL_ARM
+  - SKIP_METAL_INTEL

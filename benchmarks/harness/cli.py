@@ -161,7 +161,7 @@ TARGETS: dict[str, dict[str, Any]] = {
         "shared_device": True,
         "report_only": True,
     },
-    # bubs (mbp-1, gpu-runners / amd-gpu): Radeon Pro 5500M 8 GB (Navi 14,
+    # bubs (mbp-1, public-ci / amd-gpu): Radeon Pro 5500M 8 GB (Navi 14,
     # gfx1012, RDNA1, 24 CUs) via the HIP backend + SSCP JIT. No --gpus:
     # scripts/ci/amd-docker-args.sh passes /dev/kfd and the GPU's render node.
     # The host desktop keeps ~4 GiB of VRAM, and the fuzzybits-ci runners share

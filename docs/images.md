@@ -175,16 +175,19 @@ Jobs:
 |---|---|---|
 | `gate` | `fuzzybits-ci` | `contents: read`; resolves the immutable toolchain tag (anonymous) or defers |
 | `publish-<variant>` | `fuzzybits-ci` | `contents: read`, `packages: write`, `id-token: write`, `attestations: write` |
-| `smoke-*` | self-hosted `[self-hosted, nvidia, sm_70\|sm_86\|sm_120]` | inherits `contents: read`; anonymous GHCR pull; generic also runs `fzb --backend omp` |
+| `hw` | hosted | resolves the GPU smoke rows from [`.github/hardware.json`](../.github/hardware.json) minus `SKIP_*` variables |
+| `smoke-<target>` | `public-ci` `[self-hosted, nvidia, sm_70\|sm_86\|sm_120]` | inherits `contents: read`; anonymous GHCR pull; generic also runs `fzb --backend omp` |
 | `smoke-cpu-omp` | `fuzzybits-ci` | `fzb compile` + `fzb run --backend omp --trials 1e6` on chinese, \|z\| ≤ 4 |
-| `smoke-amd-gfx1012 (optional)` | `gpu-runners` `[self-hosted, amd-gpu]` (mbp-1) | `continue-on-error`; generic only, default mask; `acpp-info` must list a HIP device, then `fzb --backend hip` and Python `backend="hip"` at 1e8, \|z\| ≤ 4. Disable with repository variable `FUZZYBITS_AMD_GPU=disabled` |
+| `smoke-amd-gfx1012 (optional)` | `public-ci` `[self-hosted, amd-gpu]` (mbp-1) | `continue-on-error`; generic only, default mask; `acpp-info` must list a HIP device, then `fzb --backend hip` and Python `backend="hip"` at 1e8, \|z\| ≤ 4. Disable with repository variable `SKIP_GFX1012=true` |
 
 Publish uses `docker/build-push-action` with `--sbom=true --provenance=mode=max`
 and registry cache `ghcr.io/fuzzybit-org/fuzzybits-runtime:buildcache-<variant>`.
 Pins come from [`toolchain.env`](../toolchain.env) as `--build-arg`s.
 
-Smoke concurrency groups (shared with gpu.yml, one physical GPU each):
-`gpu-xerxes-v100s`, `gpu-xerxes-3070`, `gpu-shelly-5060ti`.
+GPU smoke jobs have no concurrency groups: `public-ci` has one runner per
+physical GPU, and a shared group would cancel a pending smoke whenever another
+workflow queued on the same GPU. `SKIP_<TARGET>=true` drops a target (see
+[ci-toolchain.md](ci-toolchain.md#hardware-targets-and-skip_-variables)).
 
 `actions/checkout` uses `persist-credentials: false`. Third-party actions are
 pinned to full commit SHAs. Jobs have `timeout-minutes`. Smoke uses

@@ -1,0 +1,67 @@
+# Resolves hardware targets (.github/hardware.json) against the SKIP_*
+# repository variables for matrix jobs in gpu.yml, images.yml and
+# gpu-diagnostics.yml. Non-matrix jobs test `vars.SKIP_<TARGET> != 'true'`
+# directly. Every skip_var in the registry must be mapped in `env` below
+# (tests/python/test_hw_targets.py enforces it).
+name: Hardware targets
+
+on:
+  workflow_call:
+    inputs:
+      targets:
+        description: Space-separated registry keys, in matrix order.
+        type: string
+        required: true
+    outputs:
+      matrix:
+        description: '{"include": [...]} of the enabled targets (registry fields + target).'
+        value: ${{ jobs.resolve.outputs.matrix }}
+      targets:
+        description: Space-separated enabled targets.
+        value: ${{ jobs.resolve.outputs.targets }}
+      skipped:
+        description: Space-separated skipped targets.
+        value: ${{ jobs.resolve.outputs.skipped }}
+      any:
+        description: "'true' when at least one target is enabled (an empty matrix is an error)."
+        value: ${{ jobs.resolve.outputs.any }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: resolve
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+      targets: ${{ steps.resolve.outputs.targets }}
+      skipped: ${{ steps.resolve.outputs.skipped }}
+      any: ${{ steps.resolve.outputs.any }}
+    env:
+      SKIP_SM70: ${{ vars.SKIP_SM70 }}
+      SKIP_SM75: ${{ vars.SKIP_SM75 }}
+      SKIP_SM86: ${{ vars.SKIP_SM86 }}
+      SKIP_SM120: ${{ vars.SKIP_SM120 }}
+      SKIP_GFX1012: ${{ vars.SKIP_GFX1012 }}
+      SKIP_METAL_ARM: ${{ vars.SKIP_METAL_ARM }}
+      SKIP_METAL_INTEL: ${{ vars.SKIP_METAL_INTEL }}
+    steps:
+      - name: Checkout registry
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/hardware.json
+            scripts/ci/hw_targets.py
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve
+        id: resolve
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: |
+          set -euo pipefail
+          read -r -a targets <<<"${TARGETS}"
+          python3 scripts/ci/hw_targets.py matrix "${targets[@]}"

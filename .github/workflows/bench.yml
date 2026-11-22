@@ -8,7 +8,9 @@
 # twice, bench-perf-isolated (manual approval in the gpu-isolated environment,
 # after the owner clears the RTX 3070). Report-only: CPU (#124), V100S (shared
 # with live/dev fuzzybits-server), RTX 5060 Ti, AMD gfx1012 (HIP on bubs), and
-# the RTX 3070 screen itself.
+# the RTX 3070 screen itself. Repository variables SKIP_SM70 / SKIP_SM86 /
+# SKIP_SM120 / SKIP_GFX1012 = true skip the matching GPU job (see
+# .github/hardware.json); bench-summary reports it as disabled, never failed.
 # GPU A/B times in-process fuzzybits.run on runs sized to SECONDS_PER_RUN,
 # capped at BUDGET_S of timed sampling per attempt.
 # xerxes GPU indices are NVML/nvidia-smi (GPU 0 = V100S, GPU 1 = RTX 3070),
@@ -341,7 +343,7 @@ jobs:
   bench-perf-v100s:
     name: bench-perf-v100s
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM70 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","sm_70","v100s"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -404,7 +406,7 @@ jobs:
   bench-perf-rtx3070:
     name: bench-perf-rtx3070
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM86 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","sm_86","rtx_3070"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -546,7 +548,7 @@ jobs:
   bench-perf-rtx5060ti:
     name: bench-perf-rtx5060ti
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM120 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","fast","sm_120","rtx_5060ti_8gb"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -608,13 +610,13 @@ jobs:
   # optional. No concurrency group: mbp-1 is the only amd-gpu runner, and the
   # harness flock covers manual runs. A queued job waits up to 24 h for an
   # offline runner (timeout-minutes excludes queue time) and holds
-  # bench-summary; set repository variable FUZZYBITS_AMD_GPU=disabled while
-  # mbp-1 is down.
+  # bench-summary; set repository variable SKIP_GFX1012=true while mbp-1 is
+  # down.
   bench-perf-gfx1012:
     name: bench-perf-gfx1012
     needs: [bench-filter, bench-images]
-    if: always() && vars.FUZZYBITS_AMD_GPU != 'disabled' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
-    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"gpu-runners","labels":["self-hosted","Linux","X64","amd-gpu"]}') || 'ubuntu-24.04' }}
+    if: always() && vars.SKIP_GFX1012 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","amd-gpu"]}') || 'ubuntu-24.04' }}
     continue-on-error: true
     timeout-minutes: 30
     permissions:
@@ -785,6 +787,10 @@ jobs:
           RTX5060_RESULT: ${{ needs.bench-perf-rtx5060ti.result }}
           GFX1012_RESULT: ${{ needs.bench-perf-gfx1012.result }}
           CPU_RESULT: ${{ needs.bench-perf-cpu.result }}
+          SKIP_SM70: ${{ vars.SKIP_SM70 }}
+          SKIP_SM86: ${{ vars.SKIP_SM86 }}
+          SKIP_SM120: ${{ vars.SKIP_SM120 }}
+          SKIP_GFX1012: ${{ vars.SKIP_GFX1012 }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           INJECT: ${{ github.event.inputs.inject_regression || '' }}
         run: |
@@ -830,6 +836,10 @@ jobs:
           [[ -n "${gfx1012}" ]] && args+=(--gfx1012 "${gfx1012}")
           [[ -n "${cpu}" ]] && args+=(--cpu "${cpu}")
           [[ "${NEEDS_ISOLATED}" == "true" ]] && args+=(--screen-flagged)
+          for pair in v100s=SKIP_SM70 rtx3070=SKIP_SM86 rtx5060ti=SKIP_SM120 gfx1012=SKIP_GFX1012; do
+            var="${pair#*=}"
+            [[ "${!var,,}" == "true" ]] && args+=(--disabled "${pair}")
+          done
           set +e
           python3 scripts/ci/bench_comment.py \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
