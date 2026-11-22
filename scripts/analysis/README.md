@@ -4,6 +4,8 @@ Offline analyses of fault-tree models and terminal output. Python ≥ 3.12.
 
 ## `module_census.py` — module census and task-parallel bounds
 
+Requirements: the Python standard library only.
+
 Purpose: measure how a model splits into **modules**, i.e. subgraphs connected
 to the rest only through their root. That split decides whether a bottom-up,
 module-wise compilation could gain from task parallelism. This is measurement 2
