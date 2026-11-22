@@ -1,11 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "api/diagnostics.h"
+#include "compile/ftp/tests/support.h"
 #include "io/ftp/descriptor.h"
 #include "io/formats.h"
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/edge.h"
+#include "ir/pc/passes/passes.h"
 #include "ir/pc/probability.h"
 
 #include <algorithm>
@@ -117,24 +119,26 @@ namespace {
         return projects;
     }
 
-    [[nodiscard]] auto readProject(corpus_project const &project) -> fuzzybits::io::backend::fuzzybits::ftp::ftp_read_result {
+    [[nodiscard]] auto readProject(corpus_project const &project) -> fuzzybits::api::result<ftp_lowering_test::lowering> {
         std::vector<fuzzybits::io::backend::fuzzybits::ftp::source_text> sources;
         for (auto const &file : project.files) {
             std::ifstream input(file, std::ios::binary);
             REQUIRE(input);
             sources.push_back({.path = file.generic_string(), .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
         }
-        return fuzzybits::io::backend::fuzzybits::ftp::read(sources);
+        return ftp_lowering_test::lower(sources);
     }
 
-    [[nodiscard]] auto requirePcModel(fuzzybits::io::backend::fuzzybits::ftp::read_output const &read)
-        -> fuzzybits::ir::pc::circuit const & {
-        auto const *pc = fuzzybits::ir::pc::circuit_from(read.model);
-        REQUIRE(pc != nullptr);
-        REQUIRE(pc->valid());
-        REQUIRE(pc->node_count() > 0);
-        REQUIRE_FALSE(pc->targets().empty());
-        return *pc;
+    // The writer puts a single-input gate in front of every target and the
+    // lowering keeps such gates, so a stable round trip needs them eliminated.
+    [[nodiscard]] auto requirePcModel(ftp_lowering_test::lowering const &lowered) -> fuzzybits::ir::pc::circuit {
+        const auto eliminated = fuzzybits::ir::pc::passes::eliminate_single_input(lowered.circuit);
+        REQUIRE(eliminated.ok());
+        auto const &pc = eliminated.output;
+        REQUIRE(pc.valid());
+        REQUIRE(pc.node_count() > 0);
+        REQUIRE_FALSE(pc.targets().empty());
+        return pc;
     }
 
     [[nodiscard]] auto writeOutput(fuzzybits::ir::pc::circuit const &model, std::optional<double> truncationLimit = std::nullopt)
@@ -185,16 +189,20 @@ TEST_CASE("FTP writer round-trips the writable PC subset", "[io][ftp]") {
     REQUIRE(text.find("T0 + N") != std::string::npos);
     REQUIRE(text.find(" -E") != std::string::npos);
 
-    std::istringstream input(text);
-    auto read = fuzzybits::io::backend::fuzzybits::ftp::read(input);
+    auto read = ftp_lowering_test::lower_text(text);
     INFO(diagnosticsText(read.diagnostics()));
     REQUIRE(read);
 
-    auto const *pc = fuzzybits::ir::pc::circuit_from(read.value().model);
-    REQUIRE(pc != nullptr);
+    auto const *pc = &read.value().circuit;
     REQUIRE(pc->targets().size() == 1);
     REQUIRE(pc->probability_sources().size() == 2);
-    const auto operands = pc->operands(pc->targets()[0].node);
+    // The lowering keeps the single-input gate the writer put in front of the target.
+    auto node = pc->targets()[0].node;
+    while (pc->operands(node).size() == 1) {
+        REQUIRE_FALSE(pc->operands(node)[0].complement);
+        node = pc->operands(node)[0].source;
+    }
+    const auto operands = pc->operands(node);
     REQUIRE(operands.size() == 2);
     REQUIRE(operands[1].complement);
 }
@@ -211,21 +219,21 @@ TEST_CASE("FTP input corpus round-trips to stable write checksums", "[io][ftp][c
             INFO(diagnosticsText(firstRead.diagnostics()));
             REQUIRE(firstRead);
 
-            auto const &firstPc = requirePcModel(firstRead.value());
+            const auto firstPc = requirePcModel(firstRead.value());
+            const auto firstLimit = ftp_lowering_test::limit_of(firstRead.value());
             if (!std::ranges::all_of(firstPc.probability_sources(), [](auto const &source) {
                     return source.kind == fuzzybits::ir::pc::probability_source_kind::literal;
                 })) {
                 SUCCEED("frequencies are not literal probabilities; the FTP writer cannot round-trip them");
                 continue;
             }
-            const auto firstOutput = writeOutput(firstPc, firstRead.value().metadata.truncation_limit);
-            std::istringstream reparsedInput(firstOutput);
-            auto secondRead = fuzzybits::io::backend::fuzzybits::ftp::read(reparsedInput);
+            const auto firstOutput = writeOutput(firstPc, firstLimit);
+            auto secondRead = ftp_lowering_test::lower_text(firstOutput);
             INFO(diagnosticsText(secondRead.diagnostics()));
             REQUIRE(secondRead);
 
-            auto const &secondPc = requirePcModel(secondRead.value());
-            const auto secondOutput = writeOutput(secondPc, secondRead.value().metadata.truncation_limit);
+            const auto secondPc = requirePcModel(secondRead.value());
+            const auto secondOutput = writeOutput(secondPc, ftp_lowering_test::limit_of(secondRead.value()));
             INFO("first checksum: " << checksum(firstOutput));
             INFO("second checksum: " << checksum(secondOutput));
             REQUIRE(firstOutput.size() == secondOutput.size());

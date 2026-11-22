@@ -13,6 +13,7 @@
 // search alone and by BDDs alone and fails on any difference.
 
 #include "api/options.h"
+#include "compile/ftp/tests/support.h"
 #include "io/ftp/descriptor.h"
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
@@ -229,16 +230,13 @@ namespace {
             sources.push_back(ftp::source_text{
                 .path = file, .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
         }
-        fuzzybits::api::option_set options;
-        options.set(ftp::target_option(), target);
-        options.set(ftp::duplicate_import_option(), std::string("last"));
-        auto read = ftp::read(sources, options);
+        auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::boolean_options({target}));
         if (!read) {
             std::fprintf(stderr, "FTP read failed (%zu diagnostics)\n", read.diagnostics().size());
             std::exit(1);
         }
-        auto const *circuit = pc::circuit_from(read.value().model);
-        return {*circuit, circuit->targets()[0].node};
+        auto const &circuit = read.value().circuit;
+        return {circuit, circuit.targets()[0].node};
     }
 
     auto probabilities(pc::circuit const &circuit) -> std::vector<double> {

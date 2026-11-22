@@ -80,6 +80,13 @@ The exact top-event probability of this model, from a BDD, is
 $1.17058 \times 10^{-3}$. The trial count is rounded up to whole sampling passes,
 and the same model and trial count always print the same line.
 
+CAFTA FTP projects compile the same way, from files or a directory:
+
+    fzb compile project_dir/ --negation boolean -o model.pcfb
+
+`--negation boolean` writes Boolean queries, which `fzb run` samples. Without it, FTP input is
+compiled to monotone-hull queries, which `fzb run` does not sample yet; see docs/ftp-input.md.
+
 Add --ccf to fzb compile to expand common-cause failure groups,
 --backend cuda or --backend metal to fzb run to use an NVIDIA or
 Apple Silicon GPU (--backend omp for the CPU), or --json for

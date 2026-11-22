@@ -3,7 +3,7 @@
 #include "query_guard_files.h"
 #include "support.h"
 
-#include "io/ftp/descriptor.h"
+#include "compile/ftp/tests/support.h"
 #include "io/pcfb/descriptor.h"
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
@@ -95,19 +95,18 @@ TEST_CASE("fzb inspect validates and exactly evaluates written FTP fixtures", "[
     std::size_t exact = 0;
     for (auto const &file : files) {
         INFO(file.filename().string());
-        std::ifstream input(file);
+        std::ifstream input(file, std::ios::binary);
         REQUIRE(input);
-        auto read = fuzzybits::io::backend::fuzzybits::ftp::read(input);
+        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
         INFO(diagnosticsText(read.diagnostics()));
         REQUIRE(read);
-        auto const *model = pc::circuit_from(read.value().model);
-        REQUIRE(model != nullptr);
+        auto const *model = &read.value().circuit;
         if (!std::ranges::all_of(model->probability_sources(),
                                  [](auto const &source) { return source.kind == pc::probability_source_kind::literal; })) {
             continue;
         }
 
-        const auto written = writer::write(read.value().model, writer::write_options{.model_name = file.stem().string()});
+        const auto written = writer::write(model->to_handle(), writer::write_options{.model_name = file.stem().string()});
         INFO(diagnosticsText(written.diagnostics()));
         REQUIRE(written);
         const auto path = scratch / (file.stem().string() + ".pcfb");

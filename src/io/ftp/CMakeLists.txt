@@ -3,7 +3,6 @@ add_library(fuzzybits_io_ftp STATIC
   write.cpp
   detail/parser.cpp
   detail/pra_builder.cpp
-  detail/builder.cpp
   detail/writer.cpp
   descriptor.h
   detail/model.h
@@ -21,7 +20,7 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_ftp_tests
-    SOURCES tests/read_tests.cc tests/write_tests.cc tests/project_tests.cc tests/conformance_tests.cc
-    LINK_LIBRARIES fuzzybits_io_ftp fuzzybits_ir_pra
+    SOURCES tests/write_tests.cc tests/project_tests.cc tests/conformance_tests.cc
+    LINK_LIBRARIES fuzzybits_io_ftp fuzzybits_ir_pra fuzzybits_compile_ftp
   )
 endif()

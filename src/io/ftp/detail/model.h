@@ -123,7 +123,6 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
         std::unordered_map<std::string_view, std::uint32_t> eventByName;
         std::vector<Target> targets;
         bool implicitTargets = false;
-        read_metadata metadata;
         api::diagnostic_list diagnostics;
     };
 
@@ -140,9 +139,6 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
     [[nodiscard]] auto location_text(ParsedProject const &project, Location location) -> std::string;
 
     [[nodiscard]] auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result;
-    [[nodiscard]] auto selected_targets(ParsedProject const &project, api::option_set const &options, api::diagnostic_list &diagnostics)
-        -> std::vector<Target>;
-    [[nodiscard]] auto build_pc(ParsedProject const &project, std::vector<Target> const &targets) -> ir::pc::finalize_result;
     [[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
         -> io::write_result;
 
