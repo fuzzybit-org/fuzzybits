@@ -221,23 +221,23 @@ TEST_CASE("pcfb writer: per-target quantification is recorded next to the querie
     REQUIRE(queriesOf(file.circuit).size() == 4);
 
     // Query 0 and 1 belong to target 0 (Boolean, then hull), query 2 to target 1, query 3 to target 2.
-    CHECK(stringMeta(file.circuit, "fuzzybits.query.0.negation") == "boolean");
-    CHECK(stringMeta(file.circuit, "fuzzybits.query.1.negation") == "monotone_hull");
-    CHECK(stringMeta(file.circuit, "fuzzybits.query.2.negation") == "monotone_hull");
+    CHECK(stringMeta(file.circuit, "compile.query.0.negation") == "boolean");
+    CHECK(stringMeta(file.circuit, "compile.query.1.negation") == "monotone_hull");
+    CHECK(stringMeta(file.circuit, "compile.query.2.negation") == "monotone_hull");
     for (const auto index : {0, 1}) {
-        const auto prefix = "fuzzybits.query." + std::to_string(index) + ".";
+        const auto prefix = "compile.query." + std::to_string(index) + ".";
         CHECK(stringMeta(file.circuit, prefix + "literal_mode") == "atom_split");
         CHECK(intMeta(file.circuit, prefix + "max_initiators_per_cutset") == 1);
     }
-    CHECK(stringMeta(file.circuit, "fuzzybits.query.2.literal_mode") == "omega_l");
-    CHECK_FALSE(meta(file.circuit, "fuzzybits.query.2.max_initiators_per_cutset"));
+    CHECK(stringMeta(file.circuit, "compile.query.2.literal_mode") == "omega_l");
+    CHECK_FALSE(meta(file.circuit, "compile.query.2.max_initiators_per_cutset"));
     // A target without an entry records nothing.
-    CHECK_FALSE(meta(file.circuit, "fuzzybits.query.3.negation"));
+    CHECK_FALSE(meta(file.circuit, "compile.query.3.negation"));
 
     // No quantification entries, no keys: the metadata of a plain file is unchanged.
     const auto plain = writeAndRead(model, namesOf(model));
     for (const auto *entry : *plain.circuit->metadata()) {
-        CHECK(entry->key()->str().rfind("fuzzybits.query.", 0) == std::string::npos);
+        CHECK(entry->key()->str().rfind("compile.query.", 0) == std::string::npos);
     }
 }
 

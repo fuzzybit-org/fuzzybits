@@ -73,9 +73,9 @@ position `i` of the file the writer sets
 
 | Key | Value |
 |---|---|
-| `fuzzybits.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
-| `fuzzybits.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
-| `fuzzybits.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+| `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
+| `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
+| `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
 `compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering

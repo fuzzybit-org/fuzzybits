@@ -441,7 +441,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             }
 
             [[nodiscard]] auto emitQuantification(const std::size_t index, const query_kind kind, target_quantification const &entry) -> bool {
-                const auto prefix = "fuzzybits.query." + std::to_string(index) + ".";
+                const auto prefix = "compile.query." + std::to_string(index) + ".";
                 const auto negation = kind == query_kind::probability ? std::string_view{"boolean"} : std::string_view{"monotone_hull"};
                 bool ok = setMetadata(prefix + "negation", builder_.set(prefix + "negation", negation));
                 if (ok && !entry.literal_mode.empty()) {

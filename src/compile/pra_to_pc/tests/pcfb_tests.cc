@@ -189,11 +189,11 @@ TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[com
     auto const *queries = (*circuit)->subcircuits()->Get(0)->queries();
     CHECK(queries->Get(0)->target() == queries->Get(1)->target());
 
-    CHECK(string_meta(*circuit, "fuzzybits.query.0.negation") == "boolean");
-    CHECK(string_meta(*circuit, "fuzzybits.query.1.negation") == "monotone_hull");
-    CHECK(string_meta(*circuit, "fuzzybits.query.2.negation") == "boolean");
+    CHECK(string_meta(*circuit, "compile.query.0.negation") == "boolean");
+    CHECK(string_meta(*circuit, "compile.query.1.negation") == "monotone_hull");
+    CHECK(string_meta(*circuit, "compile.query.2.negation") == "boolean");
     for (const auto index : {0, 1, 2}) {
-        const auto prefix = "fuzzybits.query." + std::to_string(index) + ".";
+        const auto prefix = "compile.query." + std::to_string(index) + ".";
         CHECK(string_meta(*circuit, prefix + "literal_mode") == "atom_split");
         CHECK(int_meta(*circuit, prefix + "max_initiators_per_cutset") == 1);
     }
@@ -217,9 +217,9 @@ TEST_CASE("pra_to_pc write options record the literal mode and omit an absent in
     require_valid(*circuit);
     using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
     CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
-    CHECK(string_meta(*circuit, "fuzzybits.query.0.literal_mode") == "omega_l");
-    CHECK(string_meta(*circuit, "fuzzybits.query.1.literal_mode") == "atom_split");
-    CHECK_FALSE(int_meta(*circuit, "fuzzybits.query.0.max_initiators_per_cutset"));
+    CHECK(string_meta(*circuit, "compile.query.0.literal_mode") == "omega_l");
+    CHECK(string_meta(*circuit, "compile.query.1.literal_mode") == "atom_split");
+    CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
 }
 
 TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked literals", "[compile][pra_to_pc][pcfb]") {

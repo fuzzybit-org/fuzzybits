@@ -30,7 +30,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
     [[nodiscard]] auto to_string(query_kind kind) noexcept -> std::string_view;
 
     // What the caller asked of one target, recorded as pcfb metadata next to its queries
-    // (fuzzybits.query.<i>.*, i the position in the file's query list) so that fzb inspect and the
+    // (compile.query.<i>.*, i the position in the file's query list) so that fzb inspect and the
     // runtime can show it. The negation semantics of a query is its kind; this adds the rest.
     struct target_quantification final {
         // ir::pra::literal_mode as text (atom_split, omega_l, negation); empty: not recorded.

@@ -272,8 +272,8 @@ TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorde
     REQUIRE(inspected.status == 0);
     CHECK(inspected.err.find("validate: ok") != std::string::npos);
     CHECK(inspected.out.find("schema_version  0x10002") != std::string::npos);
-    CHECK(inspected.out.find("fuzzybits.query.1.negation  monotone_hull") != std::string::npos);
-    CHECK(inspected.out.find("fuzzybits.query.1.max_initiators_per_cutset  1") != std::string::npos);
+    CHECK(inspected.out.find("compile.query.1.negation  monotone_hull") != std::string::npos);
+    CHECK(inspected.out.find("compile.query.1.max_initiators_per_cutset  1") != std::string::npos);
 
     // The runtime and the exact evaluator refuse the hull query instead of answering it as a probability.
     const auto exact = runFzb("inspect " + quoted(path.string()) + " --exact", scratch);
