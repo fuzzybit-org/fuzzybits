@@ -109,35 +109,35 @@ class emitter {
         broadcast(s);
     }
 
-  // Bypasses the rate limit: delivers `last` to every sink and then on_finish, exactly once. A sink
-  // that throws is skipped for the rest of this call, but on_finish still runs for every sink, and
-  // the emitter raises its own typed signal afterwards so a failing callback is never silent.
-  void finish(snapshot last, bool was_interrupted) {
-    if (sinks_.empty() || finished_) {
-      return;
+    // Bypasses the rate limit: delivers `last` to every sink and then on_finish, exactly once. A sink
+    // that throws is skipped for the rest of this call, but on_finish still runs for every sink, and
+    // the emitter raises its own typed signal afterwards so a failing callback is never silent.
+    void finish(snapshot last, bool was_interrupted) {
+        if (sinks_.empty() || finished_) {
+            return;
+        }
+        finished_ = true;
+        bool failed = false;
+        for (sink *target : sinks_) {
+            try {
+                target->on_snapshot(last);
+            } catch (...) {
+                failed = true;
+            }
+        }
+        for (sink *target : sinks_) {
+            try {
+                target->on_finish(last, was_interrupted);
+            } catch (...) {
+                failed = true;
+            }
+        }
+        if (failed) {
+            // Typed and catchable: the sinks' own messages are already reported (a Python callback stores
+            // its exception for the binding to re-raise), so this only signals that finishing failed.
+            throw interrupted("progress: a sink raised while finishing");
+        }
     }
-    finished_ = true;
-    bool failed = false;
-    for (sink *target : sinks_) {
-      try {
-        target->on_snapshot(last);
-      } catch (...) {
-        failed = true;
-      }
-    }
-    for (sink *target : sinks_) {
-      try {
-        target->on_finish(last, was_interrupted);
-      } catch (...) {
-        failed = true;
-      }
-    }
-    if (failed) {
-      // Typed and catchable: the sinks' own messages are already reported (a Python callback stores
-      // its exception for the binding to re-raise), so this only signals that finishing failed.
-      throw interrupted("progress: a sink raised while finishing");
-    }
-  }
 
   private:
     void broadcast(const snapshot &s) {

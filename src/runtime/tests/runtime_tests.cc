@@ -368,7 +368,7 @@ TEST_CASE("a non-sink failure inside the active run still finishes the sinks onc
   opt.progress_max_rate_hz = 0.0;  // a first snapshot, so the loop takes the active path
 
   // Fail after the first pass, leaving one more to go.
-  fuzzybits::runtime::fail_next_run_after_passes(1);
+  fuzzybits::runtime::testing::fail_next_run_after_passes(1);
   CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(compiled->bytes, opt),
                   fuzzybits::runtime::RuntimeError);
 
@@ -417,7 +417,7 @@ TEST_CASE("a sink exception raised while a run is already unwinding is swallowed
 
   // First snapshot is delivered (sink records it); the injected failure then unwinds, and the
   // finish path's delivery throws. The original RuntimeError must survive.
-  fuzzybits::runtime::fail_next_run_after_passes(1);
+  fuzzybits::runtime::testing::fail_next_run_after_passes(1);
   CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(compiled->bytes, opt),
                   fuzzybits::runtime::RuntimeError);
   // on_finish still ran, even though the final delivery raised.
@@ -456,7 +456,7 @@ TEST_CASE("a non-sink failure inside compile still finishes the sinks once",
   opt.progress_sinks = {&sink};
 
   // Fail between stages, i.e. from code the sink never sees.
-  fuzzybits::compile::fail_next_compile_after_stage("lower");
+  fuzzybits::compile::testing::fail_next_compile_after_stage("lower");
   CHECK_THROWS_AS(
       fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt),
       std::runtime_error);

@@ -1523,7 +1523,7 @@ double exact_pcfb_path(const std::string &path, std::uint32_t query_index) {
 }
 
 py::list query_results_to_py(const std::vector<fuzzybits::runtime::QueryResult> &results) {
-  py::list out;
+    py::list out;
     for (const auto &r : results) {
         py::dict item;
         item["name"] = r.name;

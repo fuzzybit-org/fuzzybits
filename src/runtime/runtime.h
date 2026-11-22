@@ -120,12 +120,16 @@ struct ReconstructedPdag {
 /// AdaptiveCpp / SYCL runtime initialisation (before the first sycl::queue).
 void apply_backend_mask(const std::string &backend);
 
+namespace testing {
+
 /// Test seam (#206): makes the *next* `run_graph` call on this thread throw a
 /// `RuntimeError` right after its `passes`-th device pass, so the interrupted
 /// progress path (device fault, failed result build) can be exercised without
 /// provoking a real device error. One-shot; `0` disables it. Not used by any
 /// production path.
 void fail_next_run_after_passes(std::uint64_t passes);
+
+}  // namespace testing
 
 /// Reconstruct a preprocessed `core::Pdag` from a validated pcfb circuit.
 /// Variables are created at SAMPLE `event_id` so Philox `pdag_idx` matches

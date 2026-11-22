@@ -112,9 +112,13 @@ class compile_progress {
 
 }  // namespace
 
+namespace testing {
+
 void fail_next_compile_after_stage(std::string_view stage) {
   fail_compile_after_stage = std::string(stage);
 }
+
+}  // namespace testing
 
 namespace {
 
