@@ -1415,6 +1415,12 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
     }
 
     std::optional<pcfb::Result<fuzzybits::compile::Compiled>> compiled;
+    auto drop_sink = [&sink] {
+        if (sink) {
+            py::gil_scoped_acquire acquire;
+            sink->clear();
+        }
+    };
     try {
         py::gil_scoped_release release;
         compiled.emplace(fuzzybits::compile::compile_files(input_files, opt));
@@ -1424,10 +1430,13 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
             sink->rethrow_if_failed();
         }
         throw;
+    } catch (...) {
+        // A non-sink failure: the engine already reported on_finish. Drop the callback (and any
+        // stored Python error) with the GIL held, then let the original exception through.
+        drop_sink();
+        throw;
     }
-    if (sink) {
-        sink->clear();
-    }
+    drop_sink();
     if (!*compiled) {
         throw std::runtime_error("compile: " + compiled->error().message);
     }
@@ -1553,6 +1562,12 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     }
 
     std::vector<fuzzybits::runtime::QueryResult> results;
+    auto drop_sink = [&sink] {
+        if (sink) {
+            py::gil_scoped_acquire acquire;
+            sink->clear();
+        }
+    };
     try {
         py::gil_scoped_release release;
         results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(owned), opt);
@@ -1563,16 +1578,16 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
         }
         throw;
     } catch (const sycl::exception &e) {
+        drop_sink();
         throw std::runtime_error(std::string("SYCL/AdaptiveCpp kernel failed: ") + e.what());
     } catch (const fuzzybits::runtime::RuntimeError &) {
+        drop_sink();
         throw;
     } catch (const std::exception &e) {
+        drop_sink();
         throw std::runtime_error(std::string("Monte Carlo run failed: ") + e.what());
     }
-    if (sink) {
-        // Defensive: a callback failure always interrupts, but never leak a stored exception.
-        sink->clear();
-    }
+    drop_sink();
     return query_results_to_py(results);
 }
 

@@ -91,4 +91,10 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
              std::string_view source_path = {}, std::span<const std::string> input_files = {},
              std::string_view target_name = {});
 
+/// Test seam (#206): makes the next compile on this thread throw a `std::runtime_error` right after
+/// it announces `stage` (`"parse"`, `"lower"`, `"passes"` or `"write"`), so the interrupted progress
+/// path can be exercised without a real failure. One-shot; the empty string disables it. Not used by
+/// any production path.
+void fail_next_compile_after_stage(std::string_view stage);
+
 }  // namespace fuzzybits::compile

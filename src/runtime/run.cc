@@ -80,7 +80,7 @@ class sampling_progress {
     if (!emitter_.active()) {
       return;
     }
-    auto last = tallies ? build(*tallies, passes_done) : snapshot_without_tallies(passes_done);
+    auto last = tallies ? build_final(*tallies, passes_done) : snapshot_without_tallies(passes_done);
     last.stage = interrupted ? progress::phase::sampling : progress::phase::done;
     last.elapsed_seconds = std::chrono::duration<double>(clock::now() - start_).count();
     if (!interrupted) {
@@ -89,6 +89,15 @@ class sampling_progress {
     }
     try {
       emitter_.finish(std::move(last), true);
+    } catch (...) {
+    }
+  }
+
+  /// `finish(..., interrupted=true)`, for the RAII guard. Never throws.
+  void finish_interrupted(const scram::mc::stats::TallyNodeMap *tallies,
+                          std::uint64_t passes_done) noexcept {
+    try {
+      finish(tallies, passes_done, /*interrupted=*/true);
     } catch (...) {
     }
   }
@@ -128,10 +137,36 @@ class sampling_progress {
                                                               : std::numeric_limits<double>::quiet_NaN();
     }
     s.trials_per_second = update_rate(s.trials_done);
+    last_rate_ = s.trials_per_second;
+    return s;
+  }
+
+  /// Final snapshot: the same build, but the rate is not resampled (see `update_rate`).
+  [[nodiscard]] progress::snapshot build_final(const scram::mc::stats::TallyNodeMap &tallies,
+                                               std::uint64_t passes_done) {
+    progress::snapshot s = snapshot_without_tallies(passes_done);
+    s.trials_done = passes_done * trials_per_pass_;
+    for (std::size_t i = 0; i < names_.size(); ++i) {
+      const auto &t = tallies.at(names_[i]).tally_stats;
+      progress::query_state &q = s.queries[i];
+      q.hits = static_cast<std::uint64_t>(t.num_one_bits);
+      q.trials = static_cast<std::uint64_t>(t.total_bits);
+      q.estimate = t.mean;
+      q.ci_low = t.ci[0];
+      q.ci_high = t.ci[1];
+      const double width = t.ci[1] - t.ci[0];
+      q.rel_half_width = t.mean != 0.0 && std::isfinite(width) ? width / (2.0 * t.mean)
+                                                              : std::numeric_limits<double>::quiet_NaN();
+    }
+    s.trials_per_second = last_rate_;
     return s;
   }
 
   /// Trials per second over a sliding window of ~2 s (or the whole run when it is shorter).
+  ///
+  /// The window only advances when a snapshot is actually delivered, so the "whole run" case is two
+  /// real samples apart. `finish()` does not call this: it reuses the last delivered rate, otherwise
+  /// a final sample taken microseconds after the previous one would report ~0.
   double update_rate(std::uint64_t trials_done) {
     const auto now = clock::now();
     window_.emplace_back(now, trials_done);
@@ -144,7 +179,8 @@ class sampling_progress {
     if (window_.size() < 2 || seconds <= 0.0 || trials_done < first_trials) {
       return 0.0;
     }
-    return static_cast<double>(trials_done - first_trials) / seconds;
+    last_rate_ = static_cast<double>(trials_done - first_trials) / seconds;
+    return last_rate_;
   }
 
   progress::emitter emitter_;
@@ -154,9 +190,18 @@ class sampling_progress {
   std::uint64_t passes_total_ = 0;
   clock::time_point start_;
   std::deque<std::pair<clock::time_point, std::uint64_t>> window_;
+  double last_rate_ = 0.0;
 };
 
 }  // namespace
+
+namespace {
+thread_local std::uint64_t fail_run_after_passes = 0;
+}  // namespace
+
+void fail_next_run_after_passes(std::uint64_t passes) {
+  fail_run_after_passes = passes;
+}
 
 std::vector<QueryResult> run_graph(scram::core::Pdag &pdag,
                                    const std::vector<ReconstructedQuery> &queries,
@@ -205,8 +250,21 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag,
         static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * sizeof(bitpack_t) * 8;
 
     sampling_progress progress(options, queries, trials_per_pass, total_passes);
+
+    // Every sink sees exactly one on_finish, including when the device fails or a result cannot be
+    // built: `passes_done` tracks the last pass whose tallies were collected so the interrupted
+    // snapshot describes real work, and the guard's finish never throws.
+    std::uint64_t passes_done = 0;
+    progress::finish_guard guard([&progress, &monitored, &passes_done] {
+      progress.finish_interrupted(progress.active() && passes_done > 0 ? &monitored : nullptr,
+                                  passes_done);
+    });
+    // One-shot test seam: a deterministic non-sink failure inside the active path.
+    const auto fail_after = std::exchange(fail_run_after_passes, 0);
+
     if (!progress.active()) {
       manager.pass_wait_collect(monitored, total_passes, /*passes_between_waits=*/1);
+      passes_done = total_passes;
     } else {
       // Same device work as pass_wait_collect() with passes_between_waits=1, split so a snapshot can
       // be taken at the pass waits. Tallies are only read back when a snapshot is due; sampling and
@@ -215,14 +273,14 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag,
         manager.pass(1);
         scram::mc::queue::wait_sycl_queue(manager.queue());
         if (!progress.due()) {
-          continue;
-        }
-        manager.collect_tallies(monitored);
-        try {
+          passes_done = pass;
+        } else {
+          manager.collect_tallies(monitored);
+          passes_done = pass;
           progress.maybe_emit(monitored, pass);
-        } catch (...) {
-          progress.finish(&monitored, pass, /*interrupted=*/true);
-          throw;
+        }
+        if (fail_after != 0 && pass >= fail_after) {
+          throw RuntimeError("run: injected failure after pass " + std::to_string(pass));
         }
       }
       manager.collect_tallies(monitored);
@@ -242,6 +300,7 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag,
       results.push_back(std::move(r));
     }
     progress.finish(&monitored, total_passes, /*interrupted=*/false);
+    guard.complete();
     return results;
   } catch (const progress::interrupted &) {
     throw;
