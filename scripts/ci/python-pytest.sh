@@ -27,7 +27,9 @@ whl="${whls[0]}"
 python3 -m venv /tmp/fb-venv
 /tmp/fb-venv/bin/pip install -U pip >/dev/null
 # numpy: benchmarks/reference (#179), tested by test_reference_estimators.py.
-/tmp/fb-venv/bin/pip install "${whl}" pytest numpy
+# pyte: the progress-line PTY golden tests replay captured bytes through a terminal emulator
+# (requirements-tests.txt).
+/tmp/fb-venv/bin/pip install "${whl}" pytest numpy pyte
 # Drop pyproject pythonpath so the *installed* package is imported, not python/.
 export ACPP_VISIBILITY_MASK=omp
 export FUZZYBITS_BACKEND=omp

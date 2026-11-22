@@ -2,3 +2,6 @@ coverage
 pytest
 pytest-cov
 lxml
+# PTY golden tests for the progress line (tests/python/test_progress_line.py) re-draw the captured
+# byte stream through a terminal emulator to check for wrap drift.
+pyte
