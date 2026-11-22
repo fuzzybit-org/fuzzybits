@@ -78,9 +78,12 @@ ENV SCRAM_RUNTIME_PACKAGES="libxml2 \
 
 FROM base AS minimal
 WORKDIR /build
+# The lists cache mount is empty when `base` came from the registry cache (its
+# RUN never executed in this builder), so every installing RUN updates itself.
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-fast update && \
     apt-fast install -y --no-install-recommends \
     $BUILD_PACKAGES \
     $SRC_BUILD_PACKAGES \
