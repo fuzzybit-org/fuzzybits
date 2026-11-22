@@ -1366,7 +1366,6 @@ public:
             throw *error;
         }
     }
-
     /// Drop the callback while the GIL is held, before the sink is destroyed.
     void clear() {
         callback_ = py::none();
@@ -1415,28 +1414,22 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
     }
 
     std::optional<pcfb::Result<fuzzybits::compile::Compiled>> compiled;
-    auto drop_sink = [&sink] {
-        if (sink) {
-            py::gil_scoped_acquire acquire;
-            sink->clear();
-        }
-    };
     try {
         py::gil_scoped_release release;
         compiled.emplace(fuzzybits::compile::compile_files(input_files, opt));
-    } catch (const fuzzybits::runtime::progress::interrupted &) {
+    } catch (...) {
+        // See run_pcfb_bytes: the stored callback error, not the C++ type, decides what to re-raise.
         py::gil_scoped_acquire acquire;
         if (sink) {
             sink->rethrow_if_failed();
+            sink->clear();
         }
         throw;
-    } catch (...) {
-        // A non-sink failure: the engine already reported on_finish. Drop the callback (and any
-        // stored Python error) with the GIL held, then let the original exception through.
-        drop_sink();
-        throw;
     }
-    drop_sink();
+    if (sink) {
+        py::gil_scoped_acquire acquire;
+        sink->clear();
+    }
     if (!*compiled) {
         throw std::runtime_error("compile: " + compiled->error().message);
     }
@@ -1562,32 +1555,33 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     }
 
     std::vector<fuzzybits::runtime::QueryResult> results;
-    auto drop_sink = [&sink] {
-        if (sink) {
-            py::gil_scoped_acquire acquire;
-            sink->clear();
-        }
-    };
     try {
         py::gil_scoped_release release;
         results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(owned), opt);
-    } catch (const fuzzybits::runtime::progress::interrupted &) {
+    } catch (...) {
+        // Do not key off the C++ exception type: `run_pcfb` lives in libmc/libscram while this
+        // binding is built with hidden visibility, so `catch (progress::interrupted&)` need not
+        // match across the DSO boundary. The sink is the authoritative signal: if the callback
+        // raised, its exception is stored and re-raised here with the original traceback.
         py::gil_scoped_acquire acquire;
         if (sink) {
             sink->rethrow_if_failed();
+            sink->clear();
         }
-        throw;
-    } catch (const sycl::exception &e) {
-        drop_sink();
-        throw std::runtime_error(std::string("SYCL/AdaptiveCpp kernel failed: ") + e.what());
-    } catch (const fuzzybits::runtime::RuntimeError &) {
-        drop_sink();
-        throw;
-    } catch (const std::exception &e) {
-        drop_sink();
-        throw std::runtime_error(std::string("Monte Carlo run failed: ") + e.what());
+        try {
+            throw;
+        } catch (const sycl::exception &e) {
+            throw std::runtime_error(std::string("SYCL/AdaptiveCpp kernel failed: ") + e.what());
+        } catch (const fuzzybits::runtime::RuntimeError &) {
+            throw;
+        } catch (const std::exception &e) {
+            throw std::runtime_error(std::string("Monte Carlo run failed: ") + e.what());
+        }
     }
-    drop_sink();
+    if (sink) {
+        py::gil_scoped_acquire acquire;
+        sink->clear();
+    }
     return query_results_to_py(results);
 }
 
