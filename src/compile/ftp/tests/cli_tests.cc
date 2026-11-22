@@ -213,21 +213,89 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile defaults to hull for FTP input and says how to get Boolean output", "[compile][ftp][cli]") {
+TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][cli][hull]") {
     const auto scratch = scratch_directory("hull");
-    const auto model = (fixtures_root() / "initiator_rule" / "model.ftp").string();
-    const auto out = (scratch / "m.pcfb").string();
-    const auto ran = run_fzb("compile " + quoted(model) + " --no-progress -o " + quoted(out), scratch);
-    REQUIRE(ran.status != 0);
-    REQUIRE_FALSE(std::filesystem::exists(out));
-    INFO(ran.err);
-    REQUIRE(ran.err.find("compile.ftp.hull-output-unsupported") != std::string::npos);
-    REQUIRE(ran.err.find("--negation boolean") != std::string::npos);
-    REQUIRE(ran.err.find("'TOP'") != std::string::npos);
+    const auto out = scratch / "m.pcfb";
+    // No complemented event: no marked literals, so the default hull target can be written.
+    const auto model = scratch / "m.ftp";
+    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
-    const auto explicit_hull = run_fzb("compile " + quoted(model) + " --negation hull --no-progress -o " + quoted(out), scratch);
-    REQUIRE(explicit_hull.status != 0);
-    REQUIRE(explicit_hull.err.find("compile.ftp.hull-output-unsupported") != std::string::npos);
+    const auto ran = run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    auto inspected = run_fzb("inspect " + quoted(out.string()) + " --validate --json", scratch);
+    REQUIRE(inspected.status == 0);
+    auto summary = json::parse(inspected.out);
+    REQUIRE(summary);
+    REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
+    auto const *metadata = summary.value().find("metadata");
+    REQUIRE(metadata->find("compile.query.0.negation")->string == "monotone_hull");
+    REQUIRE(metadata->find("compile.query.0.literal_mode")->string == "atom_split");
+    REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset")->string == "1");
+
+    // --negation boolean: a minor-1 file, which the exact evaluator still reads.
+    const auto boolean = run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch);
+    REQUIRE(boolean.status == 0);
+    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
+    REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
+    require_close(exact_of(out, scratch), 0.314);
+
+    // Both kinds on one target: two queries with the target's name.
+    const auto config = scratch / "both.json";
+    std::ofstream(config) << R"({"targets": [{"name": "TOP", "negation": "both"}]})";
+    const auto both = run_fzb("compile " + quoted(model.string()) + " --config " + quoted(config.string()) + " --no-progress -o " + quoted(out.string()), scratch);
+    INFO(both.err);
+    REQUIRE(both.status == 0);
+    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
+    REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
+    REQUIRE(summary.value().find("queries")->integer == 2);
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
+    REQUIRE(summary.value().find("metadata")->find("compile.query.1.negation")->string == "monotone_hull");
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile refuses hull targets with marked literals and says how to proceed", "[compile][ftp][cli][hull]") {
+    const auto scratch = scratch_directory("literals");
+    const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
+    const auto out = (scratch / "m.pcfb");
+    for (const char *flags : {"", " --literals omega_l", " --negation hull"}) {
+        const auto refused = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
+        INFO(flags << "\n" << refused.err);
+        REQUIRE(refused.status != 0);
+        REQUIRE_FALSE(std::filesystem::exists(out));
+        REQUIRE(refused.err.find("compile.ftp.hull-literals-unsupported") != std::string::npos);
+        REQUIRE(refused.err.find("--literals negation") != std::string::npos);
+        REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
+    }
+    for (const char *flags : {" --literals negation", " --negation boolean", " --complement-events negation"}) {
+        const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
+        INFO(flags << "\n" << ran.err);
+        REQUIRE(ran.status == 0);
+        REQUIRE(std::filesystem::exists(out));
+        std::filesystem::remove(out);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp][cli][hull][mc]") {
+    const auto scratch = scratch_directory("run");
+    const auto model = scratch / "m.ftp";
+    const auto out = scratch / "m.pcfb";
+    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status == 0);
+    const auto run = run_fzb("run " + quoted(out.string()) + " --trials 1024 --backend omp", scratch);
+    INFO(run.err);
+    REQUIRE(run.status != 0);
+    REQUIRE(run.err.find("pcfb.unsupported-query-kind") != std::string::npos);
+    REQUIRE(run.err.find("MONOTONE_HULL_PROBABILITY") != std::string::npos);
+    REQUIRE(run.out.find("estimate") == std::string::npos);
+
+    // The same model as a Boolean file runs.
+    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch).status == 0);
+    const auto boolean = run_fzb("run " + quoted(out.string()) + " --trials 65536 --backend omp --json", scratch);
+    INFO(boolean.err);
+    REQUIRE(boolean.status == 0);
     std::filesystem::remove_all(scratch);
 }
 

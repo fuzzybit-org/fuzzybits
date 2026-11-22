@@ -186,27 +186,117 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
     REQUIRE(again.value().bytes == compiled.bytes);
 }
 
-TEST_CASE("hull negation is the default for FTP and is refused until the writer supports it", "[compile][ftp]") {
+[[nodiscard]] auto query_kinds(::pcfb::ir::Circuit const &circuit) -> std::vector<::pcfb::QueryKind> {
+    std::vector<::pcfb::QueryKind> out;
+    for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
+        out.push_back(query->kind());
+    }
+    return out;
+}
+
+constexpr auto minor_1 = 0x00010001U;
+constexpr auto minor_2 = 0x00010002U;
+
+TEST_CASE("FTP input defaults to hull queries with their metadata", "[compile][ftp][hull]") {
+    // `simple` has no complemented event, so no marked literals.
+    const auto compiled = compile_ok(simple, {});
+    const auto circuit = view(compiled.bytes);
+    REQUIRE(circuit.schema_version() == minor_2);
+    REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP"});
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    REQUIRE(string_meta(circuit, "compile.query.0.negation") == "monotone_hull");
+    REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "atom_split");
+    auto const *rule = circuit->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset");
+    REQUIRE(rule != nullptr);
+    REQUIRE(rule->value_as_IntValue()->value() == 1);
+    REQUIRE(compiled.targets[0].monotone_hull);
+    REQUIRE_FALSE(compiled.targets[0].boolean);
     const auto result = compile_text(simple, {});
-    REQUIRE_FALSE(result);
-    REQUIRE(has_code(result.diagnostics(), "compile.ftp.hull-output-unsupported"));
     REQUIRE(has_code(result.diagnostics(), "compile.ftp.default-negation"));
-    const auto message = std::ranges::find_if(result.diagnostics().items(), [](auto const &item) { return item.severity == fuzzybits::api::diagnostic_severity::error; });
-    REQUIRE(message != result.diagnostics().items().end());
-    REQUIRE(message->message.find("--negation boolean") != std::string::npos);
-    REQUIRE(message->message.find("'TOP'") != std::string::npos);
+    REQUIRE(has_code(result.diagnostics(), "pc.pipeline.pass-skipped"));
+    // The runtime refuses hull queries until #183, the exact evaluator included.
+    REQUIRE_THROWS_AS(exact(compiled), fuzzybits::compile::ExactEvalError);
+    // Without literals the hull of a coherent tree is its probability: the Boolean file of the same model.
+    REQUIRE(std::abs(exact(compile_ok(simple, boolean_options())) - 0.314) <= 1e-12);
+    const auto recorded = json::parse(*string_meta(circuit, "compile.options"));
+    REQUIRE(recorded);
+    REQUIRE(recorded.value().find("targets")->items[0].find("negation")->string == "hull");
+}
 
-    ftp::options hull;
-    hull.negation = "hull";
-    const auto explicit_hull = compile_text(simple, hull);
-    REQUIRE_FALSE(explicit_hull);
-    REQUIRE(has_code(explicit_hull.diagnostics(), "compile.ftp.hull-output-unsupported"));
-    REQUIRE_FALSE(has_code(explicit_hull.diagnostics(), "compile.ftp.default-negation"));
+TEST_CASE("--negation boolean writes minor-1 Boolean files", "[compile][ftp][hull]") {
+    const auto compiled = compile_ok(simple, boolean_options());
+    const auto circuit = view(compiled.bytes);
+    REQUIRE(circuit.schema_version() == minor_1);
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
+    REQUIRE(string_meta(circuit, "compile.query.0.negation") == "boolean");
+}
 
-    // The default is visible on the lowered target as well.
-    const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", simple}}), {});
-    REQUIRE(lowered);
-    REQUIRE(lowered.value().projection.target_bindings().front().negation.monotone_hull);
+TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compile][ftp][hull]") {
+    const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
+    ftp::options options;
+    options.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+    options.config = R"({"targets": [{"name": "TOP", "negation": "both"}, {"name": "W1", "negation": "hull"}, {"name": "U1", "negation": "boolean"}]})";
+    for (const int level : {0, 1}) {
+        options.level = level;
+        const auto compiled = compile_ok(text, options);
+        const auto circuit = view(compiled.bytes);
+        INFO("level " << level);
+        REQUIRE(circuit.schema_version() == minor_2);
+        REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP", "TOP", "W1", "U1"});
+        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                                                      ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, ::pcfb::QueryKind::PROBABILITY});
+        const std::vector<std::string> negations{"boolean", "monotone_hull", "monotone_hull", "boolean"};
+        for (std::size_t index = 0; index < negations.size(); ++index) {
+            REQUIRE(string_meta(circuit, ("compile.query." + std::to_string(index) + ".negation").c_str()) == negations[index]);
+        }
+        // The Boolean file of the same targets and level, for the function the queries share.
+        auto boolean = options;
+        boolean.negation = "boolean";
+        boolean.config.reset();
+        boolean.targets = {"TOP", "W1"};
+        const auto reference = compile_ok(text, boolean);
+        REQUIRE(std::abs(exact(reference, 0) - 0.496) <= 1e-12);
+        REQUIRE(std::abs(exact(reference, 1) - 0.28) <= 1e-12);
+        REQUIRE(compiled.targets[0].boolean);
+        REQUIRE(compiled.targets[0].monotone_hull);
+        if (level == 1) {
+            // A hull target keeps p = 1 events: fold_unit_probability is skipped for the whole circuit.
+            REQUIRE(sample_names(circuit) == std::set<std::string>{"A", "B", "C", "ONE"});
+        }
+    }
+}
+
+TEST_CASE("hull targets with marked literals are refused with the ways out", "[compile][ftp][hull]") {
+    const auto text = read_file(fixture("initiator_rule") / "model.ftp");
+    for (const char *mode : {"atom_split", "omega_l"}) {
+        ftp::options options;
+        options.literals = mode;
+        const auto refused = compile_text(text, options);
+        INFO(mode << "\n" << render(refused.diagnostics()));
+        REQUIRE_FALSE(refused);
+        REQUIRE(has_code(refused.diagnostics(), "compile.pra_to_pc.hull-literals-unsupported"));
+        REQUIRE(has_code(refused.diagnostics(), "compile.ftp.hull-literals-unsupported"));
+        const auto hint = std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) { return item.code == "compile.ftp.hull-literals-unsupported"; });
+        REQUIRE(hint->message.find("--literals negation") != std::string::npos);
+        REQUIRE(hint->message.find("--negation boolean") != std::string::npos);
+    }
+    // The default mode is atom_split.
+    REQUIRE_FALSE(compile_text(text, {}));
+
+    // Marked operands read as plain complements: `negation` mode, or no marks.
+    ftp::options plain;
+    plain.literals = "negation";
+    const auto negation = compile_ok(text, plain);
+    const auto circuit = view(negation.bytes);
+    REQUIRE(circuit.schema_version() == minor_2);
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "negation");
+    ftp::options unmarked;
+    unmarked.complement_events = "negation";
+    REQUIRE(compile_text(text, unmarked));
+
+    // Boolean targets are unaffected by marks.
+    REQUIRE(compile_text(text, boolean_options()));
 }
 
 TEST_CASE("the initiator rule defaults to the model attribute and flags override it", "[compile][ftp][initiator]") {
@@ -324,9 +414,12 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     options = boolean_options();
     options.overrides = {ftp::override_spec{.name = "NOPE", .value = true}};
     fails(options, "compile.pra_to_pc.unknown-element");
-    options = boolean_options();
-    options.config = "{";
-    fails(options, "compile.ftp.invalid-json");
+    for (const char *config : {"{", "", R"({"negation": "boolean", "negation": "hull"})", R"({"negation": "boolean"} trailing)", "[1e999]"}) {
+        INFO(config);
+        options = boolean_options();
+        options.config = config;
+        fails(options, "compile.ftp.invalid-json");
+    }
     for (const char *config : {"[]", R"({"typo": 1})", R"({"negation": "maybe"})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
                                R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})"}) {
         INFO(config);

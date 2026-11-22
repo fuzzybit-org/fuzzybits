@@ -757,26 +757,6 @@ namespace fuzzybits::compile::ftp {
             return root;
         }
 
-        [[nodiscard]] auto hull_names(lowered_stage const &stage) -> std::string {
-            auto const *model = pra::model_from(stage.lowering.pra_model);
-            std::string names;
-            std::size_t count = 0;
-            for (auto const &binding : stage.lowering.projection.target_bindings()) {
-                if (!binding.negation.monotone_hull) {
-                    continue;
-                }
-                if (++count <= 3) {
-                    names += (names.empty() ? "" : ", ") + in_quotes(binding.domain_target.valid()
-                                                                      ? model->stable_name(pra::domain_ref(binding.domain_target))
-                                                                      : model->stable_name(binding.subject));
-                }
-            }
-            if (count > 3) {
-                names += ", ... (" + std::to_string(count) + " targets)";
-            }
-            return names;
-        }
-
         [[nodiscard]] auto model_name_of(std::string_view project_name, std::span<reader::source_text const> sources) -> std::string {
             if (!project_name.empty()) {
                 return std::string(project_name);
@@ -810,21 +790,18 @@ namespace fuzzybits::compile::ftp {
 
                 auto write_options = lowering_ns::pcfb_write_options(stage->lowering);
                 if (!write_options) {
-                    // Raised per target by the lowering; one message with the way out.
-                    bool hull = false;
+                    // Raised per target by the lowering; one more message with the ways out.
+                    bool literals = false;
                     for (auto const &item : write_options.diagnostics().items()) {
-                        if (item.code == "compile.pra_to_pc.unsupported-query-kind") {
-                            hull = true;
-                        } else {
-                            diagnostics.push(item);
-                        }
+                        literals = literals || item.code == "compile.pra_to_pc.hull-literals-unsupported";
+                        diagnostics.push(item);
                     }
-                    if (hull) {
+                    if (literals) {
                         diagnostics.push(api::make_error(
-                            "compile.ftp.hull-output-unsupported",
-                            "target(s) " + hull_names(*stage) +
-                                " use monotone-hull negation, which the .pcfb writer cannot write yet (#218); "
-                                "use --negation boolean to write Boolean queries"));
+                            "compile.ftp.hull-literals-unsupported",
+                            "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries literal atoms; "
+                            "use --literals negation (marked operands read as plain complements), --negation boolean, "
+                            "or --complement-events negation"));
                     }
                     return fail(std::move(diagnostics));
                 }

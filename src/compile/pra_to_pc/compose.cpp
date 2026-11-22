@@ -22,6 +22,19 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
 
         auto nodes = std::move(options.node_names);
         options.node_names.clear();
+        // Per-target settings travel with the target.
+        const auto rekey = [&passes](auto &table) {
+            auto moved = std::move(table);
+            table.clear();
+            for (auto &[target, value] : moved) {
+                if (target.raw() < passes.target_map.size() && passes.target_map[target.raw()].valid()) {
+                    table.emplace(passes.target_map[target.raw()], std::move(value));
+                }
+            }
+        };
+        rekey(options.target_kinds);
+        rekey(options.quantification);
+
         auto const output_ops = passes.output.op_codes();
         auto const input_ops = input.op_codes();
         for (auto &[node, name] : nodes) {

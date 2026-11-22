@@ -9,6 +9,7 @@
 #include "ir/pc/passes/passes.h"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -56,6 +57,10 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
 
     writer::write_options names;
     names.target_names = {{first_target, "TOP"}, {second_target, "OTHER"}};
+    names.target_kinds = {{first_target, {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}},
+                          {second_target, {writer::query_kind::monotone_hull_probability}}};
+    names.quantification = {{first_target, {.literal_mode = "atom_split", .max_initiators_per_cutset = 1}},
+                            {second_target, {.literal_mode = "negation", .max_initiators_per_cutset = std::nullopt}}};
     names.node_names = {{a, "A"}, {b, "B"}, {zero, "ZERO"}, {wrapper, "WRAP"}, {inverted, "NOT-B"}, {dead, "DEAD"}, {top, "TOP-GATE"}, {other, "OTHER-GATE"}};
 
     const auto compiled = passes::compile(input, passes::compile_level::c1);
@@ -65,6 +70,18 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
     REQUIRE(composed.target_names.size() == 2);
     REQUIRE(composed.target_names.at(compiled.target_map[first_target.raw()]) == "TOP");
     REQUIRE(composed.target_names.at(compiled.target_map[second_target.raw()]) == "OTHER");
+
+    // Query kinds and the quantification record follow their target.
+    REQUIRE(composed.target_kinds.size() == 2);
+    REQUIRE(composed.target_kinds.at(compiled.target_map[first_target.raw()]) ==
+            std::vector<writer::query_kind>{writer::query_kind::probability, writer::query_kind::monotone_hull_probability});
+    REQUIRE(composed.target_kinds.at(compiled.target_map[second_target.raw()]) ==
+            std::vector<writer::query_kind>{writer::query_kind::monotone_hull_probability});
+    REQUIRE(composed.quantification.size() == 2);
+    REQUIRE(composed.quantification.at(compiled.target_map[first_target.raw()]).literal_mode == "atom_split");
+    REQUIRE(composed.quantification.at(compiled.target_map[first_target.raw()]).max_initiators_per_cutset == 1U);
+    REQUIRE(composed.quantification.at(compiled.target_map[second_target.raw()]).literal_mode == "negation");
+    REQUIRE_FALSE(composed.quantification.at(compiled.target_map[second_target.raw()]).max_initiators_per_cutset);
 
     // The events keep their names on event nodes, and the gate eliminated onto `a` does not take `a`'s node.
     const auto out_a = node_named(composed, "A");
@@ -103,4 +120,6 @@ TEST_CASE("C0 keeps every name", "[compile][pra_to_pc][compose]") {
     const auto composed = lowering::compose_write_options(names, sealed.output, compiled);
     REQUIRE(composed.target_names == names.target_names);
     REQUIRE(composed.node_names == names.node_names);
+    REQUIRE(composed.target_kinds == names.target_kinds);
+    REQUIRE(composed.quantification.size() == names.quantification.size());
 }

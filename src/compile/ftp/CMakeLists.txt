@@ -34,9 +34,14 @@ if(BUILD_TESTING)
       TARGET fuzzybits_compile_ftp_cli_tests
       SOURCES tests/cli_tests.cc
       LINK_LIBRARIES fuzzybits_compile_ftp
+      ARGS "~[mc]"
     )
     target_compile_definitions(fuzzybits_compile_ftp_cli_tests PRIVATE FZB_PATH="$<TARGET_FILE:fzb>")
     add_dependencies(fuzzybits_compile_ftp_cli_tests fzb)
     set_tests_properties(fuzzybits_compile_ftp_cli_tests PROPERTIES TIMEOUT 300)
+    if(FUZZYBITS_WITH_MC)
+      add_test(NAME mc.compile_ftp.fzb_run COMMAND fuzzybits_compile_ftp_cli_tests "[mc]")
+      set_tests_properties(mc.compile_ftp.fzb_run PROPERTIES LABELS "mc" TIMEOUT 60)
+    endif()
   endif()
 endif()

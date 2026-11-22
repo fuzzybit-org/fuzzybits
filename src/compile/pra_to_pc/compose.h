@@ -9,7 +9,8 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
     // Re-keys the names in `options`, which `pcfb_write_options` derives from the
     // PC ids of a lowering, to the ids of the circuit `passes` produced from
     // `input` (the lowering's circuit), through the pipeline's composed node and
-    // target maps. A target keeps its name; a node keeps its name when some
+    // target maps. A target keeps its name, its query kinds and its quantification
+    // record (everything the writer options hold per target); a node keeps its name when some
     // output node computes it without complement. An event name only ever goes
     // to the event's own node, never to a gate that was eliminated onto it. A
     // node folded to a constant, absorbed or complemented loses its name.
