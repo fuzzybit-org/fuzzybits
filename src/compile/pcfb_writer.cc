@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,54 @@
 
 namespace fuzzybits::compile {
 namespace {
+
+namespace prog = runtime::progress;
+
+/// Compile-stage snapshots. Each stage boundary is delivered immediately (there are four, so the
+/// coalescing rate is irrelevant); `finish` sends the last snapshot and `on_finish`.
+class compile_progress {
+ public:
+  explicit compile_progress(const Options &options)
+      : emitter_(options.progress_sinks, options.progress_max_rate_hz), start_(clock::now()) {}
+
+  [[nodiscard]] bool active() const noexcept { return emitter_.active(); }
+
+  void stage(std::string step) {
+    if (!emitter_.active()) {
+      return;
+    }
+    step_ = step;
+    prog::snapshot s;
+    s.stage = prog::phase::compile;
+    s.step = std::move(step);
+    s.elapsed_seconds = elapsed();
+    emitter_.emit_now(std::move(s));
+  }
+
+  void finish(bool interrupted = false) {
+    if (!emitter_.active() || finished_) {
+      return;
+    }
+    finished_ = true;
+    prog::snapshot last;
+    last.stage = interrupted ? prog::phase::compile : prog::phase::done;
+    last.step = interrupted ? step_ : std::string{};
+    last.elapsed_seconds = elapsed();
+    emitter_.finish(std::move(last), interrupted);
+  }
+
+ private:
+  using clock = prog::emitter::clock;
+
+  [[nodiscard]] double elapsed() const {
+    return std::chrono::duration<double>(clock::now() - start_).count();
+  }
+
+  prog::emitter emitter_;
+  clock::time_point start_;
+  std::string step_;
+  bool finished_ = false;
+};
 
 pcfb::Error compile_error(std::string message) {
   return pcfb::Error{pcfb::Error::Code::BuilderError, std::move(message)};
@@ -655,8 +704,23 @@ CompiledGraph::CompiledGraph(CompiledGraph &&) noexcept = default;
 CompiledGraph &CompiledGraph::operator=(CompiledGraph &&) noexcept = default;
 CompiledGraph::~CompiledGraph() = default;
 
+namespace {
+pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files,
+                                                  const Options &options, compile_progress &progress);
+}  // namespace
+
 pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &input_files,
                                              const Options &options) {
+  compile_progress progress(options);
+  auto graph = compile_to_graph_impl(input_files, options, progress);
+  progress.finish(!graph.has_value());
+  return graph;
+}
+
+namespace {
+
+pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files,
+                                                  const Options &options, compile_progress &progress) {
   if (input_files.empty()) {
     return std::unexpected(compile_error("compile requires at least one input file"));
   }
@@ -668,6 +732,7 @@ pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &inp
   apply_options(settings, options);
   settings.input_files(input_files);
 
+  progress.stage("parse");
   std::unique_ptr<scram::mef::Model> model;
   try {
     model = scram::mef::Initializer(input_files, settings, options.allow_extern).model();
@@ -690,6 +755,7 @@ pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &inp
     watched_gates.insert(&gate);
   }
 
+  progress.stage("lower");
   std::unique_ptr<scram::core::Pdag> graph;
   try {
     scram::core::Pdag::SetWatchedGates(&watched_gates);
@@ -704,6 +770,7 @@ pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &inp
     graph->root_ptr()->mef_origin_ptr(target);
   }
 
+  progress.stage("passes");
   try {
     scram::core::CustomPreprocessor<scram::mc::DirectEval> preprocessor(graph.get(), settings);
     preprocessor();
@@ -723,18 +790,27 @@ pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &inp
   return out;
 }
 
+}  // namespace
+
 pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files, const Options &options) {
   if (!input_files.empty() && looks_like_nombrilo_file(input_files.front())) {
     if (input_files.size() != 1) {
       return std::unexpected(compile_error("nombrilo.circuit input must be a single file"));
     }
+    compile_progress progress(options);
+    progress.stage("parse");
     NombriloCompileOptions nopt;
     nopt.target = options.target;
     nopt.weights_file = options.weights_file;
-    return compile_nombrilo_file(input_files.front(), nopt);
+    auto compiled = compile_nombrilo_file(input_files.front(), nopt);
+    progress.finish(!compiled.has_value());
+    return compiled;
   }
-  auto graph = compile_to_graph(input_files, options);
+
+  compile_progress progress(options);
+  auto graph = compile_to_graph_impl(input_files, options, progress);
   if (!graph) {
+    progress.finish(/*interrupted=*/true);
     return std::unexpected(graph.error());
   }
 
@@ -747,6 +823,7 @@ pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files
   try {
     digest = sha256_files(input_files);
   } catch (const std::exception &ex) {
+    progress.finish(/*interrupted=*/true);
     return std::unexpected(compile_error(ex.what()));
   }
   std::byte sha_bytes[32];
@@ -754,14 +831,17 @@ pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files
     sha_bytes[i] = static_cast<std::byte>(digest[i]);
   }
 
+  progress.stage("write");
   const std::string source_path = input_files.empty() ? std::string() : input_files.front();
   auto bytes = pdag_to_pcfb(*graph->graph, options, out.model_name, out.target_id,
                             std::span<const std::byte>{sha_bytes, 32}, source_path, input_files,
                             out.target_name);
   if (!bytes) {
+    progress.finish(/*interrupted=*/true);
     return std::unexpected(bytes.error());
   }
   out.bytes = std::move(*bytes);
+  progress.finish();
   return out;
 }
 

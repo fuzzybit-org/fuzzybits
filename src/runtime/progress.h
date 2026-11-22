@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -46,6 +47,14 @@ class sink {
   virtual void on_finish(const snapshot &last, bool interrupted) = 0; // exactly once per run
 };
 
+// Thrown by a sink to stop the run early (e.g. a Python callback raised). The engine unwinds
+// without touching the results, reports `finish(..., interrupted=true)`, and rethrows this type
+// unchanged so the caller can restore its own error state.
+class interrupted : public std::runtime_error {
+ public:
+  using std::runtime_error::runtime_error;
+};
+
 // Owned by a run. Coalesces to at most max_rate_hz; always delivers the first and the last snapshot;
 // builds nothing when no sink is attached.
 class emitter {
@@ -70,30 +79,50 @@ class emitter {
 
   [[nodiscard]] bool active() const noexcept { return !sinks_.empty(); }
 
+  /// Whether the next `maybe_emit` would reach the sinks. Lets a caller skip building the inputs
+  /// for a snapshot (e.g. a tally collection) that would be coalesced away.
+  [[nodiscard]] bool due() const {
+    if (sinks_.empty()) {
+      return false;
+    }
+    return !emitted_ || unlimited_ || now_() - last_ >= interval_;
+  }
+
   template <class MakeSnapshot>
   void maybe_emit(MakeSnapshot &&make) {
+    if (!due()) {
+      return;
+    }
+    emit_now(make());
+  }
+
+  /// Delivers `s` immediately, regardless of the coalescing interval.
+  void emit_now(snapshot s) {
     if (sinks_.empty()) {
       return;
     }
-    const auto now = now_();
-    if (emitted_ && !unlimited_ && now - last_ < interval_) {
-      return;
-    }
-    snapshot s = make();
-    last_ = now;
+    last_ = now_();
     emitted_ = true;
     broadcast(s);
   }
 
-  // Bypasses the rate limit: delivers `last` to every sink and then on_finish, exactly once.
+  // Bypasses the rate limit: delivers `last` to every sink and then on_finish, exactly once. A sink
+  // that throws while receiving `last` cannot change the outcome of the run (the results are already
+  // final), so that exception is dropped and on_finish still runs. An exception from on_finish
+  // propagates: it is raised before the caller returns.
   void finish(snapshot last, bool interrupted) {
     if (sinks_.empty() || finished_) {
       return;
     }
     finished_ = true;
-    broadcast(last);
-    for (sink *s : sinks_) {
-      s->on_finish(last, interrupted);
+    for (sink *target : sinks_) {
+      try {
+        target->on_snapshot(last);
+      } catch (...) {
+      }
+    }
+    for (sink *target : sinks_) {
+      target->on_finish(last, interrupted);
     }
   }
 
