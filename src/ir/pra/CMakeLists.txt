@@ -10,10 +10,11 @@ add_library(fuzzybits_ir_pra STATIC
   metadata.h
   model.h
   pra.h
+  projection.h
   target.h
 )
 set_target_properties(fuzzybits_ir_pra PROPERTIES POSITION_INDEPENDENT_CODE ON)
-target_link_libraries(fuzzybits_ir_pra PUBLIC fuzzybits_ir)
+target_link_libraries(fuzzybits_ir_pra PUBLIC fuzzybits_ir fuzzybits_ir_pc)
 
 if(BUILD_TESTING)
   add_subdirectory(tests)
