@@ -107,22 +107,34 @@ class emitter {
   }
 
   // Bypasses the rate limit: delivers `last` to every sink and then on_finish, exactly once. A sink
-  // that throws while receiving `last` cannot change the outcome of the run (the results are already
-  // final), so that exception is dropped and on_finish still runs. An exception from on_finish
-  // propagates: it is raised before the caller returns.
+  // that throws is skipped for the rest of this call, but on_finish still runs for every sink, and
+  // the first exception is rethrown afterwards so a failing callback is never silent.
   void finish(snapshot last, bool interrupted) {
     if (sinks_.empty() || finished_) {
       return;
     }
     finished_ = true;
+    std::exception_ptr first_error;
     for (sink *target : sinks_) {
       try {
         target->on_snapshot(last);
       } catch (...) {
+        if (!first_error) {
+          first_error = std::current_exception();
+        }
       }
     }
     for (sink *target : sinks_) {
-      target->on_finish(last, interrupted);
+      try {
+        target->on_finish(last, interrupted);
+      } catch (...) {
+        if (!first_error) {
+          first_error = std::current_exception();
+        }
+      }
+    }
+    if (first_error) {
+      std::rethrow_exception(first_error);
     }
   }
 

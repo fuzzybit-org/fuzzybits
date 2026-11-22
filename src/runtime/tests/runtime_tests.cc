@@ -168,13 +168,14 @@ TEST_CASE("progress::emitter coalesces to the rate but always delivers first and
   CHECK(sink.finish_count == 1);
 }
 
-TEST_CASE("progress::emitter still calls on_finish when delivering the last snapshot throws",
+TEST_CASE("progress::emitter never swallows a sink exception at finish",
           "[runtime][progress][emitter]") {
   RecordingSink sink;
-  auto now = at_ms(0);
-  fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0, [&now] { return now; });
+  fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0);
   sink.throw_on = 0;  // the first on_snapshot from finish()
-  emitter.finish(fuzzybits::runtime::progress::snapshot{}, false);
+  CHECK_THROWS_AS(emitter.finish(fuzzybits::runtime::progress::snapshot{}, false),
+                  fuzzybits::runtime::progress::interrupted);
+  // on_finish still ran, and only once.
   CHECK(sink.finished);
   CHECK_FALSE(sink.interrupted);
   CHECK(sink.finish_count == 1);

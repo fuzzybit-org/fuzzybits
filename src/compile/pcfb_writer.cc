@@ -69,7 +69,15 @@ class compile_progress {
     last.stage = interrupted ? prog::phase::compile : prog::phase::done;
     last.step = interrupted ? step_ : std::string{};
     last.elapsed_seconds = elapsed();
-    emitter_.finish(std::move(last), interrupted);
+    if (!interrupted) {
+      emitter_.finish(std::move(last), false);
+      return;
+    }
+    // Already unwinding: never replace the compile error with a sink exception.
+    try {
+      emitter_.finish(std::move(last), true);
+    } catch (...) {
+    }
   }
 
  private:
