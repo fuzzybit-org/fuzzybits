@@ -17,7 +17,13 @@ excludes=(
   --exclude libacpp-rt.so
   --exclude libacpp-common.so
   --exclude librt-backend-cuda.so
+  --exclude librt-backend-hip.so
   --exclude librt-backend-omp.so
+  --exclude libllvm-to-amdgpu.so
+  --exclude libamdhip64.so.7
+  --exclude libamdhip64.so
+  --exclude libhiprtc.so.7
+  --exclude libhiprtc.so
   --exclude libllvm-to-ptx.so
   --exclude libllvm-to-backend.so
   --exclude libllvm-to-host.so

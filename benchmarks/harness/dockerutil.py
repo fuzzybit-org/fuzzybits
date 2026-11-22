@@ -112,10 +112,13 @@ def parse_toolchain_env(path: Path) -> dict[str, str]:
 
 
 def toolchain_image(root: Path | None = None) -> str:
+    """Immutable toolchain tag; the hash must match scripts/ci/toolchain-sha.sh."""
     repo = root or repo_root()
     env_path = repo / "toolchain.env"
     env = parse_toolchain_env(env_path)
-    sha12 = hashlib.sha256(env_path.read_bytes()).hexdigest()[:12]
+    digest = hashlib.sha256(env_path.read_bytes())
+    digest.update((repo / "docker" / "toolchain.Dockerfile").read_bytes())
+    sha12 = digest.hexdigest()[:12]
     ref = env["ACPP_REF"]
     return f"ghcr.io/fuzzybit-org/fuzzybits-toolchain:{ref}-generic-{sha12}"
 

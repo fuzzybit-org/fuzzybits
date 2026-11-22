@@ -17,7 +17,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import Literal
 
-Backend = Literal["auto", "cuda", "omp", "metal"]
+Backend = Literal["auto", "cuda", "hip", "omp", "metal"]
 Variant = Literal["auto", "generic", "cuda-sm70", "cuda-sm86", "cuda-sm120"]
 
 _NATIVE: ModuleType | None = None
@@ -82,7 +82,7 @@ def _ensure_jit_cache() -> None:
 
 def _ensure_runtime_defaults() -> None:
     os.environ.setdefault("ACPP_DEBUG_LEVEL", "0")
-    os.environ.setdefault("ACPP_PERSISTENT_RUNTIME", "1")
+    os.environ.setdefault("ACPP_PERSISTENT_RUNTIME", "0")
 
 
 def _load_cuda_driver():
@@ -140,6 +140,57 @@ def has_cuda_device() -> bool:
     return bool(_cuda_compute_capabilities())
 
 
+_KFD = Path("/dev/kfd")
+_KFD_TOPOLOGY = Path("/sys/class/kfd/kfd/topology/nodes")
+_DRI = Path("/dev/dri")
+
+
+def amdgpu_gfx_targets() -> list[str]:
+    """``gfxNNNN`` names of AMD GPUs this process can open through the KFD.
+
+    Reads KFD sysfs topology without initialising ROCm, so it can run before
+    ``HIP_VISIBLE_DEVICES`` is applied. Requires read/write access to
+    ``/dev/kfd`` and to at least one DRM render node (inside a container both
+    must be passed with ``--device``).
+    """
+    if sys.platform != "linux" or not os.access(_KFD, os.R_OK | os.W_OK):
+        return []
+    if not any(os.access(node, os.R_OK | os.W_OK) for node in _DRI.glob("renderD*")):
+        return []
+    targets: list[str] = []
+    for props in sorted(_KFD_TOPOLOGY.glob("*/properties")):
+        try:
+            fields = dict(line.split(None, 1) for line in props.read_text().splitlines() if " " in line)
+            version = int(fields.get("gfx_target_version", "0"))
+        except (OSError, ValueError):
+            continue
+        if version <= 0:
+            continue
+        major, minor, stepping = version // 10000, (version // 100) % 100, version % 100
+        targets.append(f"gfx{major}{minor:x}{stepping:x}")
+    return targets
+
+
+def _hip_runtime_loadable() -> bool:
+    """True if the ROCm 7 HIP runtime + hipRTC (system-provided, never bundled) load.
+
+    The HIP plugin links libamdhip64.so.7 and libllvm-to-amdgpu links
+    libhiprtc.so.7; hiprtcLinkComplete then dlopens the unversioned
+    libamdhip64.so (ROCm's hip-runtime-amd ships it). All three must resolve
+    or every SSCP kernel fails to link.
+    """
+    for name in ("libamdhip64.so.7", "libhiprtc.so.7", "libamdhip64.so"):
+        try:
+            ctypes.CDLL(name)
+        except OSError:
+            return False
+    return True
+
+
+def has_hip_device() -> bool:
+    return bool(amdgpu_gfx_targets()) and _hip_runtime_loadable()
+
+
 def _discover_installed() -> dict[str, str]:
     """Map variant name → import path for native extensions sitting in this package."""
     pkg_dir = Path(__file__).resolve().parent
@@ -181,14 +232,12 @@ def _select_variant(requested: str, installed: dict[str, str]) -> str:
 
 
 def _select_backend(requested: str) -> str:
-    if requested == "cuda":
-        return "cuda"
-    if requested == "omp":
-        return "omp"
-    if requested == "metal":
-        return "metal"
+    if requested in {"cuda", "hip", "omp", "metal"}:
+        return requested
     if has_cuda_device():
         return "cuda"
+    if has_hip_device():
+        return "hip"
     # Darwin Metal+OpenMP wheel: leave the mask unset so AdaptiveCpp enumerates
     # every compiled-in backend (paravirtual Metal GPU + OpenMP host).
     if sys.platform == "darwin":
@@ -204,7 +253,7 @@ def _apply_visibility(backend: str, device: str | int | None) -> None:
         os.environ["ACPP_VISIBILITY_MASK"] = backend
     if device is None:
         return
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(device)
+    os.environ["HIP_VISIBLE_DEVICES" if backend == "hip" else "CUDA_VISIBLE_DEVICES"] = str(device)
 
 
 def init(
@@ -220,14 +269,16 @@ def init(
     Parameters
     ----------
     backend:
-        ``"cuda"``, ``"omp"``, ``"metal"``, or ``"auto"``. Auto selects CUDA
-        if an NVIDIA device is visible, otherwise OpenMP on Linux; on Darwin
-        the mask is left unset so Metal and OpenMP both appear in
-        :func:`list_devices`. Overrides ``FUZZYBITS_BACKEND`` /
-        ``MCSCRAM_BACKEND``.
+        ``"cuda"``, ``"hip"``, ``"omp"``, ``"metal"``, or ``"auto"``. Auto
+        selects CUDA if an NVIDIA device is visible, else HIP if an AMD GPU is
+        reachable through ``/dev/kfd`` and the ROCm 7 HIP runtime + hipRTC load,
+        otherwise OpenMP on Linux; on Darwin the mask is left unset so Metal
+        and OpenMP both appear in :func:`list_devices`. Overrides
+        ``FUZZYBITS_BACKEND`` / ``MCSCRAM_BACKEND``.
     device:
-        CUDA device ordinal or UUID forwarded to ``CUDA_VISIBLE_DEVICES``.
-        ``FUZZYBITS_DEVICE`` is consulted when this is ``None``.
+        Device ordinal or UUID forwarded to ``HIP_VISIBLE_DEVICES`` when the
+        backend is HIP, else ``CUDA_VISIBLE_DEVICES``. ``FUZZYBITS_DEVICE`` is
+        consulted when this is ``None``.
     variant:
         Compile-time wheel variant: ``"generic"``, ``"cuda-sm70"``,
         ``"cuda-sm86"``, ``"cuda-sm120"``, or ``"auto"``. Auto picks a

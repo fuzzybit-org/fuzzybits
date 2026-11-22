@@ -26,8 +26,8 @@ from .guards import (
     GuardError,
     LockHandle,
     acquire_lock,
+    device_occupancy,
     format_foreign_load,
-    gpu_occupancy,
     release_lock,
     snapshot_load,
     wait_for_idle,
@@ -161,7 +161,57 @@ TARGETS: dict[str, dict[str, Any]] = {
         "shared_device": True,
         "report_only": True,
     },
+    # bubs (mbp-1, gpu-runners / amd-gpu): Radeon Pro 5500M 8 GB (Navi 14,
+    # gfx1012, RDNA1, 24 CUs) via the HIP backend + SSCP JIT. No --gpus:
+    # scripts/ci/amd-docker-args.sh passes /dev/kfd and the GPU's render node.
+    # The host desktop keeps ~4 GiB of VRAM, and the fuzzybits-ci runners share
+    # the CPU; report-only.
+    "gfx1012": {
+        "docker_context": "bubs-mbp",
+        "gpus": None,
+        "amd_gpu": True,
+        "backend": "hip",
+        "profiler": None,
+        "profiler_bin": None,
+        "lock_host": "bubs",
+        "lock_path": "/tmp/gpu-lock-bubs-amd-0",
+        "device": "AMD Radeon Pro 5500M 8GB (gfx1012)",
+        "runner": "mbp-1",
+        "models_dir": "/tmp/fuzzybits-bench/input",
+        "work_dir": "/tmp/fuzzybits-bench/work",
+        "jit_volume": "fuzzybits-bench-jit-gfx1012",
+        # nus9601 samples ~5e6 trials/s here: the 2 x 2^27-trial sizing probe
+        # needs ~55 s against the 30 s gpu_perf budget sized for NVIDIA parts.
+        "budget_scale": 4.0,
+        "shared_device": True,
+        "report_only": True,
+    },
 }
+
+GPU_BACKENDS = frozenset({"cuda", "hip"})
+
+
+def _budget_s(model: Any, key: str, target: Mapping[str, Any], default: int = 60) -> int:
+    """Per-model time budget; ``gpu_perf`` scales by the target's ``budget_scale``."""
+    budget = float(model.time_budget_s.get(key, default))
+    if key == "gpu_perf":
+        budget *= float(target.get("budget_scale", 1.0))
+    return int(budget)
+
+
+def _device_args(target: Mapping[str, Any], host: str | None) -> list[str]:
+    """Extra ``docker run`` words for targets that cannot use ``--gpus``."""
+    if not target.get("amd_gpu"):
+        return []
+    script = repo_root() / "scripts" / "ci" / "amd-docker-args.sh"
+    if host:
+        cmd = ["ssh", "-o", "BatchMode=yes", host, "bash", "-s"]
+        proc = subprocess.run(cmd, input=script.read_text(), capture_output=True, text=True, check=False)
+    else:
+        proc = subprocess.run(["bash", str(script)], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        raise GuardError(f"no AMD GPU on {host or 'this host'}: {proc.stderr.strip()}")
+    return proc.stdout.split()
 
 
 def _sample_s_ms(run: Mapping[str, Any] | None) -> float | None:
@@ -516,9 +566,12 @@ def cmd_run(args: argparse.Namespace) -> int:
         extra={"OMP_NUM_THREADS": str(target["omp_num_threads"])} if target.get("omp_num_threads") else None,
     )
     cpuset = target.get("cpuset_cpus")
+    amd = bool(target.get("amd_gpu"))
+    devices: list[str] = []
     lock: LockHandle | None = None
     try:
         try:
+            devices = _device_args(target, host)
             if target.get("lock_path") and not args.no_lock:
                 lock = acquire_lock(
                     host,
@@ -527,13 +580,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             if args.mode == "accuracy":
                 # Correctness, not a timing gate. CI runners are often busy.
-                load_before = snapshot_load(context, gpus=gpus)
+                load_before = snapshot_load(context, gpus=gpus, amd=amd)
             else:
                 load_before = wait_for_idle(
                     context=context,
                     gpus=gpus,
                     retries=args.guard_retries,
                     shared_device=bool(target.get("shared_device")),
+                    amd=amd,
                 )
         except GuardError as exc:
             payload = {
@@ -574,6 +628,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 timeout_s=int(model.time_budget_s.get("cpu_compile") or model.time_budget_s.get("cpu_accuracy", 60)),
                 gpus=gpus if backend == "cuda" else None,
                 cpuset_cpus=cpuset,
+                devices=devices,
             )
             if args.mode == "compile" or model.has_tag("pwr"):
                 inspect = compiled.get("inspect") or {}
@@ -660,7 +715,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 )
             )
             budget_key = "cpu_accuracy" if args.mode == "accuracy" else (
-                "gpu_perf" if backend == "cuda" else "cpu_perf"
+                "gpu_perf" if backend in GPU_BACKENDS else "cpu_perf"
             )
             run = fzb_run(
                 context=context,
@@ -670,12 +725,13 @@ def cmd_run(args: argparse.Namespace) -> int:
                 backend=backend,
                 volumes=volumes,
                 env=env,
-                timeout_s=int(model.time_budget_s.get(budget_key, 60)),
+                timeout_s=_budget_s(model, budget_key, target),
                 gpus=gpus if backend == "cuda" else None,
                 profiler=target.get("profiler") if args.mode == "perf" else None,
                 profiler_bin=target.get("profiler_bin"),
                 cpuset_cpus=cpuset,
                 inprocess=backend == "omp",
+                devices=devices,
             )
             if args.mode == "accuracy":
                 row = _accuracy_row(model, run, manifest=manifest)
@@ -684,7 +740,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             else:
                 profiler = (
                     _gpu_profiler_with_fallback(run)
-                    if backend == "cuda"
+                    if backend in GPU_BACKENDS
                     else (run.get("profiler") or {})
                 )
                 timed_out = bool(run.get("timed_out"))
@@ -713,7 +769,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-        load_after = snapshot_load(context, gpus=gpus)
+        load_after = snapshot_load(context, gpus=gpus, amd=amd)
         payload = {
             "schema_version": 1,
             "kind": "run",
@@ -799,7 +855,8 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
     context = target["docker_context"]
     backend = args.backend or target["backend"]
     gpus = target["gpus"]
-    gpu = backend == "cuda"
+    gpu = backend in GPU_BACKENDS
+    amd = bool(target.get("amd_gpu"))
     base_sha = args.base or _git_sha(root, "origin/develop")
     head_sha = args.head or _git_sha(root, "HEAD")
     if args.build:
@@ -859,9 +916,11 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
 
     sample_metric = args.metric == "sample"
     shared = bool(target.get("shared_device"))
+    devices: list[str] = []
     lock: LockHandle | None = None
     try:
         try:
+            devices = _device_args(target, host)
             if target.get("lock_path") and not args.no_lock:
                 lock = acquire_lock(
                     host,
@@ -873,6 +932,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                 gpus=gpus,
                 retries=args.guard_retries,
                 shared_device=shared,
+                amd=amd,
             )
         except GuardError as exc:
             return {
@@ -930,6 +990,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                 env=env_base,
                 timeout_s=compile_timeout,
                 gpus=gpus if gpu else None,
+                devices=devices,
                 cpuset_cpus=cpuset,
             )
             compiled_head = compile_and_inspect(
@@ -941,6 +1002,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                 env=env_head,
                 timeout_s=compile_timeout,
                 gpus=gpus if gpu else None,
+                devices=devices,
                 cpuset_cpus=cpuset,
             )
             if compiled_base.get("timed_out") or compiled_head.get("timed_out"):
@@ -979,7 +1041,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                 )
             scale_meta: dict[str, Any] | None = None
             budget_key = "gpu_perf" if gpu else "cpu_perf"
-            timeout_s = int(model.time_budget_s.get(budget_key, 60))
+            timeout_s = _budget_s(model, budget_key, target)
             # The sample metric times fuzzybits.run in-process after a warm-up,
             # so container start-up and JIT stay out of the measurement.
             profiler = target.get("profiler") if gpu and not sample_metric else None
@@ -996,6 +1058,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                     env=env_base,
                     timeout_s=timeout_s,
                     gpus=gpus if gpu else None,
+                    devices=devices,
                     cpuset_cpus=cpuset,
                     inprocess=True,
                     warmup_trials=trials,
@@ -1027,6 +1090,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                     env=env_head,
                     timeout_s=timeout_s,
                     gpus=gpus if gpu else None,
+                    devices=devices,
                     cpuset_cpus=cpuset,
                 )
                 if probe.get("timed_out") or not probe.get("ok"):
@@ -1086,6 +1150,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                     env=env,
                     timeout_s=timeout_s,
                     gpus=gpus if gpu else None,
+                    devices=devices,
                     profiler=profiler,
                     profiler_bin=target.get("profiler_bin"),
                     extra_runs=extra,
@@ -1125,7 +1190,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
             foreign_during_isolated: str | None = None
             for round_i in range(rounds):
                 if gpu:
-                    occupancy = gpu_occupancy(context, gpus)
+                    occupancy = device_occupancy(context, gpus=gpus, amd=amd)
                     apps = occupancy.get("compute_apps") or []
                     device = occupancy.get("gpu") or {}
                     round_load.append(
@@ -1157,6 +1222,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                         env=env,
                         timeout_s=timeout_s,
                         gpus=gpus if gpu else None,
+                        devices=devices,
                         profiler=profiler,
                         profiler_bin=target.get("profiler_bin"),
                         extra_runs=extra,
@@ -1342,7 +1408,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                     file=sys.stderr,
                 )
 
-        load_after = snapshot_load(context, gpus=gpus)
+        load_after = snapshot_load(context, gpus=gpus, amd=amd)
         payload = {
             "schema_version": 1,
             "kind": "ab",
@@ -1373,6 +1439,7 @@ def _ab_once(args: argparse.Namespace, *, ids: list[str] | None) -> dict[str, An
                 "seconds": seconds or None,
                 "budget_s": args.budget_s or None,
                 "adaptivity_level": container_env(backend=backend).get("ACPP_ADAPTIVITY_LEVEL"),
+                "persistent_runtime": container_env(backend=backend).get("ACPP_PERSISTENT_RUNTIME"),
                 "inject_regression": args.inject_regression,
                 "shared_device": shared,
                 "report_only": bool(target.get("report_only")),
@@ -1476,7 +1543,7 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--dataset", default="v1")
         p.add_argument("--target", choices=sorted(TARGETS), required=True)
         p.add_argument("--docker-context", default=None)
-        p.add_argument("--backend", choices=("omp", "cuda"), default=None)
+        p.add_argument("--backend", choices=("omp", "cuda", "hip"), default=None)
         p.add_argument("--ids", nargs="+", default=None)
         p.add_argument("--tag", nargs="+", default=None)
         p.add_argument("--mode", choices=("accuracy", "perf", "compile", "run"), default="run")

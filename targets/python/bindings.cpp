@@ -894,6 +894,9 @@ const char *sycl_device_type_name(sycl::info::device_type type) {
 }
 
 std::string sycl_backend_name(const sycl::device &dev) {
+    if (dev.get_backend() == sycl::backend::hip) {
+        return "hip";
+    }
     const auto type = dev.get_info<sycl::info::device::device_type>();
     const auto vendor = dev.get_info<sycl::info::device::vendor>();
     const auto name = dev.get_info<sycl::info::device::name>();

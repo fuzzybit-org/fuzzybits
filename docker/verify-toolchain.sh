@@ -13,8 +13,9 @@ set -a
 . ./toolchain.env
 set +a
 
-export TOOLCHAIN_SHA="$(sha256sum toolchain.env | cut -c1-12)"
-export FUZZYBITS_REVISION="$(git rev-parse HEAD)"
+TOOLCHAIN_SHA="$(scripts/ci/toolchain-sha.sh)"
+FUZZYBITS_REVISION="$(git rev-parse HEAD)"
+export TOOLCHAIN_SHA FUZZYBITS_REVISION
 LOCAL="fuzzybits-toolchain:${ACPP_REF}"
 GENERIC_TAG="${LOCAL}-generic"
 CUDA_TAG="${LOCAL}-cuda12.8"
@@ -35,6 +36,7 @@ docker --context "${CONTEXT}" build \
   --build-arg ACPP_COMMIT \
   --build-arg CLANG_VERSION \
   --build-arg CUDA_DEVEL_IMAGE \
+  --build-arg ROCM_VERSION \
   --build-arg ACPP_COMPILER_FEATURE_PROFILE \
   --build-arg BOOST_URL \
   --build-arg BOOST_SHA256 \
@@ -61,13 +63,18 @@ echo "cmake=$(cmake --version | head -1)"
 echo "clang=$(clang-20 --version | head -1)"
 test -f /usr/local/lib/cmake/AdaptiveCpp/adaptivecpp-config.cmake
 test -d /usr/local/lib/cmake/Boost-1.89.0 -o -d /usr/local/lib/cmake/Boost-1.89
-ls /usr/local/lib/hipSYCL/librt-backend-cuda.so /usr/local/lib/hipSYCL/librt-backend-omp.so
-test ! -e /usr/local/lib/hipSYCL/librt-backend-rocm.so
+ls /usr/local/lib/hipSYCL/librt-backend-cuda.so /usr/local/lib/hipSYCL/librt-backend-omp.so \
+   /usr/local/lib/hipSYCL/librt-backend-hip.so
+ldd /usr/local/lib/hipSYCL/librt-backend-hip.so | grep -q "libamdhip64.so.7 => /opt/rocm/lib/"
+ldd /usr/local/lib/hipSYCL/llvm-to-backend/libllvm-to-amdgpu.so | grep -q "libhiprtc.so.7 => /opt/rocm/lib/"
+test -f /opt/rocm/amdgcn/bitcode/ockl.bc
 test ! -e /usr/local/lib/hipSYCL/librt-backend-ze.so
 test ! -e /usr/local/lib/hipSYCL/librt-backend-ocl.so
 test ! -d /opt/intel
-test ! -d /opt/rocm
-if dpkg-query -W 2>/dev/null | grep -Ei "oneapi|level-zero|rocm|intel-opencl"; then
+# Ubuntu archive ROCm 5.7 (libamdhip64-5, libhsa-runtime64-1) shares the
+# libhsa-runtime64.so.1 SONAME with ROCm 7; OpenMPI rides in with it via
+# libboost-all-dev.
+if dpkg-query -W -f "\${Package}\n" 2>/dev/null | grep -Ei "^(intel-oneapi|level-zero|intel-opencl|libamdhip64-5|libhsa-runtime64-1|libopenmpi)"; then
   echo "error: forbidden packages present" >&2
   exit 1
 fi

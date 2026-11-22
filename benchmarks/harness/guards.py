@@ -243,6 +243,59 @@ def gpu_occupancy(context: str | None, gpus: str) -> dict[str, Any]:
     }
 
 
+# KFD lists every process holding /dev/kfd as /sys/class/kfd/kfd/proc/<host pid>
+# (with per-GPU vram_<gpu_id> byte counts); amdgpu exposes busy % and VRAM on
+# the render node. sysfs is the host's inside any container, so this works
+# through a remote docker context like host_loadavg.
+_AMD_PROBE = r"""
+for p in /sys/class/kfd/kfd/proc/*; do
+  [ -d "$p" ] || continue
+  echo "PID ${p##*/} $(cat "$p"/vram_* 2>/dev/null | awk '{s+=$1} END {print s+0}')"
+done
+for d in /sys/class/drm/renderD*/device; do
+  [ -r "$d/gpu_busy_percent" ] || continue
+  echo "GPU ${d%/device} $(cat "$d/gpu_busy_percent") $(cat "$d/mem_info_vram_used") $(cat "$d/mem_info_vram_total")"
+  break
+done
+"""
+
+
+def amd_occupancy(context: str | None) -> dict[str, Any]:
+    """KFD compute processes + amdgpu busy/VRAM, in gpu_occupancy's shape."""
+    proc = _run([*docker_prefix(context), "run", "--rm", "alpine:3.20", "sh", "-c", _AMD_PROBE])
+    if proc.returncode != 0:
+        raise GuardError(f"amd occupancy probe failed: {proc.stderr.strip()}")
+    apps: list[dict[str, str]] = []
+    gpu: dict[str, Any] = {}
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0] == "PID":
+            mib = int(parts[2]) / (1024.0 * 1024.0)
+            apps.append({"pid": parts[1], "process_name": "", "used_gpu_memory": f"{mib:.0f} MiB"})
+        elif len(parts) == 5 and parts[0] == "GPU":
+            gpu = {
+                "name": Path(parts[1]).name,
+                "utilization_gpu": float(parts[2]),
+                "memory_used_mib": int(parts[3]) / (1024.0 * 1024.0),
+                "memory_total_mib": int(parts[4]) / (1024.0 * 1024.0),
+            }
+    cmdlines = _pid_cmdlines(context, [app["pid"] for app in apps])
+    for app in apps:
+        cmdline = cmdlines.get(app["pid"], "")
+        if cmdline:
+            app["cmdline"] = cmdline
+        app["name"] = _display_name("", app["pid"], cmdline)
+    return {"compute_apps": apps, "gpu": gpu}
+
+
+def device_occupancy(context: str | None, *, gpus: str | None, amd: bool = False) -> dict[str, Any]:
+    if amd:
+        return amd_occupancy(context)
+    if gpus:
+        return gpu_occupancy(context, gpus)
+    return {}
+
+
 def format_foreign_load(snapshot: Mapping[str, Any] | None) -> str:
     """PR/history note, e.g. ``parakeet 3.0 GiB, util 14%`` or ``none``."""
     if not snapshot:
@@ -358,8 +411,9 @@ def wait_for_idle(
     retries: int = DEFAULT_RETRIES,
     retry_s: float = DEFAULT_RETRY_S,
     shared_device: bool = False,
+    amd: bool = False,
 ) -> dict[str, Any]:
-    """Return a snapshot of load (and GPU occupancy).
+    """Return a snapshot of load (and GPU occupancy; ``amd`` reads KFD instead of NVML).
 
     Exclusive GPUs (``shared_device=False``) raise ``GuardError`` if compute
     apps stay present. Shared GPUs (rtx3070, rtx5060ti) record foreign processes and
@@ -379,11 +433,11 @@ def wait_for_idle(
             "shared_device": shared_device,
         }
         busy_cpu = False
-        if not gpus:
+        if not gpus and not amd:
             busy_cpu = snapshot["load_fraction"] > load_fraction
         busy_gpu = False
-        if gpus:
-            snapshot.update(gpu_occupancy(context, gpus))
+        if gpus or amd:
+            snapshot.update(device_occupancy(context, gpus=gpus, amd=amd))
             snapshot["foreign_load"] = format_foreign_load(snapshot)
             # NVML reports containerized processes as process_name "[Not Found]".
             # Those are live occupants (e.g. /app/parakeet on xerxes GPU 1).
@@ -398,7 +452,7 @@ def wait_for_idle(
     raise GuardError(f"host not idle after {retries} retries: {last}")
 
 
-def snapshot_load(context: str | None, gpus: str | None = None) -> dict[str, Any]:
+def snapshot_load(context: str | None, gpus: str | None = None, *, amd: bool = False) -> dict[str, Any]:
     nproc = host_nproc(context)
     load = host_loadavg(context)
     snapshot: dict[str, Any] = {
@@ -406,7 +460,7 @@ def snapshot_load(context: str | None, gpus: str | None = None) -> dict[str, Any
         "loadavg": list(load),
         "load_fraction": load[0] / float(nproc),
     }
-    if gpus:
-        snapshot.update(gpu_occupancy(context, gpus))
+    if gpus or amd:
+        snapshot.update(device_occupancy(context, gpus=gpus, amd=amd))
         snapshot["foreign_load"] = format_foreign_load(snapshot)
     return snapshot

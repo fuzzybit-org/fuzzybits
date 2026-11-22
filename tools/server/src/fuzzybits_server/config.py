@@ -21,7 +21,7 @@ DEFAULT_BENCH_INDEX_URL = "https://fuzzybit-org.github.io/fuzzybits/bench/v1/ind
 _LEGACY_DEFAULT_INPUT = Path("/app/input/SmallTree.xml")
 _BOOLEAN_TRUE = {"1", "true", "yes", "on"}
 _BOOLEAN_FALSE = {"0", "false", "no", "off"}
-_BACKENDS = ("auto", "cuda", "omp", "metal")
+_BACKENDS = ("auto", "cuda", "hip", "omp", "metal")
 _ENGINES = ("pcfb", "legacy")
 
 
@@ -218,7 +218,7 @@ def parse_server_cli(argv: list[str] | None = None) -> argparse.Namespace:
         "--backend",
         choices=_BACKENDS,
         default="auto",
-        help="AdaptiveCpp visibility: auto (default), cuda, omp, or metal",
+        help="AdaptiveCpp visibility: auto (default), cuda, hip, omp, or metal",
     )
     parser.add_argument(
         "--engine",

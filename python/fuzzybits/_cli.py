@@ -332,7 +332,7 @@ def cmd_inspect(argv: Sequence[str]) -> int:
 def cmd_run(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb run",
-        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|omp|metal] [--json]",
+        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]",
         description="fzb run options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -349,7 +349,7 @@ def cmd_run(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--backend",
         default="auto",
-        help="AdaptiveCpp backend: auto, cuda, omp, or metal",
+        help="AdaptiveCpp backend: auto, cuda, hip, omp, or metal",
     )
     parser.add_argument("--json", action="store_true", help="print results as JSON")
     parser.add_argument(
@@ -378,9 +378,9 @@ def cmd_run(argv: Sequence[str]) -> int:
         return 1
 
     backend = str(args.backend or "auto").lower()
-    if backend not in {"auto", "cuda", "omp", "metal"}:
+    if backend not in {"auto", "cuda", "hip", "omp", "metal"}:
         print(
-            f"fzb run: unknown backend '{args.backend}' (expected auto, cuda, omp, or metal)",
+            f"fzb run: unknown backend '{args.backend}' (expected auto, cuda, hip, omp, or metal)",
             file=sys.stderr,
         )
         return 1

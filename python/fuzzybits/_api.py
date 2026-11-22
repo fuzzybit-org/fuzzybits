@@ -263,8 +263,8 @@ def _mask_backend(backend: str | None) -> str:
     if chosen in {"", "auto"}:
         _runtime.native()
         return ""
-    if chosen not in {"cuda", "omp", "metal"}:
-        raise ValueError(f"backend must be 'auto', 'cuda', 'omp', or 'metal' (got {backend!r})")
+    if chosen not in {"cuda", "hip", "omp", "metal"}:
+        raise ValueError(f"backend must be 'auto', 'cuda', 'hip', 'omp', or 'metal' (got {backend!r})")
     if not _runtime.is_initialized():
         _runtime.init(backend=chosen)  # type: ignore[arg-type]
         return chosen
@@ -511,7 +511,7 @@ def run(
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
 
     ``seed`` is rejected (#65). ``backend`` is ``"auto"``, ``"cuda"``,
-    ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`
+    ``"hip"``, ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`
     already applied. Metal SSCP currently rejects ``double`` until #17/#30.
 
     ``on_progress`` receives a :class:`ProgressSnapshot` per coalesced engine

@@ -26,6 +26,8 @@ PRODUCT_FILES = frozenset(
         "Dockerfile.cuda",
         "Dockerfile.cuda12.8",
         "Dockerfile.fzb",
+        ".dockerignore",
+        "scripts/ci/toolchain-sha.sh",
         ".github/workflows/images.yml",
     }
 )

@@ -187,11 +187,13 @@ def container_env(*, backend: str, extra: Mapping[str, str] | None = None) -> di
     env = {
         "ACPP_VISIBILITY_MASK": backend,
         "ACPP_DEBUG_LEVEL": "0",
-        # The runtime image defaults to 2, which re-JITs kernels for each new
-        # launch shape; 1 matches the live servers. 0 fails das9701 on sm_86
-        # with CU:701 (launch out of resources, #18).
+        # 2 keeps re-specialising kernels (steady-state 64 Mi-trial das9201
+        # runs 0.63-0.93 s vs 0.15 s at 1 on gfx1012). 0 fails das9701 on sm_86
+        # with CU:701 (launch out of resources, #18). A persistent runtime adds
+        # ~0.5 s to the first run of each launch shape; without it every run
+        # is at steady state (0.153/0.152/0.152 s) and init is faster.
         "ACPP_ADAPTIVITY_LEVEL": "1",
-        "ACPP_PERSISTENT_RUNTIME": "1",
+        "ACPP_PERSISTENT_RUNTIME": "0",
         "ACPP_APPDB_DIR": "/home/coder/.cache/fuzzybits/acpp",
     }
     if backend == "omp":
@@ -211,6 +213,7 @@ def docker_run(
     volumes: Sequence[str] = (),
     env: Mapping[str, str] | None = None,
     gpus: str | None = None,
+    devices: Sequence[str] = (),
     entrypoint: str = "python3",
     user: str | None = None,
     timeout: float | None = None,
@@ -222,6 +225,7 @@ def docker_run(
     cmd = docker_cmd(context, "run", "--rm", "--name", container)
     if gpus:
         cmd += ["--gpus", gpus]
+    cmd += list(devices)
     if cpuset_cpus:
         cmd += ["--cpuset-cpus", cpuset_cpus]
     if user:
@@ -254,6 +258,7 @@ def run_inner(
     profiler_bin: str | None = None,
     cpuset_cpus: str | None = None,
     inprocess: Mapping[str, Any] | None = None,
+    devices: Sequence[str] = (),
 ) -> dict[str, Any]:
     if inprocess and inprocess.get("mode") == "pass_shape":
         payload = {**dict(inprocess), "timeout": timeout_s}
@@ -304,6 +309,7 @@ def run_inner(
         volumes=volumes,
         env=env,
         gpus=gpus,
+        devices=devices,
         entrypoint=entrypoint,
         timeout=timeout_s + 90,
         cpuset_cpus=cpuset_cpus,
@@ -398,6 +404,7 @@ def compile_and_inspect(
     timeout_s: int = 120,
     gpus: str | None = None,
     cpuset_cpus: str | None = None,
+    devices: Sequence[str] = (),
 ) -> dict[str, Any]:
     compile_cmd = ["fzb", "compile", model_xml, "-c", "2", "--no-kn", "-o", pcfb_out]
     compiled = run_inner(
@@ -407,6 +414,7 @@ def compile_and_inspect(
         volumes=volumes,
         env=env,
         gpus=gpus,
+        devices=devices,
         timeout_s=timeout_s,
         cpuset_cpus=cpuset_cpus,
     )
@@ -420,6 +428,7 @@ def compile_and_inspect(
         volumes=volumes,
         env=env,
         gpus=gpus,
+        devices=devices,
         timeout_s=min(timeout_s, 60),
         cpuset_cpus=cpuset_cpus,
     )
@@ -463,6 +472,7 @@ def fzb_run(
     cpuset_cpus: str | None = None,
     inprocess: bool = False,
     warmup_trials: int | None = None,
+    devices: Sequence[str] = (),
 ) -> dict[str, Any]:
     inner = ["fzb", "run", pcfb, "--trials", str(trials), "--backend", backend, "--json"]
     inprocess_payload = None
@@ -488,6 +498,7 @@ def fzb_run(
         profiler_bin=profiler_bin,
         cpuset_cpus=cpuset_cpus,
         inprocess=inprocess_payload,
+        devices=devices,
     )
     if result["ok"]:
         try:
@@ -513,6 +524,7 @@ def probe_pass_size(
     timeout_s: int,
     gpus: str | None = None,
     cpuset_cpus: str | None = None,
+    devices: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Read ``sample_shape.trials_per_pass`` at ``trials`` without sampling."""
     result = run_inner(
@@ -522,6 +534,7 @@ def probe_pass_size(
         volumes=volumes,
         env=env,
         gpus=gpus,
+        devices=devices,
         timeout_s=timeout_s,
         cpuset_cpus=cpuset_cpus,
         inprocess={

@@ -14,7 +14,9 @@
 #   tools/server/scripts/e2e-smoke.sh [IMAGE]
 #
 # Env: SMOKE_N (default 1e7), SMOKE_TPP (default 1e6), SMOKE_TIMEOUT (90),
-#      SMOKE_Z_MAX (4), ACPP_VISIBILITY_MASK (omp).
+#      SMOKE_Z_MAX (4), ACPP_VISIBILITY_MASK (omp), FUZZYBITS_BACKEND (unset
+#      = server default), SMOKE_DOCKER_ARGS (extra `docker run` words, e.g.
+#      "--device /dev/kfd --device /dev/dri --group-add 987" for an AMD GPU).
 set -euo pipefail
 
 IMAGE="${1:-${SERVER_IMAGE:-ghcr.io/fuzzybit-org/fuzzybits-server:nightly-generic}}"
@@ -49,10 +51,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "e2e-smoke  image=${IMAGE}  N=${N}  tpp=${TPP}  timeout=${TIMEOUT_SEC}s  |z|≤${Z_MAX}  mask=${MASK}"
+echo "e2e-smoke  image=${IMAGE}  N=${N}  tpp=${TPP}  timeout=${TIMEOUT_SEC}s  |z|≤${Z_MAX}  mask=${MASK}  backend=${FUZZYBITS_BACKEND:-default}"
+
+read -r -a extra_args <<<"${SMOKE_DOCKER_ARGS:-}"
+if [[ -n "${FUZZYBITS_BACKEND:-}" ]]; then
+  extra_args+=(-e FUZZYBITS_BACKEND="${FUZZYBITS_BACKEND}")
+fi
 
 docker run --rm -d \
   --name "${NAME}" \
+  ${extra_args[@]+"${extra_args[@]}"} \
   -e ACPP_VISIBILITY_MASK="${MASK}" \
   -e ACPP_DEBUG_LEVEL="${ACPP_DEBUG_LEVEL:-0}" \
   -e HOST=0.0.0.0 \

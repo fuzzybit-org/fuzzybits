@@ -1,18 +1,29 @@
-# Toolchain images: LLVM 20 + AdaptiveCpp (full) + CUDA 12.8 + Boost 1.89.
-# Public repo. GitHub-hosted runners only (no pull_request, no self-hosted).
-# Packages stay private; org.opencontainers.image.source links them to this repo
-# so other fuzzybits workflows can pull with GITHUB_TOKEN.
+# Toolchain images: LLVM 20 + AdaptiveCpp (full) + CUDA 12.8 + ROCm 7.2 + Boost 1.89.
+# Public repo. Self-hosted fuzzybits-ci runners; never pull_request.
+# The package is public; org.opencontainers.image.source links it to this repo.
+#
+# Tags: `<ACPP_REF>-{generic,cuda12.8}-<TOOLCHAIN_SHA>` are content-addressed
+# (scripts/ci/toolchain-sha.sh) and published from develop and ci/** alike, so
+# a ci/** branch that changes the toolchain can build its own runtime images.
+# The moving `<ACPP_REF>-{generic,cuda12.8}` tags follow develop only.
+#
+# images.yml defers when its immutable toolchain tag is not yet published
+# (same push), so a successful build here dispatches it for the same ref.
 name: Toolchain images
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, "ci/**"]
     paths:
       - toolchain.env
       - docker/toolchain.Dockerfile
-      - Dockerfile.cuda12.8
+      - scripts/ci/toolchain-sha.sh
       - .github/workflows/toolchain.yml
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -25,6 +36,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      actions: write
     env:
       REGISTRY: ghcr.io
       IMAGE: ghcr.io/fuzzybit-org/fuzzybits-toolchain
@@ -83,19 +95,39 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "ACPP_REPO=${ACPP_REPO}"
             echo "ACPP_COMMIT=${ACPP_COMMIT}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
             echo "CUDA_DEVEL_IMAGE=${CUDA_DEVEL_IMAGE}"
-            echo "CUDA_RUNTIME_IMAGE=${CUDA_RUNTIME_IMAGE}"
+            echo "ROCM_VERSION=${ROCM_VERSION}"
             echo "ACPP_COMPILER_FEATURE_PROFILE=${ACPP_COMPILER_FEATURE_PROFILE}"
             echo "BOOST_VERSION=${BOOST_VERSION}"
             echo "BOOST_URL=${BOOST_URL}"
             echo "BOOST_SHA256=${BOOST_SHA256}"
-            echo "TOOLCHAIN_SHA=$(sha256sum toolchain.env | cut -c1-12)"
+            echo "TOOLCHAIN_SHA=${sha}"
           } >> "${GITHUB_ENV}"
+
+      - name: Compute tags
+        id: meta
+        run: |
+          set -euo pipefail
+          tags=(
+            "${IMAGE}:${ACPP_REF}-generic-${TOOLCHAIN_SHA}"
+            "${IMAGE}:${ACPP_REF}-cuda12.8-${TOOLCHAIN_SHA}"
+          )
+          if [[ "${GITHUB_REF}" == refs/heads/develop ]]; then
+            tags+=("${IMAGE}:${ACPP_REF}-generic" "${IMAGE}:${ACPP_REF}-cuda12.8")
+          fi
+          {
+            echo "tags<<EOF"
+            printf '%s\n' "${tags[@]}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+          printf 'tags:\n'
+          printf '  %s\n' "${tags[@]}"
 
       - name: Log in to GHCR
         uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
@@ -108,8 +140,8 @@ jobs:
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       # One image serves both cmake --preset generic and cmake --preset cuda-sm70
-      # (AdaptiveCpp full = SSCP + clang CUDA SMCP). Published under both variant
-      # tags; cache is buildcache-generic (cuda12.8 is an alias, not a second build).
+      # (AdaptiveCpp full = SSCP + clang CUDA SMCP + HIP). Published under both
+      # variant tags; cache is buildcache-generic (cuda12.8 is an alias).
       - name: Build and push
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
@@ -119,18 +151,14 @@ jobs:
           push: true
           provenance: false
           sbom: false
-          tags: |
-            ${{ env.IMAGE }}:${{ env.ACPP_REF }}-generic
-            ${{ env.IMAGE }}:${{ env.ACPP_REF }}-cuda12.8
-            ${{ env.IMAGE }}:${{ env.ACPP_REF }}-generic-${{ env.TOOLCHAIN_SHA }}
-            ${{ env.IMAGE }}:${{ env.ACPP_REF }}-cuda12.8-${{ env.TOOLCHAIN_SHA }}
+          tags: ${{ steps.meta.outputs.tags }}
           build-args: |
             ACPP_REF=${{ env.ACPP_REF }}
             ACPP_REPO=${{ env.ACPP_REPO }}
             ACPP_COMMIT=${{ env.ACPP_COMMIT }}
             CLANG_VERSION=${{ env.CLANG_VERSION }}
             CUDA_DEVEL_IMAGE=${{ env.CUDA_DEVEL_IMAGE }}
-            CUDA_RUNTIME_IMAGE=${{ env.CUDA_RUNTIME_IMAGE }}
+            ROCM_VERSION=${{ env.ROCM_VERSION }}
             ACPP_COMPILER_FEATURE_PROFILE=${{ env.ACPP_COMPILER_FEATURE_PROFILE }}
             BOOST_VERSION=${{ env.BOOST_VERSION }}
             BOOST_URL=${{ env.BOOST_URL }}
@@ -142,9 +170,17 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ env.ACPP_REF }}
             org.opencontainers.image.title=fuzzybits-toolchain
-            org.opencontainers.image.description=LLVM ${{ env.CLANG_VERSION }} + AdaptiveCpp ${{ env.ACPP_REF }} (full SSCP + CUDA SMCP) for cmake --preset generic|cuda-sm70
+            org.opencontainers.image.description=LLVM ${{ env.CLANG_VERSION }} + AdaptiveCpp ${{ env.ACPP_REF }} (full SSCP + CUDA SMCP + HIP, ROCm ${{ env.ROCM_VERSION }}) for cmake --preset generic|cuda-sm70
             dev.fuzzybits.acpp.commit=${{ env.ACPP_COMMIT }}
             dev.fuzzybits.toolchain.sha=${{ env.TOOLCHAIN_SHA }}
             dev.fuzzybits.acpp.profile=${{ env.ACPP_COMPILER_FEATURE_PROFILE }}
+            dev.fuzzybits.rocm.version=${{ env.ROCM_VERSION }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-generic
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-generic,mode=max
+
+      # GITHUB_TOKEN-created workflow_dispatch events do start workflows.
+      - name: Dispatch runtime images
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run images.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME}"

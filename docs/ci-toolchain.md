@@ -5,9 +5,9 @@ from scratch is tens of minutes; CI of fuzzybits itself should start from these
 images and finish the C++ build in under 10 minutes on a hosted-runner-sized
 machine (`--cpus=4 -m 16g`).
 
-Image: **`ghcr.io/fuzzybit-org/fuzzybits-toolchain`** (private, linked to this
-repo via `org.opencontainers.image.source`). Packages stay private so only
-fuzzybits workflows (and org members) can pull them with `GITHUB_TOKEN`.
+Image: **`ghcr.io/fuzzybit-org/fuzzybits-toolchain`** (public, linked to this
+repo via `org.opencontainers.image.source`). Anyone can pull it anonymously;
+only this repository's workflows can push (`packages: write`).
 
 Metal tarball cache is deferred; see [#30](https://github.com/fuzzybit-org/fuzzybits/issues/30).
 
@@ -24,8 +24,17 @@ than building twice.
 | base | `nvidia/cuda:12.8.1-devel-ubuntu24.04` (from `toolchain.env`) |
 | build deps | cmake, ninja, git, python3-dev, libxml2-dev, libomp, tcmalloc/jemalloc headers |
 | LLVM | clang/llvm/lld/libomp **20** from apt.llvm.org (not built from source) |
-| AdaptiveCpp | `v25.10.0` (`ACPP_COMMIT`), CUDA backend + OpenMP, **no** OpenCL / ROCm / Level Zero / oneAPI |
+| ROCm | `ROCM_VERSION` (7.2.4) from repo.radeon.com: HIP runtime (CLR), HSA, comgr/hipRTC, device bitcode, `hip-dev` headers (unpacked without its `rocm-llvm`/`hipcc` deps) |
+| AdaptiveCpp | `v25.10.0` (`ACPP_COMMIT`), CUDA + HIP + OpenMP backends, **no** OpenCL / Level Zero / oneAPI |
 | Boost | 1.89.0 static+PIC, CMake package in `/usr/local` (same URL/SHA as `toolchain.env`) |
+
+The HIP backend serves AMD GPUs only through the generic (SSCP) target:
+`libllvm-to-amdgpu.so` links the JIT output with hipRTC → comgr, so no ROCm
+clang or `hipcc` is needed at build or run time. AdaptiveCpp refuses a ROCm
+whose LLVM major is older than `CLANG_VERSION` (ROCm 6.x ships LLVM 19; 7.2
+ships LLVM 22). `libboost-all-dev` is deliberately not installed: on noble it
+pulls OpenMPI and Ubuntu's ROCm 5.7, whose `libhsa-runtime64.so.1` has the same
+SONAME as ROCm 7's.
 
 `cmake --preset generic` and `cmake --preset cuda-sm70` both work:
 
@@ -68,21 +77,23 @@ Local helper: `docker/verify-toolchain.sh` (does not push).
 CI copies the fuzzybits source into a thin overlay (`docker/toolchain-verify.Dockerfile`)
 or bind-mounts it. The toolchain image itself does **not** contain fuzzybits.
 
-Inspect backends (expect OpenMP + CUDA only; `plugin-with-sscp-compiler: true`):
+Inspect backends (`plugin-with-sscp-compiler: true`; OpenMP always, HIP when
+an AMD GPU is passed in, CUDA under `--gpus`):
 
 ```bash
-docker run --rm --entrypoint bash IMG -lc \
-  'acpp-info -l; cat /usr/local/etc/AdaptiveCpp/acpp-core.json'
+docker run --rm --device /dev/kfd --device /dev/dri \
+  --group-add "$(stat -c %g /dev/kfd)" --group-add "$(stat -c %g /dev/dri/renderD128)" \
+  --entrypoint bash IMG -lc \
+  'ACPP_VISIBILITY_MASK=hip acpp-info -l; cat /usr/local/etc/AdaptiveCpp/acpp-core.json'
 ```
-
-`acpp-core.json` may mention `default-rocm-path: /opt/rocm`; that path is
-absent and no ROCm/oneAPI/Level Zero packages are installed.
 
 ## Tags
 
 Pins come from [`toolchain.env`](../toolchain.env). Let `ACPP_REF` be the
 AdaptiveCpp ref (currently `v25.10.0`) and `TOOLCHAIN_SHA` the first 12 hex
-chars of `sha256sum toolchain.env`.
+chars of sha256 over `toolchain.env` + `docker/toolchain.Dockerfile`
+([`scripts/ci/toolchain-sha.sh`](../scripts/ci/toolchain-sha.sh), the only
+place it is computed).
 
 | tag | mutability | meaning |
 |---|---|---|
@@ -107,12 +118,16 @@ Labels (also set by the workflow):
 
 Workflow: [`.github/workflows/toolchain.yml`](../.github/workflows/toolchain.yml).
 
-Triggers (GitHub-hosted `ubuntu-24.04` only; never `pull_request`, never
-self-hosted):
+Triggers (self-hosted `fuzzybits-ci`; never `pull_request`):
 
-- `push` to `develop` when `toolchain.env`, `docker/toolchain.Dockerfile`,
-  `Dockerfile.cuda12.8`, or the workflow file change
+- `push` to `develop` or `ci/**` when `toolchain.env`,
+  `docker/toolchain.Dockerfile`, `scripts/ci/toolchain-sha.sh`, or the
+  workflow file change
 - `workflow_dispatch`
+
+Both refs publish the immutable `-<TOOLCHAIN_SHA>` tags; only `develop` moves
+`<ACPP_REF>-generic` / `-cuda12.8`. A successful push build dispatches
+`images.yml` for the same ref, which deferred while the tag was missing.
 
 The job reads `toolchain.env` into `--build-arg`s (single source of truth),
 logs into GHCR with `GITHUB_TOKEN`, and builds
@@ -138,10 +153,10 @@ Local (xerxes):
 
 ```bash
 set -a && . ./toolchain.env && set +a
-TOOLCHAIN_SHA=$(sha256sum toolchain.env | cut -c1-12)
+TOOLCHAIN_SHA=$(scripts/ci/toolchain-sha.sh)
 docker --context xerxes build -f docker/toolchain.Dockerfile --target toolchain \
   --build-arg ACPP_REF --build-arg ACPP_REPO --build-arg ACPP_COMMIT \
-  --build-arg CLANG_VERSION --build-arg CUDA_DEVEL_IMAGE \
+  --build-arg CLANG_VERSION --build-arg CUDA_DEVEL_IMAGE --build-arg ROCM_VERSION \
   --build-arg ACPP_COMPILER_FEATURE_PROFILE \
   --build-arg BOOST_URL --build-arg BOOST_SHA256 --build-arg BOOST_VERSION \
   --build-arg FUZZYBITS_REVISION="$(git rev-parse HEAD)" \
@@ -155,15 +170,18 @@ Do not `docker push` from a laptop; publishing is the workflow after merge.
 
 ## How CI consumes them
 
-Workflows [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) (hosted)
-and [`.github/workflows/gpu.yml`](../.github/workflows/gpu.yml) (self-hosted):
+Workflows [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+(self-hosted `fuzzybits-ci`; hosted for fork/Dependabot PRs) and
+[`.github/workflows/gpu.yml`](../.github/workflows/gpu.yml) (self-hosted GPUs):
 
-1. `docker login ghcr.io` with `GITHUB_TOKEN` (`packages: read` is enough to
-   pull a private package linked to this repo). Hosted jobs only, plus the
-   documented self-hosted exception in `gpu.yml`.
-2. Pull the immutable tag
-   `ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic-${TOOLCHAIN_SHA}`.
-3. Bind-mount the source at `/src` and run
+1. Pull the immutable tag
+   `ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic-${TOOLCHAIN_SHA}`
+   (public; `ci.yml` still logs in with `GITHUB_TOKEN` to avoid anonymous
+   rate limits). If it is not published yet — a PR that changes the toolchain
+   before a `ci/**` push built it — `scripts/ci/docker-toolchain-run.sh` falls
+   back to develop's moving tag with a `::warning::`. `images.yml` and the
+   bench head build never fall back: they fail or defer instead.
+2. Bind-mount the source at `/src` and run
    `cmake --preset <variant>` with `CMAKE_C/CXX_COMPILER_LAUNCHER=ccache`.
    AdaptiveCpp's `syclcc-launcher` keeps that launcher in front of `acpp`, so
    SYCL TUs go through ccache as `ccache acpp …`.
@@ -208,6 +226,8 @@ Concurrency groups are per physical GPU (`gpu-xerxes-v100s`,
 3. `CLANG_VERSION` must stay on a release AdaptiveCpp supports and that the
    CUDA devel image's headers accept (clang 20 ↔ CUDA 12.8).
 4. `CUDA_DEVEL_IMAGE` / `CUDA_RUNTIME_IMAGE` are the `FROM` lines.
+   `ROCM_VERSION` selects `repo.radeon.com/rocm/apt/<ver>`; its LLVM major
+   must be ≥ `CLANG_VERSION`, and the KFD on AMD runners must support it.
 5. `BOOST_URL` / `BOOST_SHA256` / `BOOST_VERSION` must stay ≥ `BOOST_MIN_VERSION`
    (1.87/1.88 break AdaptiveCpp CUDA SMCP).
 6. Merge to `develop`. The toolchain workflow rebuilds and retags
@@ -222,7 +242,6 @@ Concurrency groups are per physical GPU (`gpu-xerxes-v100s`,
 
 Published runtime images (`ghcr.io/fuzzybit-org/fuzzybits-runtime`) are a
 separate workflow: [`.github/workflows/images.yml`](../.github/workflows/images.yml),
-documented in [`docs/images.md`](images.md). Hosted publish jobs pull this
-toolchain image (private, `GITHUB_TOKEN`) and build `docker/runtime.Dockerfile`
-on top of it so LLVM/AdaptiveCpp are not rebuilt. The runtime package itself
-is public.
+documented in [`docs/images.md`](images.md). Its publish jobs (self-hosted
+`fuzzybits-ci`) build `docker/runtime.Dockerfile` on this toolchain's
+immutable tag so LLVM/AdaptiveCpp are not rebuilt. Both packages are public.

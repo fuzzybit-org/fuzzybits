@@ -257,10 +257,10 @@ Legacy Options:
 ### Example Run
 ```bash
 ACPP_VISIBILITY_MASK=cuda \
-ACPP_ADAPTIVITY_LEVEL=2 \
+ACPP_ADAPTIVITY_LEVEL=1 \
 ACPP_ALLOCATION_TRACKING=1 \
 ACPP_DEBUG_LEVEL=0 \
-ACPP_PERSISTENT_RUNTIME=1 \
+ACPP_PERSISTENT_RUNTIME=0 \
 ACPP_USE_ACCELERATED_CPU=on \
 mcscram \
 --pdag \
@@ -286,11 +286,16 @@ AdaptiveCpp environment variables control hardware acceleration behavior, debugg
 
 | Variable                   | Description                                             | Values                                                                              | Default |
 |----------------------------|---------------------------------------------------------|-------------------------------------------------------------------------------------|---------|
-| `ACPP_VISIBILITY_MASK`     | Controls which backends are available for execution     | `cuda`, `rocm`, `opencl`, `lz`, `omp`, combinations (e.g., `cuda,opencl`), or `all` | `all`   |
-| `ACPP_DEBUG_LEVEL`         | Controls runtime debug output verbosity                 | `0` (silent), `1` (fatal), `2` (errors/warnings), `3` (info), `4` extra             | `0`     |
-| `ACPP_ADAPTIVITY_LEVEL`    | Controls JIT kernel optimization and runtime adaptivity | `0` (static), `1` (basic), `2` (standard)                                           | `2`     |
+| `ACPP_VISIBILITY_MASK`     | Controls which backends are available for execution     | `cuda`, `hip` (alias `rocm`), `ocl`, `ze`, `omp`, lists (e.g., `cuda;hip`)           | all     |
+| `ACPP_DEBUG_LEVEL`         | Controls runtime debug output verbosity                 | `0` (silent), `1` (fatal), `2` (errors/warnings), `3` (info), `4` extra             | `2`     |
+| `ACPP_ADAPTIVITY_LEVEL`    | Controls JIT kernel optimization and runtime adaptivity | `0` (static), `1` (basic), `2` (standard)                                           | `1`     |
 | `ACPP_ALLOCATION_TRACKING` | Enables memory allocation tracking for debugging        | `0` (disabled), `1` (enabled)                                                       | `0`     |
-| `ACPP_PERSISTENT_RUNTIME`  | Keeps the runtime running between successive calls      | `0` (disabled), `1` (enabled)                                                       | `1`     |
+| `ACPP_PERSISTENT_RUNTIME`  | Keeps the runtime running between successive calls      | `0` (disabled), `1` (enabled)                                                       | `0`     |
+
+Defaults are AdaptiveCpp's (v25.10 `runtime/settings.hpp`). The OpenMP host
+backend is always loaded regardless of the mask. The fuzzybits runtime images
+set `ACPP_DEBUG_LEVEL=0`, `ACPP_ADAPTIVITY_LEVEL=1`, `ACPP_PERSISTENT_RUNTIME=0`
+and `ACPP_VISIBILITY_MASK=cuda;hip` (see [`docs/images.md`](images.md)).
 
 ### Usage Examples
 

@@ -6,7 +6,9 @@
 # 1.89 + CUDA 12.8 devel) so hosted-runner jobs do not rebuild AdaptiveCpp.
 # The final image is NOT the toolchain: it is ubuntu:24.04 plus
 #   scram-cli, fzb, AdaptiveCpp runtime, optional SSCP JIT, pip-installed
-#   fuzzybits wheel, acpp-info, mcscram-smoke.
+#   fuzzybits wheel, acpp-info, mcscram-smoke. The SSCP (generic) image also
+#   carries the HIP backend and ROCm user-space libs (~110 MB) so AMD GPUs
+#   work with `--device /dev/kfd --device /dev/dri`.
 #
 # Why not FROM ${CUDA_RUNTIME_IMAGE}? nvidia/cuda:*-runtime is ~3 GB because
 # of libcublas/cufft/cusolver/… AdaptiveCpp only needs libcudart; the NVIDIA
@@ -109,13 +111,17 @@ ARG FUZZYBITS_REVISION=unknown
 ARG FUZZYBITS_VERSION=0.18.6
 ARG INCLUDE_SSCP_JIT=1
 ARG CMAKE_PRESET=generic
+ARG ROCM_VERSION=n/a
 
+# AdaptiveCpp filters plugins by the mask it reads before main(); a later
+# `fzb run --backend hip` can only narrow among backends loaded here. The
+# cuda-smNN images ship no HIP plugin, so `hip` is inert there.
 ENV DEBIAN_FRONTEND=noninteractive \
-    ACPP_VISIBILITY_MASK=cuda \
+    ACPP_VISIBILITY_MASK="cuda;hip" \
     ACPP_DEBUG_LEVEL=0 \
-    ACPP_ADAPTIVITY_LEVEL=2 \
+    ACPP_ADAPTIVITY_LEVEL=1 \
     ACPP_ALLOCATION_TRACKING=0 \
-    ACPP_PERSISTENT_RUNTIME=1 \
+    ACPP_PERSISTENT_RUNTIME=0 \
     ACPP_APPDB_DIR=/home/coder/.cache/fuzzybits/acpp \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_ROOT_USER_ACTION=ignore \
@@ -131,6 +137,7 @@ LABEL org.opencontainers.image.source="https://github.com/fuzzybit-org/fuzzybits
       dev.fuzzybits.acpp.targets="${ACPP_TARGETS}" \
       dev.fuzzybits.cuda.embed_ptx="${CUDA_EMBED_PTX}" \
       dev.fuzzybits.cuda.version="${CUDA_VERSION}" \
+      dev.fuzzybits.rocm.version="${ROCM_VERSION}" \
       dev.fuzzybits.clang.version="${CLANG_VERSION}" \
       dev.fuzzybits.sscp="${INCLUDE_SSCP_JIT}" \
       dev.fuzzybits.cmake.preset="${CMAKE_PRESET}"
@@ -155,6 +162,9 @@ RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
       libgomp1 \
       libffi8 \
       libxml2 \
+      libdrm2 \
+      libdrm-amdgpu1 \
+      libelf1t64 \
       python3 \
       python3-pip \
       python3-venv && \
@@ -181,7 +191,7 @@ RUN native_fzb="$(mktemp)" && \
     rm -f "${native_fzb}" && \
     apt-get purge -y python3-pip python3-venv && \
     apt-get autoremove -y && \
-    printf '%s\n' /usr/local/lib /usr/local/cuda/lib64 > /etc/ld.so.conf.d/fuzzybits.conf && \
+    printf '%s\n' /usr/local/lib /usr/local/cuda/lib64 /opt/rocm/lib > /etc/ld.so.conf.d/fuzzybits.conf && \
     ldconfig && \
     mkdir -p /home/${USER}/.cache/fuzzybits/acpp && \
     chown -R ${USER}:${USER} /app /home/${USER} && \
@@ -195,9 +205,9 @@ RUN native_fzb="$(mktemp)" && \
     python3 -c "import fuzzybits; assert hasattr(fuzzybits, 'compile')" && \
     test -z "${PYTHONPATH:-}" && \
     test -z "${LD_PRELOAD:-}" && \
-    missing="$(ldd /usr/local/lib/hipSYCL/librt-backend-omp.so \
-                   /usr/local/lib/hipSYCL/librt-backend-cuda.so \
+    missing="$(ldd /usr/local/lib/hipSYCL/librt-backend-*.so \
                    /usr/local/lib/hipSYCL/llvm-to-backend/*.so \
+                   $(ls /opt/rocm/lib/*.so.* 2>/dev/null) \
                  | grep 'not found' | grep -v 'libcuda.so' || true)" && \
     if [ -n "${missing}" ]; then echo "${missing}" >&2; exit 1; fi && \
     ACPP_VISIBILITY_MASK=omp acpp-info -l && \

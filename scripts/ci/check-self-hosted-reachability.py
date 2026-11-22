@@ -7,7 +7,8 @@ allowed self-hosted runs-on values are in APPROVED_PR_RUNS_ON:
 * ``fuzzybits-ci`` (this repository only) for same-repo, non-Dependabot PRs,
   with GitHub-hosted ubuntu-24.04 for fork and Dependabot PRs.
 * Bench GPU jobs in bench.yml: ``public-ci`` + V100S / RTX 3070 / RTX 5060 Ti
-  labels, same same-repo non-Dependabot expression. GPU labels anywhere else
+  labels, and ``gpu-runners`` + ``amd-gpu`` (bubs), same same-repo
+  non-Dependabot expression. GPU labels anywhere else
   in a PR-triggered workflow stay forbidden (#122).
 * Bench CPU job: ``fuzzybits-bench`` group, same expression.
 
@@ -38,6 +39,7 @@ SELF_HOSTED_MARKERS = (
     "fzb-xerxes",
     "shelly-1",
     "gpu-runners",
+    "amd-gpu",
     "public-ci",
     "fuzzybits-ci",
     "fuzzybits-bench",
@@ -74,6 +76,9 @@ APPROVED_PR_RUNS_ON_RTX3070 = same_repo_non_dependabot_runs_on(
 APPROVED_PR_RUNS_ON_RTX5060TI = same_repo_non_dependabot_runs_on(
     '{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","fast","sm_120","rtx_5060ti_8gb"]}'
 )
+APPROVED_PR_RUNS_ON_AMD_GPU = same_repo_non_dependabot_runs_on(
+    '{"group":"gpu-runners","labels":["self-hosted","Linux","X64","amd-gpu"]}'
+)
 APPROVED_PR_RUNS_ON_BENCH_CPU = same_repo_non_dependabot_runs_on(
     '{"group":"fuzzybits-bench","labels":["self-hosted","Linux","X64"]}'
 )
@@ -87,6 +92,7 @@ APPROVED_PR_RUNS_ON_ALL = frozenset(
         APPROVED_PR_RUNS_ON_V100S,
         APPROVED_PR_RUNS_ON_RTX3070,
         APPROVED_PR_RUNS_ON_RTX5060TI,
+        APPROVED_PR_RUNS_ON_AMD_GPU,
         APPROVED_PR_RUNS_ON_BENCH_CPU,
     }
 )

@@ -200,6 +200,33 @@ else
   echo "omitting SSCP JIT bitcode (SMCP AOT runtime; llvm-to-backend still staged)"
 fi
 
+# --- HIP backend (generic only; AMD GPUs are reachable only via SSCP JIT) ---
+# The KFD driver comes from the host (`--device /dev/kfd --device /dev/dri`);
+# everything in user space is staged here. libhiprtc dlopens libamd_comgr and
+# libhiprtc-builtins through RUNPATH=$ORIGIN, so the ROCm libs keep their
+# /opt/rocm/lib layout. Device bitcode goes to the redistributable path
+# (dirname(libacpp-common)/hipSYCL/ext/bitcode/amdgcn) that LLVMToAmdgpu
+# searches before the baked ACPP_ROCM_DEVICE_LIBS_PATH.
+ROCM_PATH="${ROCM_PATH:-/opt/rocm}"
+ROCM_LIBS=(libamdhip64.so.7 libhiprtc.so.7 libhiprtc-builtins.so.7 libamd_comgr.so.3
+           libhsa-runtime64.so.1 librocprofiler-register.so.0)
+if [[ "${INCLUDE_SSCP_JIT}" == "1" && -e /usr/local/lib/hipSYCL/librt-backend-hip.so ]]; then
+  echo "including HIP backend + ROCm user-space runtime from ${ROCM_PATH}"
+  stage /usr/local/lib/hipSYCL/librt-backend-hip.so
+  for so in "${ROCM_LIBS[@]}"; do
+    stage "${ROCM_PATH}/lib/${so}" "/opt/rocm/lib/${so}"
+  done
+  # hiprtcLinkComplete dlopens the HIP runtime by its unversioned dev name
+  # (hip_comgr_helper: "hip runtime failed to load using dlopen" otherwise);
+  # ldconfig only creates SONAME links.
+  ln -sfn libamdhip64.so.7 "${DEST}/opt/rocm/lib/libamdhip64.so"
+  stage_glob "${ROCM_PATH}/amdgcn/bitcode/*.bc" /usr/local/lib/hipSYCL/ext/bitcode/amdgcn
+else
+  # Without librt-backend-hip nothing loads it, and its DT_NEEDED libhiprtc
+  # would fail the runtime image's ldd gate.
+  rm -f "${DEST}/usr/local/lib/hipSYCL/llvm-to-backend/libllvm-to-amdgpu.so"
+fi
+
 # --- smoke inputs + scripts -------------------------------------------------
 mkdir -p "${DEST}/app/input" "${DEST}/usr/local/bin"
 stage "${SRC}/docker/inputs/chinese.xml" /app/input/chinese.xml
@@ -264,5 +291,13 @@ if [[ "${INCLUDE_SSCP_JIT}" == "1" ]]; then
   require_staged "/usr/lib/llvm-${CLANG_VERSION}/bin/ld.lld"
   require_staged /usr/local/lib/hipSYCL/ext/llvm/bin/ld.lld
   require_staged /usr/local/cuda/nvvm/libdevice/libdevice.10.bc
+  if [[ -e /usr/local/lib/hipSYCL/librt-backend-hip.so ]]; then
+    require_staged /usr/local/lib/hipSYCL/librt-backend-hip.so
+    require_staged /usr/local/lib/hipSYCL/llvm-to-backend/libllvm-to-amdgpu.so
+    require_staged /usr/local/lib/hipSYCL/ext/bitcode/amdgcn/ockl.bc
+    for so in "${ROCM_LIBS[@]}" libamdhip64.so; do
+      require_staged "/opt/rocm/lib/${so}"
+    done
+  fi
 fi
 echo "required libs present"

@@ -41,9 +41,11 @@ class InvalidPcfbError : public RuntimeError {
 struct RunOptions {
   std::uint64_t trials = 0;
   int seed = 372;
-  /// "cuda", "metal", "omp", or empty (AdaptiveCpp default). Applied via
+  /// "cuda", "hip", "metal", "omp", or empty (AdaptiveCpp default). Applied via
   /// ACPP_VISIBILITY_MASK, which make_throwing_sycl_queue() reads at queue
-  /// construction.
+  /// construction. Plugins are filtered by the mask AdaptiveCpp cached before
+  /// main(), so this only narrows selection among backends that mask loaded
+  /// (an empty or multi-backend mask such as `cuda;hip`).
   std::string backend;
   /// Progress sinks. Not owned; they must outlive the run. Empty means no
   /// snapshot is ever built.

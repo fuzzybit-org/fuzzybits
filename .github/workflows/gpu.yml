@@ -78,7 +78,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
@@ -147,7 +147,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
@@ -214,7 +214,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"

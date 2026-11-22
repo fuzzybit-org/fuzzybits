@@ -12,3 +12,4 @@ self-hosted-runner:
     - rtx_5060ti_8gb
     - fast
     - gfx1012
+    - amd-gpu

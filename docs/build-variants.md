@@ -373,8 +373,11 @@ exposes every compiled-in backend.
 | `metal` | `metal` (device) / `omp` (`metal-cpu` preset) | AdaptiveCpp auto-detects the Apple GPU; `omp` remains the CPU fallback | `metal` is accepted by AdaptiveCpp's backend loader; it is not yet listed in upstream `env_variables.md`. GitHub-hosted `macos-26` exposes a paravirtual GPU (`Mac2`/`Common3`), not `Apple7`. Unset the mask to let auto-detect pick Metal |
 
 Other runtime defaults used by the test presets: `ACPP_DEBUG_LEVEL=0`,
-`ACPP_PERSISTENT_RUNTIME=1`. Production CLI containers may also set
-`ACPP_ADAPTIVITY_LEVEL=2` and `ACPP_ALLOCATION_TRACKING=1`.
+`ACPP_PERSISTENT_RUNTIME=1`. The runtime images and `fuzzybits.init()` use
+`ACPP_ADAPTIVITY_LEVEL=1` and `ACPP_PERSISTENT_RUNTIME=0`: level 2 keeps
+re-specialising kernels (4–6× slower steady-state runs measured on gfx1012),
+and a persistent runtime adds ~0.5 s to the first run of each launch shape
+(see [`docs/benchmarks.md`](benchmarks.md)).
 
 ## Backend-per-architecture
 
