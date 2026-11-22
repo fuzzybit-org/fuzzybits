@@ -27,4 +27,16 @@ if(BUILD_TESTING)
     SOURCES tests/compile_tests.cc tests/json_tests.cc
     LINK_LIBRARIES fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
   )
+
+  # Runs the fzb binary; the test itself links nothing from SCRAM.
+  if(NOT SKBUILD)
+    fuzzybits_add_imported_test(
+      TARGET fuzzybits_compile_ftp_cli_tests
+      SOURCES tests/cli_tests.cc
+      LINK_LIBRARIES fuzzybits_compile_ftp
+    )
+    target_compile_definitions(fuzzybits_compile_ftp_cli_tests PRIVATE FZB_PATH="$<TARGET_FILE:fzb>")
+    add_dependencies(fuzzybits_compile_ftp_cli_tests fzb)
+    set_tests_properties(fuzzybits_compile_ftp_cli_tests PROPERTIES TIMEOUT 300)
+  endif()
 endif()
