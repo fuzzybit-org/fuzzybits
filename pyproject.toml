@@ -38,7 +38,7 @@ fzb = "fuzzybits._cli:main"
 # extension), not a PyPI extra. Kept so `pip install 'fuzzybits[cuda-sm70]'`
 # documents the intent; the extra is a no-op until native packages split (#32).
 cuda-sm70 = []
-test = ["pytest>=7", "numpy>=1.26", "pyte>=0.8"]
+test = ["pytest>=7", "numpy>=1.26", "pyte>=0.8", "wcwidth>=0.2"]
 
 [project.urls]
 Homepage = "https://github.com/fuzzybit-org/fuzzybits"
