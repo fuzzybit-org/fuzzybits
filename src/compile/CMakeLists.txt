@@ -10,13 +10,18 @@ target_include_directories(fuzzybits_exact_eval
 )
 target_link_libraries(fuzzybits_exact_eval PUBLIC pcfb)
 
+# FIPS 180-4 digest for general.source_sha256; no SCRAM.
+add_library(fuzzybits_sha256 STATIC sha256.cc sha256.h)
+set_target_properties(fuzzybits_sha256 PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(fuzzybits_sha256 PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>)
+
 add_subdirectory(pra_to_pc)
+add_subdirectory(ftp)
 
 # Host-only OpenPSA → pcfb lowering. No SYCL.
 add_library(fuzzybits_compile STATIC
   pcfb_writer.cc
   nombrilo.cc
-  sha256.cc
 )
 set_target_properties(fuzzybits_compile PROPERTIES
   POSITION_INDEPENDENT_CODE ON
@@ -31,6 +36,7 @@ target_link_libraries(fuzzybits_compile
     scram
     pcfb
     fuzzybits_exact_eval
+    fuzzybits_sha256
   PRIVATE
     ${LIBS}
 )
