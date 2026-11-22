@@ -44,6 +44,13 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
     inline constexpr std::string_view kFtpHeaderAttribute = "ftp.header";
     inline constexpr std::string_view kFtpLimitAttribute = "ftp.limit";
     inline constexpr std::string_view kFtpImportFlagAttribute = "ftp.import_flag";
+    // Source conventions, recorded for the compile driver; nothing in `ir::pra`
+    // or the lowering reads them.
+    inline constexpr std::string_view kFtpNegationAttribute = "ftp.negation";
+    inline constexpr std::string_view kFtpNegationDeleteTerm = "delete_term";
+    inline constexpr std::string_view kFtpMaxInitiatorsAttribute = "ftp.max_initiators_per_cutset";
+    inline constexpr std::string_view kFtpMaxInitiatorsOne = "1";
+    inline constexpr std::string_view kFtpMaxInitiatorsNone = "none";
 
     enum class DefinitionKind : std::uint8_t {
         and_gate,
@@ -120,13 +127,19 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
         api::diagnostic_list diagnostics;
     };
 
+    struct PraOptions final {
+        complement_events_policy complementEvents = complement_events_policy::atom;
+        bool maxOneInitiator = true;
+    };
+
     [[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> duplicate_import_policy;
+    [[nodiscard]] auto parse_pra_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> PraOptions;
     [[nodiscard]] auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<source_text>>;
     // Parses every source in order and resolves names, imports and targets.
     [[nodiscard]] auto parse(std::vector<source_text> sources, duplicate_import_policy policy) -> ParsedProject;
     [[nodiscard]] auto location_text(ParsedProject const &project, Location location) -> std::string;
 
-    [[nodiscard]] auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result;
+    [[nodiscard]] auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result;
     [[nodiscard]] auto selected_targets(ParsedProject const &project, api::option_set const &options, api::diagnostic_list &diagnostics)
         -> std::vector<Target>;
     [[nodiscard]] auto build_pc(ParsedProject const &project, std::vector<Target> const &targets) -> ir::pc::finalize_result;

@@ -202,7 +202,7 @@ uses the same parser until #182.
 | FTP construct | `ir::pra` | Class |
 |---|---|---|
 | `NAME + ops`, `NAME * ops`, `NAME k ops` (indented lines continue the operands) | `or` / `and` / `cardinality(k, n)` gate, source file:line | core |
-| `-name` operand | complemented operand | core |
+| `-name` operand | complemented operand; on a basic event also marked `literal` (`io.ftp.complement_events = atom`, default; `negation` leaves it unmarked); on a gate never marked (a negation, i.e. a delete term under hull queries) | core |
 | `ENDTREE` (the file's tree section comes first and must be closed) | — | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate` |
 | `IMPORT` records `value name [flags]` | basic event, `literal` probability, one source per record | core |
 | `I` flag | initiating event on the basic event; a value > 1 is a `frequency` literal | core |
@@ -212,6 +212,7 @@ uses the same parser until #182.
 | `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
 | no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
 | `LIMIT x` | project attribute `ftp.limit` | extension |
+| source conventions | project attributes `ftp.negation = delete_term` (always) and `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering, for the compile driver (#182) to map to quantification defaults | extension |
 | `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:
