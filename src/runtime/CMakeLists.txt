@@ -28,6 +28,11 @@ target_link_libraries(fuzzybits_runtime_host
     Boost::multi_index
 )
 
+# Progress log writer: one host TU, no SYCL and no engine dependency. Kept as its
+# own archive and linked explicitly by the consumers (fzb, the Python extension,
+# the runtime tests), because nothing inside libmc references it and an
+# unreferenced archive member would never be pulled in. Defined in src/CMakeLists.txt.
+
 # Device-side Monte Carlo.
 # RULE_LAUNCH_COMPILE / CUDA SMCP apply to every source of mc. PRIVATE link
 # of the host archive so its objects land in libmc.so once (fzb / tests

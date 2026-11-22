@@ -192,6 +192,20 @@ class PassResult:
     nodes: Mapping[int, NodeTally]
 
 
+def _progress_log_path(value: Any) -> str | None:
+    """Coerce ``progress_log=`` (str | PathLike | None) to the native path argument."""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        raise TypeError("progress_log must be a str or os.PathLike, not bytes")
+    text = os.fspath(value)
+    if isinstance(text, bytes):
+        text = text.decode()
+    if not text:
+        raise ValueError("progress_log must be a non-empty path")
+    return str(text)
+
+
 def _reject_seed(seed: int | None, options: Mapping[str, Any]) -> None:
     if seed is not None or "seed" in options:
         raise NotImplementedError(
@@ -271,6 +285,7 @@ def compile(  # noqa: A001 - public API name
     no_kn: bool = True,
     watch: Any = None,
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
+    progress_log: str | os.PathLike[str] | None = None,
     **options: Any,
 ) -> bytes:
     """Compile OpenPSA/MEF XML or nombrilo.circuit to a pcfb 1.1 buffer.
@@ -292,6 +307,11 @@ def compile(  # noqa: A001 - public API name
         Optional callable receiving a :class:`ProgressSnapshot` at each compile
         stage (``parse``, ``lower``, ``passes``, ``write``) and once at the end.
         Raising from it aborts the compile and re-raises here.
+    progress_log:
+        Optional path for a progress log: ``.jsonl`` / ``.ndjson`` (one JSON
+        object per snapshot) or ``.csv`` (header from the snapshot schema).
+        Any other extension raises :class:`ValueError`. Written even when no
+        display is active; nothing is created unless given.
     """
     _reject_seed(options.pop("seed", None) if "seed" in options else None, options)
     native = _runtime.native()
@@ -308,7 +328,12 @@ def compile(  # noqa: A001 - public API name
     if names:
         opts["watch"] = names
     return bytes(
-        native.compile_pcfb(_as_input_files(model_xml), opts, _progress_callback(on_progress))
+        native.compile_pcfb(
+            _as_input_files(model_xml),
+            opts,
+            _progress_callback(on_progress),
+            progress_log=_progress_log_path(progress_log),
+        )
     )
 
 
@@ -480,6 +505,7 @@ def run(
     backend: str = "auto",
     seed: int | None = None,
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
+    progress_log: str | os.PathLike[str] | None = None,
     **options: Any,
 ) -> list[QueryResult]:
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
@@ -491,6 +517,12 @@ def run(
     ``on_progress`` receives a :class:`ProgressSnapshot` per coalesced engine
     snapshot (first and last always included, at most ~10 per second). Raising
     from it stops the run and re-raises the same exception here.
+
+    ``progress_log`` writes every coalesced progress snapshot to ``.jsonl`` /
+    ``.ndjson`` (one JSON object per snapshot) or ``.csv`` (long format, header
+    from the snapshot schema). Any other extension raises :class:`ValueError`.
+    The log is written whether or not a display is active, and no file is
+    created unless requested.
     """
     _reject_seed(seed, options)
     if options:
@@ -501,7 +533,11 @@ def run(
         raise ValueError("run() requires a positive trial count")
     native = _runtime.native()
     rows = native.run_pcfb(
-        _pcfb_bytes(pcfb), n, _mask_backend(backend), _progress_callback(on_progress)
+        _pcfb_bytes(pcfb),
+        n,
+        _mask_backend(backend),
+        _progress_callback(on_progress),
+        progress_log=_progress_log_path(progress_log),
     )
     return [
         QueryResult(

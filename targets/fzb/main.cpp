@@ -2,6 +2,7 @@
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
+#include "runtime/progress_log.h"
 #include "version.h"
 
 #ifdef FZB_HAS_RUNTIME
@@ -21,6 +22,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -72,6 +74,21 @@ std::string json_escape(std::string_view s) {
   return out;
 }
 
+constexpr const char *kProgressLogHelp =
+    "write a progress log to FILE (.jsonl or .csv; all snapshot fields, "
+    "independent of the terminal display)";
+
+/// Opens the opt-in `--progress-log FILE`. Returns null when the flag is absent,
+/// so no file is ever created unless asked for. Throws `std::runtime_error` /
+/// `std::invalid_argument` (bad extension) before any work starts.
+std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(const po::variables_map &vm) {
+  if (vm.count("progress-log") == 0) {
+    return nullptr;
+  }
+  return std::make_unique<fuzzybits::runtime::progress::log_sink>(
+      std::filesystem::path(vm["progress-log"].as<std::string>()));
+}
+
 #ifdef FZB_HAS_RUNTIME
 std::uint64_t parse_trials(const std::string &text) {
   char *end = nullptr;
@@ -91,6 +108,7 @@ int cmd_run(int argc, char **argv) {
        "must be 372 (the scram-cli default); other values are rejected")
       ("backend", po::value<std::string>(), "AdaptiveCpp backend: cuda, metal or omp (sets ACPP_VISIBILITY_MASK)")
       ("json", "print results as JSON")
+      ("progress-log", po::value<std::string>(), kProgressLogHelp)
       ("input-file", po::value<std::string>(), ".pcfb file");
 
   po::positional_options_description pos;
@@ -146,8 +164,30 @@ int cmd_run(int argc, char **argv) {
     return 1;
   }
 
+  // The log is opt-in and independent of the terminal display (`--no-progress`
+  // and redirection do not affect it). Opening it here fails before sampling.
+  std::unique_ptr<fuzzybits::runtime::progress::log_sink> progress_log;
+  try {
+    progress_log = open_progress_log(vm);
+  } catch (const std::exception &ex) {
+    std::cerr << "fzb run: " << ex.what() << std::endl;
+    return 1;
+  }
+  if (progress_log) {
+    opt.progress_sinks.push_back(progress_log.get());
+  }
+
   try {
     const auto results = fuzzybits::runtime::run_pcfb(vm["input-file"].as<std::string>(), opt);
+    if (progress_log) {
+      // No-op when the engine already delivered its finish record.
+      fuzzybits::runtime::progress::finish_log(*progress_log, results);
+    }
+    if (progress_log && !progress_log->ok()) {
+      std::cerr << "fzb run: writing the progress log failed: " << progress_log->path().string()
+                << std::endl;
+      return 1;
+    }
     if (vm.count("json")) {
       std::cout << "{\n  \"queries\": [\n";
       for (std::size_t i = 0; i < results.size(); ++i) {
@@ -173,12 +213,20 @@ int cmd_run(int argc, char **argv) {
     }
     return 0;
   } catch (const fuzzybits::runtime::InvalidPcfbError &ex) {
+    if (progress_log) {
+      fuzzybits::runtime::progress::finish_log(*progress_log, /*interrupted=*/true);
+    }
     std::cerr << "fzb run: " << ex.what() << std::endl;
     for (const auto &d : ex.diagnostics) {
       std::cerr << "validate: " << d.location << ": " << d.message << std::endl;
     }
     return 1;
   } catch (const std::exception &ex) {
+    if (progress_log) {
+      // A failed run still closes its log, marked interrupted, instead of
+      // leaving a file that looks like a run in progress.
+      fuzzybits::runtime::progress::finish_log(*progress_log, /*interrupted=*/true);
+    }
     std::cerr << "fzb run: " << ex.what() << std::endl;
     return 1;
   }
@@ -411,6 +459,7 @@ int cmd_compile(int argc, char **argv) {
       ("allow-extern", "**UNSAFE** allow external libraries")
       ("target", po::value<std::string>(), "top-event / gate / nombrilo name")
       ("weights", po::value<std::string>(), "nombrilo variant weights file")
+      ("progress-log", po::value<std::string>(), kProgressLogHelp)
       ("input-file", po::value<std::vector<std::string>>(), "MEF XML or nombrilo.circuit file");
 
   po::positional_options_description pos;
@@ -460,6 +509,17 @@ int cmd_compile(int argc, char **argv) {
   }
 
   const auto files = vm["input-file"].as<std::vector<std::string>>();
+  // Opt-in and independent of the display; opened before lowering starts.
+  std::unique_ptr<fuzzybits::runtime::progress::log_sink> progress_log;
+  try {
+    progress_log = open_progress_log(vm);
+  } catch (const std::exception &ex) {
+    std::cerr << "fzb compile: " << ex.what() << std::endl;
+    return 1;
+  }
+  if (progress_log) {
+    opt.progress_sinks.push_back(progress_log.get());
+  }
   auto compiled = fuzzybits::compile::compile_files(files, opt);
   if (!compiled) {
     std::cerr << "fzb compile: " << compiled.error().message << std::endl;
@@ -486,6 +546,15 @@ int cmd_compile(int argc, char **argv) {
   }
   std::cerr << "wrote " << out_path << " (" << compiled->bytes.size() << " bytes)"
             << " model=" << compiled->model_name << " top=" << compiled->target_id << std::endl;
+  if (progress_log) {
+    // A compile has no query results; the finishing snapshot carries the stage.
+    fuzzybits::runtime::progress::finish_log(*progress_log);
+    if (!progress_log->ok()) {
+      std::cerr << "fzb compile: writing the progress log failed: " << progress_log->path().string()
+                << std::endl;
+      return 1;
+    }
+  }
   return 0;
 }
 

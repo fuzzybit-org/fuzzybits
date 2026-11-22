@@ -1,5 +1,22 @@
-# SPDX-License-Identifier: GPL-3.0-or-later
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
+
+# Progress log writer (`--progress-log`, `progress_log=`): format writers for the
+# progress snapshots. Host-only and SYCL-free, and needed by the compile path as
+# well as the run path (and by builds without the MC engine), so it lives here
+# rather than in src/runtime. Its own archive because nothing inside libmc
+# references it; the consumers (fzb, the Python extension, the runtime tests)
+# link it explicitly, which pulls the object in through their own references.
+add_library(fuzzybits_progress_log STATIC
+  runtime/progress_log.cc
+)
+set_target_properties(fuzzybits_progress_log PROPERTIES
+  POSITION_INDEPENDENT_CODE ON
+  OUTPUT_NAME fuzzybits_progress_log
+)
+target_include_directories(fuzzybits_progress_log
+  PUBLIC
+    $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+)
 
 ####################### Begin SCRAM core lib config ##################### {{{
 ### Begin SCRAM core source list ### {{{
