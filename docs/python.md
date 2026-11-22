@@ -118,7 +118,9 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
 buffer (the same host path as `fzb compile`). FTP input takes `target=`,
 `overrides=`, `duplicate_import=`, `complement_events=`, `negation=`,
 `max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
-returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
+returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). MEF input expands
+common-cause groups unless `ccf=False` (`fzb compile --no-ccf`); `target=` and
+`watch=` take a name or a sequence of names (MEF and nombrilo input take one target). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
 explicit converters; see [`nombrilo.md`](nombrilo.md). `inspect` always runs `pcfb::validate` and
 returns its diagnostics (empty iff the circuit is core-1.1 conforming).
 `run` is the one-shot `fzb run` equivalent: `list[QueryResult(name, estimate,
@@ -185,9 +187,9 @@ to override.
 ## CLI (`fzb` on the wheel)
 
 ```bash
-fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [-o model.pcfb]
-fzb compile model.safetensors [--target NAME] [--weights FILE] [-o model.pcfb]
-fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
+fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [--no-ccf] [--target NAME|@FILE] [--watch NAME|@FILE]... [-o model.pcfb]
+fzb compile model.safetensors [--target NAME|@FILE] [--weights FILE] [-o model.pcfb]
+fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]
