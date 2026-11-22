@@ -1,8 +1,11 @@
 # Slim runtime images → GHCR. Public repo.
 #
-# Publish: GitHub-hosted ubuntu-24.04 only (packages:write).
-# Smoke: self-hosted GPUs, trusted triggers only. Runtime image is public —
-# smoke pulls anonymously and must not log in or hold packages:read.
+# Publish: self-hosted fuzzybits-ci (packages:write via GITHUB_TOKEN, isolated
+# DOCKER_CONFIG). Smoke: self-hosted NVIDIA GPUs, plus the optional AMD gfx1012
+# (public-ci / amd-gpu); trusted triggers only. GPU smoke targets come from
+# .github/hardware.json; SKIP_<TARGET>=true (repository variable) drops one. Runtime and toolchain images
+# are public — smoke pulls anonymously and must not log in or hold
+# packages:read.
 # Never pull_request / pull_request_target / workflow_run — self-hosted jobs
 # must not be reachable from PR code (#34).
 name: Runtime images
@@ -37,7 +40,8 @@ jobs:
     runs-on: { group: fuzzybits-ci, labels: [self-hosted, Linux, X64] }
     timeout-minutes: 5
     outputs:
-      proceed: ${{ steps.decide.outputs.proceed }}
+      proceed: ${{ steps.toolchain.outputs.proceed }}
+      toolchain_image: ${{ steps.toolchain.outputs.image }}
     steps:
       - name: Isolate Docker credentials (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -53,33 +57,68 @@ jobs:
           docker run --rm -v "${GITHUB_WORKSPACE}:/w" -v "${RUNNER_TOOL_CACHE}:/t" alpine:3.20 chown -R "$(id -u):$(id -g)" /w /t
 
       - name: Checkout
-        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Decide
-        id: decide
+      - name: Changed files
+        id: changes
+        if: github.event_name == 'push'
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          proceed=true
-          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/develop" ]]; then
-            before="${{ github.event.before }}"
-            if [[ -n "${before}" && ! "${before}" =~ ^0+$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
-              files="$(git diff --name-only "${before}" "${{ github.sha }}")"
-            else
-              files="$(git diff --name-only HEAD^ HEAD || true)"
-            fi
-            echo "changed files:"
-            printf '%s\n' "${files}"
-            if printf '%s\n' "${files}" | grep -Eq '^(src/|python/|targets/|cmake/|share/|CMakeLists\.txt|CMakePresets\.json|toolchain\.env|pyproject\.toml|Dockerfile|Dockerfile\.cuda|Dockerfile\.cuda12\.8|Dockerfile\.fzb|docker/|\.github/workflows/images\.yml)'; then
-              proceed=true
-            else
-              proceed=false
-            fi
+          if [[ -n "${BEFORE}" && ! "${BEFORE}" =~ ^0+$ ]] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            files="$(git diff --name-only "${BEFORE}" "${GITHUB_SHA}")"
+          elif base="$(git merge-base origin/develop HEAD 2>/dev/null)" && [[ "${base}" != "$(git rev-parse HEAD)" ]]; then
+            files="$(git diff --name-only "${base}" HEAD)"
+          else
+            files="$(git diff --name-only HEAD^ HEAD || true)"
           fi
-          echo "proceed=${proceed}" >> "${GITHUB_OUTPUT}"
+          echo "changed files:"
+          printf '%s\n' "${files}"
+          engine=false
+          if grep -Eq '^(src/|python/|targets/|cmake/|share/|CMakeLists\.txt|CMakePresets\.json|toolchain\.env|pyproject\.toml|docker/|scripts/ci/toolchain-sha\.sh|\.dockerignore|\.github/workflows/images\.yml)' <<<"${files}"; then
+            engine=true
+          fi
+          toolchain=false
+          if grep -Eq '^(toolchain\.env|docker/toolchain\.Dockerfile|scripts/ci/toolchain-sha\.sh|\.github/workflows/toolchain\.yml)$' <<<"${files}"; then
+            toolchain=true
+          fi
+          echo "engine=${engine}" >> "${GITHUB_OUTPUT}"
+          echo "toolchain=${toolchain}" >> "${GITHUB_OUTPUT}"
+
+      # The toolchain package is public; inspect anonymously. A missing
+      # immutable tag is never papered over with the moving tag: that image
+      # predates this commit's toolchain.env (e.g. it has no HIP backend).
+      - name: Resolve toolchain image
+        id: toolchain
+        env:
+          EVENT: ${{ github.event_name }}
+          ENGINE_CHANGED: ${{ steps.changes.outputs.engine }}
+          TOOLCHAIN_CHANGED: ${{ steps.changes.outputs.toolchain }}
+        run: |
+          set -euo pipefail
+          if [[ "${EVENT}" == push && "${GITHUB_REF}" == refs/heads/develop && "${ENGINE_CHANGED}" != true ]]; then
+            echo "no engine/image change on develop; skipping publish"
+            echo "proceed=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          acpp_ref="$(sed -n 's/^ACPP_REF=//p' toolchain.env)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
+          image="${TOOLCHAIN_REPO}:${acpp_ref}-generic-${sha}"
+          if docker manifest inspect "${image}" >/dev/null 2>&1; then
+            echo "using ${image}"
+            echo "image=${image}" >> "${GITHUB_OUTPUT}"
+            echo "proceed=true" >> "${GITHUB_OUTPUT}"
+          elif [[ "${EVENT}" == push && "${TOOLCHAIN_CHANGED}" == true ]]; then
+            echo "::notice title=Runtime images deferred::${image} is built by this push's toolchain.yml run, which dispatches this workflow on ${GITHUB_REF_NAME} when it finishes."
+            echo "proceed=false" >> "${GITHUB_OUTPUT}"
+          else
+            echo "::error title=Toolchain image missing::${image} is not published. Run toolchain.yml on ${GITHUB_REF_NAME}."
+            exit 1
+          fi
 
   publish:
     name: publish-${{ matrix.variant }}
@@ -122,6 +161,7 @@ jobs:
             include_sscp: "0"
     env:
       VARIANT: ${{ matrix.variant }}
+      TOOLCHAIN_IMAGE: ${{ needs.gate.outputs.toolchain_image }}
     steps:
       - name: Isolate Docker credentials (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -183,13 +223,7 @@ jobs:
             echo "ACPP_COMMIT=${ACPP_COMMIT}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
             echo "CUDA_VERSION=${CUDA_VERSION}"
-            echo "CUDA_DEVEL_IMAGE=${CUDA_DEVEL_IMAGE}"
-            echo "CUDA_RUNTIME_IMAGE=${CUDA_RUNTIME_IMAGE}"
-            echo "ACPP_COMPILER_FEATURE_PROFILE=${ACPP_COMPILER_FEATURE_PROFILE}"
-            echo "BOOST_VERSION=${BOOST_VERSION}"
-            echo "BOOST_URL=${BOOST_URL}"
-            echo "BOOST_SHA256=${BOOST_SHA256}"
-            echo "TOOLCHAIN_SHA=$(sha256sum toolchain.env | cut -c1-12)"
+            echo "ROCM_VERSION=${ROCM_VERSION}"
             echo "FUZZYBITS_VERSION=${version}"
             echo "SHA12=${GITHUB_SHA:0:12}"
           } >> "${GITHUB_ENV}"
@@ -239,22 +273,6 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
-      # Inspect only (no layer pull). Buildx pulls the toolchain once into the
-      # builder; a docker-engine pull here would double the 12.5 GB on disk.
-      - name: Resolve toolchain image
-        run: |
-          set -euo pipefail
-          immutable="${TOOLCHAIN_REPO}:${ACPP_REF}-generic-${TOOLCHAIN_SHA}"
-          moving="${TOOLCHAIN_REPO}:${ACPP_REF}-generic"
-          if docker buildx imagetools inspect "${immutable}" >/dev/null; then
-            echo "TOOLCHAIN_IMAGE=${immutable}" >> "${GITHUB_ENV}"
-            echo "using ${immutable}"
-          else
-            echo "immutable toolchain tag missing; falling back to ${moving}"
-            docker buildx imagetools inspect "${moving}" >/dev/null
-            echo "TOOLCHAIN_IMAGE=${moving}" >> "${GITHUB_ENV}"
-          fi
-
       - name: Build and push
         id: build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
@@ -277,12 +295,7 @@ jobs:
             ACPP_REF=${{ env.ACPP_REF }}
             ACPP_COMMIT=${{ env.ACPP_COMMIT }}
             CUDA_VERSION=${{ env.CUDA_VERSION }}
-            CUDA_DEVEL_IMAGE=${{ env.CUDA_DEVEL_IMAGE }}
-            CUDA_RUNTIME_IMAGE=${{ env.CUDA_RUNTIME_IMAGE }}
-            ACPP_COMPILER_FEATURE_PROFILE=${{ env.ACPP_COMPILER_FEATURE_PROFILE }}
-            BOOST_VERSION=${{ env.BOOST_VERSION }}
-            BOOST_URL=${{ env.BOOST_URL }}
-            BOOST_SHA256=${{ env.BOOST_SHA256 }}
+            ROCM_VERSION=${{ matrix.include_sscp == '1' && env.ROCM_VERSION || 'n/a' }}
             FUZZYBITS_REVISION=${{ github.sha }}
             FUZZYBITS_VERSION=${{ env.FUZZYBITS_VERSION }}
           labels: |
@@ -295,6 +308,7 @@ jobs:
             dev.fuzzybits.acpp.targets=${{ matrix.acpp_targets }}
             dev.fuzzybits.cuda.embed_ptx=${{ matrix.cuda_embed_ptx }}
             dev.fuzzybits.cuda.version=${{ env.CUDA_VERSION }}
+            dev.fuzzybits.rocm.version=${{ matrix.include_sscp == '1' && env.ROCM_VERSION || 'n/a' }}
             dev.fuzzybits.variant=${{ matrix.variant }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.variant }}
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.variant }},mode=max
@@ -326,43 +340,30 @@ jobs:
             /orgs/fuzzybit-org/packages/container/fuzzybits-runtime/visibility \
             -f visibility=public
 
+  hw:
+    name: hw
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
+    uses: ./.github/workflows/hw-targets.yml
+    with:
+      targets: sm70 sm86 sm120
+
+  # Generic + the target's SMCP image in one job per GPU. No concurrency
+  # group: public-ci has one runner per physical GPU (it serialises), and a
+  # group shared with other workflows cancels this job while it is pending.
   smoke:
-    name: smoke-${{ matrix.name }}
-    needs: publish
-    if: needs.publish.result == 'success'
+    name: smoke-${{ matrix.target }}
+    needs: [publish, hw]
+    if: needs.publish.result == 'success' && needs.hw.outputs.any == 'true'
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          # xerxes Docker: physical GPU 0 = Tesla V100S (shared by sm_70 runners).
-          # Both variants in one job: two matrix rows with the same
-          # concurrency group cancel each other as "higher priority waiting
-          # request" before either starts.
-          - name: sm70
-            variants: "generic cuda12.8-sm70"
-            runs_on: [self-hosted, Linux, X64, nvidia, sm_70, v100s]
-            concurrency_group: gpu-xerxes-v100s
-            docker_gpus: device=0
-          # physical GPU 1 = RTX 3070
-          - name: sm86
-            variants: "generic cuda12.8-sm86"
-            runs_on: [self-hosted, Linux, X64, nvidia, sm_86, rtx_3070]
-            concurrency_group: gpu-xerxes-3070
-            docker_gpus: device=1
-          - name: sm120
-            variants: "generic cuda12.8-sm120"
-            runs_on: [self-hosted, Linux, X64, nvidia, fast, sm_120, rtx_5060ti_8gb]
-            concurrency_group: gpu-shelly-5060ti
-            docker_gpus: device=0
+      matrix: ${{ fromJSON(needs.hw.outputs.matrix) }}
     runs-on: ${{ matrix.runs_on }}
     timeout-minutes: 30
-    concurrency:
-      group: ${{ matrix.concurrency_group }}
-      cancel-in-progress: false
     env:
       DOCKER_GPUS: ${{ matrix.docker_gpus }}
-      VARIANTS: ${{ matrix.variants }}
-      SMOKE_PREFIX: fuzzybits-runtime-smoke-${{ github.run_id }}-${{ matrix.name }}-${{ github.run_attempt }}
+      VARIANTS: generic ${{ matrix.cuda_variant }}
+      SMOKE_PREFIX: fuzzybits-runtime-smoke-${{ github.run_id }}-${{ matrix.target }}-${{ github.run_attempt }}
     steps:
       - name: Resolve image tags
         run: |
@@ -487,3 +488,92 @@ jobs:
             -e SMOKE_FZB_OMP=1 \
             -e FZB_OMP_TRIALS=1e6 \
             "${RUNTIME_IMAGE}"
+
+  # Optional: AMD Radeon Pro 5500M 8 GB (Navi 14, gfx1012, RDNA1, 24 CUs) on
+  # bubs (mbp-1) via the HIP backend + SSCP JIT in the generic image.
+  # continue-on-error keeps a failure (or the single amd-gpu runner being
+  # offline/busy past the timeout) from failing the workflow. The image's
+  # default mask (cuda;hip) is kept on purpose: that is what users get. No
+  # concurrency group: mbp-1 is the only amd-gpu runner, and a group would let
+  # GitHub cancel a pending run when a newer one queues. Set repository
+  # variable SKIP_GFX1012=true while mbp-1 is down (a queued job waits up to
+  # 24 h for it). runs-on matches .github/hardware.json gfx1012.
+  smoke-amd:
+    name: smoke-amd-gfx1012 (optional)
+    needs: publish
+    if: needs.publish.result == 'success' && vars.SKIP_GFX1012 != 'true'
+    continue-on-error: true
+    runs-on: { group: public-ci, labels: [self-hosted, Linux, X64, amd-gpu] }
+    timeout-minutes: 30
+    env:
+      VARIANT: generic
+      SMOKE_NAME: fuzzybits-runtime-smoke-${{ github.run_id }}-amd-${{ github.run_attempt }}
+    steps:
+      - name: Isolate Docker credentials (self-hosted)
+        run: |
+          mkdir -p "${RUNNER_TEMP}/docker-config"
+          echo "DOCKER_CONFIG=${RUNNER_TEMP}/docker-config" >> "${GITHUB_ENV}"
+
+      - name: Reclaim workspace (self-hosted)
+        run: |
+          docker ps -aq --filter "volume=${GITHUB_WORKSPACE}" | xargs -r docker rm -f
+          docker run --rm -v "${GITHUB_WORKSPACE}:/w" -v "${RUNNER_TOOL_CACHE}:/t" alpine:3.20 chown -R "$(id -u):$(id -g)" /w /t
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Resolve image tag
+        run: |
+          set -euo pipefail
+          SHA12="${GITHUB_SHA:0:12}"
+          if [[ "${GITHUB_REF}" == refs/heads/ci/* ]]; then
+            TAG="ci-${SHA12}-${VARIANT}"
+          elif [[ "${GITHUB_REF_TYPE}" == tag ]]; then
+            TAG="${GITHUB_REF_NAME}-${VARIANT}"
+          else
+            TAG="sha-${SHA12}-${VARIANT}"
+          fi
+          echo "RUNTIME_IMAGE=${IMAGE}:${TAG}" >> "${GITHUB_ENV}"
+          echo "RUNTIME_IMAGE=${IMAGE}:${TAG}"
+
+      - name: AMD GPU probe
+        run: |
+          set -euo pipefail
+          echo "runner=${RUNNER_NAME:-} kernel=$(uname -r)"
+          cat /sys/module/amdgpu/version 2>/dev/null || true
+          mapfile -t amd_args < <(scripts/ci/amd-docker-args.sh)
+          echo "AMD_DOCKER_ARGS=${amd_args[*]}" >> "${GITHUB_ENV}"
+          echo "docker args: ${amd_args[*]}"
+
+      - name: Pull runtime image
+        run: |
+          set -euo pipefail
+          docker pull "${RUNTIME_IMAGE}"
+          docker image inspect "${RUNTIME_IMAGE}" --format '{{.Id}} {{.Size}}' \
+            | awk '{printf "id=%s uncompressed_GiB=%.2f\n", $1, $2/1024/1024/1024}'
+
+      # Same 1e8 trials as the CUDA smoke (σ̂ ≈ 3.4e-6 at p ≈ 1.17e-3). Measured
+      # on the 5500M: 1e9 trials in 2.2 s warm; the cold SSCP JIT is seconds.
+      - name: Image smoke (fzb + Python on HIP)
+        run: |
+          set -euo pipefail
+          read -r -a amd_args <<<"${AMD_DOCKER_ARGS}"
+          docker run --rm --name "${SMOKE_NAME}" "${amd_args[@]}" \
+            --entrypoint fuzzybits-image-smoke \
+            -e SMOKE_TIMEOUT=120 \
+            -e SMOKE_MC=0 \
+            -e SMOKE_FZB_CUDA=0 \
+            -e SMOKE_FZB_OMP=0 \
+            -e SMOKE_FZB_HIP=1 \
+            -e FZB_HIP_TRIALS=1e8 \
+            "${RUNTIME_IMAGE}"
+
+      - name: Drop this job's container
+        if: always()
+        run: docker rm -f "${SMOKE_NAME}" || true
+
+      - name: Remove pulled runtime image
+        if: always()
+        run: docker rmi "${RUNTIME_IMAGE}" || true

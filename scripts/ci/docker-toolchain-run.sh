@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Pull the pinned GHCR toolchain image and run a command inside it.
-# Source is bind-mounted at /src. Caller must already `docker login ghcr.io`
-# when the package is private (hosted: packages:read; self-hosted: same,
-# documented exception — no other secrets).
+# Pull the pinned GHCR toolchain image (public package) and run a command
+# inside it. Source is bind-mounted at /src.
 #
 # Usage:
 #   scripts/ci/docker-toolchain-run.sh [--gpus SPEC] [--name NAME] -- cmd...
@@ -44,14 +42,13 @@ set -a
 # shellcheck disable=SC1091
 . ./toolchain.env
 set +a
-sha="$(sha256sum toolchain.env | cut -c1-12)"
+sha="$(scripts/ci/toolchain-sha.sh)"
 image="${TOOLCHAIN_IMAGE:-ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic-${sha}}"
 
 echo "toolchain image=${image}"
 ensure_image() {
   local ref="$1"
-  # Prefer a local copy: later pulls in the same job can 401 even after
-  # docker/login-action (token lifetime / rate), and GHCR is private.
+  # Prefer a local copy: the image is ~12 GB and the tag is immutable.
   if docker image inspect "${ref}" >/dev/null 2>&1; then
     echo "using local ${ref}"
     image="${ref}"
@@ -65,7 +62,13 @@ ensure_image() {
 }
 if ! ensure_image "${image}"; then
   fallback="ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic"
-  echo "immutable tag missing; falling back to ${fallback}"
+  # The moving tag is develop's toolchain, not necessarily this toolchain.env.
+  msg="toolchain ${image} is not published; building against ${fallback} (develop's toolchain)"
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    echo "::warning title=toolchain fallback::${msg}"
+  else
+    echo "warning: ${msg}" >&2
+  fi
   if ! ensure_image "${fallback}"; then
     echo "error: cannot pull or find ${image} or ${fallback}" >&2
     exit 1

@@ -421,12 +421,14 @@ void apply_backend_mask(const std::string &backend) {
   const char *mask = nullptr;
   if (backend == "cuda") {
     mask = "cuda";
+  } else if (backend == "hip") {
+    mask = "hip";
   } else if (backend == "omp") {
     mask = "omp";
   } else if (backend == "metal") {
     mask = "metal";
   } else {
-    throw RuntimeError("unknown backend '" + backend + "' (expected cuda, omp, or metal)");
+    throw RuntimeError("unknown backend '" + backend + "' (expected cuda, hip, omp, or metal)");
   }
 #ifdef _WIN32
   if (_putenv_s("ACPP_VISIBILITY_MASK", mask) != 0) {

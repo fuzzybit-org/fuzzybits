@@ -3,9 +3,10 @@
 # GitHub-hosted ubuntu-24.04. Fork PR runs need maintainer approval (repo
 # setting: all external contributors). Hosted-only steps check
 # runner.environment.
-# Toolchain image is private; GITHUB_TOKEN packages:read is enough because
-# org.opencontainers.image.source links it to this repo. Fork PRs cannot
-# pull private packages — maintainers should push a ci/** branch instead.
+# The toolchain image is a public GHCR package (anonymous pull). Its immutable
+# tag (scripts/ci/toolchain-sha.sh) exists only after toolchain.yml ran on
+# develop or a ci/** push, so a PR that changes the toolchain falls back to the
+# moving develop tag with a warning — push a ci/** branch to test the change.
 name: CI
 
 on:
@@ -142,7 +143,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
@@ -244,7 +245,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
@@ -332,7 +333,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
@@ -425,7 +426,7 @@ jobs:
           # shellcheck disable=SC1091
           . ./toolchain.env
           set +a
-          sha="$(sha256sum toolchain.env | cut -c1-12)"
+          sha="$(scripts/ci/toolchain-sha.sh)"
           {
             echo "ACPP_REF=${ACPP_REF}"
             echo "CLANG_VERSION=${CLANG_VERSION}"

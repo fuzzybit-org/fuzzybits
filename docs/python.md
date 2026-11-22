@@ -4,10 +4,15 @@ The Monte Carlo engine is installable as **`fuzzybits`** (import name and
 distribution name). Wheels are self-contained:
 
 - **Linux x86_64** (`manylinux_*`): AdaptiveCpp runtime (`libacpp-rt`,
-  `libacpp-common`, CUDA/OpenMP backend plugins) and, for the `generic`
-  variant, the SSCP JIT pieces (`llvm-to-backend`, `libLLVM`,
-  `libdevice.10.bc`, `opt`/`llc`). NVIDIA **driver** libraries (`libcuda.so*`)
-  are not bundled; a CUDA ≥ 12.8 driver is required for GPU runs.
+  `libacpp-common`, CUDA/HIP/OpenMP backend plugins) and, for the `generic`
+  variant, the SSCP JIT pieces (`llvm-to-backend` incl. `libllvm-to-amdgpu`,
+  `libLLVM`, `libdevice.10.bc`, the ROCm `amdgcn` device bitcode,
+  `opt`/`llc`). NVIDIA **driver** libraries (`libcuda.so*`) are not bundled; a
+  CUDA ≥ 12.8 driver is required for NVIDIA runs. ROCm is not bundled either:
+  AMD runs need the ROCm 7 user space (`hip-runtime-amd`: `libamdhip64.so.7`,
+  its unversioned `libamdhip64.so` link, `libhiprtc.so.7`, `libamd_comgr.so.3`)
+  on the loader path, plus read/write `/dev/kfd` and a `/dev/dri/renderD*`
+  node (`render` group). No ROCm clang/hipcc: the JIT links through hipRTC.
 - **macOS 26+ Apple Silicon** (`macosx_*_arm64`): AdaptiveCpp `ACPP_REF_METAL`
   runtime with Metal + OpenMP backends and SSCP JIT (`libllvm-to-metal`,
   `opt`/`llc`/`ld64.lld`, `libLLVM`, Homebrew `liblld`/`libomp`), `delocate`-repaired
@@ -52,7 +57,7 @@ Variants follow [#29](https://github.com/fuzzybit-org/fuzzybits/issues/29):
 
 | wheel | native module | AdaptiveCpp flow | when to use |
 |---|---|---|---|
-| `generic` (default) | `fuzzybits._native_generic` | SSCP JIT | any NVIDIA GPU / CPU |
+| `generic` (default) | `fuzzybits._native_generic` | SSCP JIT | any NVIDIA GPU, AMD GPU (ROCm 7, e.g. gfx1012), CPU |
 | `cuda-sm70` | `fuzzybits._native_cuda_sm70` | clang CUDA SMCP AOT + embedded PTX | Volta (V100) |
 | `cuda-sm86` | `fuzzybits._native_cuda_sm86` | clang CUDA SMCP AOT + embedded PTX | Ampere consumer (RTX 30xx) |
 | `cuda-sm120` | `fuzzybits._native_cuda_sm120` | clang CUDA SMCP AOT + embedded PTX | Blackwell consumer (RTX 50xx) |
@@ -76,7 +81,7 @@ if both `.so` files are present (future `fuzzybits-native-*` split).
 ```python
 import fuzzybits
 
-fuzzybits.init(backend="auto")          # "cuda" | "omp" | "metal" | "auto"; also FUZZYBITS_BACKEND
+fuzzybits.init(backend="auto")          # "cuda" | "hip" | "omp" | "metal" | "auto"; also FUZZYBITS_BACKEND
 print(fuzzybits.__version__)
 print(fuzzybits.list_devices())
 
@@ -185,7 +190,7 @@ fzb compile model.safetensors [--target NAME] [--weights FILE] [-o model.pcfb]
 fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
-fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|omp|metal] [--json]
+fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]
 fzb --help
 fzb --version
 ```

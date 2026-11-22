@@ -1,0 +1,65 @@
+{
+  "$comment": [
+    "Hardware-accelerated CI targets. Setting the repository variable named by",
+    "skip_var to 'true' disables every job or step that executes on that device;",
+    "builds that only target it (images, wheels) still run. Resolved by",
+    "scripts/ci/hw_targets.py via .github/workflows/hw-targets.yml.",
+    "runs_on always names a runner group with one runner per physical device:",
+    "the runner serialises jobs, so the NVIDIA/AMD jobs need no concurrency groups.",
+    "gpu_test_smcp: gpu.yml also tests the target's SMCP preset (shares the GPU).",
+    "diagnostics_optional: gpu-diagnostics.yml tolerates a failure."
+  ],
+  "targets": {
+    "sm70": {
+      "skip_var": "SKIP_SM70",
+      "device": "Tesla V100S 32 GB (xerxes GPU 0, shared with live/dev fuzzybits-server)",
+      "runs_on": {"group": "public-ci", "labels": ["self-hosted", "Linux", "X64", "nvidia", "sm_70", "v100s"]},
+      "docker_gpus": "device=0",
+      "cuda_variant": "cuda12.8-sm70",
+      "cuda_preset": "cuda-sm70",
+      "gpu_test_smcp": true,
+      "timeout_minutes": 120
+    },
+    "sm75": {
+      "skip_var": "SKIP_SM75",
+      "device": "GTX 1660 Super (fzb-xerxes-4, gpu-runners group: not reachable from this public repository)",
+      "runs_on": {"group": "gpu-runners", "labels": ["self-hosted", "Linux", "X64", "nvidia", "sm_75", "gtx_1660s"]},
+      "diagnostics_optional": true,
+      "timeout_minutes": 15
+    },
+    "sm86": {
+      "skip_var": "SKIP_SM86",
+      "device": "RTX 3070 8 GB (xerxes GPU 1)",
+      "runs_on": {"group": "public-ci", "labels": ["self-hosted", "Linux", "X64", "nvidia", "sm_86", "rtx_3070"]},
+      "docker_gpus": "device=1",
+      "cuda_variant": "cuda12.8-sm86",
+      "cuda_preset": "cuda-sm86",
+      "timeout_minutes": 90
+    },
+    "sm120": {
+      "skip_var": "SKIP_SM120",
+      "device": "RTX 5060 Ti 8 GB (shelly GPU 0, shared with resident services)",
+      "runs_on": {"group": "public-ci", "labels": ["self-hosted", "Linux", "X64", "nvidia", "fast", "sm_120", "rtx_5060ti_8gb"]},
+      "docker_gpus": "device=0",
+      "cuda_variant": "cuda12.8-sm120",
+      "cuda_preset": "cuda-sm120",
+      "timeout_minutes": 90
+    },
+    "gfx1012": {
+      "skip_var": "SKIP_GFX1012",
+      "device": "Radeon Pro 5500M 8 GB (bubs, mbp-1, HIP)",
+      "runs_on": {"group": "public-ci", "labels": ["self-hosted", "Linux", "X64", "amd-gpu"]},
+      "timeout_minutes": 30
+    },
+    "metal-arm": {
+      "skip_var": "SKIP_METAL_ARM",
+      "device": "Apple Silicon paravirtual Metal GPU (GitHub-hosted macos-26)",
+      "runs_on": "macos-26"
+    },
+    "metal-intel": {
+      "skip_var": "SKIP_METAL_INTEL",
+      "device": "Intel Mac GPU (GitHub-hosted macos-15-intel; the Intel wheels are OpenMP-only today)",
+      "runs_on": "macos-15-intel"
+    }
+  }
+}

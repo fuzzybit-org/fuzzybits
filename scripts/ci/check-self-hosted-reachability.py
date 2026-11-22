@@ -7,8 +7,10 @@ allowed self-hosted runs-on values are in APPROVED_PR_RUNS_ON:
 * ``fuzzybits-ci`` (this repository only) for same-repo, non-Dependabot PRs,
   with GitHub-hosted ubuntu-24.04 for fork and Dependabot PRs.
 * Bench GPU jobs in bench.yml: ``public-ci`` + V100S / RTX 3070 / RTX 5060 Ti
-  labels, same same-repo non-Dependabot expression. GPU labels anywhere else
-  in a PR-triggered workflow stay forbidden (#122).
+  / ``amd-gpu`` (bubs) labels, same same-repo non-Dependabot expression. GPU
+  labels anywhere else in a PR-triggered workflow stay forbidden (#122).
+* A ``runs-on`` expression that reads ``matrix`` or ``needs`` (labels resolved
+  at run time from .github/hardware.json) counts as self-hosted.
 * Bench CPU job: ``fuzzybits-bench`` group, same expression.
 
 Fork PR runs also need maintainer approval (repository setting). Other GPU
@@ -38,6 +40,7 @@ SELF_HOSTED_MARKERS = (
     "fzb-xerxes",
     "shelly-1",
     "gpu-runners",
+    "amd-gpu",
     "public-ci",
     "fuzzybits-ci",
     "fuzzybits-bench",
@@ -74,6 +77,9 @@ APPROVED_PR_RUNS_ON_RTX3070 = same_repo_non_dependabot_runs_on(
 APPROVED_PR_RUNS_ON_RTX5060TI = same_repo_non_dependabot_runs_on(
     '{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","fast","sm_120","rtx_5060ti_8gb"]}'
 )
+APPROVED_PR_RUNS_ON_AMD_GPU = same_repo_non_dependabot_runs_on(
+    '{"group":"public-ci","labels":["self-hosted","Linux","X64","amd-gpu"]}'
+)
 APPROVED_PR_RUNS_ON_BENCH_CPU = same_repo_non_dependabot_runs_on(
     '{"group":"fuzzybits-bench","labels":["self-hosted","Linux","X64"]}'
 )
@@ -87,6 +93,7 @@ APPROVED_PR_RUNS_ON_ALL = frozenset(
         APPROVED_PR_RUNS_ON_V100S,
         APPROVED_PR_RUNS_ON_RTX3070,
         APPROVED_PR_RUNS_ON_RTX5060TI,
+        APPROVED_PR_RUNS_ON_AMD_GPU,
         APPROVED_PR_RUNS_ON_BENCH_CPU,
     }
 )
@@ -137,11 +144,16 @@ def _is_self_hosted(text: str) -> bool:
     return any(marker.lower() in lowered for marker in SELF_HOSTED_MARKERS)
 
 
+def _is_dynamic(text: str) -> bool:
+    lowered = text.replace(" ", "").lower()
+    return "${{" in lowered and ("matrix." in lowered or "needs." in lowered)
+
+
 def _job_is_self_hosted(job: dict) -> bool:
     if not isinstance(job, dict):
         return False
     for s in _strings(job.get("runs-on")):
-        if _is_self_hosted(s):
+        if _is_self_hosted(s) or _is_dynamic(s):
             return True
     strategy = job.get("strategy") or {}
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None

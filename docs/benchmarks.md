@@ -164,9 +164,9 @@ it is CPU-only and does not import the native engine.
 
 ```text
 python -m benchmarks validate
-python -m benchmarks run  --target cpu|v100s|rtx3070|rtx5060ti --mode accuracy|perf|compile \
+python -m benchmarks run  --target cpu|v100s|rtx3070|rtx5060ti|gfx1012 --mode accuracy|perf|compile \
     --image IMG --out results.json [--md summary.md] [--ids chinese das9201]
-python -m benchmarks ab   --target cpu|v100s|rtx3070|rtx5060ti --rounds 6 \
+python -m benchmarks ab   --target cpu|v100s|rtx3070|rtx5060ti|gfx1012 --rounds 6 \
     --base SHA --head SHA --build \
     --out ab.json [--md ab.md]
 python -m benchmarks ab   --target v100s --base-image IMG --head-image IMG \
@@ -197,8 +197,12 @@ with the same recipe and timed alternately on the same host** (lesson from
    full digest.
 2. Warm both AdaptiveCpp JIT caches (`ACPP_APPDB_DIR` on a per-side volume)
    at the timed trial count. Containers run with `ACPP_ADAPTIVITY_LEVEL=1`
-   (the runtime image default of 2 re-JITs for new launch shapes; 1 matches
-   the deployed server; 0 fails with CU:701 on das9701, #18).
+   and `ACPP_PERSISTENT_RUNTIME=0` (also the image defaults). Level 2 keeps
+   re-specialising kernels: steady-state 64 Mi-trial das9201 runs took
+   0.63–0.93 s at 2 vs 0.15 s at 1 on gfx1012; 0 fails with CU:701 on
+   das9701 (#18). A persistent runtime added ~0.5 s to the first run of each
+   launch shape; without it the three runs were 0.153/0.152/0.152 s. Results
+   record both values in `context`.
 3. Alternate base/head for N rounds (default 6; CPU A/A uses 10), swapping
    the order every round (A-B, B-A, …) so slow drift does not always land on
    one side. Profiled runs drop the first round; `--metric sample` keeps all
@@ -255,8 +259,15 @@ with the same recipe and timed alternately on the same host** (lesson from
 | `bench-perf-isolated` | same runner, environment `gpu-isolated` | A/B, `sample_s`, 12 rounds × 1.0 s, exclusive (`rtx3070-isolated`) | runs only after a double flag and a manual approval; blocks when `ci_lo > 1.03` |
 | `bench-perf-v100s` | `public-ci` V100S (`sm_70,v100s`, NVML GPU 0) | A/B, `sample_s`, 6 rounds × 1.5 s | **report-only**; shares the GPU with the live and dev fuzzybits-server |
 | `bench-perf-rtx5060ti` | `public-ci` RTX 5060 Ti (`sm_120,rtx_5060ti_8gb`, NVML GPU 0 on shelly) | same as V100S | **report-only**; ~0.5 GiB free beside VLLM |
+| `bench-perf-gfx1012` | `public-ci` `amd-gpu` (mbp-1 on bubs) | A/B on the Radeon Pro 5500M via HIP, `sample_s`, 6 rounds × 1.5 s; skipped while either image predates the HIP backend | **report-only**, `continue-on-error` |
 | `bench-perf-cpu` | `fuzzybits-bench` (gateway) | A/B, `cpu_sample_s` | **report-only** (#124) |
 | `bench-summary` | hosted | sticky PR comment + overall verdict | the one required check |
+
+Repository variables `SKIP_SM70`, `SKIP_SM86`, `SKIP_SM120` and `SKIP_GFX1012`
+set to `true` skip the V100S, RTX 3070, RTX 5060 Ti and gfx1012 jobs (see
+[ci-toolchain.md](ci-toolchain.md#hardware-targets-and-skip_-variables)); the
+comment shows "hardware disabled" and the verdict ignores them. `SKIP_SM86`
+also removes the only GPU gate that can block (the screen and isolated run).
 
 Each GPU A/B spends at most `BUDGET_S` seconds timing samples per attempt
 (90 s for the screen and the report-only jobs, 110 s for the isolated run):
@@ -310,6 +321,17 @@ hang). There is no Nsight Systems on shelly, so A/B uses fzb `sample_s` / wall
 instead of `gpu_total_ms` from nsys. If generic SSCP JIT cannot target sm_120,
 the harness records `unsupported` and does not block. Leave
 `bench-perf-rtx5060ti` optional.
+
+`gfx1012` (bubs / mbp-1, lock `/tmp/gpu-lock-bubs-amd-0`) is **report-only**
+and `shared_device`, and the only HIP target. The host desktop keeps ~4 GiB of
+the 8 GiB VRAM and the `fuzzybits-ci` runners share bubs' CPU, which feeds
+the host side of each pass. Occupancy comes from sysfs, not NVML: KFD lists
+every process holding `/dev/kfd` under `/sys/class/kfd/kfd/proc/<pid>` (with
+per-GPU `vram_*` bytes) and amdgpu exposes `gpu_busy_percent` /
+`mem_info_vram_*` on the render node. Desktop compositing does not open KFD,
+so it shows up as VRAM and utilisation, not as a compute process. There is
+no profiler; A/B uses `sample_s`. The job has no `concurrency` group because
+mbp-1 is the only `amd-gpu` runner.
 
 `workflow_dispatch` accepts `inject_regression` (`scale:1.10`, `scale:1.05`,
 `repeat`) to confirm the screen flags twice and the isolated run blocks.
@@ -400,14 +422,15 @@ accuracy pass. In A/B, **head timeout / base ok is a regression
 | `rtx3070` | xerxes `--gpus device=1` (NVML GPU 1, PCI 43:00.0) | RTX 3070 | yes; shared (`shared_device`) + **report-only** screen; take `/tmp/gpu-lock-xerxes-1` |
 | `rtx3070-isolated` | same device as `rtx3070` | RTX 3070 | yes; **exclusive**, blocking; take `/tmp/gpu-lock-xerxes-1` |
 | `rtx5060ti` | shelly `--gpus device=0` (NVML GPU 0, sm_120) | RTX 5060 Ti 8 GB | yes; shared + **report-only**; take `/tmp/gpu-lock-shelly-0` |
+| `gfx1012` | bubs (`bubs-mbp`), no `--gpus`: `scripts/ci/amd-docker-args.sh` → `/dev/kfd` + render node + render gid; backend `hip` | Radeon Pro 5500M 8 GB (Navi 14, RDNA1) | yes; shared + **report-only**; take `/tmp/gpu-lock-bubs-amd-0` |
 | `cpu` | gateway | i7-9700, 8 cores | yes |
 | — | xerxes CPU | noisy (Tdarr/Plex) | **no** |
 | — | shelly CPU, bubs | CI (`fuzzybits-ci`) | **no** CPU timing |
 
 GPU jobs take the lock. The exclusive target (`rtx3070-isolated`) waits for
 idle compute apps and fails `inconclusive` if the device stays busy. Shared
-targets (`v100s`, `rtx3070`, `rtx5060ti`) record foreign processes and time
-anyway. Do not time GPU work without the lock.
+targets (`v100s`, `rtx3070`, `rtx5060ti`, `gfx1012`) record foreign processes
+and time anyway. Do not time GPU work without the lock.
 
 ### Injected regression (acceptance)
 

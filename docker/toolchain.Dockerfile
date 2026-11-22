@@ -1,22 +1,23 @@
 # syntax=docker/dockerfile:1.10.0
 #
-# CI toolchain image: LLVM 20 + AdaptiveCpp (full = SSCP + clang CUDA SMCP)
-# + CUDA 12.8 devel + CMake/Ninja + Boost 1.89. Serves both
+# CI toolchain image: LLVM 20 + AdaptiveCpp (full = SSCP + clang CUDA SMCP,
+# CUDA + HIP + OpenMP backends) + CUDA 12.8 devel + ROCm runtime + CMake/Ninja
+# + Boost 1.89. Serves both
 #   cmake --preset generic
 #   cmake --preset cuda-sm70
 # so one image is published under both -generic and -cuda12.8 tags.
 #
-# Stages base → minimal → llvm-clang → adaptivecpp-clang are the CUDA-only
-# recipe from Dockerfile.cuda12.8 (no oneAPI / Level Zero / ROCm). Keep the
-# AdaptiveCpp cmake/build RUN in lockstep with that file. Default profile
-# here is `full`; Dockerfile.cuda12.8 stays `minimal` for slim SMCP runtimes.
+# Stages base → minimal → llvm-clang follow Dockerfile.cuda12.8; this file
+# adds a ROCm stage and builds AdaptiveCpp with the HIP backend (no oneAPI /
+# Level Zero / OpenCL). Default profile here is `full`; Dockerfile.cuda12.8
+# stays CUDA-only `minimal` for slim SMCP runtimes.
 #
 # ARG defaults match toolchain.env. CI must pass --build-arg from that file:
 #   set -a && . ./toolchain.env && set +a
 #   docker build -f docker/toolchain.Dockerfile --target toolchain \
 #     --build-arg ACPP_REF --build-arg ACPP_REPO --build-arg ACPP_COMMIT \
 #     --build-arg CLANG_VERSION \
-#     --build-arg CUDA_DEVEL_IMAGE \
+#     --build-arg CUDA_DEVEL_IMAGE --build-arg ROCM_VERSION \
 #     --build-arg ACPP_COMPILER_FEATURE_PROFILE \
 #     --build-arg BOOST_URL --build-arg BOOST_SHA256 --build-arg BOOST_VERSION \
 #     --build-arg FUZZYBITS_REVISION --build-arg TOOLCHAIN_SHA \
@@ -52,8 +53,10 @@ ENV BUILD_PACKAGES="ca-certificates \
     sudo \
     wget"
 
+# No libboost-all-dev: Boost 1.89 is built below, and the distro meta-package
+# pulls OpenMPI plus Ubuntu's ROCm 5.7 (libhsa-runtime64.so.1 shares its SONAME
+# with the ROCm stage's).
 ENV SRC_BUILD_PACKAGES="cmake \
-    libboost-all-dev \
     libedit-dev \
     libhwloc-dev \
     libnuma-dev \
@@ -75,9 +78,12 @@ ENV SCRAM_RUNTIME_PACKAGES="libxml2 \
 
 FROM base AS minimal
 WORKDIR /build
+# The lists cache mount is empty when `base` came from the registry cache (its
+# RUN never executed in this builder), so every installing RUN updates itself.
 RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     --mount=target=/var/cache/apt,type=cache,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean && \
+    apt-fast update && \
     apt-fast install -y --no-install-recommends \
     $BUILD_PACKAGES \
     $SRC_BUILD_PACKAGES \
@@ -106,10 +112,43 @@ RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
     apt-fast update && \
     apt-fast install -y --no-install-recommends $LLVM_PACKAGES
 
-# AdaptiveCpp CUDA SMCP (clang CUDA) + SSCP. Do NOT pass -DWITH_CUDA_NVCXX_ONLY=*
-# (deprecated; forces ACPP_COMPILER_FEATURE_PROFILE=custom-deprecated).
-# `full` builds SSCP (generic JIT) and the clang CUDA plugin (cuda-sm70).
-FROM llvm-clang AS adaptivecpp-clang
+# ROCm for the AdaptiveCpp HIP backend (rt-backend-hip) and the SSCP AMDGPU
+# JIT (llvm-to-amdgpu). With libhiprtc present at configure time AdaptiveCpp
+# links JIT output through hipRTC/comgr (ROCm LLVM) instead of upstream clang,
+# so ROCm's LLVM must be >= CLANG_VERSION; ROCm 7.2 ships LLVM 22.
+# hip-dev is unpacked without its dependencies: it hard-depends on rocm-llvm
+# (several GB) and hipcc, neither of which this toolchain uses.
+FROM llvm-clang AS rocm
+ARG ROCM_VERSION=7.2.4
+ENV ROCM_VERSION=${ROCM_VERSION} \
+    ROCM_PATH=/opt/rocm
+RUN --mount=target=/var/lib/apt/lists,type=cache,sharing=locked \
+    --mount=target=/var/cache/apt,type=cache,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean && \
+    mkdir -p /etc/apt/keyrings && \
+    wget -q -O- https://repo.radeon.com/rocm/rocm.gpg.key | gpg --dearmor > /etc/apt/keyrings/rocm.gpg && \
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/${ROCM_VERSION} ${CODENAME} main" \
+      > /etc/apt/sources.list.d/rocm.list && \
+    printf 'Package: *\nPin: release o=repo.radeon.com\nPin-Priority: 600\n' > /etc/apt/preferences.d/rocm-pin-600 && \
+    apt-fast update && \
+    apt-fast install -y --no-install-recommends \
+      hip-runtime-amd \
+      hsa-rocr-dev \
+      rocm-device-libs \
+      libdrm-dev && \
+    cd /tmp && apt-get download hip-dev && \
+    dpkg-deb -x hip-dev_*.deb / && rm -f hip-dev_*.deb && \
+    test -f "${ROCM_PATH}/include/hip/hip_runtime_api.h" && \
+    test -f "${ROCM_PATH}/amdgcn/bitcode/ockl.bc" && \
+    ls "${ROCM_PATH}"/lib/libamdhip64.so* "${ROCM_PATH}"/lib/libhiprtc.so* "${ROCM_PATH}"/lib/libamd_comgr.so* && \
+    printf '%s\n' "${ROCM_PATH}/lib" > /etc/ld.so.conf.d/rocm.conf && \
+    ldconfig
+
+# AdaptiveCpp CUDA SMCP (clang CUDA) + SSCP + HIP. Do NOT pass
+# -DWITH_CUDA_NVCXX_ONLY=* (deprecated; forces
+# ACPP_COMPILER_FEATURE_PROFILE=custom-deprecated). `full` builds SSCP (generic
+# JIT for CUDA, AMDGPU and host) and the clang CUDA plugin (cuda-sm70).
+FROM rocm AS adaptivecpp-clang
 ARG CMAKE_BUILD_TYPE=Release
 ARG ACPP_REPO=https://github.com/AdaptiveCpp/AdaptiveCpp.git
 ARG ACPP_REF=v25.10.0
@@ -141,7 +180,9 @@ RUN git clone --filter=blob:none --depth 1 --branch "${ACPP_REF}" "${ACPP_REPO}"
           -DCUDA_TOOLKIT_ROOT_DIR=${CUDA_TOOLKIT_ROOT_DIR} \
           -DWITH_CUDA_BACKEND=ON \
           -DWITH_OPENCL_BACKEND=OFF \
-          -DWITH_ROCM_BACKEND=OFF \
+          -DWITH_ROCM_BACKEND=ON \
+          -DROCM_PATH=${ROCM_PATH} \
+          -DCMAKE_DISABLE_FIND_PACKAGE_HIP=ON \
           -DWITH_LEVEL_ZERO_BACKEND=OFF \
           -DACPP_COMPILER_FEATURE_PROFILE=${ACPP_COMPILER_FEATURE_PROFILE} && \
     cmake --build AdaptiveCpp/build -j "$(nproc)" && \
@@ -162,6 +203,11 @@ ARG BOOST_INCLUDE_LIBRARIES="program_options;filesystem;system;random;range;exce
 # Refuse a SMCP-only AdaptiveCpp install: `cmake --preset generic` needs SSCP.
 # Checks the built compiler, not the ARG default (stage ARG defaults can differ).
 RUN python3 -c 'import json,sys; d=json.load(open("/usr/local/etc/AdaptiveCpp/acpp-core.json")); v=d.get("plugin-with-sscp-compiler"); sys.exit(0 if v=="true" else 1)'
+# Refuse an install without the HIP backend, or whose AMDGPU JIT would fall
+# back to upstream clang (cannot read ROCm 7.x device-lib bitcode).
+RUN test -f /usr/local/lib/hipSYCL/librt-backend-hip.so && \
+    test -f /usr/local/lib/hipSYCL/llvm-to-backend/libllvm-to-amdgpu.so && \
+    ldd /usr/local/lib/hipSYCL/llvm-to-backend/libllvm-to-amdgpu.so | grep -q 'libhiprtc\.so'
 
 WORKDIR /tmp/boost
 RUN wget -q -O boost.tar.gz "${BOOST_URL}" && \
@@ -197,7 +243,8 @@ LABEL org.opencontainers.image.source="https://github.com/fuzzybit-org/fuzzybits
       org.opencontainers.image.revision="${FUZZYBITS_REVISION}" \
       org.opencontainers.image.version="${ACPP_REF}" \
       org.opencontainers.image.title="fuzzybits-toolchain" \
-      org.opencontainers.image.description="LLVM ${CLANG_VERSION} + AdaptiveCpp ${ACPP_REF} (full SSCP + CUDA SMCP) for cmake --preset generic|cuda-sm70" \
+      org.opencontainers.image.description="LLVM ${CLANG_VERSION} + AdaptiveCpp ${ACPP_REF} (full SSCP + CUDA SMCP, HIP backend, ROCm ${ROCM_VERSION}) for cmake --preset generic|cuda-sm70" \
       dev.fuzzybits.acpp.commit="${ACPP_COMMIT}" \
       dev.fuzzybits.toolchain.sha="${TOOLCHAIN_SHA}" \
-      dev.fuzzybits.acpp.profile="${ACPP_COMPILER_FEATURE_PROFILE}"
+      dev.fuzzybits.acpp.profile="${ACPP_COMPILER_FEATURE_PROFILE}" \
+      dev.fuzzybits.rocm.version="${ROCM_VERSION}"

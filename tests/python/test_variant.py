@@ -61,6 +61,7 @@ def test_cuda_module_file_names():
 def test_backend_auto_cuda_if_nvidia(monkeypatch):
     import fuzzybits._runtime as rt
 
+    monkeypatch.setattr(rt, "has_hip_device", lambda: False)
     monkeypatch.setattr(rt, "has_cuda_device", lambda: True)
     assert _select_backend("auto") == "cuda"
     monkeypatch.setattr(rt, "has_cuda_device", lambda: False)
@@ -70,4 +71,52 @@ def test_backend_auto_cuda_if_nvidia(monkeypatch):
         assert _select_backend("auto") == "omp"
     assert _select_backend("omp") == "omp"
     assert _select_backend("cuda") == "cuda"
+    assert _select_backend("hip") == "hip"
     assert _select_backend("metal") == "metal"
+
+
+def test_backend_auto_prefers_cuda_then_hip(monkeypatch):
+    import fuzzybits._runtime as rt
+
+    monkeypatch.setattr(rt, "has_cuda_device", lambda: False)
+    monkeypatch.setattr(rt, "has_hip_device", lambda: True)
+    assert _select_backend("auto") == "hip"
+    monkeypatch.setattr(rt, "has_cuda_device", lambda: True)
+    assert _select_backend("auto") == "cuda"
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="KFD topology is Linux-only")
+def test_amdgpu_gfx_targets_from_kfd_topology(monkeypatch, tmp_path):
+    import fuzzybits._runtime as rt
+
+    nodes = tmp_path / "nodes"
+    for idx, version in enumerate((0, 100102, 90010, 110000)):
+        node = nodes / str(idx)
+        node.mkdir(parents=True)
+        (node / "properties").write_text(f"cpu_cores_count 0\ngfx_target_version {version}\nsimd_count 48\n")
+    kfd = tmp_path / "kfd"
+    kfd.touch()
+    dri = tmp_path / "dri"
+    dri.mkdir()
+    monkeypatch.setattr(rt, "_KFD", kfd)
+    monkeypatch.setattr(rt, "_KFD_TOPOLOGY", nodes)
+    monkeypatch.setattr(rt, "_DRI", dri)
+    # No render node: the KFD alone cannot submit work.
+    assert rt.amdgpu_gfx_targets() == []
+    (dri / "renderD128").touch()
+    assert rt.amdgpu_gfx_targets() == ["gfx1012", "gfx90a", "gfx1100"]
+    kfd.unlink()
+    assert rt.amdgpu_gfx_targets() == []
+
+
+def test_device_ordinal_follows_backend(monkeypatch):
+    import fuzzybits._runtime as rt
+
+    for name in ("ACPP_VISIBILITY_MASK", "CUDA_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES"):
+        monkeypatch.delenv(name, raising=False)
+    rt._apply_visibility("hip", 1)
+    assert rt.os.environ["ACPP_VISIBILITY_MASK"] == "hip"
+    assert rt.os.environ["HIP_VISIBLE_DEVICES"] == "1"
+    assert "CUDA_VISIBLE_DEVICES" not in rt.os.environ
+    rt._apply_visibility("cuda", 0)
+    assert rt.os.environ["CUDA_VISIBLE_DEVICES"] == "0"

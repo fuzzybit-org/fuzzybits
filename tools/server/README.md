@@ -23,7 +23,7 @@ uv run --no-sync fuzzybits-server --no-ui          # headless API; GET / is a JS
 ```
 
 CLI defaults to `127.0.0.1:8000`. Flags: `--host`, `--port`, `--data-dir`,
-`--cache-dir` (platformdirs), `--backend auto|cuda|omp|metal`,
+`--cache-dir` (platformdirs), `--backend auto|cuda|hip|omp|metal`,
 `--engine pcfb|legacy`, `--no-ui`, `--open`.
 
 Compile / sampling endpoints need the native module. The published
@@ -207,8 +207,15 @@ The image runs as non-root `coder`. Default env:
 | `FUZZYBITS_SERVER_DATA_DIR` | `/data` |
 | `FUZZYBITS_SERVER_CACHE_DIR` | `/home/coder/.cache/fuzzybits/server` |
 | `ACPP_APPDB_DIR` | `/home/coder/.cache/fuzzybits/acpp` |
-| `ACPP_VISIBILITY_MASK` | `omp` |
+| `ACPP_VISIBILITY_MASK` | `omp` (CLI tools only; see below) |
 | `HOST` / `PORT` | `0.0.0.0` / `8000` |
+
+The server's backend is `FUZZYBITS_BACKEND` / `--backend`
+(`auto|cuda|hip|omp|metal`). Under `auto` (the default) `fuzzybits.init()`
+picks CUDA if an NVIDIA device is visible, else HIP if `/dev/kfd` and an AMD
+render node are passed in, else OpenMP, and **replaces** `ACPP_VISIBILITY_MASK`
+with that choice — the image's `omp` mask does not pin the server to CPU. Set
+`FUZZYBITS_BACKEND=omp` to keep a GPU-attached container on the CPU.
 
 Volumes: `/data` (models) and `/home/coder/.cache/fuzzybits` (JIT + `.pcfb` cache).
 `HEALTHCHECK` hits `/api/v1/healthz`.
@@ -220,7 +227,7 @@ IMG=ghcr.io/fuzzybit-org/fuzzybits-server:nightly-generic
 
 # CPU (OpenMP)
 docker run --rm -p 8000:8000 \
-  -e ACPP_VISIBILITY_MASK=omp \
+  -e FUZZYBITS_BACKEND=omp \
   -v "$PWD/input/Aralia:/data/Aralia:ro" \
   -v fuzzybits-cache:/home/coder/.cache/fuzzybits \
   "$IMG"
@@ -228,14 +235,24 @@ docker run --rm -p 8000:8000 \
 # GPU (NVIDIA device N). Use the cuda12.8-sm70 tag on Volta (sm_70);
 # generic SSCP covers other NVIDIA GPUs.
 docker run --rm --gpus device=0 -p 8000:8000 \
-  -e ACPP_VISIBILITY_MASK=cuda \
+  -e FUZZYBITS_BACKEND=cuda \
   -v "$PWD/input/Aralia:/data/Aralia:ro" \
   -v fuzzybits-cache:/home/coder/.cache/fuzzybits \
   ghcr.io/fuzzybit-org/fuzzybits-server:nightly-cuda12.8-sm70
+
+# AMD GPU (generic only; ROCm 7 user space ships in the image, the host needs
+# only the amdgpu driver). amd-docker-args.sh prints --device /dev/kfd, the
+# GPU's render node and --group-add <render gid>. The HIP plugin must be in the
+# mask AdaptiveCpp reads before main(), hence cuda;hip.
+docker run --rm $(scripts/ci/amd-docker-args.sh) -p 8000:8000 \
+  -e FUZZYBITS_BACKEND=hip -e ACPP_VISIBILITY_MASK='cuda;hip' \
+  -v "$PWD/input/Aralia:/data/Aralia:ro" \
+  -v fuzzybits-cache:/home/coder/.cache/fuzzybits \
+  "$IMG"
 ```
 
 xerxes mapping: `--gpus device=0` is the Tesla V100S, `device=1` is the RTX 3070.
-Hosted CI smokes CPU only (`ACPP_VISIBILITY_MASK=omp`).
+bubs (mbp-1): Radeon Pro 5500M 8 GB, `gfx1012`. CI smokes the server on CPU only.
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/healthz
@@ -250,6 +267,11 @@ E2E helper (compile chinese + das9201, check \|z\|≤4 vs BDD refs, POST a
 
 ```bash
 tools/server/scripts/e2e-smoke.sh "$IMG"
+
+# on an AMD host
+SMOKE_DOCKER_ARGS="$(scripts/ci/amd-docker-args.sh | tr '\n' ' ')" \
+  ACPP_VISIBILITY_MASK='cuda;hip' FUZZYBITS_BACKEND=hip \
+  tools/server/scripts/e2e-smoke.sh "$IMG"
 ```
 
 ### Compose
@@ -260,13 +282,14 @@ services:
     image: ghcr.io/fuzzybit-org/fuzzybits-server:nightly-generic
     ports: ["8000:8000"]
     environment:
-      ACPP_VISIBILITY_MASK: omp          # cuda on GPU hosts
+      FUZZYBITS_BACKEND: omp             # cuda / hip on GPU hosts (hip: ACPP_VISIBILITY_MASK: "cuda;hip")
       HOST: "0.0.0.0"
       PORT: "8000"
     volumes:
       - ../../input/Aralia:/data/Aralia:ro
       - fuzzybits-cache:/home/coder/.cache/fuzzybits
-    # gpus: ["device=0"]                 # NVIDIA: also set ACPP_VISIBILITY_MASK=cuda
+    # gpus: ["device=0"]                 # NVIDIA
+    # devices: [/dev/kfd, /dev/dri/renderD128]   # AMD; group_add: [<render gid>]
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/healthz')"]
       interval: 15s

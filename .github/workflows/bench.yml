@@ -7,12 +7,15 @@
 # Blocking: accuracy (CPU) and, only when the RTX 3070 screen flags a model
 # twice, bench-perf-isolated (manual approval in the gpu-isolated environment,
 # after the owner clears the RTX 3070). Report-only: CPU (#124), V100S (shared
-# with live/dev fuzzybits-server), RTX 5060 Ti, and the RTX 3070 screen itself.
+# with live/dev fuzzybits-server), RTX 5060 Ti, AMD gfx1012 (HIP on bubs), and
+# the RTX 3070 screen itself. Repository variables SKIP_SM70 / SKIP_SM86 /
+# SKIP_SM120 / SKIP_GFX1012 = true skip the matching GPU job (see
+# .github/hardware.json); bench-summary reports it as disabled, never failed.
 # GPU A/B times in-process fuzzybits.run on runs sized to SECONDS_PER_RUN,
 # capped at BUDGET_S of timed sampling per attempt.
 # xerxes GPU indices are NVML/nvidia-smi (GPU 0 = V100S, GPU 1 = RTX 3070),
-# never CUDA FASTEST_FIRST. Jobs flock /tmp/gpu-lock-xerxes-{0,1} and
-# /tmp/gpu-lock-shelly-0.
+# never CUDA FASTEST_FIRST. Jobs flock /tmp/gpu-lock-xerxes-{0,1},
+# /tmp/gpu-lock-shelly-0 and /tmp/gpu-lock-bubs-amd-0.
 #
 # runs-on expressions must stay byte-identical to
 # scripts/ci/check-self-hosted-reachability.py APPROVED_PR_RUNS_ON_*.
@@ -156,13 +159,8 @@ jobs:
             echo "ACPP_COMMIT=${ACPP_COMMIT}"
             echo "CLANG_VERSION=${CLANG_VERSION}"
             echo "CUDA_VERSION=${CUDA_VERSION}"
-            echo "CUDA_DEVEL_IMAGE=${CUDA_DEVEL_IMAGE}"
-            echo "CUDA_RUNTIME_IMAGE=${CUDA_RUNTIME_IMAGE}"
-            echo "ACPP_COMPILER_FEATURE_PROFILE=${ACPP_COMPILER_FEATURE_PROFILE}"
-            echo "BOOST_VERSION=${BOOST_VERSION}"
-            echo "BOOST_URL=${BOOST_URL}"
-            echo "BOOST_SHA256=${BOOST_SHA256}"
-            echo "TOOLCHAIN_SHA=$(sha256sum toolchain.env | cut -c1-12)"
+            echo "ROCM_VERSION=${ROCM_VERSION}"
+            echo "TOOLCHAIN_SHA=$(scripts/ci/toolchain-sha.sh)"
             echo "FUZZYBITS_VERSION=${version}"
           } >> "${GITHUB_ENV}"
 
@@ -177,16 +175,17 @@ jobs:
         uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Resolve toolchain image
+        if: needs.bench-filter.outputs.product == 'true'
         run: |
           set -euo pipefail
+          # The moving tag may be a different toolchain than toolchain.env pins;
+          # a head built on it would not be what images.yml publishes.
           immutable="ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic-${TOOLCHAIN_SHA}"
-          moving="ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic"
-          if docker buildx imagetools inspect "${immutable}" >/dev/null; then
-            echo "TOOLCHAIN_IMAGE=${immutable}" >> "${GITHUB_ENV}"
-          else
-            docker buildx imagetools inspect "${moving}" >/dev/null
-            echo "TOOLCHAIN_IMAGE=${moving}" >> "${GITHUB_ENV}"
+          if ! docker buildx imagetools inspect "${immutable}" >/dev/null; then
+            echo "::error::${immutable} is not published; push the toolchain change to develop or a ci/** branch first (toolchain.yml)"
+            exit 1
           fi
+          echo "TOOLCHAIN_IMAGE=${immutable}" >> "${GITHUB_ENV}"
 
       - name: Resolve base image
         id: base
@@ -257,12 +256,7 @@ jobs:
             ACPP_REF=${{ env.ACPP_REF }}
             ACPP_COMMIT=${{ env.ACPP_COMMIT }}
             CUDA_VERSION=${{ env.CUDA_VERSION }}
-            CUDA_DEVEL_IMAGE=${{ env.CUDA_DEVEL_IMAGE }}
-            CUDA_RUNTIME_IMAGE=${{ env.CUDA_RUNTIME_IMAGE }}
-            ACPP_COMPILER_FEATURE_PROFILE=${{ env.ACPP_COMPILER_FEATURE_PROFILE }}
-            BOOST_VERSION=${{ env.BOOST_VERSION }}
-            BOOST_URL=${{ env.BOOST_URL }}
-            BOOST_SHA256=${{ env.BOOST_SHA256 }}
+            ROCM_VERSION=${{ env.ROCM_VERSION }}
             FUZZYBITS_REVISION=${{ github.sha }}
             FUZZYBITS_VERSION=${{ env.FUZZYBITS_VERSION }}
           labels: |
@@ -349,7 +343,7 @@ jobs:
   bench-perf-v100s:
     name: bench-perf-v100s
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM70 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","sm_70","v100s"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -412,7 +406,7 @@ jobs:
   bench-perf-rtx3070:
     name: bench-perf-rtx3070
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM86 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","sm_86","rtx_3070"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -554,7 +548,7 @@ jobs:
   bench-perf-rtx5060ti:
     name: bench-perf-rtx5060ti
     needs: [bench-filter, bench-images]
-    if: always() && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    if: always() && vars.SKIP_SM120 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","nvidia","fast","sm_120","rtx_5060ti_8gb"]}') || 'ubuntu-24.04' }}
     timeout-minutes: 30
     concurrency:
@@ -607,6 +601,87 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bench-rtx5060ti
+          path: artifacts/
+          if-no-files-found: warn
+
+  # bubs (mbp-1) Radeon Pro 5500M 8 GB (Navi 14, gfx1012) via the HIP backend
+  # + SSCP JIT in the generic image (lock /tmp/gpu-lock-bubs-amd-0). The host
+  # desktop holds VRAM and fuzzybits-ci runners share the CPU; report-only and
+  # optional. No concurrency group: mbp-1 is the only amd-gpu runner, and the
+  # harness flock covers manual runs. A queued job waits up to 24 h for an
+  # offline runner (timeout-minutes excludes queue time) and holds
+  # bench-summary; set repository variable SKIP_GFX1012=true while mbp-1 is
+  # down.
+  bench-perf-gfx1012:
+    name: bench-perf-gfx1012
+    needs: [bench-filter, bench-images]
+    if: always() && vars.SKIP_GFX1012 != 'true' && needs.bench-filter.result == 'success' && needs.bench-filter.outputs.trusted == 'true' && needs.bench-filter.outputs.run_benches == 'true' && needs.bench-images.result == 'success'
+    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"public-ci","labels":["self-hosted","Linux","X64","amd-gpu"]}') || 'ubuntu-24.04' }}
+    continue-on-error: true
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      BASE_IMAGE: ${{ needs.bench-images.outputs.base_image }}
+      HEAD_IMAGE: ${{ needs.bench-images.outputs.head_image }}
+      BASE_SHA: ${{ needs.bench-images.outputs.base_sha }}
+      HEAD_SHA: ${{ needs.bench-images.outputs.head_sha }}
+      INJECT: ${{ github.event.inputs.inject_regression || '' }}
+      MODE: perf
+      TARGET: gfx1012
+      OUT: artifacts/gfx1012.json
+      METRIC: sample
+      SECONDS_PER_RUN: "1.5"
+      BUDGET_S: "90"
+      ROUNDS: "6"
+    steps:
+      - name: Isolate Docker credentials (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: |
+          mkdir -p "${RUNNER_TEMP}/docker-config"
+          echo "DOCKER_CONFIG=${RUNNER_TEMP}/docker-config" >> "${GITHUB_ENV}"
+
+      - name: Reclaim workspace (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: |
+          docker ps -aq --filter "volume=${GITHUB_WORKSPACE}" | xargs -r docker rm -f
+          docker run --rm -v "${GITHUB_WORKSPACE}:/w" -v "${RUNNER_TOOL_CACHE}:/t" alpine:3.20 chown -R "$(id -u):$(id -g)" /w /t
+
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          submodules: false
+
+      - name: Pull images
+        run: |
+          docker pull "${BASE_IMAGE}"
+          docker pull "${HEAD_IMAGE}"
+
+      - name: Require the HIP backend in both images
+        id: hip
+        run: |
+          set -euo pipefail
+          for image in "${BASE_IMAGE}" "${HEAD_IMAGE}"; do
+            if ! docker run --rm --entrypoint test "${image}" -e /usr/local/lib/hipSYCL/librt-backend-hip.so; then
+              echo "::notice::${image} has no HIP backend (predates ROCm in the generic image); gfx1012 A/B skipped"
+              python3 scripts/ci/bench_comment.py --write-skip "${OUT}" --skip-job gfx1012 \
+                --skip-reason "base or head image predates the HIP backend"
+              echo "skip=true" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+          done
+          echo "skip=false" >> "${GITHUB_OUTPUT}"
+
+      - name: A/B AMD gfx1012 (report-only)
+        if: steps.hip.outputs.skip != 'true'
+        run: bash scripts/ci/bench_invoke.sh
+
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bench-gfx1012
           path: artifacts/
           if-no-files-found: warn
 
@@ -675,6 +750,7 @@ jobs:
       - bench-perf-rtx3070
       - bench-perf-isolated
       - bench-perf-rtx5060ti
+      - bench-perf-gfx1012
       - bench-perf-cpu
     if: always()
     runs-on: ubuntu-24.04
@@ -709,7 +785,12 @@ jobs:
           NEEDS_ISOLATED: ${{ needs.bench-perf-rtx3070.outputs.needs_isolated }}
           ISOLATED_RESULT: ${{ needs.bench-perf-isolated.result }}
           RTX5060_RESULT: ${{ needs.bench-perf-rtx5060ti.result }}
+          GFX1012_RESULT: ${{ needs.bench-perf-gfx1012.result }}
           CPU_RESULT: ${{ needs.bench-perf-cpu.result }}
+          SKIP_SM70: ${{ vars.SKIP_SM70 }}
+          SKIP_SM86: ${{ vars.SKIP_SM86 }}
+          SKIP_SM120: ${{ vars.SKIP_SM120 }}
+          SKIP_GFX1012: ${{ vars.SKIP_GFX1012 }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
           INJECT: ${{ github.event.inputs.inject_regression || '' }}
         run: |
@@ -744,6 +825,7 @@ jobs:
           rtx="$(find_json rtx3070)"
           isolated="$(find_json rtx3070-isolated)"
           rtx5060="$(find_json rtx5060ti)"
+          gfx1012="$(find_json gfx1012)"
           cpu="$(find_json cpu)"
           args=()
           [[ -n "${acc}" ]] && args+=(--accuracy "${acc}")
@@ -751,8 +833,13 @@ jobs:
           [[ -n "${rtx}" ]] && args+=(--rtx3070 "${rtx}")
           [[ -n "${isolated}" ]] && args+=(--rtx3070-isolated "${isolated}")
           [[ -n "${rtx5060}" ]] && args+=(--rtx5060ti "${rtx5060}")
+          [[ -n "${gfx1012}" ]] && args+=(--gfx1012 "${gfx1012}")
           [[ -n "${cpu}" ]] && args+=(--cpu "${cpu}")
           [[ "${NEEDS_ISOLATED}" == "true" ]] && args+=(--screen-flagged)
+          for pair in v100s=SKIP_SM70 rtx3070=SKIP_SM86 rtx5060ti=SKIP_SM120 gfx1012=SKIP_GFX1012; do
+            var="${pair#*=}"
+            [[ "${!var,,}" == "true" ]] && args+=(--disabled "${pair}")
+          done
           set +e
           python3 scripts/ci/bench_comment.py \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
@@ -779,7 +866,7 @@ jobs:
               echo "RTX 3070 screen flagged twice; bench-perf-isolated result=${ISOLATED_RESULT}" >&2
               exit 1
             fi
-            for job in "v100s=${V100S_RESULT}" "rtx3070=${RTX_RESULT}" "rtx5060ti=${RTX5060_RESULT}" "cpu=${CPU_RESULT}"; do
+            for job in "v100s=${V100S_RESULT}" "rtx3070=${RTX_RESULT}" "rtx5060ti=${RTX5060_RESULT}" "gfx1012=${GFX1012_RESULT}" "cpu=${CPU_RESULT}"; do
               if [[ "${job#*=}" == "failure" ]]; then
                 echo "report-only job ${job%%=*} failed (not blocking)" >&2
               fi

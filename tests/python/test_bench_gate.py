@@ -529,3 +529,77 @@ def test_rtx5060ti_comment_is_report_only_shared(tmp_path: Path):
     assert "report-only" in text
     assert "EngineCore 3.6 GiB" in text
     assert "never blocks" in text
+
+
+def test_gfx1012_target_is_hip_report_only():
+    target = TARGETS["gfx1012"]
+    assert target["backend"] == "hip"
+    assert target["gpus"] is None
+    assert target["amd_gpu"] is True
+    assert target["lock_path"] == "/tmp/gpu-lock-bubs-amd-0"
+    assert target["shared_device"] is True
+    assert target["report_only"] is True
+    assert target["profiler"] is None
+    assert target["runner"] == "mbp-1"
+
+
+def test_device_args_only_for_amd_targets():
+    from benchmarks.harness.cli import _device_args
+
+    assert _device_args(TARGETS["rtx5060ti"], None) == []
+    assert _device_args(TARGETS["cpu"], "xerxes") == []
+
+
+def test_amd_occupancy_parses_kfd_and_amdgpu(monkeypatch):
+    import subprocess
+
+    from benchmarks.harness import guards
+
+    stdout = (
+        "PID 4242 536870912\n"
+        "GPU /sys/class/drm/renderD129 37 4073197568 8573157376\n"
+    )
+    monkeypatch.setattr(
+        guards,
+        "_run",
+        lambda cmd, **_: subprocess.CompletedProcess(cmd, 0, stdout=stdout, stderr=""),
+    )
+    monkeypatch.setattr(guards, "_pid_cmdlines", lambda ctx, pids: {"4242": "fzb run model.pcfb"})
+    snap = guards.device_occupancy("bubs-mbp", gpus=None, amd=True)
+    assert snap["compute_apps"] == [
+        {"pid": "4242", "process_name": "", "used_gpu_memory": "512 MiB", "cmdline": "fzb run model.pcfb", "name": "fzb"}
+    ]
+    assert snap["gpu"]["name"] == "renderD129"
+    assert snap["gpu"]["utilization_gpu"] == 37.0
+    assert round(snap["gpu"]["memory_total_mib"]) == 8176
+    assert "util 37%" in format_foreign_load(snap)
+
+
+def test_gfx1012_error_and_skip_do_not_fail_overall(tmp_path: Path):
+    base = {"accuracy": {"verdict": "pass"}, "rtx3070": {"verdict": "pass"}}
+    assert overall_verdict({**base, "gfx1012": {"verdict": "error", "kind": "ab"}}) == "warn"
+    assert overall_verdict({**base, "gfx1012": {"verdict": "inconclusive"}}) == "warn"
+    skip = tmp_path / "gfx1012.json"
+    write_skip(skip, job="gfx1012", reason="base or head image predates the HIP backend")
+    text, overall = render(
+        jobs={"accuracy": None, "rtx3070": None, "gfx1012": skip},
+        run_url="",
+        notices=[],
+        trusted=True,
+        run_benches=True,
+    )
+    assert overall == "pass"
+    assert "AMD gfx1012 A/B" in text
+    assert "predates the HIP backend" in text
+
+
+def test_budget_scale_applies_to_gpu_perf_only():
+    from types import SimpleNamespace
+
+    from benchmarks.harness.cli import _budget_s
+
+    model = SimpleNamespace(time_budget_s={"gpu_perf": 30, "cpu_perf": 180})
+    assert _budget_s(model, "gpu_perf", TARGETS["gfx1012"]) == 120
+    assert _budget_s(model, "gpu_perf", TARGETS["rtx3070-isolated"]) == 30
+    assert _budget_s(model, "cpu_perf", TARGETS["gfx1012"]) == 180
+    assert _budget_s(model, "cpu_accuracy", TARGETS["cpu"]) == 60

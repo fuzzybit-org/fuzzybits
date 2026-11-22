@@ -2,7 +2,10 @@
 """macOS wheel smoke: import, devices, chinese within 4σ on omp (and metal), pytest.
 
 On a paravirtual Metal device (hosted runner) the Metal run must complete, but
-its accuracy is reported, not gated (#172).
+its accuracy is reported, not gated (#172). SMOKE_SKIP_METAL=1 (CI sets it from
+SKIP_METAL_ARM / SKIP_METAL_INTEL) keeps the runtime off the Metal device: the
+wheel layout is still checked, devices are listed with the omp mask, and the
+Metal chinese run is skipped.
 
 Arm64 wheels must ship Metal + OpenMP. x86_64 wheels are OpenMP + generic SSCP
 host JIT (no Metal). Intended for a clean venv that has only the wheel
@@ -98,12 +101,15 @@ def _run_child(script: str, extra_args: list[str], env: dict[str, str], timeout:
     )
 
 
-def smoke_devices(*, require_metal: bool) -> bool:
+def smoke_devices(*, require_metal: bool, skip_metal: bool = False) -> bool:
     """Returns whether the visible Metal device is paravirtual (hosted runner)."""
     script = r"""
 import os, sys
 os.environ.pop("ACPP_VISIBILITY_MASK", None)
 os.environ.pop("FUZZYBITS_BACKEND", None)
+if sys.argv[2] == "1":
+    os.environ["ACPP_VISIBILITY_MASK"] = "omp"
+    os.environ["FUZZYBITS_BACKEND"] = "omp"
 os.environ.setdefault("ACPP_DEBUG_LEVEL", "2")
 os.environ.setdefault("ACPP_PERSISTENT_RUNTIME", "1")
 require_metal = sys.argv[1] == "1"
@@ -134,7 +140,12 @@ print("import+list_devices ok")
     env.pop("FUZZYBITS_BACKEND", None)
     env.setdefault("ACPP_DEBUG_LEVEL", "2")
     env.setdefault("ACPP_PERSISTENT_RUNTIME", "1")
-    proc = _run_child(script, ["1" if require_metal else "0"], env, MC_TIMEOUT)
+    proc = _run_child(
+        script,
+        ["1" if require_metal and not skip_metal else "0", "1" if skip_metal else "0"],
+        env,
+        MC_TIMEOUT,
+    )
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
@@ -217,9 +228,12 @@ def main() -> int:
         raise SystemExit(f"fzb --help failed rc={help_proc.returncode}")
     if "Usage: fzb" not in help_proc.stdout:
         raise SystemExit("fzb --help did not print the native-style usage")
-    paravirtual = smoke_devices(require_metal=has_metal)
+    skip_metal = os.environ.get("SMOKE_SKIP_METAL") == "1"
+    paravirtual = smoke_devices(require_metal=has_metal, skip_metal=skip_metal)
     smoke_chinese(xml, "omp")
-    if has_metal:
+    if has_metal and skip_metal:
+        print("::notice title=Metal smoke skipped::SMOKE_SKIP_METAL=1 (hardware disabled in CI)")
+    elif has_metal:
         smoke_chinese(xml, "metal", gate_accuracy=not paravirtual)
     else:
         print("skip metal smoke (OpenMP-only wheel)")

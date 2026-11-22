@@ -16,10 +16,10 @@ MARKER = "<!-- fuzzybits-bench-gate -->"
 
 # Jobs whose harness verdict can fail the required summary: accuracy, and the
 # isolated RTX 3070 A/B that runs only when the screen flags a model twice.
-# CPU (#124), V100S (shared with live/dev), RTX 5060 Ti and the RTX 3070 screen
-# are report-only: they never fail the summary.
+# CPU (#124), V100S (shared with live/dev), RTX 5060 Ti, AMD gfx1012 and the
+# RTX 3070 screen are report-only: they never fail the summary.
 BLOCKING_JOBS = ("accuracy", "rtx3070_isolated")
-REPORT_ONLY_JOBS = ("cpu", "rtx5060ti", "v100s", "rtx3070")
+REPORT_ONLY_JOBS = ("cpu", "rtx5060ti", "gfx1012", "v100s", "rtx3070")
 
 _FAIL = {"block", "error"}
 # inconclusive: host busy — fail the gate so an untested PR is not green.
@@ -122,9 +122,15 @@ def render(
     trusted: bool = True,
     run_benches: bool = True,
     screen_flagged: bool = False,
+    disabled: Mapping[str, str] | None = None,
 ) -> tuple[str, str]:
-    """Return ``(markdown, overall_verdict)``."""
-    loaded = {name: _load(path) for name, path in jobs.items()}
+    """Return ``(markdown, overall_verdict)``.
+
+    ``disabled`` maps a job to the SKIP_* repository variable that turned its
+    hardware off; such jobs render as skipped and never affect the verdict.
+    """
+    disabled = dict(disabled or {})
+    loaded = {name: None if name in disabled else _load(path) for name, path in jobs.items()}
     overall = overall_verdict(loaded)
     if screen_flagged and loaded.get("rtx3070_isolated") is None:
         overall = "error"
@@ -158,7 +164,7 @@ def render(
         lines.append(f"- inject: `{inject}`")
     lines.append(
         "- Blocking: accuracy, and the isolated RTX 3070 A/B when the RTX 3070 screen "
-        "flags a model twice. CPU, V100S, RTX 5060 Ti and the screen are report-only."
+        "flags a model twice. CPU, V100S, RTX 5060 Ti, AMD gfx1012 and the screen are report-only."
     )
     if screen_flagged:
         isolated = loaded.get("rtx3070_isolated")
@@ -182,6 +188,9 @@ def render(
         lines.append(f"- **RTX 5060 Ti:** {rtx5060_note} (never blocks)")
     elif loaded.get("rtx5060ti"):
         lines.append("- **RTX 5060 Ti:** shared GPU, report-only (never blocks)")
+    amd_note = shared_device_note(_context(loaded.get("gfx1012")))
+    if amd_note:
+        lines.append(f"- **AMD gfx1012:** {amd_note} (never blocks)")
     if notices:
         lines.append("")
         for notice in notices:
@@ -193,12 +202,16 @@ def render(
         "rtx3070_isolated": "RTX 3070 isolated A/B (`sample_s`, blocks at ci_lo > 1.03)",
         "v100s": "V100S A/B (`sample_s`, report-only; shared with live/dev)",
         "rtx5060ti": "RTX 5060 Ti A/B (shelly, shared GPU, report-only)",
+        "gfx1012": "AMD gfx1012 A/B (HIP, bubs, shared GPU, report-only)",
         "cpu": "CPU A/B (`cpu_sample_s`, report-only)",
     }
     for name, title in labels.items():
         payload = loaded.get(name)
         path = jobs.get(name)
         lines += ["", f"## {title}", ""]
+        if name in disabled:
+            lines.append(f"- skipped: hardware disabled (`{disabled[name]}=true`)")
+            continue
         if payload is None:
             if name == "rtx3070_isolated" and not screen_flagged:
                 lines.append("_not needed: the screen did not flag a model twice_")
@@ -219,7 +232,7 @@ def render(
         "",
         "## Artifacts",
         "",
-        "JSON results are uploaded on the Actions run (accuracy, rtx3070, rtx3070-isolated, v100s, rtx5060ti, cpu).",
+        "JSON results are uploaded on the Actions run (accuracy, rtx3070, rtx3070-isolated, v100s, rtx5060ti, gfx1012, cpu).",
         "",
     ]
     return "\n".join(lines).rstrip() + "\n", overall
@@ -298,9 +311,17 @@ def main(argv: list[str] | None = None) -> int:
         help="The RTX 3070 screen flagged a model twice; the isolated result is required",
     )
     parser.add_argument("--rtx5060ti", type=Path, default=None)
+    parser.add_argument("--gfx1012", type=Path, default=None)
     parser.add_argument("--cpu", type=Path, default=None)
     parser.add_argument("--run-url", default="")
     parser.add_argument("--notice", action="append", default=[])
+    parser.add_argument(
+        "--disabled",
+        action="append",
+        default=[],
+        metavar="JOB=SKIP_VAR",
+        help="Job whose hardware is disabled by a SKIP_* repository variable",
+    )
     parser.add_argument("--inject", default=None)
     parser.add_argument("--trusted", action="store_true", default=False)
     parser.add_argument("--run-benches", action="store_true", default=False)
@@ -338,6 +359,7 @@ def main(argv: list[str] | None = None) -> int:
         "rtx3070_isolated": args.rtx3070_isolated,
         "v100s": args.v100s,
         "rtx5060ti": args.rtx5060ti,
+        "gfx1012": args.gfx1012,
         "cpu": args.cpu,
     }
     markdown, overall = render(
@@ -348,6 +370,7 @@ def main(argv: list[str] | None = None) -> int:
         trusted=args.trusted,
         run_benches=args.run_benches,
         screen_flagged=args.screen_flagged,
+        disabled=dict(item.split("=", 1) for item in args.disabled),
     )
     if args.require and args.trusted and args.run_benches:
         required = ["accuracy"] + (["rtx3070_isolated"] if args.screen_flagged else [])

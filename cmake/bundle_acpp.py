@@ -290,13 +290,20 @@ def bundle(acpp_prefix: Path, dest: Path) -> None:
     for name in ("libacpp-rt.so", "libacpp-common.so"):
         record(lib / name, dest)
 
+    # ROCm itself (libamdhip64, libhiprtc, comgr, HSA) is never bundled: it
+    # must match the host's amdgpu KFD, like libcuda.so.1 must match the driver.
     backends = dest / "hipSYCL"
-    for name in ("librt-backend-cuda.so", "librt-backend-omp.so"):
+    for name in ("librt-backend-cuda.so", "librt-backend-hip.so", "librt-backend-omp.so"):
         record(hipsycl / name, backends)
 
     l2b = dest / "hipSYCL" / "llvm-to-backend"
-    for name in ("libllvm-to-backend.so", "libllvm-to-host.so", "libllvm-to-ptx.so"):
+    for name in ("libllvm-to-backend.so", "libllvm-to-host.so", "libllvm-to-ptx.so", "libllvm-to-amdgpu.so"):
         record(hipsycl / "llvm-to-backend" / name, l2b)
+
+    rocm_bitcode = Path(os.environ.get("ROCM_PATH", "/opt/rocm")) / "amdgcn" / "bitcode"
+    amdgcn_dst = dest / "hipSYCL" / "ext" / "bitcode" / "amdgcn"
+    for src in sorted(rocm_bitcode.glob("*.bc")) if rocm_bitcode.is_dir() else []:
+        record(src, amdgcn_dst)
 
     bitcode_src = hipsycl / "bitcode"
     bitcode_dst = dest / "hipSYCL" / "bitcode"

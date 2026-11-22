@@ -10,6 +10,10 @@ INPUT_DIR="${SMOKE_INPUT_DIR:-/app/input}"
 SMOKE_MC="${SMOKE_MC:-1}"
 SMOKE_FZB_CUDA="${SMOKE_FZB_CUDA:-1}"
 SMOKE_FZB_OMP="${SMOKE_FZB_OMP:-1}"
+# AMD GPU via the HIP backend; needs `--device /dev/kfd --device /dev/dri` and
+# the host's kfd/render group ids (`--group-add`).
+SMOKE_FZB_HIP="${SMOKE_FZB_HIP:-0}"
+FZB_HIP_TRIALS="${FZB_HIP_TRIALS:-${FZB_TRIALS}}"
 SMOKE_Z_MAX="${SMOKE_Z_MAX:-4}"
 CHINESE_REF="${CHINESE_REF:-1.17058e-3}"
 
@@ -90,7 +94,7 @@ PY
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
-if [[ "${SMOKE_FZB_CUDA}" == "1" || "${SMOKE_FZB_OMP}" == "1" ]]; then
+if [[ "${SMOKE_FZB_CUDA}" == "1" || "${SMOKE_FZB_OMP}" == "1" || "${SMOKE_FZB_HIP}" == "1" ]]; then
   echo "== fzb compile chinese =="
   fzb compile "${INPUT_DIR}/chinese.xml" -c 2 --no-kn -o "${tmp}/chinese.pcfb"
 fi
@@ -100,6 +104,45 @@ if [[ "${SMOKE_FZB_CUDA}" == "1" ]]; then
   log="${tmp}/cuda.json"
   timeout "${TIMEOUT_SEC}" fzb run "${tmp}/chinese.pcfb" --trials "${FZB_TRIALS}" --backend cuda --json | tee "${log}"
   check_fzb_z cuda "${log}" "${FZB_TRIALS}"
+fi
+
+if [[ "${SMOKE_FZB_HIP}" == "1" ]]; then
+  # fzb's queue selector scores every non-HIP device -1 under a `hip` mask, so
+  # a successful run cannot have silently fallen back to the OpenMP host.
+  echo "== HIP devices =="
+  case ";${ACPP_VISIBILITY_MASK:-};" in
+    *";hip;"* | ";;") ;;
+    *) echo "error: ACPP_VISIBILITY_MASK=${ACPP_VISIBILITY_MASK} does not load the HIP backend" >&2; exit 5 ;;
+  esac
+  ls -l /dev/kfd /dev/dri
+  info="$(ACPP_DEBUG_LEVEL=2 acpp-info -l 2>&1)"
+  printf '%s\n' "${info}"
+  if ! printf '%s\n' "${info}" | awk '/^Loaded backend [0-9]+: HIP/{hip=1; next} /^Loaded backend/{hip=0} hip && /Found device/{ok=1} END{exit !ok}'; then
+    echo "error: AdaptiveCpp enumerated no HIP device" >&2
+    exit 5
+  fi
+
+  echo "== fzb run chinese hip =="
+  log="${tmp}/hip.json"
+  timeout "${TIMEOUT_SEC}" fzb run "${tmp}/chinese.pcfb" --trials "${FZB_HIP_TRIALS}" --backend hip --json | tee "${log}"
+  check_fzb_z hip "${log}" "${FZB_HIP_TRIALS}"
+
+  echo "== python fuzzybits on hip =="
+  timeout "${TIMEOUT_SEC}" python3 - "${tmp}/chinese.pcfb" "${FZB_HIP_TRIALS}" "${CHINESE_REF}" "${SMOKE_Z_MAX}" <<'PY'
+import math, sys
+import fuzzybits
+pcfb, trials, pref, zmax = sys.argv[1], int(float(sys.argv[2])), float(sys.argv[3]), float(sys.argv[4])
+fuzzybits.init(backend="hip")
+devices = fuzzybits.list_devices()
+gpus = [d for d in devices if d["backend"] == "hip"]
+print("hip devices", [(d["name"], d["vendor"], d["version"]) for d in gpus])
+assert gpus, f"no hip device in {devices}"
+assert fuzzybits.active_backend() == "hip", fuzzybits.active_backend()
+(q,) = fuzzybits.run(pcfb, trials=trials, backend="hip")
+z = abs(q.estimate - pref) / math.sqrt(q.estimate * (1.0 - q.estimate) / q.n)
+print(f"python hip chinese  p̂={q.estimate:.6e}  n={q.n}  |z|={z:.3f}")
+assert z <= zmax, f"|z|={z:.3f} > {zmax}"
+PY
 fi
 
 if [[ "${SMOKE_FZB_OMP}" == "1" ]]; then
