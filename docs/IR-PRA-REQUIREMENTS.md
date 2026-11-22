@@ -196,8 +196,8 @@ Still needed:
 
 Implemented: the CAFTA FTP project reader (#180, `src/io/ftp`, endpoint `io.fuzzybits.ftp.project_reader`,
 `ftp::read_project`). A project is one or more `.ftp` files (or a directory, all `*.ftp` sorted) read as their ordered
-union; sections do not continue from one file into the next. It is the only FTP parser; the older `read()` to `ir::pc`
-uses the same parser until #182.
+union; sections do not continue from one file into the next. It is the only FTP parser (the legacy FTP to `ir::pc`
+builder was removed with #182); `fzb compile` drives it ([`ftp-input.md`](ftp-input.md)).
 
 | FTP construct | `ir::pra` | Class |
 |---|---|---|
@@ -212,7 +212,7 @@ uses the same parser until #182.
 | `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
 | no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
 | `LIMIT x` | project attribute `ftp.limit` | extension |
-| source conventions | project attributes `ftp.negation = delete_term` (always) and `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering, for the compile driver (#182) to map to quantification defaults | extension |
+| source conventions | project attributes `ftp.negation = delete_term` (always) and `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering; the compile driver (#182) maps them to quantification defaults | extension |
 | `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:

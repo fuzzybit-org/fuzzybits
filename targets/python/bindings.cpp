@@ -7,6 +7,7 @@
 #include <sycl/sycl.hpp>
 
 #include "compile/exact_eval.h"
+#include "compile/ftp/compile.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
@@ -1558,6 +1559,142 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
     return py_bytes_from((*compiled)->bytes);
 }
 
+std::vector<std::string> names_from_py(const py::handle &value, const char *what) {
+    std::vector<std::string> out;
+    if (py::isinstance<py::str>(value)) {
+        out.push_back(value.cast<std::string>());
+    } else if (py::isinstance<py::sequence>(value) && !py::isinstance<py::bytes>(value)) {
+        for (auto item : value.cast<py::sequence>()) {
+            if (!py::isinstance<py::str>(item)) {
+                throw std::invalid_argument(std::string(what) + " must be a name or a sequence of names");
+            }
+            out.push_back(item.cast<std::string>());
+        }
+    } else if (!value.is_none()) {
+        throw std::invalid_argument(std::string(what) + " must be a name or a sequence of names");
+    }
+    return out;
+}
+
+fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
+    namespace ftp = fuzzybits::compile::ftp;
+    ftp::options out;
+    const auto text = [&](std::initializer_list<const char *> keys, std::optional<std::string> &into) {
+        if (auto value = get_option(options, keys); value && !value->is_none()) {
+            into = value->cast<std::string>();
+        }
+    };
+    if (auto value = get_option(options, {"target", "targets"})) {
+        out.targets = names_from_py(*value, "target");
+    }
+    if (auto value = get_option(options, {"watch"})) {
+        out.watch = names_from_py(*value, "watch");
+    }
+    if (auto value = get_option(options, {"overrides", "override"}); value && !value->is_none()) {
+        if (py::isinstance<py::dict>(*value)) {
+            for (auto item : value->cast<py::dict>()) {
+                const auto name = py::str(item.first).cast<std::string>();
+                if (!py::isinstance<py::bool_>(item.second) && !py::isinstance<py::int_>(item.second)) {
+                    throw std::invalid_argument("override " + name + " must be True, False, 1 or 0");
+                }
+                const auto flag = item.second.cast<long>();
+                if (flag != 0 && flag != 1) {
+                    throw std::invalid_argument("override " + name + " must be True, False, 1 or 0");
+                }
+                out.overrides.push_back({name, flag == 1});
+            }
+        } else {
+            for (const auto &entry : names_from_py(*value, "overrides")) {
+                auto parsed = ftp::parse_override(entry);
+                if (!parsed) {
+                    throw std::invalid_argument(parsed.diagnostics().items().front().message);
+                }
+                out.overrides.push_back(std::move(parsed).value());
+            }
+        }
+    }
+    text({"duplicate_import", "duplicate-import"}, out.duplicate_import);
+    text({"complement_events", "complement-events"}, out.complement_events);
+    text({"negation"}, out.negation);
+    text({"literals"}, out.literals);
+    text({"config"}, out.config);
+    if (auto value = get_option(options, {"max_initiators_per_cutset", "max-initiators-per-cutset"})) {
+        if (value->is_none() || (py::isinstance<py::str>(*value) && value->cast<std::string>() == "none")) {
+            out.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+        } else if (py::isinstance<py::int_>(*value) && !py::isinstance<py::bool_>(*value) && value->cast<long long>() >= 0 &&
+                   value->cast<long long>() <= 0xFFFFFFFFLL) {
+            out.max_initiators_per_cutset = std::optional<std::uint32_t>{value->cast<std::uint32_t>()};
+        } else {
+            throw std::invalid_argument("max_initiators_per_cutset must be a non-negative integer or None");
+        }
+    }
+    if (auto value = get_option(options, {"compilation_level", "compilation-level", "pdag_c", "c"}); value && !value->is_none()) {
+        out.level = value->cast<int>();
+    }
+    return out;
+}
+
+/// "ftp", "mef" (anything else) or "mixed"; the Python layer picks the compile path from it.
+std::string classify_compile_inputs(const std::vector<std::string> &input_files) {
+    const std::vector<std::filesystem::path> paths(input_files.begin(), input_files.end());
+    switch (fuzzybits::compile::ftp::classify_inputs(paths)) {
+        case fuzzybits::compile::ftp::input_kind::ftp: return "ftp";
+        case fuzzybits::compile::ftp::input_kind::mixed: return "mixed";
+        case fuzzybits::compile::ftp::input_kind::other: break;
+    }
+    return "mef";
+}
+
+/// CAFTA FTP project -> (pcfb bytes, report JSON). Diagnostics of a failed compile are raised as
+/// RuntimeError, one `code: message` line each.
+py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py::dict &options,
+                           py::object on_progress, double progress_rate_hz, py::object progress,
+                           const std::optional<std::string> &progress_log) {
+    namespace ftp = fuzzybits::compile::ftp;
+    if (input_files.empty()) {
+        throw std::invalid_argument("compile requires at least one input file");
+    }
+    auto log = open_progress_log(progress_log);
+    auto opt = ftp_options_from_py(options);
+    opt.progress_max_rate_hz = progress_rate_hz;
+    const std::vector<std::filesystem::path> paths(input_files.begin(), input_files.end());
+
+    ProgressSinks sinks(std::move(on_progress), std::move(progress), log.get(), opt.progress_sinks);
+
+    std::optional<ftp::compile_result> compiled;
+    try {
+        py::gil_scoped_release release;
+        compiled.emplace(ftp::compile_project(paths, opt));
+        if (log) {
+            fuzzybits::runtime::progress::finish_log(*log, /*interrupted=*/!*compiled);
+        }
+    } catch (...) {
+        close_interrupted(log);
+        py::gil_scoped_acquire acquire;
+        sinks.rethrow_if_failed();
+        sinks.clear();
+        throw;
+    }
+    {
+        py::gil_scoped_acquire acquire;
+        sinks.rethrow_if_failed();
+        sinks.clear();
+    }
+    if (!*compiled) {
+        std::string message = "compile:";
+        for (const auto &item : compiled->diagnostics().items()) {
+            if (item.severity == fuzzybits::api::diagnostic_severity::error) {
+                message += "\n  " + item.code + ": " + item.message;
+            }
+        }
+        throw std::runtime_error(message);
+    }
+    if (log && !log->ok()) {
+        throw std::runtime_error("compile: writing the progress log failed: " + log->path().string());
+    }
+    return py::make_tuple(py_bytes_from(compiled->value().bytes), py::str(ftp::report_json(*compiled, 0)));
+}
+
 py::bytes nombrilo_to_pcfb_path(const std::string &path, const py::dict &options) {
     fuzzybits::compile::NombriloCompileOptions opt;
     if (auto value = get_option(options, {"target", "target_gate", "target-gate", "top"})) {
@@ -2084,6 +2221,31 @@ Args:
 
 Returns:
     A dict containing analysis timing, warnings, and probability results.
+)pbdoc");
+
+    m.def("classify_compile_inputs", &classify_compile_inputs, py::arg("input_files"),
+          "Returns 'ftp' (CAFTA FTP files or directories), 'mef' (anything else) or 'mixed'.");
+
+    m.def(
+        "compile_ftp_pcfb",
+        &compile_ftp_pcfb,
+        py::arg("input_files"),
+        py::arg("options") = py::dict(),
+        py::arg("on_progress") = py::none(),
+        py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress") = py::none(),
+        py::arg("progress_log") = py::none(),
+        R"pbdoc(
+Compile a CAFTA FTP project (files or directories of `*.ftp`) into a pcfb buffer.
+
+Args:
+    input_files: FTP files or directories, read as one project in sorted path order.
+    options: `target`, `watch`, `overrides` (name -> bool), `duplicate_import`,
+        `complement_events`, `negation`, `max_initiators_per_cutset`, `literals`,
+        `compilation_level` (0 or 1) and `config` (JSON text).
+
+Returns:
+    `(pcfb bytes, report JSON text)`.
 )pbdoc");
 
     m.def(

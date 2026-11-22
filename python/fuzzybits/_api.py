@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -243,12 +245,12 @@ def _as_input_files(model_xml: str | os.PathLike[str] | Sequence[str | os.PathLi
         stripped = text.lstrip()
         if stripped.startswith("<") or stripped.startswith("<?xml"):
             raise ValueError(
-                "compile() takes MEF XML file paths, not XML text; write the "
+                "compile() takes file paths, not XML text; write the "
                 "model to a file first"
             )
         files.append(text)
     if not files:
-        raise ValueError("at least one MEF XML path is required")
+        raise ValueError("at least one input path is required")
     return files
 
 
@@ -293,32 +295,178 @@ def _mask_backend(backend: str | None) -> str:
     return chosen
 
 
+_UNSET: Any = object()
+
+#: Keywords of :func:`compile` that apply to CAFTA FTP projects only.
+_FTP_ONLY = (
+    "overrides",
+    "duplicate_import",
+    "complement_events",
+    "negation",
+    "literals",
+    "config",
+)
+
+
+def _ftp_config_text(config: Any) -> str:
+    """A quantification config as JSON text: a mapping, JSON text, or a path to a JSON file."""
+    if isinstance(config, Mapping):
+        return json.dumps(config)
+    if isinstance(config, os.PathLike):
+        return Path(config).read_text(encoding="utf-8")
+    if isinstance(config, str):
+        if config.lstrip().startswith("{"):
+            return config
+        return Path(config).read_text(encoding="utf-8")
+    raise TypeError("config must be a mapping, JSON text or a path to a JSON file")
+
+
+def _as_names(value: Any, what: str) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (bytes, bytearray)):
+        raise TypeError(f"{what} must be a name or a sequence of names")
+    return [str(item) for item in value]
+
+
+def _compile_ftp(
+    files: list[str],
+    *,
+    pdag_c: int | None,
+    watch: Any,
+    target: Any,
+    overrides: Any,
+    duplicate_import: str | None,
+    complement_events: str | None,
+    negation: str | None,
+    max_initiators_per_cutset: Any,
+    literals: str | None,
+    config: Any,
+    report: bool,
+    on_progress: Callable[[ProgressSnapshot], None] | None,
+    progress: bool | None,
+    progress_log: str | os.PathLike[str] | None,
+    options: dict[str, Any],
+) -> bytes | tuple[bytes, dict[str, Any]]:
+    if options:
+        raise TypeError(
+            "compile() got options that do not apply to CAFTA FTP input: " + ", ".join(sorted(options))
+        )
+    opts: dict[str, Any] = {}
+    if target is not None:
+        opts["target"] = _as_names(target, "target")
+    names = _as_watch(watch)
+    if names:
+        opts["watch"] = names
+    if overrides is not None:
+        if isinstance(overrides, Mapping):
+            opts["overrides"] = {str(name): value for name, value in overrides.items()}
+        else:
+            opts["overrides"] = _as_names(overrides, "overrides")
+    for key, value in (
+        ("duplicate_import", duplicate_import),
+        ("complement_events", complement_events),
+        ("negation", negation),
+        ("literals", literals),
+    ):
+        if value is not None:
+            opts[key] = str(value)
+    if max_initiators_per_cutset is not _UNSET:
+        opts["max_initiators_per_cutset"] = max_initiators_per_cutset
+    if pdag_c is not None:
+        opts["compilation_level"] = pdag_c
+    if config is not None:
+        opts["config"] = _ftp_config_text(config)
+    _flush_progress_streams()
+    blob, report_json = _runtime.native().compile_ftp_pcfb(
+        files,
+        opts,
+        _progress_callback(on_progress),
+        progress=progress,
+        progress_log=_progress_log_path(progress_log),
+    )
+    document = json.loads(report_json)
+    warned = 0
+    for item in document.get("diagnostics", []):
+        if item["severity"] == "warning":
+            warned += 1
+            if warned <= 10:
+                warnings.warn(f"{item['code']}: {item['message']}", stacklevel=3)
+    if warned > 10:
+        warnings.warn(f"{warned - 10} more warning(s); compile(report=True) lists all", stacklevel=3)
+    blob = bytes(blob)
+    return (blob, document) if report else blob
+
+
 def compile(  # noqa: A001 - public API name
     model_xml: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     *,
-    pdag_c: int = 2,
+    pdag_c: int | None = None,
     no_kn: bool = True,
     watch: Any = None,
+    target: str | Sequence[str] | None = None,
+    overrides: Mapping[str, bool | int] | Sequence[str] | None = None,
+    duplicate_import: str | None = None,
+    complement_events: str | None = None,
+    negation: str | None = None,
+    max_initiators_per_cutset: int | str | None = _UNSET,
+    literals: str | None = None,
+    config: Mapping[str, Any] | str | os.PathLike[str] | None = None,
+    report: bool = False,
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
     progress: bool | None = None,
     progress_log: str | os.PathLike[str] | None = None,
     **options: Any,
-) -> bytes:
-    """Compile OpenPSA/MEF XML or nombrilo.circuit to a pcfb 1.1 buffer.
+) -> bytes | tuple[bytes, dict[str, Any]]:
+    """Compile OpenPSA/MEF XML, nombrilo.circuit or CAFTA FTP input to a pcfb buffer.
+
+    The format is detected from the inputs: ``.ftp`` files, a directory holding
+    ``*.ftp`` files, or text with an ``ENDTREE`` line are CAFTA FTP; several FTP
+    files form one project, read in sorted path order. FTP input goes through
+    ``ir::pra``, the quantification config, the ``ir::pc`` lowering and passes,
+    and the pcfb writer; the arguments below marked *FTP* apply to it only
+    (passing one with MEF input raises :class:`ValueError`).
 
     Parameters
     ----------
     model_xml:
-        Path to a MEF XML file, a nombrilo.circuit safetensors file, or a
-        sequence of MEF input files. Format is detected from the file header.
+        Path to a MEF XML file, a nombrilo.circuit safetensors file, FTP files
+        or directories, or a sequence of them.
     pdag_c:
-        PDAG compilation level (``-c`` / ``compilation_level``).
+        MEF: PDAG compilation level (``-c``, default 2). FTP: ``0`` (no passes)
+        or ``1`` (default; the ``ir::pc`` passes).
     no_kn:
-        Match the CLI ``--no-kn`` flag (expand k-out-of-n to AND/OR).
+        MEF only: match the CLI ``--no-kn`` flag (expand k-out-of-n to AND/OR).
     watch:
-        Extra MEF gate / event names (or PDAG indices) emitted as additional
-        ``PROBABILITY`` queries so :class:`Session` tallies them. Boolean
-        ``True``/``False`` is ignored (that is ``watch_mode``).
+        Extra gate / event names (MEF also PDAG indices) emitted as additional
+        queries so :class:`Session` tallies them. Boolean ``True``/``False`` is
+        ignored (that is ``watch_mode``).
+    target:
+        MEF: the top gate name. FTP: a PROCESS target, gate or basic event name,
+        or a sequence of them (default: every PROCESS target).
+    overrides:
+        FTP: ``{name: True | False}`` (or ``["NAME=1", ...]``) forcing elements
+        to constants under every negation semantics.
+    duplicate_import, complement_events:
+        FTP reader options: ``"error" | "first" | "last"`` (default ``"last"``)
+        and ``"atom" | "negation"`` (default ``"atom"``).
+    negation:
+        FTP: ``"boolean"`` or ``"hull"``. The default is hull when the model
+        records ``ftp.negation = delete_term`` (always, for FTP input); the
+        pcfb writer cannot write hull queries yet, so pass ``"boolean"``.
+    max_initiators_per_cutset:
+        FTP: at most this many initiating events per cut set; ``None`` or
+        ``"none"`` for no rule. Default: the model's
+        ``ftp.max_initiators_per_cutset`` attribute.
+    literals:
+        FTP hull targets: ``"atom_split"`` (default), ``"omega_l"`` or ``"negation"``.
+    config:
+        FTP: a quantification config (mapping, JSON text or a path to a JSON
+        file); the other arguments override it.
+    report:
+        FTP: return ``(blob, report)``, where ``report`` is the dict of the
+        lowering transform report, the pass reports, circuit sizes, timings and
+        every diagnostic (the content of ``fzb compile --report``).
     on_progress:
         Optional callable receiving a :class:`ProgressSnapshot` at each compile
         stage (``parse``, ``lower``, ``passes``, ``write``) and once at the end.
@@ -335,13 +483,62 @@ def compile(  # noqa: A001 - public API name
         object per snapshot) or ``.csv`` (header from the snapshot schema).
         Any other extension raises :class:`ValueError`. Written even when no
         display is active; nothing is created unless given.
+
+    Returns
+    -------
+    bytes
+        The pcfb buffer; with ``report=True`` (FTP only) a ``(bytes, dict)`` pair.
+        FTP warnings are issued as :class:`UserWarning`.
     """
     _reject_seed(options.pop("seed", None) if "seed" in options else None, options)
     native = _runtime.native()
+    files = _as_input_files(model_xml)
+    kind = native.classify_compile_inputs(files)
+    if kind == "mixed":
+        raise ValueError("FTP and non-FTP inputs cannot be combined")
+    ftp_only = {
+        "overrides": overrides,
+        "duplicate_import": duplicate_import,
+        "complement_events": complement_events,
+        "negation": negation,
+        "literals": literals,
+        "config": config,
+    }
+    if max_initiators_per_cutset is not _UNSET:
+        ftp_only["max_initiators_per_cutset"] = max_initiators_per_cutset
+    if kind == "ftp":
+        return _compile_ftp(
+            files,
+            pdag_c=pdag_c,
+            watch=watch if watch is not None else options.pop("watch", None),
+            target=target,
+            overrides=overrides,
+            duplicate_import=duplicate_import,
+            complement_events=complement_events,
+            negation=negation,
+            max_initiators_per_cutset=max_initiators_per_cutset,
+            literals=literals,
+            config=config,
+            report=report,
+            on_progress=on_progress,
+            progress=progress,
+            progress_log=progress_log,
+            options=options,
+        )
+    unsupported = sorted(key for key, value in ftp_only.items() if value is not None or key == "max_initiators_per_cutset")
+    if unsupported or report:
+        raise ValueError(
+            "compile() arguments apply to CAFTA FTP input only: "
+            + ", ".join(unsupported + (["report"] if report else []))
+        )
     opts: dict[str, Any] = {
-        "compilation_level": pdag_c,
+        "compilation_level": 2 if pdag_c is None else pdag_c,
         "no_kn": no_kn,
     }
+    if target is not None:
+        if not isinstance(target, str):
+            raise ValueError("MEF input takes one target")
+        opts["target"] = target
     opts.update(options)
     names = _as_watch(watch)
     if not names:
@@ -353,7 +550,7 @@ def compile(  # noqa: A001 - public API name
     _flush_progress_streams()
     return bytes(
         native.compile_pcfb(
-            _as_input_files(model_xml),
+            files,
             opts,
             _progress_callback(on_progress),
             progress=progress,
@@ -399,12 +596,15 @@ def compile_file(
     model_xml: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     out_path: str | os.PathLike[str],
     *,
-    pdag_c: int = 2,
+    pdag_c: int | None = None,
     no_kn: bool = True,
     **options: Any,
 ) -> Path:
-    """Compile MEF XML to ``out_path`` and return that path."""
+    """Compile MEF XML or an FTP project to ``out_path`` and return that path."""
+    if options.get("report"):
+        raise ValueError("compile_file() writes the blob only; use compile(report=True) for the report")
     data = compile(model_xml, pdag_c=pdag_c, no_kn=no_kn, **options)
+    assert isinstance(data, bytes)
     path = Path(out_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
