@@ -8,6 +8,15 @@ DATA = Path(__file__).resolve().parent / "data"
 
 
 @pytest.fixture(scope="session")
+def hull_pcfb_path() -> Path:
+    """A valid pcfb 1.2 file whose only query is MONOTONE_HULL_PROBABILITY (query name ``TOP_HULL``)."""
+    path = DATA / "monotone_hull_query.pcfb"
+    if not path.is_file():
+        pytest.skip(f"missing fixture {path}")
+    return path
+
+
+@pytest.fixture(scope="session")
 def tiny_xml() -> Path:
     path = DATA / "tiny.xml"
     if not path.is_file():

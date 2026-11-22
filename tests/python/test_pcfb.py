@@ -229,3 +229,29 @@ def test_session_watch_tallies_named_gate(tiny_xml: Path):
         assert named
         assert named[0] in first.nodes
         assert first.nodes[named[0]].total_bits == first.trials_per_pass
+
+
+HULL_MESSAGE = r"pcfb\.unsupported-query-kind.*TOP_HULL.*MONOTONE_HULL_PROBABILITY"
+
+
+def test_inspect_still_reads_a_hull_file(hull_pcfb_path: Path):
+    summary = fuzzybits.inspect(hull_pcfb_path)
+    assert summary["diagnostics"] == []
+    assert [str(n) for n in summary["query_names"]] == ["TOP_HULL"]
+
+
+def test_run_rejects_monotone_hull_query(hull_pcfb_path: Path):
+    for source in (hull_pcfb_path, hull_pcfb_path.read_bytes()):
+        with pytest.raises(RuntimeError, match=HULL_MESSAGE):
+            fuzzybits.run(source, trials=1 << 12, backend="omp")
+
+
+def test_session_rejects_monotone_hull_query(hull_pcfb_path: Path):
+    with pytest.raises(RuntimeError, match=HULL_MESSAGE):
+        fuzzybits.Session(hull_pcfb_path.read_bytes(), backend="omp")
+
+
+def test_exact_rejects_monotone_hull_query(hull_pcfb_path: Path):
+    for source in (hull_pcfb_path, hull_pcfb_path.read_bytes()):
+        with pytest.raises(RuntimeError, match=HULL_MESSAGE):
+            fuzzybits.exact(source)

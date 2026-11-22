@@ -322,6 +322,7 @@ pcfb::ir::Circuit require_valid_circuit(pcfb::Result<pcfb::ir::Circuit> circuit,
   if (!circuit) {
     throw RuntimeError(std::string(op) + ": " + circuit.error().message);
   }
+  require_implemented_queries(*circuit, op);
   const auto diags = pcfb::validate(*circuit);
   if (!diags.empty()) {
     throw InvalidPcfbError(std::string(op) + ": pcfb validation failed (" + std::to_string(diags.size()) +

@@ -426,7 +426,8 @@ def inspect(pcfb: bytes | str | os.PathLike[str]) -> dict[str, Any]:
 def exact(pcfb: bytes | str | os.PathLike[str], query_index: int = 0) -> float:
     """Exhaustive exact P(query) for small models (≤ 30 random SAMPLE events).
 
-    Same as ``fzb inspect --exact``. Raises if the circuit has too many events.
+    Same as ``fzb inspect --exact``. Raises if the circuit has too many events or a query
+    kind other than ``PROBABILITY`` (see :func:`run`).
     """
     native = _runtime.native()
     if isinstance(pcfb, (bytes, bytearray, memoryview)):
@@ -535,6 +536,11 @@ def run(
     **options: Any,
 ) -> list[QueryResult]:
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
+
+    Only ``PROBABILITY`` queries are answered: a file with any other query kind (for example
+    ``MONOTONE_HULL_PROBABILITY``) or a schema minor newer than 1.2 raises :class:`RuntimeError`
+    before sampling, naming the query and its kind (``pcfb.unsupported-query-kind`` /
+    ``pcfb.unsupported-schema-version``). :class:`Session` and :func:`exact` apply the same check.
 
     ``seed`` is rejected (#65). ``backend`` is ``"auto"``, ``"cuda"``,
     ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`

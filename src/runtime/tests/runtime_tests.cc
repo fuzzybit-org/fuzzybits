@@ -1,4 +1,5 @@
 #include "compile/pcfb_writer.h"
+#include "io/pcfb/tests/query_guard_files.h"
 #include "pdag.h"
 #include "runtime/runtime.h"
 
@@ -682,4 +683,70 @@ TEST_CASE("fzb run chinese.pcfb small-N estimate is in (0,1) on CPU", "[runtime]
   REQUIRE(results[0].estimate <= 1.0);
   REQUIRE(results[0].ci_low <= results[0].estimate);
   REQUIRE(results[0].ci_high >= results[0].estimate);
+}
+
+namespace {
+
+template <class Fn>
+void require_unsupported(Fn &&fn, const std::string &id, const std::string &fragment) {
+  try {
+    fn();
+    FAIL("the runtime accepted a file it does not implement");
+  } catch (const fuzzybits::runtime::UnsupportedPcfbError &error) {
+    INFO(error.what());
+    CHECK(error.id == id);
+    CHECK(std::string(error.what()).find(fragment) != std::string::npos);
+  }
+}
+
+}  // namespace
+
+TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime][mc][guard]") {
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = 1 << 12;
+  opt.backend = "omp";
+  const auto tmp = std::filesystem::temp_directory_path() / "fuzzybits-guard-hull.pcfb";
+  for (auto bytes : {query_guard_files::hull_only(), query_guard_files::mixed()}) {
+    query_guard_files::write(tmp, bytes);
+    const std::string kind = "MONOTONE_HULL_PROBABILITY";
+    const std::string id = "pcfb.unsupported-query-kind";
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt)); }, id,
+                        query_guard_files::hull_name);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(tmp, opt)); }, id, kind);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::load_pcfb(tmp)); }, id, kind);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, "omp")); }, id,
+                        query_guard_files::hull_name);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_path(tmp, "omp")); }, id, kind);
+    // Callers that hold a circuit and skip load_pcfb (the Python Session does) hit the same check.
+    auto circuit = pcfb::io::from_bytes(bytes);
+    REQUIRE(circuit);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::pdag_from_circuit(*circuit)); }, id,
+                        query_guard_files::hull_name);
+    require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(*circuit, opt)); }, id,
+                        query_guard_files::hull_name);
+  }
+  std::filesystem::remove(tmp);
+}
+
+TEST_CASE("the runtime rejects a schema minor newer than it supports", "[runtime][mc][guard]") {
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = 1 << 12;
+  opt.backend = "omp";
+  const auto bytes = query_guard_files::boolean_with_minor(3);
+  require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt)); },
+                      "pcfb.unsupported-schema-version", "1.3");
+  require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, "omp")); },
+                      "pcfb.unsupported-schema-version", "1.3");
+}
+
+TEST_CASE("the runtime still runs Boolean queries of a 1.2-capable build", "[runtime][mc][guard]") {
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = 1 << 14;
+  opt.backend = "omp";
+  for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2)}) {
+    const auto results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt);
+    REQUIRE(results.size() == 1);
+    CHECK(results[0].name == query_guard_files::boolean_name);
+    CHECK(std::abs(results[0].estimate - 0.125) < 0.02);
+  }
 }

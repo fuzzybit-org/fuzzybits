@@ -38,6 +38,20 @@ class InvalidPcfbError : public RuntimeError {
   std::vector<pcfb::Diagnostic> diagnostics;
 };
 
+/// A file the runtime cannot answer: a query kind it does not implement or a newer schema minor.
+/// `id` is the stable diagnostic id (`pcfb.unsupported-query-kind`, `pcfb.unsupported-schema-version`).
+class UnsupportedPcfbError : public RuntimeError {
+ public:
+  UnsupportedPcfbError(std::string diagnostic_id, const std::string &message)
+      : RuntimeError("[" + diagnostic_id + "] " + message), id(std::move(diagnostic_id)) {}
+
+  std::string id;
+};
+
+/// Throws `UnsupportedPcfbError` unless every query of `circuit` is one the runtime implements
+/// (`PROBABILITY`) and the schema minor is supported. Run before any sampling.
+void require_implemented_queries(const pcfb::ir::Circuit &circuit, const char *op);
+
 struct RunOptions {
   std::uint64_t trials = 0;
   int seed = 372;

@@ -156,3 +156,16 @@ def test_fzb_run_seed_rejected(tiny_xml: Path, tmp_path: Path):
     assert accepted.returncode == 0, accepted.stderr
     payload = json.loads(accepted.stdout)
     assert payload["queries"]
+
+
+def test_fzb_refuses_monotone_hull_query(hull_pcfb_path: Path):
+    run = _run_fzb("run", str(hull_pcfb_path), "--trials", "4096", "--no-progress")
+    assert run.returncode != 0
+    assert "pcfb.unsupported-query-kind" in run.stderr
+    assert "TOP_HULL" in run.stderr
+
+    exact = _run_fzb("inspect", str(hull_pcfb_path), "--validate", "--exact")
+    assert exact.returncode != 0
+    assert "validate: ok" in exact.stderr
+    assert "pcfb.unsupported-query-kind" in exact.stderr
+    assert "exact_probability" not in exact.stdout

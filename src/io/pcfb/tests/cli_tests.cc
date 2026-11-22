@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "query_guard_files.h"
 #include "support.h"
 
 #include "io/ftp/descriptor.h"
@@ -187,5 +188,60 @@ TEST_CASE("fzb run estimates a written pcfb within 4 standard errors of the exac
     const auto standardError = std::sqrt(expected * (1.0 - expected) / trials);
     INFO("estimate " << estimate << " exact " << expected << " n " << trials << " standard error " << standardError);
     REQUIRE(std::abs(estimate - expected) <= 4.0 * standardError);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb inspect --exact refuses monotone-hull queries but still summarises them", "[io][pcfb][cli][guard]") {
+    const auto scratch = scratchDirectory("guard-exact");
+    const auto hull = scratch / "hull.pcfb";
+    const auto mixed = scratch / "mixed.pcfb";
+    const auto boolean = scratch / "boolean.pcfb";
+    query_guard_files::write(hull, query_guard_files::hull_only());
+    query_guard_files::write(mixed, query_guard_files::mixed());
+    query_guard_files::write(boolean, query_guard_files::boolean_only());
+
+    for (auto const &path : {hull, mixed}) {
+        const auto refused = runFzb("inspect " + quoted(path.string()) + " --validate --exact", scratch);
+        INFO(refused.out << refused.err);
+        CHECK(refused.status != 0);
+        CHECK(refused.err.find("validate: ok") != std::string::npos);
+        CHECK(refused.err.find("pcfb.unsupported-query-kind") != std::string::npos);
+        CHECK(refused.err.find(query_guard_files::hull_name) != std::string::npos);
+        CHECK(refused.out.find("exact_probability") == std::string::npos);
+    }
+
+    const auto summary = runFzb("inspect " + quoted(hull.string()), scratch);
+    INFO(summary.out << summary.err);
+    CHECK(summary.status == 0);
+
+    const auto accepted = runFzb("inspect " + quoted(boolean.string()) + " --exact", scratch);
+    INFO(accepted.out << accepted.err);
+    REQUIRE(accepted.status == 0);
+    CHECK(std::abs(numberAfter(accepted.out, "exact_probability") - 0.125) < 1.0e-12);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb run refuses monotone-hull queries and unsupported schema minors before sampling", "[mc][io][pcfb][guard]") {
+    const auto scratch = scratchDirectory("guard-run");
+    const auto hull = scratch / "hull.pcfb";
+    const auto mixed = scratch / "mixed.pcfb";
+    const auto future = scratch / "future.pcfb";
+    query_guard_files::write(hull, query_guard_files::hull_only());
+    query_guard_files::write(mixed, query_guard_files::mixed());
+    query_guard_files::write(future, query_guard_files::boolean_with_minor(3));
+
+    for (auto const &path : {hull, mixed}) {
+        const auto run = runFzb("run " + quoted(path.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+        INFO(run.out << run.err);
+        CHECK(run.status != 0);
+        CHECK(run.err.find("pcfb.unsupported-query-kind") != std::string::npos);
+        CHECK(run.err.find(query_guard_files::hull_name) != std::string::npos);
+        CHECK(run.out.find("estimate") == std::string::npos);
+    }
+    const auto old = runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+    INFO(old.out << old.err);
+    CHECK(old.status != 0);
+    CHECK(old.err.find("pcfb.unsupported-schema-version") != std::string::npos);
+    CHECK(old.out.find("estimate") == std::string::npos);
     std::filesystem::remove_all(scratch);
 }
