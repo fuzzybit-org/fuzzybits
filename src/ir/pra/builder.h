@@ -123,9 +123,11 @@ namespace fuzzybits::ir::pra {
         bool qualified_ = false;
     };
 
+    // `literal` is admitted only together with `complement` on a basic event.
     struct operand_spec final {
         reference event;
         bool complement = false;
+        bool literal = false;
     };
 
     struct finalize_result final {

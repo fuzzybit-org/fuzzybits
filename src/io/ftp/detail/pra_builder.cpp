@@ -11,7 +11,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
 
     // Basic events take ids in event order and gates in definition order, so
     // every reference is passed as an id and never resolved by name.
-    auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
+    auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result {
         ir::pra::builder builder;
 
         for (const auto header : project.headers) {
@@ -19,6 +19,10 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
         }
         if (project.limit) {
             builder.add_project_attribute(kFtpLimitAttribute, project.limitText);
+        }
+        builder.add_project_attribute(kFtpNegationAttribute, kFtpNegationDeleteTerm);
+        if (options.maxOneInitiator) {
+            builder.add_project_attribute(kFtpMaxInitiatorsAttribute, kFtpMaxInitiatorsOne);
         }
 
         std::vector<ir::pra::source_file_id> files;
@@ -60,18 +64,21 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
             }
         }
 
-        const auto operandRef = [&project](const std::string_view name) -> ir::pra::reference {
-            if (const auto gate = project.definitionByName.find(name); gate != project.definitionByName.end()) {
-                return ir::pra::gate_id(gate->second);
+        const auto markLiterals = options.complementEvents == complement_events_policy::atom;
+        const auto operandSpec = [&project, markLiterals](Operand const &operand) -> ir::pra::operand_spec {
+            if (const auto gate = project.definitionByName.find(operand.name); gate != project.definitionByName.end()) {
+                return ir::pra::operand_spec{.event = ir::pra::gate_id(gate->second), .complement = operand.complement};
             }
-            return ir::pra::basic_event_id(project.eventByName.at(name));
+            return ir::pra::operand_spec{.event = ir::pra::basic_event_id(project.eventByName.at(operand.name)),
+                                         .complement = operand.complement,
+                                         .literal = operand.complement && markLiterals};
         };
 
         std::vector<ir::pra::operand_spec> operands;
         for (auto const &definition : project.definitions) {
             operands.clear();
             for (auto const &operand : definition.operands) {
-                operands.push_back(ir::pra::operand_spec{.event = operandRef(operand.name), .complement = operand.complement});
+                operands.push_back(operandSpec(operand));
             }
             const auto location = source(definition.location);
             const ir::pra::element_spec element{.stable_name = definition.name, .sources = std::span{&location, 1}};

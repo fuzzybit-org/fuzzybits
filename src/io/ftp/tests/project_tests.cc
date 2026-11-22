@@ -22,6 +22,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -112,9 +113,13 @@ TEST_CASE("FTP project reader descriptor produces ir.pra.model", "[io][ftp][proj
     REQUIRE(descriptor.endpoint == ftp::project_reader_endpoint_id());
     REQUIRE(descriptor.input_format == fuzzybits::io::formats::ftp());
     REQUIRE(descriptor.produces.contains(fuzzybits::api::capability_id("ir.pra.model")));
-    REQUIRE(descriptor.options.entries.size() == 1);
+    REQUIRE(descriptor.options.entries.size() == 3);
     REQUIRE(descriptor.options.entries[0].key == ftp::duplicate_import_option());
     REQUIRE(std::get<std::string>(descriptor.options.entries[0].default_value) == "last");
+    REQUIRE(descriptor.options.entries[1].key == ftp::complement_events_option());
+    REQUIRE(std::get<std::string>(descriptor.options.entries[1].default_value) == "atom");
+    REQUIRE(descriptor.options.entries[2].key == ftp::max_initiators_option());
+    REQUIRE(std::get<std::string>(descriptor.options.entries[2].default_value) == "1");
 }
 
 TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[io][ftp][project]") {
@@ -158,6 +163,85 @@ TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[i
     REQUIRE(attribute(model, model.project_attributes(), "ftp.limit") == std::vector<std::string>{"1.0E-09"});
     REQUIRE(attribute(model, model.project_attributes(), "ftp.header") ==
             std::vector<std::string>{"**CHAR32", "**DBNAME: unit", "**FTITLE: simple", "*XEQ"});
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") == std::vector<std::string>{"delete_term"});
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset") == std::vector<std::string>{"1"});
+}
+
+TEST_CASE("FTP -EVENT operands are marked literal, -GATE operands are not", "[io][ftp][project]") {
+    constexpr std::string_view text = R"ftp(TOP + G1 -G2 -C
+G1 * A -B
+G2 * -A C
+ENDTREE
+PROCESS TOP
+IMPORT
+  1.0E-01 A
+  2.0E-01 B
+  3.0E-01 C
+)ftp";
+    const auto marks = [](pra::model const &model, std::string_view gate) {
+        std::vector<std::pair<bool, bool>> out;
+        for (auto const &operand : model.operands(model.find_gate(gate))) {
+            out.emplace_back(operand.complement, operand.literal);
+        }
+        return out;
+    };
+    using marking = std::vector<std::pair<bool, bool>>;
+
+    SECTION("atom (default)") {
+        const auto read = readText(text);
+        auto const &model = requireModel(read);
+        REQUIRE(marks(model, "TOP") == marking{{false, false}, {true, false}, {true, true}});
+        REQUIRE(marks(model, "G1") == marking{{false, false}, {true, true}});
+        REQUIRE(marks(model, "G2") == marking{{true, true}, {false, false}});
+        REQUIRE(model.summary().complemented_operand_count == 4);
+        REQUIRE(model.summary().literal_operand_count == 3);
+    }
+    SECTION("explicit atom") {
+        fuzzybits::api::option_set options;
+        options.set(ftp::complement_events_option(), std::string("atom"));
+        REQUIRE(requireModel(readText(text, options)).summary().literal_operand_count == 3);
+    }
+    SECTION("negation leaves every complement unmarked") {
+        fuzzybits::api::option_set options;
+        options.set(ftp::complement_events_option(), std::string("negation"));
+        const auto read = readText(text, options);
+        auto const &model = requireModel(read);
+        REQUIRE(marks(model, "TOP") == marking{{false, false}, {true, false}, {true, false}});
+        REQUIRE(marks(model, "G2") == marking{{true, false}, {false, false}});
+        REQUIRE(model.summary().complemented_operand_count == 4);
+        REQUIRE(model.summary().literal_operand_count == 0);
+    }
+    SECTION("other values are rejected") {
+        fuzzybits::api::option_set options;
+        options.set(ftp::complement_events_option(), std::string("literal"));
+        const auto read = readText(text, options);
+        REQUIRE_FALSE(read);
+        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option", "io.ftp.complement_events") == 1);
+    }
+}
+
+TEST_CASE("FTP conventions are recorded as model attributes", "[io][ftp][project]") {
+    const auto initiators = [](fuzzybits::api::option_set const &options) {
+        const auto read = readText(kSimple, options);
+        auto const &model = requireModel(read);
+        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") == std::vector<std::string>{"delete_term"});
+        return attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset");
+    };
+    fuzzybits::api::option_set options;
+    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
+    options.set(ftp::max_initiators_option(), std::string("1"));
+    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
+    options.set(ftp::max_initiators_option(), std::int64_t{1});
+    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
+    options.set(ftp::max_initiators_option(), std::string("none"));
+    REQUIRE(initiators(options).empty());
+
+    for (auto const &value : {fuzzybits::api::option_value{std::string("2")}, fuzzybits::api::option_value{std::int64_t{2}}}) {
+        options.set(ftp::max_initiators_option(), value);
+        const auto read = readText(kSimple, options);
+        REQUIRE_FALSE(read);
+        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option", "io.ftp.max_initiators_per_cutset") == 1);
+    }
 }
 
 TEST_CASE("FTP project reader reads several files as one model", "[io][ftp][project]") {

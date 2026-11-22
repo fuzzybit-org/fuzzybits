@@ -35,6 +35,14 @@ namespace fuzzybits::io::backend::fuzzybits::ftp {
         error,
     };
 
+    // How the project reader hands a complemented basic-event operand `-EVENT` to
+    // `ir::pra` (`io.ftp.complement_events`): `atom` marks it `literal`,
+    // `negation` leaves it an ordinary complement. `-GATE` is never marked.
+    enum class complement_events_policy : std::uint8_t {
+        atom,
+        negation,
+    };
+
     // One file of a project held in memory; `path` is used in source locations
     // and diagnostics.
     struct source_text final {
@@ -48,6 +56,8 @@ namespace fuzzybits::io::backend::fuzzybits::ftp {
     [[nodiscard]] auto truncation_limit_option() -> api::option_key;
     [[nodiscard]] auto target_option() -> api::option_key;
     [[nodiscard]] auto duplicate_import_option() -> api::option_key;
+    [[nodiscard]] auto complement_events_option() -> api::option_key;
+    [[nodiscard]] auto max_initiators_option() -> api::option_key;
     [[nodiscard]] auto reader_descriptor() -> io::reader_descriptor;
     [[nodiscard]] auto project_reader_descriptor() -> io::reader_descriptor;
     [[nodiscard]] auto writer_descriptor() -> io::writer_descriptor;

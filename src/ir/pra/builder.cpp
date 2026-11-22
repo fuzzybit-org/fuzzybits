@@ -150,6 +150,7 @@ namespace fuzzybits::ir::pra {
                 group_sources();
                 index_names();
                 resolve_operands();
+                check_literal_operands();
                 resolve_initiators();
                 check_gates();
                 check_expressions();
@@ -404,6 +405,27 @@ namespace fuzzybits::ir::pra {
                         storage_.gate_operands[slot].event = resolve(state_.operands[slot], event_kinds, [&] {
                             return describe(row.element) + " operand " + std::to_string(index + 1);
                         });
+                    }
+                }
+            }
+
+            // Unresolved operands were already reported by resolve_operands().
+            void check_literal_operands() {
+                for (auto const &row : storage_.gates) {
+                    for (std::uint32_t index = 0; index < row.operands.count; ++index) {
+                        auto const &operand = storage_.gate_operands[row.operands.offset + index];
+                        if (!operand.literal) {
+                            continue;
+                        }
+                        const auto context = [&] {
+                            return describe(row.element) + " operand " + std::to_string(index + 1);
+                        };
+                        if (!operand.complement) {
+                            error("ir.pra.invalid-literal-operand", context() + " is marked literal but not complemented");
+                        } else if (operand.event.valid() && operand.event.kind() != element_kind::basic_event) {
+                            error("ir.pra.invalid-literal-operand", context() + " is marked literal but references " +
+                                                                        describe(operand.event) + ", not a basic event");
+                        }
                     }
                 }
             }
@@ -728,6 +750,7 @@ namespace fuzzybits::ir::pra {
             summary.operand_count = storage.gate_operands.size();
             for (auto const &operand : storage.gate_operands) {
                 summary.complemented_operand_count += operand.complement ? 1 : 0;
+                summary.literal_operand_count += operand.literal ? 1 : 0;
             }
             for (auto const &row : storage.gates) {
                 add_unique(summary.gate_kinds_present, row.kind);
@@ -1000,7 +1023,7 @@ namespace fuzzybits::ir::pra {
         const gate_id id(row);
         const auto offset = static_cast<std::uint32_t>(storage_.gate_operands.size());
         for (auto const &operand : operands) {
-            storage_.gate_operands.push_back(gate_operand{.complement = operand.complement});
+            storage_.gate_operands.push_back(gate_operand{.complement = operand.complement, .literal = operand.literal});
             state_.operands.push_back(pending(operand.event));
         }
         storage_.gates.push_back(gate{

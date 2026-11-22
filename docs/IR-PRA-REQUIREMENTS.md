@@ -81,7 +81,7 @@ expand CCF.
 - **Sealed model:** `pra::model` is immutable, shares its storage between copies and exposes spans. Lookup by stable
   name within a kind (`find`, `find_gate`, ...) uses an open-addressing index built at seal time (expected O(1)).
   `topological_gates()` lists every gate after the gates among its operands. `summary()` records gate and operand
-  counts, complemented operands, gate depth, and the gate and expression kinds present.
+  counts, complemented operands, operands marked `literal`, gate depth, and the gate and expression kinds present.
 - **Handle:** `to_handle()` wraps the model in `ir::handle` with storage type and form `ir.pra.model` (endpoint
   `ir.pra`); the form profile also satisfies `ir.probabilistic_risk_model`. `pra::is_pra(handle)` and
   `pra::model_from(handle)` extract it.
@@ -99,11 +99,19 @@ expand CCF.
 | `basic_event` | element, expression | |
 | `house_event` | element, value | |
 | `initiating_event` | element, basic event | the basic event carries the value, which may be a frequency |
-| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`, `xnor` (even parity); operands reference a basic event, house event or gate, each with a complement flag |
+| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`, `xnor` (even parity); operands reference a basic event, house event or gate, each with a complement flag and a `literal` marker (see below) |
 | `fault_tree` | element, gates, top gates | gates are those whose owner is the tree; top gates must be owned by the tree |
 | `domain_target` | element, kind, role (`primary`, `watch`), subject | kinds `fault_tree_top` (subject: a fault tree with exactly one top gate), `gate`, `basic_event`; `sequence` and `end_state` are reserved |
 
 At-least-k over n operands is `cardinality(k, n)`.
+
+**Literal marker.** `operand_spec::literal` (stored as `gate_operand::literal`) says that a complemented basic-event
+operand is an atomic literal of that event as the source wrote it. It is Boolean-neutral: the operand still means the
+complement of the event, and `ir::pra` neither interprets the marker nor infers it. Consumers that distinguish atomic
+literals from negations (for example hull queries, where a marked operand is its own droppable atom and an unmarked
+complement is a delete term) read it from the operand. The builder accepts it only on a complemented operand that
+resolves to a basic event. Only readers whose source format defines such literals set it; today that is the FTP
+reader. A model without marked operands is read as if no source convention applied.
 
 ### Construction
 
@@ -133,6 +141,7 @@ Hard IR validity errors, all with severity `error`:
 | `ir.pra.invalid-arity` | a `not` gate without exactly one operand |
 | `ir.pra.invalid-cardinality` | bounds outside `0 <= low <= high <= n` |
 | `ir.pra.invalid-literal` | a non-finite literal, a probability outside [0, 1] or a negative frequency |
+| `ir.pra.invalid-literal-operand` | an operand marked `literal` that is not complemented or does not reference a basic event |
 | `ir.pra.invalid-expression` | a parameter expression without a name or an unsupported expression without a diagnostic id |
 | `ir.pra.invalid-fault-tree-top` | a top gate not owned by its fault tree, or listed twice |
 | `ir.pra.invalid-target` | a `fault_tree_top` target on a fault tree without exactly one top gate |
@@ -193,7 +202,7 @@ uses the same parser until #182.
 | FTP construct | `ir::pra` | Class |
 |---|---|---|
 | `NAME + ops`, `NAME * ops`, `NAME k ops` (indented lines continue the operands) | `or` / `and` / `cardinality(k, n)` gate, source file:line | core |
-| `-name` operand | complemented operand | core |
+| `-name` operand | complemented operand; on a basic event also marked `literal` (`io.ftp.complement_events = atom`, default; `negation` leaves it unmarked); on a gate never marked (a negation, i.e. a delete term under hull queries) | core |
 | `ENDTREE` (the file's tree section comes first and must be closed) | — | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate` |
 | `IMPORT` records `value name [flags]` | basic event, `literal` probability, one source per record | core |
 | `I` flag | initiating event on the basic event; a value > 1 is a `frequency` literal | core |
@@ -203,6 +212,7 @@ uses the same parser until #182.
 | `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
 | no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
 | `LIMIT x` | project attribute `ftp.limit` | extension |
+| source conventions | project attributes `ftp.negation = delete_term` (always) and `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering, for the compile driver (#182) to map to quantification defaults | extension |
 | `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:
