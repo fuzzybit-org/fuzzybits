@@ -37,6 +37,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
 
     [[nodiscard]] auto write_pc(ir::pc::circuit const &model, write_options const &options) -> pcfb_write_result;
 
+    [[nodiscard]] auto read_pcfb(std::span<std::byte const> bytes) -> pcfb_read_result;
+
     [[nodiscard]] auto parse_sha256_hex(std::string const &text) -> std::optional<std::array<std::byte, 32>>;
 
 } // namespace fuzzybits::io::backend::fuzzybits::pcfb::detail
