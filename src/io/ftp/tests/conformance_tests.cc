@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "api/diagnostics.h"
+#include "compile/ftp/inspect.h"
 #include "io/ftp/descriptor.h"
 #include "ir/pc/circuit.h"
 #include "ir/pra/model.h"
@@ -138,7 +139,7 @@ namespace {
         return out;
     }
 
-    void requireStructure(ftp_test::structure const &actual, ftp_test::json const &expected) {
+    void requireStructure(fuzzybits::compile::ftp::structure_summary const &actual, ftp_test::json const &expected) {
         REQUIRE(actual.gates == static_cast<std::size_t>(expected["gates"].number()));
         REQUIRE(actual.or_gates == static_cast<std::size_t>(expected["gates_by_kind"]["or"].number()));
         REQUIRE(actual.and_gates == static_cast<std::size_t>(expected["gates_by_kind"]["and"].number()));
@@ -158,7 +159,7 @@ namespace {
                 static_cast<std::size_t>(expected["complemented_edges_to_basic_events"].number()));
         REQUIRE(actual.roots == names(expected["roots"]));
         if (!expected["process_targets"].array().empty()) {
-            REQUIRE(actual.targets == names(expected["process_targets"]));
+            REQUIRE(actual.process_targets == names(expected["process_targets"]));
         }
         if (expected["limit"].is_null()) {
             REQUIRE_FALSE(actual.limit);
@@ -166,12 +167,12 @@ namespace {
             REQUIRE(actual.limit);
             REQUIRE(std::abs(*actual.limit - expected["limit"].number()) <= 1e-12 * std::abs(expected["limit"].number()));
         }
-        REQUIRE(actual.initiators == static_cast<std::size_t>(expected["initiator_tagged_events"].number()));
-        REQUIRE(actual.initiators_p_1 == static_cast<std::size_t>(expected["initiator_tagged_events_with_p_1"].number()));
+        REQUIRE(actual.initiating_events == static_cast<std::size_t>(expected["initiator_tagged_events"].number()));
+        REQUIRE(actual.initiating_events_p_1 == static_cast<std::size_t>(expected["initiator_tagged_events_with_p_1"].number()));
         REQUIRE(actual.events_p_1 == static_cast<std::size_t>(expected["events_p_eq_1"].number()));
         REQUIRE(actual.events_p_0 == static_cast<std::size_t>(expected["events_p_eq_0"].number()));
         REQUIRE(actual.names_not_ncname == static_cast<std::size_t>(expected["names_not_valid_xml_ncname"].number()));
-        REQUIRE(actual.duplicate_imports == expected["duplicate_imports"].object().size());
+        REQUIRE(actual.duplicate_imports.size() == expected["duplicate_imports"].object().size());
     }
 
     [[nodiscard]] auto fixtureDirectories() -> std::vector<std::filesystem::path> {
@@ -229,9 +230,9 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
 
                 auto const *model = pra::model_from(read.value());
                 REQUIRE(model != nullptr);
-                const auto counts = ftp_test::structure_of(*model, read.diagnostics());
+                const auto counts = fuzzybits::compile::ftp::structure_of(*model);
                 requireStructure(counts, (*spec)["structure"]);
-                REQUIRE(counts.targets == names((*spec)["default_targets"]));
+                REQUIRE(counts.process_targets == names((*spec)["default_targets"]));
 
                 for (auto const &[target, values] : outcome["results"].object()) {
                     INFO("target " << target);

@@ -2,6 +2,7 @@
 
 #include "api/diagnostics.h"
 #include "io/formats.h"
+#include "compile/ftp/inspect.h"
 #include "io/ftp/descriptor.h"
 #include "ir/pc/circuit.h"
 #include "ir/pra/model.h"
@@ -490,7 +491,7 @@ namespace {
     }
 
     // Field names that differ from the card; never their values (#38).
-    [[nodiscard]] auto cardMismatches(ftp_test::structure const &actual, ftp_test::json const &card) -> std::vector<std::string> {
+    [[nodiscard]] auto cardMismatches(fuzzybits::compile::ftp::structure_summary const &actual, ftp_test::json const &card) -> std::vector<std::string> {
         std::vector<std::string> out;
         const auto number = [](ftp_test::json const &value) { return static_cast<std::size_t>(value.number()); };
         const auto check = [&out](const bool equal, std::string field) {
@@ -517,10 +518,10 @@ namespace {
         check(actual.complemented_edges_to_basic_events == number(card["complemented_edges_to_basic_events"]),
               "complemented_edges_to_basic_events");
         check(actual.roots == cardNames(card["roots"]), "roots");
-        check(actual.targets == cardNames(card["process_targets"]), "process_targets");
-        check(actual.initiators == number(card["initiator_tagged_events"]), "initiator_tagged_events");
+        check(actual.process_targets == cardNames(card["process_targets"]), "process_targets");
+        check(actual.initiating_events == number(card["initiator_tagged_events"]), "initiator_tagged_events");
         check(actual.names_not_ncname == number(card["names_not_valid_xml_ncname"]), "names_not_valid_xml_ncname");
-        check(actual.duplicate_imports == card["duplicate_imports"].object().size(), "duplicate_imports");
+        check(actual.duplicate_imports.size() == card["duplicate_imports"].object().size(), "duplicate_imports");
         check(actual.limit.has_value() == !card["limit"].is_null() &&
                   (!actual.limit || *actual.limit == card["limit"].number()),
               "limit");
@@ -572,7 +573,7 @@ TEST_CASE("FTP private projects match their cards", "[io][ftp][private]") {
             }
             std::cout << "private FTP project " << index + 1 << ": FAIL (read failed with " << errors << " errors)\n";
         } else {
-            const auto counts = ftp_test::structure_of(*pra::model_from(read.value()), read.diagnostics());
+            const auto counts = fuzzybits::compile::ftp::structure_of(*pra::model_from(read.value()));
             mismatches = cardMismatches(counts, (*card)["structure"]);
             ok = mismatches.empty();
             std::cout << "private FTP project " << index + 1 << ": " << (ok ? "pass" : "FAIL") << " (policy " << policy << ", read "
