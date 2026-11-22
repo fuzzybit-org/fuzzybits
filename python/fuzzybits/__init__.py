@@ -9,6 +9,7 @@ Public surface:
 - :func:`compile` / :func:`compile_file` / :func:`inspect` / :func:`exact` / :func:`run`
 - :func:`nombrilo_to_pcfb` / :func:`pcfb_to_nombrilo`
 - :class:`Session` (streaming per-pass popcounts over a ``.pcfb``)
+- :class:`ProgressSnapshot` / :class:`QueryState` (typed ``on_progress=`` payloads)
 
 The native SYCL extension is selected at import: ``_native_cuda_smNN``
 (sm70, sm86, sm120) if that extension is installed *and* a device of that
@@ -22,7 +23,9 @@ from ._api import (
     NodeTally,
     PassResult,
     ProbabilityEstimate,
+    ProgressSnapshot,
     QueryResult,
+    QueryState,
     Session,
     compile,
     compile_file,
@@ -51,7 +54,9 @@ __all__ = [
     "NodeTally",
     "PassResult",
     "ProbabilityEstimate",
+    "ProgressSnapshot",
     "QueryResult",
+    "QueryState",
     "Session",
     "__version__",
     "active_backend",
