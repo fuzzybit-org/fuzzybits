@@ -26,25 +26,7 @@ namespace {
     using namespace pcfb_writer_test;
     namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 
-    using edge = pc::edge_ref;
     using kind = writer::query_kind;
-
-    // Three targets over events a, b, c: a AND b, b OR c, and the event a.
-    [[nodiscard]] auto buildModel() -> pc::circuit {
-        pc::builder builder;
-        const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
-        const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
-        const auto c = builder.add_basic_event(builder.add_literal_probability(0.3));
-        const auto both = builder.add_and({edge{.source = a}, edge{.source = b}});
-        const auto either = builder.add_or({edge{.source = b}, edge{.source = c}});
-        (void)builder.add_target(both);
-        (void)builder.add_target(either);
-        (void)builder.add_target(a);
-        auto sealed = std::move(builder).seal();
-        INFO(diagnosticsText(sealed.diagnostics));
-        REQUIRE(sealed.ok());
-        return std::move(sealed.output);
-    }
 
     struct written_file final {
         std::vector<std::byte> bytes;
@@ -105,17 +87,11 @@ namespace {
         return entry->value_as_IntValue()->value();
     }
 
-    [[nodiscard]] auto namesOf(pc::circuit const &model) -> writer::write_options {
-        writer::write_options options;
-        options.target_names = {{pc::target_id(0), "AND"}, {pc::target_id(1), "OR"}, {pc::target_id(2), "A"}};
-        return options;
-    }
-
 } // namespace
 
 TEST_CASE("pcfb writer: Boolean-only query sets stay at schema minor 1", "[io][pcfb][kind]") {
-    const auto model = buildModel();
-    auto const options = namesOf(model);
+    const auto model = threeTargetModel();
+    auto const options = threeTargetNames();
     const auto file = writeAndRead(model, options);
     CHECK(file.circuit->schema_version() == ::pcfb::kSchemaVersionV11);
     CHECK(queriesOf(file.circuit) == std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
@@ -123,14 +99,14 @@ TEST_CASE("pcfb writer: Boolean-only query sets stay at schema minor 1", "[io][p
                                                             {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
 
     // An explicit probability kind is the same file.
-    auto explicitKinds = namesOf(model);
+    auto explicitKinds = threeTargetNames();
     explicitKinds.target_kinds = {{pc::target_id(0), {kind::probability}}, {pc::target_id(2), {kind::probability}}};
     CHECK(writeAndRead(model, explicitKinds).bytes == file.bytes);
 }
 
 TEST_CASE("pcfb writer: a monotone-hull target makes the file schema minor 2 and keeps names and kinds", "[io][pcfb][kind]") {
-    const auto model = buildModel();
-    auto options = namesOf(model);
+    const auto model = threeTargetModel();
+    auto options = threeTargetNames();
     options.target_kinds = {{pc::target_id(1), {kind::monotone_hull_probability}}};
     const auto file = writeAndRead(model, options);
     CHECK(file.circuit->schema_version() == ::pcfb::kSchemaVersionV12);
@@ -143,8 +119,8 @@ TEST_CASE("pcfb writer: a monotone-hull target makes the file schema minor 2 and
 }
 
 TEST_CASE("pcfb writer: options.query is the default for targets without an explicit kind", "[io][pcfb][kind]") {
-    const auto model = buildModel();
-    auto options = namesOf(model);
+    const auto model = threeTargetModel();
+    auto options = threeTargetNames();
     options.query = kind::monotone_hull_probability;
     options.target_kinds = {{pc::target_id(0), {kind::probability}}};
     const auto file = writeAndRead(model, options);
@@ -159,8 +135,8 @@ TEST_CASE("pcfb writer: options.query is the default for targets without an expl
 }
 
 TEST_CASE("pcfb writer: several kinds on one target make several queries on one tensor", "[io][pcfb][kind]") {
-    const auto model = buildModel();
-    auto options = namesOf(model);
+    const auto model = threeTargetModel();
+    auto options = threeTargetNames();
     options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}}};
     const auto file = writeAndRead(model, options);
     CHECK(minorOf(file.circuit) == 2);
@@ -171,7 +147,7 @@ TEST_CASE("pcfb writer: several kinds on one target make several queries on one 
 }
 
 TEST_CASE("pcfb writer: io.pcfb.query_kind selects the default kind of the stream writer", "[io][pcfb][kind]") {
-    const auto model = buildModel();
+    const auto model = threeTargetModel();
     const auto written = [&](std::string const &value) {
         fuzzybits::io::write_request request{.format = fuzzybits::io::formats::pcfb()};
         request.options.set(writer::query_kind_option(), value);
@@ -209,8 +185,8 @@ TEST_CASE("pcfb writer: io.pcfb.query_kind selects the default kind of the strea
 }
 
 TEST_CASE("pcfb writer: per-target quantification is recorded next to the queries", "[io][pcfb][kind]") {
-    const auto model = buildModel();
-    auto options = namesOf(model);
+    const auto model = threeTargetModel();
+    auto options = threeTargetNames();
     options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
                             {pc::target_id(1), {kind::monotone_hull_probability}}};
     options.quantification = {
@@ -235,29 +211,29 @@ TEST_CASE("pcfb writer: per-target quantification is recorded next to the querie
     CHECK_FALSE(meta(file.circuit, "compile.query.3.negation"));
 
     // No quantification entries, no keys: the metadata of a plain file is unchanged.
-    const auto plain = writeAndRead(model, namesOf(model));
+    const auto plain = writeAndRead(model, threeTargetNames());
     for (const auto *entry : *plain.circuit->metadata()) {
         CHECK(entry->key()->str().rfind("compile.query.", 0) == std::string::npos);
     }
 }
 
 TEST_CASE("pcfb writer: invalid query kinds and quantification entries are diagnosed", "[io][pcfb][kind]") {
-    const auto model = buildModel();
+    const auto model = threeTargetModel();
     const auto codeOf = [&](writer::write_options const &options) { return hasCode(writer::write(model.to_handle(), options).diagnostics(), "io.pcfb.invalid-query-kind"); };
 
-    auto unknown = namesOf(model);
+    auto unknown = threeTargetNames();
     unknown.target_kinds = {{pc::target_id(9), {kind::probability}}};
     CHECK(codeOf(unknown));
 
-    auto empty = namesOf(model);
+    auto empty = threeTargetNames();
     empty.target_kinds = {{pc::target_id(0), {}}};
     CHECK(codeOf(empty));
 
-    auto repeated = namesOf(model);
+    auto repeated = threeTargetNames();
     repeated.target_kinds = {{pc::target_id(0), {kind::monotone_hull_probability, kind::monotone_hull_probability}}};
     CHECK(codeOf(repeated));
 
-    auto orphan = namesOf(model);
+    auto orphan = threeTargetNames();
     orphan.quantification = {{pc::target_id(9), writer::target_quantification{.literal_mode = "atom_split"}}};
     CHECK(hasCode(writer::write(model.to_handle(), orphan).diagnostics(), "io.pcfb.invalid-quantification"));
 }

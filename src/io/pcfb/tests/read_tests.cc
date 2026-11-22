@@ -1,0 +1,1023 @@
+#include <catch2/catch_test_macros.hpp>
+
+#include "support.h"
+
+#include "api/diagnostics.h"
+#include "api/ids.h"
+#include "compile/exact_eval.h"
+#include "compile/ftp/compile.h"
+#include "io/descriptor.h"
+#include "io/formats.h"
+#include "io/ftp/descriptor.h"
+#include "io/pcfb/descriptor.h"
+#include "ir/pc/builder.h"
+#include "ir/pc/circuit.h"
+#include "ir/pc/edge.h"
+#include "ir/pc/id.h"
+#include "ir/pc/op_code.h"
+#include "ir/pc/target.h"
+
+#include "pcfb.h"
+#include "pcfb/builder.h"
+#include "pcfb/io.h"
+#include "pcfb/validate.h"
+#include "pcfb_generated.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <map>
+#include <memory>
+#include <optional>
+#include <random>
+#include <ranges>
+#include <set>
+#include <sstream>
+#include <span>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
+namespace {
+
+    using namespace pcfb_writer_test;
+    namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
+    namespace ftp = fuzzybits::compile::ftp;
+
+    using kind = writer::query_kind;
+    using bytes_type = std::vector<std::byte>;
+
+    [[nodiscard]] auto readOk(std::span<std::byte const> bytes) -> writer::read_output {
+        auto result = writer::read(bytes);
+        INFO(diagnosticsText(result.diagnostics()));
+        REQUIRE(result);
+        return std::move(result).value();
+    }
+
+    [[nodiscard]] auto writeBack(writer::read_output const &read) -> bytes_type {
+        auto written = writer::write(read.circuit.to_handle(), read.options);
+        INFO(diagnosticsText(written.diagnostics()));
+        REQUIRE(written);
+        return std::move(written).value().bytes;
+    }
+
+    // The ids of every diagnostic, for exact-set assertions.
+    [[nodiscard]] auto codesOf(fuzzybits::api::diagnostic_list const &diagnostics) -> std::set<std::string> {
+        std::set<std::string> codes;
+        for (auto const &item : diagnostics.items()) {
+            codes.insert(item.code);
+        }
+        return codes;
+    }
+
+    struct edge_key final {
+        std::uint32_t source;
+        bool complement;
+        friend auto operator<=>(edge_key const &, edge_key const &) = default;
+    };
+
+    struct operand_view final {
+        // The operands as the file lists them: `inputs` holds the plain operands and the complemented
+        // ones whose source is also listed plain (read there through a NOT tensor), `inverted_inputs` the
+        // rest. The interleaving of the two lists is not stored.
+        std::vector<edge_key> inputs;
+        std::vector<edge_key> inverted;
+        // An operand is a NOT gate: the file cannot tell it from the NOT tensor the writer inserts for a
+        // source used in both polarities, so such operands are resolved to the complemented source and
+        // compared as a multiset.
+        bool through_not = false;
+    };
+
+    template <typename mapper> [[nodiscard]] auto operandsOf(pc::circuit const &circuit, const pc::bool_node_id node, mapper &&map) -> operand_view {
+        operand_view view;
+        std::vector<edge_key> edges;
+        for (auto edge : circuit.operands(node)) {
+            while (circuit.op_codes()[edge.source.raw()] == pc::op_code::not_gate && circuit.operand_counts()[edge.source.raw()] == 1) {
+                auto const inner = circuit.operands(edge.source)[0];
+                edge = pc::edge_ref{.source = inner.source, .complement = inner.complement == edge.complement};
+                view.through_not = true;
+            }
+            edges.push_back({map(edge.source), edge.complement});
+        }
+        for (auto const &edge : edges) {
+            const bool plainToo = std::ranges::any_of(edges, [&](auto const &other) { return other.source == edge.source && !other.complement; });
+            (edge.complement && !plainToo ? view.inverted : view.inputs).push_back(edge);
+        }
+        return view;
+    }
+
+    [[nodiscard]] auto eventIds(pc::circuit const &circuit) -> std::vector<std::uint32_t> {
+        std::vector<std::uint32_t> ids(circuit.node_count(), 0);
+        std::uint32_t next = 0;
+        for (std::uint32_t node = 0; node < circuit.node_count(); ++node) {
+            if (circuit.op_codes()[node] == pc::op_code::basic_event) {
+                ids[node] = ++next;
+            }
+        }
+        return ids;
+    }
+
+    [[nodiscard]] auto effectiveKinds(writer::write_options const &options, pc::target_id target) -> std::vector<kind> {
+        const auto found = options.target_kinds.find(target);
+        return found == options.target_kinds.end() ? std::vector<kind>{options.query} : found->second;
+    }
+
+    // The read circuit has the structure of the written one, seen through the maps. Differences that
+    // follow from what pcfb records: observable roles are not stored (every read target is primary);
+    // house events and the full-range cardinality (a ONES tensor without operands) read as constants;
+    // an unnamed NOT gate whose consumers also list its operand is a complemented edge in the read
+    // circuit (see operand_view); the interleaving of complemented and plain operands is not stored.
+    void requireSameStructure(RandomModel const &model, writer::write_output const &written, writer::read_output const &read) {
+        auto const &original = model.circuit;
+        auto const &options = model.options;
+        auto const &circuit = read.circuit;
+        REQUIRE(circuit.valid());
+        REQUIRE(written.tensor_by_node.size() == original.node_count());
+        const auto readEvents = eventIds(circuit);
+
+        const auto mapped = [&](const pc::bool_node_id node) -> pc::bool_node_id {
+            return read.node_by_tensor.at(written.tensor_by_node.at(node.raw()));
+        };
+        const auto mappedId = [&](const pc::bool_node_id node) {
+            const auto result = mapped(node);
+            REQUIRE(result.valid());
+            return result.raw();
+        };
+
+        std::size_t skipped = 0;
+        std::vector<bool> covered(circuit.node_count(), false);
+        bool anyFullRange = false;
+        for (std::uint32_t v = 0; v < original.node_count(); ++v) {
+            INFO("node " << v);
+            const auto node = pc::bool_node_id(v);
+            const auto code = original.op_codes()[v];
+            const auto fanIn = original.operand_counts()[v];
+            const auto name = options.node_names.find(node);
+            const bool targeted = std::ranges::any_of(original.targets(), [&](auto const &target) { return target.node == node; });
+            if (!mapped(node).valid()) {
+                REQUIRE(code == pc::op_code::not_gate);
+                REQUIRE(fanIn == 1);
+                REQUIRE_FALSE(original.operands(node)[0].complement);
+                REQUIRE(name == options.node_names.end());
+                REQUIRE_FALSE(targeted);
+                ++skipped;
+                continue;
+            }
+            const auto r = mapped(node).raw();
+            covered[r] = true;
+            const bool fullRange = code == pc::op_code::cardinality && original.cardinality_low()[v] == 0 && original.cardinality_high()[v] == fanIn;
+            anyFullRange = anyFullRange || fullRange;
+            auto expected = code == pc::op_code::house_event || fullRange ? pc::op_code::constant : code;
+            REQUIRE(circuit.op_codes()[r] == expected);
+            REQUIRE(read.tensor_by_node.at(r) == written.tensor_by_node[v]);
+
+            std::string expectedName = name == options.node_names.end() ? std::string{} : name->second;
+            if (code == pc::op_code::basic_event && expectedName.empty()) {
+                expectedName = "e" + std::to_string(written.event_id_by_node[v]);
+            }
+            const auto readName = read.options.node_names.find(pc::bool_node_id(r));
+            REQUIRE((readName == read.options.node_names.end() ? std::string{} : readName->second) == expectedName);
+
+            switch (code) {
+            case pc::op_code::basic_event: {
+                REQUIRE(readEvents[r] == written.event_id_by_node[v]);
+                auto const &sourceOf = original.probability_sources()[original.probability_source_refs()[v].raw()];
+                auto const &readSource = circuit.probability_sources()[circuit.probability_source_refs()[r].raw()];
+                REQUIRE(readSource.kind == pc::probability_source_kind::literal);
+                REQUIRE(readSource.literal == sourceOf.literal);
+                break;
+            }
+            case pc::op_code::constant:
+            case pc::op_code::house_event:
+                REQUIRE(circuit.constant_values()[r] == original.constant_values()[v]);
+                break;
+            default:
+                if (fullRange) {
+                    REQUIRE(circuit.constant_values()[r] == 1);
+                    break;
+                }
+                if (code == pc::op_code::cardinality) {
+                    REQUIRE(circuit.cardinality_low()[r] == original.cardinality_low()[v]);
+                    REQUIRE(circuit.cardinality_high()[r] == original.cardinality_high()[v]);
+                }
+                auto before = operandsOf(original, node, mappedId);
+                auto after = operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); });
+                if (before.through_not || after.through_not) {
+                    std::vector<edge_key> left = before.inputs;
+                    left.insert(left.end(), before.inverted.begin(), before.inverted.end());
+                    std::vector<edge_key> right = after.inputs;
+                    right.insert(right.end(), after.inverted.begin(), after.inverted.end());
+                    std::ranges::sort(left);
+                    std::ranges::sort(right);
+                    REQUIRE(left == right);
+                } else {
+                    REQUIRE(before.inputs == after.inputs);
+                    REQUIRE(before.inverted == after.inverted);
+                }
+                break;
+            }
+        }
+        // A NOT tensor the writer created for a consumer without operands (cardinality(0, n)) has no user
+        // left to fold into, so it reads back as a gate of its own.
+        std::size_t extra = 0;
+        for (std::uint32_t r = 0; r < circuit.node_count(); ++r) {
+            if (!covered[r]) {
+                {
+                    std::ostringstream d;
+                    d << "extra read node " << r << " tensor " << read.tensor_by_node.at(r) << " operands";
+                    for (auto const &e : circuit.operands(pc::bool_node_id(r))) d << ' ' << e.source.raw() << (e.complement ? "~" : "");
+                    std::size_t users = 0;
+                    for (std::uint32_t q = 0; q < circuit.node_count(); ++q)
+                        for (auto const &e : circuit.operands(pc::bool_node_id(q))) users += e.source.raw() == r;
+                    d << " users " << users;
+                    for (std::uint32_t q = 0; q < circuit.node_count(); ++q)
+                        for (auto const &e : circuit.operands(pc::bool_node_id(q)))
+                            if (e.source.raw() == r) d << " [user " << q << " op " << int(circuit.op_codes()[q]) << " name " << (read.options.node_names.contains(pc::bool_node_id(q)) ? read.options.node_names.at(pc::bool_node_id(q)) : "") << "]";
+                    for (std::uint32_t v = 0; v < original.node_count(); ++v)
+                        if (written.tensor_by_node[v] == read.tensor_by_node.at(r)) d << " orig node " << v << " op " << int(original.op_codes()[v]);
+                    UNSCOPED_INFO(d.str());
+                }
+                REQUIRE(anyFullRange);
+                REQUIRE(circuit.op_codes()[r] == pc::op_code::not_gate);
+                ++extra;
+            }
+        }
+        REQUIRE(circuit.node_count() - extra + skipped == original.node_count());
+
+        REQUIRE(circuit.targets().size() == original.targets().size());
+        for (std::size_t index = 0; index < original.targets().size(); ++index) {
+            INFO("target " << index);
+            auto const &before = original.targets()[index];
+            auto const &after = circuit.targets()[index];
+            REQUIRE(after.id == before.id);
+            REQUIRE(after.node == mapped(before.node));
+            REQUIRE(after.role == pc::observable_role::primary);
+            const auto named = options.target_names.find(before.id);
+            const auto readNamed = read.options.target_names.find(after.id);
+            REQUIRE(readNamed != read.options.target_names.end());
+            REQUIRE(readNamed->second == (named == options.target_names.end() ? "t" + std::to_string(before.id.raw()) : named->second));
+            REQUIRE(read.options.target_kinds.at(after.id) == effectiveKinds(options, before.id));
+        }
+
+        REQUIRE(read.options.quantification.size() == options.quantification.size());
+        for (auto const &[target, entry] : options.quantification) {
+            INFO("quantification of target " << target.raw());
+            const auto found = read.options.quantification.find(target);
+            REQUIRE(found != read.options.quantification.end());
+            REQUIRE(found->second.literal_mode == entry.literal_mode);
+            REQUIRE(found->second.max_initiators_per_cutset == entry.max_initiators_per_cutset);
+        }
+        REQUIRE(read.options.model_name == options.model_name);
+        REQUIRE(read.options.source_format == options.source_format);
+        REQUIRE(read.options.source_sha256 == options.source_sha256);
+        REQUIRE(read.options.compile_options == options.compile_options);
+        REQUIRE(read.options.query == kind::probability);
+    }
+
+    // Two read circuits are the same structure, id for id.
+    void requireEqual(writer::read_output const &left, writer::read_output const &right) {
+        auto const &a = left.circuit;
+        auto const &b = right.circuit;
+        REQUIRE(a.node_count() == b.node_count());
+        REQUIRE(a.edge_count() == b.edge_count());
+        for (std::uint32_t node = 0; node < a.node_count(); ++node) {
+            INFO("node " << node);
+            REQUIRE(a.op_codes()[node] == b.op_codes()[node]);
+            REQUIRE(a.cardinality_low()[node] == b.cardinality_low()[node]);
+            REQUIRE(a.cardinality_high()[node] == b.cardinality_high()[node]);
+            REQUIRE(a.constant_values()[node] == b.constant_values()[node]);
+            const auto id = pc::bool_node_id(node);
+            REQUIRE(a.operands(id).size() == b.operands(id).size());
+            for (std::size_t edge = 0; edge < a.operands(id).size(); ++edge) {
+                REQUIRE(a.operands(id)[edge].source == b.operands(id)[edge].source);
+                REQUIRE(a.operands(id)[edge].complement == b.operands(id)[edge].complement);
+            }
+            if (a.op_codes()[node] == pc::op_code::basic_event) {
+                REQUIRE(a.probability_sources()[a.probability_source_refs()[node].raw()].literal ==
+                        b.probability_sources()[b.probability_source_refs()[node].raw()].literal);
+            }
+        }
+        REQUIRE(a.targets().size() == b.targets().size());
+        for (std::size_t target = 0; target < a.targets().size(); ++target) {
+            REQUIRE(a.targets()[target].node == b.targets()[target].node);
+        }
+        REQUIRE(left.options.node_names == right.options.node_names);
+        REQUIRE(left.options.target_names == right.options.target_names);
+        REQUIRE(left.options.target_kinds == right.options.target_kinds);
+        REQUIRE(left.options.model_name == right.options.model_name);
+        REQUIRE(left.options.source_format == right.options.source_format);
+        REQUIRE(left.options.compile_options == right.options.compile_options);
+        REQUIRE(left.options.quantification.size() == right.options.quantification.size());
+    }
+
+    // The first operator at which two files differ, for failure messages.
+    [[nodiscard]] auto firstDifference(std::span<std::byte const> left, std::span<std::byte const> right) -> std::string {
+        auto a = ::pcfb::io::from_bytes(left);
+        auto b = ::pcfb::io::from_bytes(right);
+        if (!a || !b) {
+            return "unreadable";
+        }
+        auto const *x = (*a)->subcircuits()->Get(0);
+        auto const *y = (*b)->subcircuits()->Get(0);
+        std::ostringstream text;
+        const auto list = [](flatbuffers::Vector<std::uint32_t> const *values) {
+            std::string out = "[";
+            for (std::uint32_t index = 0; values != nullptr && index < values->size(); ++index) {
+                out += std::to_string(values->Get(index)) + " ";
+            }
+            return out + "]";
+        };
+        const auto describe = [&](::pcfb::Op const *op) {
+            return std::to_string(static_cast<int>(op->opcode())) + " in" + list(op->inputs()) + " inv" + list(op->inverted_inputs()) + " name '" +
+                   (op->name() == nullptr ? "" : op->name()->str()) + "'";
+        };
+        text << "operators " << x->operators()->size() << " vs " << y->operators()->size() << '\n';
+        for (std::uint32_t index = 0; index < std::min(x->operators()->size(), y->operators()->size()); ++index) {
+            if (describe(x->operators()->Get(index)) != describe(y->operators()->Get(index))) {
+                text << "first difference at operator " << index << ":\n";
+                for (auto at = index > 4 ? index - 4 : 0; at < std::min(x->operators()->size(), index + 12); ++at) {
+                    text << "  " << at << ": " << describe(x->operators()->Get(at)) << "   |   " << describe(y->operators()->Get(at)) << '\n';
+                }
+                const auto wanted = describe(y->operators()->Get(index));
+                for (std::uint32_t at = 0; at < x->operators()->size(); ++at) {
+                    if (describe(x->operators()->Get(at)) == wanted) {
+                        text << "the operator moved to " << at << ", used by:\n";
+                        for (std::uint32_t user = 0; user < x->operators()->size(); ++user) {
+                            auto const *op = x->operators()->Get(user);
+                            for (auto const *values : {op->inputs(), op->inverted_inputs()}) {
+                                for (std::uint32_t k = 0; values != nullptr && k < values->size(); ++k) {
+                                    if (values->Get(k) == x->operators()->Get(at)->output()) {
+                                        text << "  " << user << ": " << describe(op) << '\n';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                return text.str();
+            }
+        }
+        text << "operators agree; queries or metadata differ";
+        return text.str();
+    }
+
+    // Same operator multiset, queries and metadata; only the operator order may differ.
+    void requireSameFile(std::span<std::byte const> left, std::span<std::byte const> right) {
+        auto a = ::pcfb::io::from_bytes(left);
+        auto b = ::pcfb::io::from_bytes(right);
+        REQUIRE(a);
+        REQUIRE(b);
+        auto const *x = (*a)->subcircuits()->Get(0);
+        auto const *y = (*b)->subcircuits()->Get(0);
+        INFO(firstDifference(left, right));
+        const auto histogram = [](::pcfb::SubCircuit const *sub) {
+            std::map<std::pair<int, std::string>, std::size_t> counts;
+            for (auto const *op : *sub->operators()) {
+                ++counts[{static_cast<int>(op->opcode()), op->name() == nullptr ? std::string{} : op->name()->str()}];
+            }
+            return counts;
+        };
+        {
+            std::ostringstream d;
+            auto hx = histogram(x);
+            auto hy = histogram(y);
+            for (auto const &[key, n] : hx) if (hy[key] != n) d << "orig " << key.first << " '" << key.second << "' x" << n << " vs " << hy[key] << "\n";
+            for (auto const &[key, n] : hy) if (hx[key] != n) d << "rewrite " << key.first << " '" << key.second << "' x" << n << " vs " << hx[key] << "\n";
+            INFO(d.str());
+            REQUIRE(x->operators()->size() == y->operators()->size());
+            REQUIRE(hx == hy);
+        }
+        REQUIRE(x->queries()->size() == y->queries()->size());
+        for (std::uint32_t index = 0; index < x->queries()->size(); ++index) {
+            REQUIRE(x->queries()->Get(index)->kind() == y->queries()->Get(index)->kind());
+            REQUIRE(x->queries()->Get(index)->name()->str() == y->queries()->Get(index)->name()->str());
+        }
+        REQUIRE((*a)->schema_version() == (*b)->schema_version());
+        REQUIRE((*a)->metadata()->size() == (*b)->metadata()->size());
+    }
+
+    struct round_trip_stats final {
+        std::size_t circuits = 0;
+        std::size_t nodes = 0;
+        std::size_t reordered = 0;
+        std::size_t exact = 0;
+    };
+
+    void roundTripRandom(RandomModel const &model, round_trip_stats &stats) {
+        auto written = writer::write(model.circuit.to_handle(), model.options);
+        INFO(diagnosticsText(written.diagnostics()));
+        REQUIRE(written);
+        auto const &output = written.value();
+        auto result = writer::read(output.bytes);
+        INFO(diagnosticsText(result.diagnostics()));
+        REQUIRE(result);
+        auto const &read = result.value();
+        const bool hull = std::ranges::any_of(model.circuit.targets(), [&](auto const &target) {
+            const auto kinds = effectiveKinds(model.options, target.id);
+            return std::ranges::find(kinds, kind::monotone_hull_probability) != kinds.end();
+        });
+        REQUIRE(read.schema_version == (hull ? 0x00010002U : 0x00010001U));
+        requireSameStructure(model, output, read);
+        // Byte-identical rewrite. The one exception: cardinality(0, n) is a ONES tensor without operands, but
+        // the writer still emits the operands' subtrees before it, so the file orders operators by a
+        // traversal through edges that the read circuit no longer has. Those operands become roots of
+        // their own and may be forced into another order by the ascending event ids. The rewrite then
+        // lists the same operators in another order: it is a fixed point from there on, with every other
+        // part of the file unchanged.
+        const bool lossy = std::ranges::any_of(std::views::iota(0U, model.circuit.node_count()), [&](const std::uint32_t node) {
+            return model.circuit.op_codes()[node] == pc::op_code::cardinality && model.circuit.cardinality_low()[node] == 0 &&
+                   model.circuit.cardinality_high()[node] == model.circuit.operand_counts()[node];
+        });
+        const auto again = writeBack(read);
+        if (!lossy) {
+            ++stats.exact;
+            INFO(firstDifference(output.bytes, again));
+            REQUIRE(again == output.bytes);
+        } else if (again != output.bytes) {
+            ++stats.reordered;
+            const auto second = readOk(again);
+            REQUIRE(second.circuit.node_count() == read.circuit.node_count());
+            REQUIRE(writeBack(second) == again);
+            requireSameFile(output.bytes, again);
+        }
+        ++stats.circuits;
+        stats.nodes += model.circuit.node_count();
+    }
+
+    [[nodiscard]] auto readTextFile(std::filesystem::path const &path) -> std::string {
+        std::ifstream input(path, std::ios::binary);
+        REQUIRE(input);
+        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+    }
+
+    [[nodiscard]] auto readBinaryFile(std::filesystem::path const &path) -> bytes_type {
+        const auto text = readTextFile(path);
+        bytes_type bytes(text.size());
+        std::ranges::transform(text, bytes.begin(), [](const char c) { return static_cast<std::byte>(c); });
+        return bytes;
+    }
+
+    [[nodiscard]] auto asBytes(std::string const &text) -> bytes_type {
+        bytes_type bytes(text.size());
+        std::ranges::transform(text, bytes.begin(), [](const char c) { return static_cast<std::byte>(c); });
+        return bytes;
+    }
+
+    // pcfb object-API plumbing for files the pcfb builder cannot produce.
+    [[nodiscard]] auto pack(::pcfb::CircuitT const &model) -> bytes_type {
+        flatbuffers::FlatBufferBuilder builder;
+        builder.Finish(::pcfb::Circuit::Pack(builder, &model), ::pcfb::CircuitIdentifier());
+        auto const *data = reinterpret_cast<std::byte const *>(builder.GetBufferPointer());
+        return {data, data + builder.GetSize()};
+    }
+
+    [[nodiscard]] auto unpack(std::span<std::byte const> bytes) -> std::unique_ptr<::pcfb::CircuitT> {
+        auto circuit = ::pcfb::io::from_bytes(bytes);
+        REQUIRE(circuit);
+        return std::unique_ptr<::pcfb::CircuitT>((*circuit).get()->UnPack());
+    }
+
+    [[nodiscard]] auto sampleBytes(std::vector<double> const &probabilities, std::vector<std::uint32_t> const &eventIds,
+                                   ::pcfb::SampleSource source = ::pcfb::SampleSource::BASIC_EVENT) -> ::pcfb::builder {
+        ::pcfb::builder builder;
+        for (std::size_t index = 0; index < probabilities.size(); ++index) {
+            REQUIRE(builder.add_sample(probabilities[index], "s" + std::to_string(index), eventIds[index], source));
+        }
+        return builder;
+    }
+
+} // namespace
+
+TEST_CASE("pcfb reader descriptor and endpoint", "[io][pcfb][read]") {
+    const auto descriptor = writer::reader_descriptor();
+    CHECK(descriptor.input_format == fuzzybits::io::formats::pcfb());
+    CHECK(descriptor.endpoint == writer::reader_endpoint_id());
+    CHECK(descriptor.endpoint != writer::writer_endpoint_id());
+    CHECK(descriptor.produces.contains(fuzzybits::api::capability_id("ir.probabilistic_boolean_dag")));
+
+    const auto model = threeTargetModel();
+    const auto written = requireWrite(model, threeTargetNames());
+    const auto path = std::filesystem::temp_directory_path() / ("fzb_pcfb_reader_endpoint_" + std::to_string(std::random_device{}()) + ".pcfb");
+    {
+        std::ofstream output(path, std::ios::binary);
+        output.write(reinterpret_cast<char const *>(written.bytes.data()), static_cast<std::streamsize>(written.bytes.size()));
+    }
+    fuzzybits::io::read_request request{.path = path, .format = fuzzybits::io::formats::pcfb()};
+    const auto handle = writer::read(request);
+    INFO(diagnosticsText(handle.diagnostics()));
+    REQUIRE(handle);
+    auto const *circuit = pc::circuit_from(handle.value());
+    REQUIRE(circuit != nullptr);
+    CHECK(circuit->satisfies_form(fuzzybits::api::form_id("ir.probabilistic_boolean_dag")));
+    CHECK(circuit->node_count() == model.node_count());
+
+    const auto overPath = writer::read(path);
+    REQUIRE(overPath);
+    CHECK(overPath.value().tensor_by_node.size() == model.node_count());
+
+    request.path = path.string() + ".missing";
+    const auto missing = writer::read(request);
+    CHECK_FALSE(missing);
+    CHECK(hasCode(missing.diagnostics(), std::string(writer::diag::unreadable)));
+
+    request.path = path;
+    request.format = fuzzybits::io::formats::ftp();
+    CHECK(hasCode(writer::read(request).diagnostics(), std::string(writer::diag::format_mismatch)));
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pcfb][read]") {
+    const auto model = threeTargetModel();
+    auto options = threeTargetNames();
+    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
+                            {pc::target_id(1), {kind::monotone_hull_probability}}};
+    options.quantification = {
+        {pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split", .max_initiators_per_cutset = 1}},
+        {pc::target_id(1), writer::target_quantification{.literal_mode = "omega_l"}},
+    };
+    options.node_names = {{pc::bool_node_id(0), "PUMP-A"}, {pc::bool_node_id(3), "BOTH"}};
+    options.model_name = "demo";
+    options.source_format = "cafta-ftp";
+    options.compile_options = "-c 2";
+    std::array<std::byte, 32> digest{};
+    digest[0] = std::byte{0xAB};
+    digest[31] = std::byte{0x01};
+    options.source_sha256 = digest;
+
+    const auto written = requireWrite(model, options);
+    const auto read = readOk(written.bytes);
+    CHECK(read.schema_version == 0x00010002U);
+    CHECK(read.options.target_names == options.target_names);
+    CHECK(read.options.target_kinds.at(pc::target_id(0)) == std::vector<kind>{kind::probability, kind::monotone_hull_probability});
+    CHECK(read.options.target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::monotone_hull_probability});
+    CHECK(read.options.target_kinds.at(pc::target_id(2)) == std::vector<kind>{kind::probability});
+    CHECK(read.circuit.targets().size() == 3);
+    CHECK(read.options.quantification.size() == 2);
+    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "atom_split");
+    CHECK(read.options.quantification.at(pc::target_id(0)).max_initiators_per_cutset == 1U);
+    CHECK(read.options.quantification.at(pc::target_id(1)).literal_mode == "omega_l");
+    CHECK_FALSE(read.options.quantification.at(pc::target_id(1)).max_initiators_per_cutset.has_value());
+    CHECK(read.options.node_names.at(pc::bool_node_id(0)) == "PUMP-A");
+    CHECK(read.options.node_names.at(pc::bool_node_id(3)) == "BOTH");
+    CHECK(read.options.node_names.at(pc::bool_node_id(1)) == "e2");
+    CHECK(read.options.model_name == "demo");
+    CHECK(read.options.source_format == "cafta-ftp");
+    CHECK(read.options.compile_options == "-c 2");
+    CHECK(read.options.source_sha256 == digest);
+    CHECK(read.options.query == kind::probability);
+
+    // Every metadata entry verbatim, in file order.
+    auto file = ::pcfb::io::from_bytes(written.bytes);
+    REQUIRE(file);
+    REQUIRE((*file)->metadata() != nullptr);
+    REQUIRE(read.metadata.size() == (*file)->metadata()->size());
+    for (std::size_t index = 0; index < read.metadata.size(); ++index) {
+        CHECK(read.metadata[index].first == (*file)->metadata()->Get(static_cast<flatbuffers::uoffset_t>(index))->key()->str());
+    }
+    const auto find = [&](std::string const &key) -> writer::metadata_value const * {
+        for (auto const &entry : read.metadata) {
+            if (entry.first == key) {
+                return &entry.second;
+            }
+        }
+        return nullptr;
+    };
+    REQUIRE(find("general.generator") != nullptr);
+    CHECK(std::get<std::string>(*find("general.generator")) == "fuzzybits");
+    CHECK(std::get<std::string>(*find("pcfb.opset")) == "core-1.1");
+    CHECK(std::get<std::int64_t>(*find("compile.query.0.max_initiators_per_cutset")) == 1);
+    CHECK(std::get<std::string>(*find("compile.query.2.negation")) == "monotone_hull");
+    CHECK(std::get<std::vector<std::byte>>(*find("general.source_sha256")).size() == 32);
+
+    CHECK(writeBack(read) == written.bytes);
+}
+
+TEST_CASE("pcfb reader accepts any minor of schema major 1 and keeps the version it read", "[io][pcfb][read]") {
+    const auto written = requireWrite(threeTargetModel(), threeTargetNames());
+    auto model = unpack(written.bytes);
+    model->schema_version = 0x00010007U;
+    const auto patched = pack(*model);
+    const auto read = readOk(patched);
+    CHECK(read.schema_version == 0x00010007U);
+    // The writer picks the lowest minor again.
+    const auto rewritten = writeBack(read);
+    const auto view = ::pcfb::io::from_bytes(rewritten);
+    REQUIRE(view);
+    CHECK((*view)->schema_version() == 0x00010001U);
+}
+
+TEST_CASE("pcfb reader round-trips writer output byte for byte on random circuits", "[io][pcfb][read][random]") {
+    std::mt19937_64 rng(0x219219);
+    Coverage coverage;
+    round_trip_stats stats;
+    for (int round = 0; round < 360; ++round) {
+        INFO("round " << round);
+        const auto model = round % 3 == 0 ? randomModel(rng, coverage) : randomModel(rng, coverage, RandomSize{.max_events = 300, .max_gates = 700});
+        roundTripRandom(model, stats);
+    }
+    CHECK(stats.circuits == 360);
+    INFO(stats.exact << " circuits rewrote byte for byte, " << stats.reordered << " reordered operators");
+    CHECK(stats.exact >= 60);
+    CHECK(stats.nodes > 100'000);
+    for (std::size_t code = 0; code < coverage.op_codes.size(); ++code) {
+        INFO("op_code " << code);
+        REQUIRE(coverage.op_codes[code] > 0);
+    }
+    for (std::size_t form = 0; form < coverage.cardinality_forms.size(); ++form) {
+        INFO("cardinality form " << form);
+        REQUIRE(coverage.cardinality_forms[form] > 0);
+    }
+    REQUIRE(coverage.mixed_polarity_gates > 0);
+    REQUIRE(coverage.duplicate_operands > 0);
+    REQUIRE(coverage.non_topological_circuits > 0);
+    REQUIRE(coverage.multi_target_circuits > 0);
+}
+
+TEST_CASE("pcfb reader keeps the event order of a circuit whose gates come first", "[io][pcfb][read]") {
+    // Events a < b < c by node id, listed by the top gate as c, a, b: the file emits the samples in that
+    // order and the read circuit must still number a, b, c.
+    pc::builder builder;
+    const auto top = builder.add_and({pc::edge_ref{.source = pc::bool_node_id(3)}, pc::edge_ref{.source = pc::bool_node_id(1)},
+                                      pc::edge_ref{.source = pc::bool_node_id(2), .complement = true}});
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+    const auto c = builder.add_basic_event(builder.add_literal_probability(0.3));
+    (void)builder.add_target(top);
+    const auto model = sealed(std::move(builder));
+    REQUIRE(model.node_count() == 4);
+    const auto written = requireWrite(model);
+    auto file = ::pcfb::io::from_bytes(written.bytes);
+    REQUIRE(file);
+    CHECK(written.event_id_by_node[a.raw()] == 1);
+    CHECK(written.event_id_by_node[c.raw()] == 3);
+    CHECK(written.tensor_by_node[c.raw()] < written.tensor_by_node[a.raw()]);
+
+    const auto read = readOk(written.bytes);
+    std::vector<double> probabilities;
+    for (std::uint32_t node = 0; node < read.circuit.node_count(); ++node) {
+        if (read.circuit.op_codes()[node] == pc::op_code::basic_event) {
+            probabilities.push_back(read.circuit.probability_sources()[read.circuit.probability_source_refs()[node].raw()].literal);
+        }
+    }
+    CHECK(probabilities == std::vector<double>{0.1, 0.2, 0.3});
+    CHECK(writeBack(read) == written.bytes);
+    static_cast<void>(b);
+}
+
+TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite byte for byte", "[io][pcfb][read][ftp]") {
+    const auto root = projectRoot() / "input" / "ftp" / "conformance";
+    std::vector<std::filesystem::path> directories;
+    for (auto const &entry : std::filesystem::directory_iterator(root)) {
+        if (entry.is_directory() && entry.path().filename().string().rfind("invalid", 0) != 0) {
+            directories.push_back(entry.path());
+        }
+    }
+    std::ranges::sort(directories);
+    REQUIRE(directories.size() >= 10);
+
+    struct variant final {
+        std::string label;
+        ftp::options settings;
+    };
+    std::vector<variant> variants;
+    {
+        ftp::options boolean;
+        boolean.negation = "boolean";
+        variants.push_back({"boolean", boolean});
+        ftp::options hull;
+        hull.complement_events = "negation";
+        variants.push_back({"hull", hull});
+        ftp::options both;
+        both.complement_events = "negation";
+        both.config = R"({"negation": "both"})";
+        variants.push_back({"both", both});
+        ftp::options literals;
+        literals.literals = "negation";
+        variants.push_back({"hull with atoms as negation", literals});
+    }
+
+    std::size_t compiled = 0;
+    std::size_t hullFiles = 0;
+    std::size_t twoKindTargets = 0;
+    std::size_t roundTrips = 0;
+    for (auto const &directory : directories) {
+        std::vector<std::filesystem::path> files;
+        for (auto const &entry : std::filesystem::directory_iterator(directory)) {
+            if (entry.path().extension() == ".ftp") {
+                files.push_back(entry.path());
+            }
+        }
+        std::ranges::sort(files);
+        std::vector<fuzzybits::io::backend::fuzzybits::ftp::source_text> sources;
+        for (auto const &file : files) {
+            sources.push_back({.path = file.filename().string(), .text = readTextFile(file)});
+        }
+        for (auto const &entry : variants) {
+            INFO(directory.filename().string() << " / " << entry.label);
+            const auto result = ftp::compile_sources(sources, entry.settings);
+            if (!result) {
+                continue;
+            }
+            ++compiled;
+            auto const &bytes = result.value().bytes;
+            const auto read = readOk(bytes);
+            CHECK(writeBack(read) == bytes);
+            ++roundTrips;
+            hullFiles += read.schema_version == 0x00010002U ? 1 : 0;
+            for (auto const &[target, kinds] : read.options.target_kinds) {
+                twoKindTargets += kinds.size() > 1 ? 1 : 0;
+            }
+            // Fixed point on the structure as well.
+            const auto second = readOk(writeBack(read));
+            requireEqual(read, second);
+        }
+    }
+    INFO(compiled << " compiled files, " << hullFiles << " with hull queries, " << twoKindTargets << " two-kind targets");
+    CHECK(compiled >= 20);
+    CHECK(roundTrips == compiled);
+    CHECK(hullFiles > 0);
+    CHECK(twoKindTargets > 0);
+}
+
+TEST_CASE("pcfb reader: tracked .pcfb files read to a fixed point or are rejected with a documented id", "[io][pcfb][read]") {
+    std::vector<std::filesystem::path> files;
+    const auto root = projectRoot();
+    for (auto iterator = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied);
+         iterator != std::filesystem::recursive_directory_iterator(); ++iterator) {
+        const auto name = iterator->path().filename().string();
+        if (iterator->is_directory() && (name == ".git" || name == "_deps" || name == "node_modules" || name.rfind("build", 0) == 0 ||
+                                         name.rfind(".venv", 0) == 0 || name.rfind("cmake-build", 0) == 0)) {
+            iterator.disable_recursion_pending();
+            continue;
+        }
+        if (iterator->is_regular_file() && iterator->path().extension() == ".pcfb") {
+            files.push_back(iterator->path());
+        }
+    }
+    std::ranges::sort(files);
+    REQUIRE_FALSE(files.empty());
+
+    for (auto const &file : files) {
+        INFO(file.string());
+        const auto bytes = readBinaryFile(file);
+        const auto first = writer::read(bytes);
+        INFO(diagnosticsText(first.diagnostics()));
+        if (!first) {
+            for (auto const &item : first.diagnostics().items()) {
+                CHECK(item.code.rfind("io.pcfb.", 0) == 0);
+            }
+            CHECK(first.diagnostics().has_errors());
+            continue;
+        }
+        const auto once = writeBack(first.value());
+        const auto second = readOk(once);
+        requireEqual(first.value(), second);
+        CHECK(first.value().schema_version == second.schema_version);
+        CHECK(writeBack(second) == once);
+    }
+}
+
+TEST_CASE("pcfb reader: the hull query fixture keeps its kinds", "[io][pcfb][read]") {
+    const auto bytes = readBinaryFile(projectRoot() / "tests" / "python" / "data" / "monotone_hull_query.pcfb");
+    const auto read = readOk(bytes);
+    CHECK(read.schema_version == 0x00010002U);
+    bool hull = false;
+    for (auto const &[target, kinds] : read.options.target_kinds) {
+        hull = hull || std::ranges::find(kinds, kind::monotone_hull_probability) != kinds.end();
+    }
+    CHECK(hull);
+}
+
+TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", "[io][pcfb][read]") {
+    // NO_OP and EXACTLY, a source other than BASIC_EVENT, non-contiguous event ids in descending file
+    // order, a query with confidence levels.
+    auto builder = sampleBytes({0.5, 0.25, 0.125}, {9, 5, 7}, ::pcfb::SampleSource::COLLAPSED_MODULE);
+    const std::uint32_t pair[] = {0, 1};
+    const std::uint32_t inverted[] = {2};
+    const auto both = builder.add_op(::pcfb::OpCode::BITWISE_NO_OP, std::span<std::uint32_t const>{pair, 1});
+    REQUIRE(both);
+    const auto exactly = builder.add_op(::pcfb::OpCode::BITWISE_EXACTLY, pair, inverted, 1U, "exactly one");
+    REQUIRE(exactly);
+    const double levels[] = {0.95};
+    REQUIRE(builder.add_query(*exactly, ::pcfb::QueryKind::PROBABILITY, "q", levels));
+    REQUIRE(builder.add_query(*both, ::pcfb::QueryKind::PROBABILITY, "h"));
+    auto bytes = builder.finish();
+    REQUIRE(bytes);
+
+    auto result = writer::read(*bytes);
+    INFO(diagnosticsText(result.diagnostics()));
+    REQUIRE(result);
+    CHECK(codesOf(result.diagnostics()) == std::set<std::string>{std::string(writer::diag::sample_source_dropped),
+                                                                std::string(writer::diag::confidence_ignored),
+                                                                std::string(writer::diag::event_ids_renumbered),
+                                                                std::string(writer::diag::no_op_as_and),
+                                                                std::string(writer::diag::emission_order_changed)});
+    auto const &read = result.value();
+    auto const &circuit = read.circuit;
+    REQUIRE(circuit.targets().size() == 2);
+    // Events are numbered by ascending file id: 5 (0.25), 7 (0.125), 9 (0.5).
+    std::vector<double> probabilities;
+    for (std::uint32_t node = 0; node < circuit.node_count(); ++node) {
+        if (circuit.op_codes()[node] == pc::op_code::basic_event) {
+            probabilities.push_back(circuit.probability_sources()[circuit.probability_source_refs()[node].raw()].literal);
+        }
+    }
+    CHECK(probabilities == std::vector<double>{0.25, 0.125, 0.5});
+
+    const auto exactlyNode = circuit.targets()[0].node;
+    CHECK(circuit.op_codes()[exactlyNode.raw()] == pc::op_code::cardinality);
+    CHECK(circuit.cardinality_low()[exactlyNode.raw()] == 1);
+    CHECK(circuit.cardinality_high()[exactlyNode.raw()] == 1);
+    REQUIRE(circuit.operands(exactlyNode).size() == 3);
+    CHECK(circuit.operands(exactlyNode)[2].complement);
+    CHECK(read.options.node_names.at(exactlyNode) == "exactly one");
+    CHECK(circuit.op_codes()[circuit.targets()[1].node.raw()] == pc::op_code::and_gate);
+    CHECK(read.options.target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::probability});
+
+    // Semantics: exact probability of the file equals the exhaustive value of the read circuit.
+    auto file = ::pcfb::io::from_bytes(*bytes);
+    REQUIRE(file);
+    CHECK(std::abs(fuzzybits::compile::exact_probability(*file, 0) - referenceProbabilities(circuit)[0]) <= 1.0e-12);
+}
+
+TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is one cardinality node", "[io][pcfb][read]") {
+    auto builder = sampleBytes({0.1, 0.2, 0.3, 0.4}, {1, 2, 3, 4});
+    const std::uint32_t operands[] = {0, 1, 2, 3};
+    const auto least = builder.add_op(::pcfb::OpCode::BITWISE_ATLEAST, operands, {}, 1U);
+    const auto most = builder.add_op(::pcfb::OpCode::BITWISE_ATMOST, operands, {}, 3U);
+    REQUIRE(least);
+    REQUIRE(most);
+    const std::uint32_t both[] = {*least, *most};
+    const auto range = builder.add_op(::pcfb::OpCode::BITWISE_AND, both, {}, std::nullopt, "range");
+    REQUIRE(range);
+    REQUIRE(builder.add_query(*range, ::pcfb::QueryKind::PROBABILITY, "q"));
+    // The same pair with a named half is two nodes and an AND.
+    const auto namedLeast = builder.add_op(::pcfb::OpCode::BITWISE_ATLEAST, operands, {}, 2U, "named");
+    const auto mostAgain = builder.add_op(::pcfb::OpCode::BITWISE_ATMOST, operands, {}, 3U);
+    REQUIRE(namedLeast);
+    REQUIRE(mostAgain);
+    const std::uint32_t pair[] = {*namedLeast, *mostAgain};
+    const auto kept = builder.add_op(::pcfb::OpCode::BITWISE_AND, pair, {}, std::nullopt, "kept");
+    REQUIRE(kept);
+    REQUIRE(builder.add_query(*kept, ::pcfb::QueryKind::PROBABILITY, "k"));
+    auto bytes = builder.finish();
+    REQUIRE(bytes);
+
+    const auto read = readOk(*bytes);
+    auto const &circuit = read.circuit;
+    CHECK(std::ranges::count(circuit.op_codes(), pc::op_code::cardinality) == 3);
+    CHECK(std::ranges::count(circuit.op_codes(), pc::op_code::and_gate) == 1);
+    const auto rangeNode = read.node_by_tensor[*range];
+    REQUIRE(rangeNode.valid());
+    CHECK(circuit.op_codes()[rangeNode.raw()] == pc::op_code::cardinality);
+    CHECK(circuit.cardinality_low()[rangeNode.raw()] == 1);
+    CHECK(circuit.cardinality_high()[rangeNode.raw()] == 3);
+    CHECK_FALSE(read.node_by_tensor[*least].valid());
+    CHECK_FALSE(read.node_by_tensor[*most].valid());
+    CHECK(read.node_by_tensor[*namedLeast].valid());
+    requireEqual(read, readOk(writeBack(read)));
+}
+
+TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with stable ids", "[io][pcfb][read][negative]") {
+    const auto written = requireWrite(threeTargetModel(), threeTargetNames());
+    const auto codeOfError = [](fuzzybits::api::diagnostic_list const &diagnostics) {
+        for (auto const &item : diagnostics.items()) {
+            if (item.severity == fuzzybits::api::diagnostic_severity::error) {
+                return item.code;
+            }
+        }
+        return std::string{};
+    };
+
+    SECTION("empty and truncated bytes") {
+        CHECK(codeOfError(writer::read(std::span<std::byte const>{}).diagnostics()) == writer::diag::unreadable);
+        for (const auto length : {std::size_t{1}, std::size_t{4}, std::size_t{8}, written.bytes.size() / 2, written.bytes.size() * 3 / 4}) {
+            INFO("length " << length);
+            const auto result = writer::read(std::span<std::byte const>{written.bytes.data(), length});
+            CHECK_FALSE(result);
+            CHECK_FALSE(result.has_value());
+            CHECK(codeOfError(result.diagnostics()).rfind("io.pcfb.", 0) == 0);
+        }
+    }
+
+    SECTION("corrupted bytes never crash and fail with a pcfb id when they fail") {
+        std::mt19937_64 rng(7);
+        std::size_t rejected = 0;
+        for (int round = 0; round < 400; ++round) {
+            auto bytes = written.bytes;
+            const auto flips = 1 + round % 4;
+            for (int flip = 0; flip < flips; ++flip) {
+                bytes[std::uniform_int_distribution<std::size_t>(0, bytes.size() - 1)(rng)] ^= static_cast<std::byte>(1 + rng() % 255);
+            }
+            const auto result = writer::read(bytes);
+            if (!result) {
+                ++rejected;
+                CHECK(codeOfError(result.diagnostics()).rfind("io.pcfb.", 0) == 0);
+            } else {
+                CHECK(result.value().circuit.valid());
+            }
+        }
+        CHECK(rejected > 0);
+    }
+
+    SECTION("a wrong file identifier") {
+        auto bytes = written.bytes;
+        bytes[4] = std::byte{'X'};
+        CHECK_FALSE(writer::read(bytes));
+    }
+
+    SECTION("a query kind this reader does not know") {
+        auto model = unpack(written.bytes);
+        model->subcircuits[0]->queries[1]->kind = static_cast<::pcfb::QueryKind>(9);
+        model->schema_version = 0x00010002U;
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK_FALSE(result.has_value());
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::unknown_query_kind);
+    }
+
+    SECTION("a hull query in a file that declares minor 1") {
+        auto hull = threeTargetNames();
+        hull.query = kind::monotone_hull_probability;
+        auto model = unpack(requireWrite(threeTargetModel(), hull).bytes);
+        model->schema_version = 0x00010001U;
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::unknown_query_kind);
+    }
+
+    SECTION("externally supplied inputs") {
+        auto model = unpack(written.bytes);
+        model->subcircuits[0]->inputs = {0};
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK_FALSE(result.has_value());
+        const auto code = codeOfError(result.diagnostics());
+        CHECK((code == writer::diag::external_inputs || code == writer::diag::invalid_file));
+    }
+
+    SECTION("a reserved operator") {
+        auto model = unpack(written.bytes);
+        model->subcircuits[0]->operators[3]->opcode = ::pcfb::OpCode::BITWISE_EVENS;
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK_FALSE(result.has_value());
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::invalid_file);
+    }
+
+    SECTION("a major version other than 1") {
+        auto model = unpack(written.bytes);
+        model->schema_version = 0x00020001U;
+        CHECK_FALSE(writer::read(pack(*model)));
+    }
+
+    SECTION("a second subcircuit") {
+        auto model = unpack(written.bytes);
+        model->subcircuits.push_back(std::make_unique<::pcfb::SubCircuitT>(*model->subcircuits[0]));
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::invalid_file);
+    }
+}
+
+TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][read][negative]") {
+    auto options = threeTargetNames();
+    options.model_name = "demo";
+    options.target_kinds = {{pc::target_id(0), {kind::probability}}};
+    options.quantification = {{pc::target_id(0), writer::target_quantification{.literal_mode = "omega_l", .max_initiators_per_cutset = 2}}};
+    options.source_sha256 = std::array<std::byte, 32>{};
+    auto model = unpack(requireWrite(threeTargetModel(), options).bytes);
+    for (auto &entry : model->metadata) {
+        if (entry->key == "compile.query.0.max_initiators_per_cutset") {
+            ::pcfb::IntValueT value;
+            value.value = -3;
+            entry->value.Set(value);
+        } else if (entry->key == "general.source_sha256") {
+            ::pcfb::BytesValueT value;
+            value.value = {1, 2, 3};
+            entry->value.Set(value);
+        } else if (entry->key == "general.model_name") {
+            ::pcfb::IntValueT value;
+            value.value = 5;
+            entry->value.Set(value);
+        }
+    }
+    auto result = writer::read(pack(*model));
+    INFO(diagnosticsText(result.diagnostics()));
+    REQUIRE(result);
+    CHECK(codesOf(result.diagnostics()) == std::set<std::string>{std::string(writer::diag::invalid_metadata)});
+    CHECK(result.diagnostics().size() == 3);
+    auto const &read = result.value();
+    CHECK_FALSE(read.options.source_sha256.has_value());
+    CHECK_FALSE(read.options.quantification.at(pc::target_id(0)).max_initiators_per_cutset.has_value());
+    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "omega_l");
+    // Circuit.name is the fallback of general.model_name.
+    CHECK(read.options.model_name == "demo");
+    // The entries stay as they were.
+    CHECK(std::ranges::any_of(read.metadata, [](auto const &entry) { return entry.first == "general.model_name" && std::holds_alternative<std::int64_t>(entry.second); }));
+}
