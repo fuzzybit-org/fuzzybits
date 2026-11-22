@@ -31,7 +31,8 @@ and a git commit related to the GUI code can be "GUI: Fix the memory leak in Gat
 2. Create your **topic** branch from the **develop** branch.
 3. Keep in sync your **origin** develop branch with the **upstream** develop branch.
 4. Develop your contributions following the [Coding Style and Quality Assurance].
-   Every commit should compile and pass tests.
+   Every commit should compile and pass tests. To build and test in the CI toolchain image on a
+   Docker host, use `scripts/dev/ws.sh` ([scripts/dev/README.md](scripts/dev/README.md)).
 5. Keep your **topic** branch in sync with the **develop** branch
    by merging or rebasing your **topic** branch on top of the **develop**.
    Rebasing is highly recommended for streamlining the history.
