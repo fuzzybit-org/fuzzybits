@@ -5,30 +5,72 @@
 #include "ir/pra/model.h"
 #include "ir/pra/projection.h"
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
+    namespace {
 
-    auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<io::backend::fuzzybits::pcfb::write_options> {
-        using options_result = api::result<io::backend::fuzzybits::pcfb::write_options>;
+        namespace writer = io::backend::fuzzybits::pcfb;
+
+        [[nodiscard]] auto literal_mode_name(const ir::pra::literal_mode mode) noexcept -> std::string_view {
+            switch (mode) {
+            case ir::pra::literal_mode::atom_split:
+                return "atom_split";
+            case ir::pra::literal_mode::omega_l:
+                return "omega_l";
+            case ir::pra::literal_mode::negation:
+                return "negation";
+            }
+            return "atom_split";
+        }
+
+    } // namespace
+
+    auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::write_options> {
+        using options_result = api::result<writer::write_options>;
         auto const *model = ir::pra::model_from(lowering.pra_model);
         if (model == nullptr || !model->valid()) {
             return options_result::fail(
                 api::make_error("compile.pra_to_pc.invalid-artifact", "the lowering artifact does not hold an ir::pra model"));
         }
 
-        io::backend::fuzzybits::pcfb::write_options options;
+        writer::write_options options;
         api::diagnostic_list diagnostics;
         for (auto const &target : lowering.projection.target_bindings()) {
             const auto name = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target))
                                                            : model->stable_name(target.subject);
+            std::vector<writer::query_kind> kinds;
+            if (target.negation.boolean) {
+                kinds.push_back(writer::query_kind::probability);
+            }
             if (target.negation.monotone_hull) {
-                diagnostics.push(api::make_error("compile.pra_to_pc.unsupported-query-kind",
-                                                 "target '" + std::string(name) +
-                                                     "' requests monotone-hull semantics, which pcfb core-1.1 cannot express"));
+                kinds.push_back(writer::query_kind::monotone_hull_probability);
+                // pcfb 1.2 has no literal atoms per query (literal_samples, RFC 7.3), so a hull query could
+                // only be written with the marked operands read as plain complements, which is the
+                // `negation` mode and not what the target asked for.
+                if (const auto literals = lowering.projection.literal_events(target); !literals.empty()) {
+                    diagnostics.push(api::make_error(
+                        "compile.pra_to_pc.hull-literals-unsupported",
+                        "target '" + std::string(name) + "' requests monotone-hull semantics and its cone has " + std::to_string(literals.size()) +
+                            " event(s) with marked literal operands (first: '" + std::string(model->stable_name(ir::pra::domain_ref(literals.front()))) +
+                            "'); pcfb 1.2 cannot carry literal atoms yet"));
+                }
+            }
+            if (kinds.empty()) {
+                diagnostics.push(api::make_error("compile.pra_to_pc.invalid-artifact",
+                                                 "target '" + std::string(name) + "' requests no negation semantics"));
             }
             options.target_names.emplace(target.pc_target, std::string(name));
+            options.target_kinds.emplace(target.pc_target, std::move(kinds));
+            options.quantification.emplace(target.pc_target,
+                                           writer::target_quantification{
+                                               .literal_mode = std::string(literal_mode_name(target.literals)),
+                                               .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
+                                           });
         }
         for (auto const &event : lowering.projection.event_bindings()) {
             options.node_names.emplace(event.node, std::string(model->stable_name(event.element)));

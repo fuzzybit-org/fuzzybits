@@ -11,6 +11,7 @@
 #include "ir/pc/circuit.h"
 
 #include <ios>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -19,7 +20,14 @@
 namespace fuzzybits::io::backend::fuzzybits::pcfb {
     namespace {
 
-        constexpr std::string_view kProbabilityQueryKind = "probability";
+        [[nodiscard]] auto parseQueryKind(std::string_view text) -> std::optional<query_kind> {
+            for (const auto kind : {query_kind::probability, query_kind::monotone_hull_probability}) {
+                if (text == to_string(kind)) {
+                    return kind;
+                }
+            }
+            return std::nullopt;
+        }
 
         [[nodiscard]] auto optionsFrom(io::write_request const &request) -> api::result<write_options> {
             write_options options;
@@ -39,9 +47,14 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
                     diagnostics.push(api::make_error("io.pcfb.invalid-option", "io.pcfb.source_sha256 must be 64 hexadecimal digits"));
                 }
             }
-            if (auto value = request.options.get<std::string>(query_kind_option()); value && *value != kProbabilityQueryKind) {
-                diagnostics.push(api::make_error("io.pcfb.invalid-option",
-                                                 "io.pcfb.query_kind '" + *value + "' is not supported by pcfb core-1.1 (expected 'probability')"));
+            if (auto value = request.options.get<std::string>(query_kind_option())) {
+                if (const auto kind = parseQueryKind(*value)) {
+                    options.query = *kind;
+                } else {
+                    diagnostics.push(api::make_error("io.pcfb.invalid-option", "io.pcfb.query_kind '" + *value + "' is not a pcfb query kind (expected '" +
+                                                                                   std::string(to_string(query_kind::probability)) + "' or '" +
+                                                                                   std::string(to_string(query_kind::monotone_hull_probability)) + "')"));
+                }
             }
             if (diagnostics.has_errors()) {
                 return api::result<write_options>::fail(std::move(diagnostics));
@@ -50,6 +63,16 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
         }
 
     } // namespace
+
+    auto to_string(const query_kind kind) noexcept -> std::string_view {
+        switch (kind) {
+        case query_kind::probability:
+            return "probability";
+        case query_kind::monotone_hull_probability:
+            return "monotone_hull_probability";
+        }
+        return "probability";
+    }
 
     auto writer_endpoint_id() -> api::endpoint_id {
         return api::endpoint_id("io.fuzzybits.pcfb.writer");
@@ -117,8 +140,9 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
                                        api::option_spec{
                                            .key = query_kind_option(),
                                            .name = "Query kind",
-                                           .default_value = std::string{kProbabilityQueryKind},
-                                           .help = "Query.kind for every target; core-1.1 supports only 'probability'.",
+                                           .default_value = std::string{to_string(query_kind::probability)},
+                                           .help = "Query.kind of every target without an explicit kind: 'probability' or "
+                                                   "'monotone_hull_probability' (pcfb 1.2, schema minor 2).",
                                        },
                                    }},
         };

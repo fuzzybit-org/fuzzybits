@@ -1,6 +1,6 @@
 # ir::pc → pcfb
 
-`src/io/pcfb` writes a sealed `ir::pc::circuit` as a pcfb core-1.1 file through
+`src/io/pcfb` writes a sealed `ir::pc::circuit` as a pcfb file (opset `core-1.1`) through
 the pinned `pcfb::builder`. It links no SCRAM code. The reverse direction
 (`.pcfb` → `ir::pc`) belongs to
 [#146](https://github.com/fuzzybit-org/fuzzybits/issues/146).
@@ -45,12 +45,43 @@ symbol maps are only available through `write_options`.
 | … `low = 0` | `ATMOST high` |
 | … `low = high` | `EXACTLY low` |
 | … otherwise | `AND(ATLEAST low, ATMOST high)`, two unnamed tensors before the `AND` |
-| target | `Query` on the node's tensor, in target order; `kind` from `write_options::query` (default `PROBABILITY`) |
+| target | `Query` on the node's tensor, in target order; one per kind of `write_options::target_kinds`, else one of kind `write_options::query` (default `PROBABILITY`); see Query kinds |
 | `observable_role` | not representable; non-primary roles give the note `io.pcfb.target-role` |
 | nodes no target reaches | written |
 
 Cases are tested in that order, so `[n, n]` is `ATLEAST n` and `[0, 0]` is
 `ATMOST 0`. `ir::pc` guarantees `0 ≤ low ≤ high ≤ n`, so no range is empty.
+
+## Query kinds
+
+A query is `probability` (`PROBABILITY`) or `monotone_hull_probability`
+(`MONOTONE_HULL_PROBABILITY`, pcfb 1.2; semantics in
+[`rfc/monotone-hull-queries.md`](rfc/monotone-hull-queries.md)). `write_options::target_kinds`
+gives the kinds of a target; targets without an entry get `write_options::query`, which the
+`io.pcfb.query_kind` option sets for the stream writer. Several kinds on one target make several
+queries on one tensor, in the listed order, all named like the target; the kind tells them apart.
+An empty or repeating list, or an entry for a target that is not in the circuit, is
+`io.pcfb.invalid-query-kind`.
+
+`schema_version` is the lowest minor that covers the kinds written: `0x00010001` for a
+file with only `probability` queries (byte-identical to what a 1.1 writer produced), `0x00010002` as
+soon as one query is a hull query. The opset stays `core-1.1`. Runtimes that do not implement a
+kind reject the file before sampling (`pcfb.unsupported-query-kind`).
+
+`write_options::quantification` records, per target, what the caller asked for. For the query at
+position `i` of the file the writer sets
+
+| Key | Value |
+|---|---|
+| `fuzzybits.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
+| `fuzzybits.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
+| `fuzzybits.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+
+`fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
+`compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering
+artifact: a target's negation set gives its kinds, and a monotone-hull target whose cone has marked
+literal events is refused with `compile.pra_to_pc.hull-literals-unsupported` until pcfb carries
+literal atoms (RFC 7.3, #197).
 
 ## Order
 
