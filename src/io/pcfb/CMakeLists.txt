@@ -33,7 +33,7 @@ if(BUILD_TESTING)
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_pcfb_tests
     SOURCES tests/write_tests.cc tests/kind_tests.cc
-    LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_io_ftp fuzzybits_exact_eval pcfb
+    LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
   )
 
   # Query-kind guard (#217): header-only check plus the exact evaluator; needs only pcfb.
@@ -48,7 +48,7 @@ if(BUILD_TESTING)
     fuzzybits_add_imported_test(
       TARGET fuzzybits_io_pcfb_cli_tests
       SOURCES tests/cli_tests.cc
-      LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_io_ftp pcfb
+      LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_compile_ftp pcfb
       ARGS "~[mc]"
     )
     target_compile_definitions(fuzzybits_io_pcfb_cli_tests PRIVATE FZB_PATH="$<TARGET_FILE:fzb>")

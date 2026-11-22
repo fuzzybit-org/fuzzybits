@@ -6,6 +6,7 @@
 #include "compile/ftp/json.h"
 #include "compile/sha256.h"
 #include "ir/pc/circuit.h"
+#include "ir/pc/op_code.h"
 #include "ir/pra/projection.h"
 #include "pcfb.h"
 
@@ -468,6 +469,37 @@ TEST_CASE("inputs are classified by extension, directory and content", "[compile
     REQUIRE(compiled);
     REQUIRE(compiled.value().model_name == "project");
     std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("FTP gates keep their shape through the lowering", "[compile][ftp][lowering]") {
+    namespace pc = fuzzybits::ir::pc;
+    const auto lower = [](std::string const &text) {
+        auto lowered = ftp::lower_sources(sources_of({{"m.ftp", text}}), boolean_options());
+        INFO(render(lowered.diagnostics()));
+        REQUIRE(lowered);
+        return std::move(lowered).value();
+    };
+
+    const auto simple_lowering = lower("TOP + A MID\nMID * B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\nLIMIT 1.0E-05\n");
+    auto const &circuit = simple_lowering.circuit;
+    REQUIRE(circuit.node_count() == 5);
+    REQUIRE(circuit.edge_count() == 4);
+    REQUIRE(circuit.targets().size() == 1);
+    REQUIRE(circuit.probability_sources().size() == 3);
+    REQUIRE(circuit.op_codes()[circuit.targets()[0].node.raw()] == pc::op_code::or_gate);
+
+    const auto atleast = lower("TOP 2 A B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\n");
+    const auto top = atleast.circuit.targets()[0].node;
+    REQUIRE(atleast.circuit.op_codes()[top.raw()] == pc::op_code::cardinality);
+    REQUIRE(atleast.circuit.operands(top).size() == 3);
+    REQUIRE(atleast.circuit.cardinality_low()[top.raw()] == 2);
+    REQUIRE(atleast.circuit.cardinality_high()[top.raw()] == 3);
+
+    const auto complemented = lower("TOP * A -B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n");
+    const auto operands = complemented.circuit.operands(complemented.circuit.targets()[0].node);
+    REQUIRE(operands.size() == 2);
+    REQUIRE_FALSE(operands[0].complement);
+    REQUIRE(operands[1].complement);
 }
 
 TEST_CASE("override flags parse as NAME=0 or NAME=1", "[compile][ftp]") {

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "api/options.h"
+#include "compile/ftp/tests/support.h"
 #include "io/ftp/descriptor.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/hull/hull.h"
@@ -82,13 +83,10 @@ TEST_CASE("hull check reproduces the FTP conformance fixtures", "[ir][pc][hull][
             auto const &target = results->keys[member];
             auto const &values = results->items[member];
             INFO(fixture.filename().string() << " / " << target);
-            fuzzybits::api::option_set options;
-            options.set(ftp::target_option(), target);
-            options.set(ftp::duplicate_import_option(), std::string("last"));
-            auto read = ftp::read(sources, options);
+            auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::boolean_options({target}));
+            INFO(read.diagnostics().size() << " diagnostics");
             REQUIRE(read);
-            auto const *model = pc::circuit_from(read.value().model);
-            REQUIRE(model != nullptr);
+            auto const *model = &read.value().circuit;
             REQUIRE(model->targets().size() == 1);
             const auto node = model->targets()[0].node;
 
