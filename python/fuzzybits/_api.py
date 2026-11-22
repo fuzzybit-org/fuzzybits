@@ -332,7 +332,7 @@ def compile(  # noqa: A001 - public API name
             _as_input_files(model_xml),
             opts,
             _progress_callback(on_progress),
-            _progress_log_path(progress_log),
+            progress_log=_progress_log_path(progress_log),
         )
     )
 
@@ -537,7 +537,7 @@ def run(
         n,
         _mask_backend(backend),
         _progress_callback(on_progress),
-        _progress_log_path(progress_log),
+        progress_log=_progress_log_path(progress_log),
     )
     return [
         QueryResult(

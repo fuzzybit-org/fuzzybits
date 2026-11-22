@@ -162,9 +162,15 @@ TEST_CASE("fzb run --progress-log writes CSV with a header and one row per query
   CHECK(lines.front().find("query_name") != std::string::npos);
   CHECK(lines.front().find("rel_half_width") != std::string::npos);
   CHECK(lines.front().find("converged") != std::string::npos);
+  // Long format: one row per (snapshot, query); the finish rows come last.
+  CHECK(lines.back().find(",finish,") != std::string::npos);
+  std::size_t finish_rows = 0;
   for (std::size_t i = 1; i < lines.size(); ++i) {
-    CHECK(lines[i].find("finish") != std::string::npos);
+    if (lines[i].find(",finish,") != std::string::npos) {
+      ++finish_rows;
+    }
   }
+  CHECK(finish_rows == 1);
 }
 
 TEST_CASE("fzb run --progress-log is independent of the terminal display", "[mc][cli][progress-log]") {
