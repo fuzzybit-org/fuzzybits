@@ -89,14 +89,37 @@ def test_compile_returns_the_blob_with_metadata_and_names(tmp_path: Path):
     assert summary["samples"] == 3
 
 
-def test_hull_is_the_default_and_is_refused_with_a_hint(tmp_path: Path):
+def test_hull_is_the_default_and_carries_its_metadata(tmp_path: Path):
     model = _write(tmp_path, "m.ftp", SIMPLE)
-    with pytest.raises(RuntimeError) as failure:
-        fuzzybits.compile([model])
-    assert "compile.ftp.hull-output-unsupported" in str(failure.value)
-    assert "--negation boolean" in str(failure.value)
-    with pytest.raises(RuntimeError, match="hull-output-unsupported"):
-        fuzzybits.compile([model], negation="hull")
+    blob = fuzzybits.compile([model])
+    summary = fuzzybits.inspect(blob)
+    assert summary["diagnostics"] == []
+    assert summary["schema_version"] == 0x00010002
+    meta = summary["metadata"]
+    assert meta["compile.query.0.negation"] == "monotone_hull"
+    assert meta["compile.query.0.literal_mode"] == "atom_split"
+    assert meta["compile.query.0.max_initiators_per_cutset"] == "1"
+    boolean = fuzzybits.inspect(fuzzybits.compile([model], negation="boolean"))
+    assert boolean["schema_version"] == 0x00010001
+    assert boolean["metadata"]["compile.query.0.negation"] == "boolean"
+    both = fuzzybits.inspect(fuzzybits.compile([model], config={"targets": [{"name": "TOP", "negation": "both"}]}))
+    assert both["queries"] == 2
+    assert both["metadata"]["compile.query.1.negation"] == "monotone_hull"
+    # The runtime guard (#217) refuses the hull file until #183.
+    with pytest.raises(Exception, match="unsupported-query-kind"):
+        fuzzybits.run(blob, trials=1024, backend="omp")
+
+
+def test_hull_targets_with_marked_literals_are_refused(tmp_path: Path):
+    model = CONFORMANCE / "initiator_rule" / "model.ftp"
+    for options in ({}, {"literals": "omega_l"}):
+        with pytest.raises(RuntimeError) as failure:
+            fuzzybits.compile([model], **options)
+        assert "compile.ftp.hull-literals-unsupported" in str(failure.value)
+        assert "--literals negation" in str(failure.value)
+    blob = fuzzybits.compile([model], literals="negation")
+    assert fuzzybits.inspect(blob)["metadata"]["compile.query.0.literal_mode"] == "negation"
+    assert fuzzybits.compile([model], complement_events="negation")
 
 
 def test_targets_watch_overrides_and_levels(tmp_path: Path):
@@ -118,6 +141,7 @@ def test_targets_watch_overrides_and_levels(tmp_path: Path):
     assert fuzzybits.compile([model], overrides=["E2=1"], **_boolean(target="TOP"))
 
 
+@pytest.mark.filterwarnings("ignore:compile.pra_to_pc.unused-override")
 def test_defaults_come_from_the_model_attributes_and_flags_override_the_config():
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
     # ftp.max_initiators_per_cutset = 1 is the default rule: TOP is 0.288, not 0.45.
@@ -253,8 +277,8 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
 
     hull = _run_fzb("compile", str(model), "--no-progress", "-o", str(pcfb), cwd=tmp_path)
     assert hull.returncode != 0
-    assert "hull-output-unsupported" in hull.stderr
-    assert "--negation boolean" in hull.stderr
+    assert "hull-literals-unsupported" in hull.stderr
+    assert "--literals negation" in hull.stderr
 
     bad = _run_fzb("compile", str(model), "--negation", "boolean", "--override", "OPER", "-o", str(pcfb), cwd=tmp_path)
     assert bad.returncode != 0

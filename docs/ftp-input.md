@@ -20,9 +20,9 @@ Sources: `src/io/ftp` (reader, ids `io.ftp.*`), `src/compile/pra_to_pc` (lowerin
 ## Inputs
 
 ```text
-fzb compile model.ftp -o model.pcfb --negation boolean
+fzb compile model.ftp -o model.pcfb
 fzb compile top.ftp systems.ftp imports.ftp --negation boolean
-fzb compile project_dir/ --negation boolean
+fzb compile project_dir/ --literals negation
 ```
 
 A file is FTP when it ends in `.ftp` (any case), or is text (no NUL byte, not XML) with a line `ENDTREE`; a directory is
@@ -101,10 +101,18 @@ object of `name: true|false|1|0` or an array of `{name, value, kind}`. TOML is n
 `--negation boolean` reads every complement as logical negation: the query is the exact probability of the target
 function, and the result of `fzb run` and `fzb inspect --exact` is that probability. FTP models are written for a
 solver that deletes cut sets with a complemented gate (`ftp.negation = delete_term`); that is the monotone-hull
-reading (`--negation hull`), which differs from the Boolean one. The hull query needs the pcfb 1.2 query kind and the
-writer support for it (#217, #218), and the runtime estimator (#183). **Until the writer supports it, `fzb compile` fails
-for hull targets with `compile.ftp.hull-output-unsupported` and tells you to pass `--negation boolean`.** Since hull is
-the default for FTP input, `--negation boolean` is currently needed on every FTP compile.
+reading (`--negation hull`), which differs from the Boolean one. **Hull is the default for FTP input.** A hull target is
+written as a `MONOTONE_HULL_PROBABILITY` query (pcfb 1.2, schema minor 2); a file with Boolean queries only stays at minor 1.
+A target may ask for both kinds (`"negation": "both"` in the config): two queries on one tensor, both named after the
+target. The runtime estimator for hull queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact`
+refuse a file with a hull query (`pcfb.unsupported-query-kind`), and `--negation boolean` is what runs today.
+
+pcfb 1.2 has no literal atoms per query yet, so a hull query reads a marked operand (`-EVENT` under
+`--complement-events atom`) as a plain complement, which is the `negation` literal mode. A hull target whose cone has
+marked operands is therefore refused in `atom_split` mode (the default) and in `omega_l` mode, with
+`compile.pra_to_pc.hull-literals-unsupported` per target and `compile.ftp.hull-literals-unsupported` naming the ways out:
+`--literals negation` (the hull of the plain complements), `--complement-events negation` (no marks) or
+`--negation boolean`. Boolean targets ignore the marks.
 
 `--max-initiators-per-cutset N` ANDs each target with `not atleast(N + 1; initiating events in its cone)`. Under Boolean
 semantics this deletes the assignments with more than N initiating events (a probability change), under the hull it
@@ -117,6 +125,7 @@ deletes the cut sets with more than N.
 | `general.source_format` | `cafta-ftp` |
 | `general.source_sha256` | SHA-256 of the file contents concatenated in sorted path order (32 bytes; `fzb inspect --json` prints hex) |
 | `general.model_name` | project name, else the input directory name, else the first sorted file's stem |
+| `compile.query.<i>.negation`, `.literal_mode`, `.max_initiators_per_cutset` | per query `i` in file order: `boolean` or `monotone_hull`, the literal mode, and the initiator rule when one is lowered into the target (written by the `.pcfb` writer) |
 | `compile.options` | JSON of the effective settings: compilation level, reader options, initiator rule, the `ftp.limit` text, and per target (queries in file order, then watch targets) the subject kind, negation semantics, literal mode and the counts of initiating and literal events; overrides |
 
 Query names are the target names (the PROCESS target, gate or basic event name); basic-event samples carry the event
@@ -139,7 +148,7 @@ Every diagnostic has a stable id; the report lists all of them with severity.
 | `ir.pra.cycle`, `ir.pra.invalid-*`, `ir.pra.duplicate-name` | model validation errors |
 | `compile.ftp.invalid-option`, `compile.ftp.invalid-config`, `compile.ftp.invalid-json` | bad flag, config document or JSON |
 | `compile.ftp.unknown-target` | `--target` or `--watch` names nothing |
-| `compile.ftp.hull-output-unsupported` | hull targets cannot be written yet (see above) |
+| `compile.ftp.hull-literals-unsupported`, `compile.pra_to_pc.hull-literals-unsupported` | a hull target has marked literal operands in `atom_split` or `omega_l` mode (see above) |
 | `compile.ftp.default-negation`, `compile.ftp.default-initiator-rule` | notes: a default came from a model attribute |
 | `compile.ftp.unknown-attribute` | warning: an attribute value the driver does not know is ignored |
 | `compile.pra_to_pc.unknown-target`, `.unknown-element`, `.ambiguous-element`, `.duplicate-target`, `.duplicate-override`, `.unused-override` | target and override resolution |
@@ -155,6 +164,6 @@ values of every fixture (`src/compile/ftp/tests/cli_tests.cc`).
 ## Limits
 
 - Probabilities are literals; parameters, rates and distributions are not part of FTP.
-- Hull output, and so the default of FTP input, waits for #218; hull estimation for #183.
+- Hull queries are written but not yet estimated (#183); hull targets with marked literals wait for literal atoms in pcfb.
 - `fzb inspect` for FTP projects (#201) and `--exact` for hull queries (#202) are separate.
 - `--config` reads JSON only.

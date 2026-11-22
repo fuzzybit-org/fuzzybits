@@ -84,7 +84,8 @@ CAFTA FTP projects compile the same way, from files or a directory:
 
     fzb compile project_dir/ --negation boolean -o model.pcfb
 
-`--negation boolean` is needed for now; see docs/ftp-input.md.
+`--negation boolean` writes Boolean queries, which `fzb run` samples. Without it, FTP input is
+compiled to monotone-hull queries, which `fzb run` does not sample yet; see docs/ftp-input.md.
 
 Add --ccf to fzb compile to expand common-cause failure groups,
 --backend cuda or --backend metal to fzb run to use an NVIDIA or
