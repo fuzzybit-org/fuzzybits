@@ -128,6 +128,46 @@ Results are deterministic for a given model and trial count (Philox
 counters). `seed=` raises `NotImplementedError` on `probability`, `compile`,
 `run`, and `Session` ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)).
 
+### Progress callbacks
+
+`run` and `compile` take `on_progress=`, called with a `ProgressSnapshot` — the
+engine's typed, schema-v1 progress record, decoupled from any rendering.
+Snapshots are coalesced at the source to at most ~10 per second; the first and
+the last are always delivered. No snapshot is built when no callback is
+attached, so results are bit-identical either way.
+
+```python
+import fuzzybits
+
+def show(snapshot):
+    if snapshot.phase != "sampling":
+        return
+    print(
+        f"{snapshot.trials_done}/{snapshot.trials_total} trials"
+        f"  {snapshot.trials_per_second:.3g}/s"
+        f"  ETA {snapshot.eta_seconds:.0f}s"
+    )
+    for query in snapshot.queries:
+        print(f"  {query.name}  {query.estimate:.4g}  ±{query.rel_half_width:.1%}")
+
+rows = fuzzybits.run("model.pcfb", trials=1e9, on_progress=show)
+fuzzybits.compile("model.xml", on_progress=show)   # phases parse/lower/passes/write
+```
+
+`ProgressSnapshot` fields: `schema`, `phase` (`"compile"`, `"sampling"`,
+`"checking"`, `"done"`), `step` (the compile sub-stage, else `""`),
+`trials_done` / `trials_total`, `passes_done` / `passes_total` (0 means
+unknown), `elapsed_seconds`, `trials_per_second`, `frac_done`, `eta_seconds`,
+and `queries`. Each `QueryState` carries `name`, `hits`, `trials`, `estimate`,
+`ci_low`, `ci_high`, `rel_half_width`, `target_rel_half_width` (NaN without a
+convergence target) and `converged`. Values are typed; nothing needs string
+parsing. Raising from the callback stops the run cleanly and re-raises the same
+exception.
+
+The legacy `native().run_probability(..., on_progress)` string key-value
+callback is unchanged. The server mirrors these records onto its unchanged
+live-progress frame with `fuzzybits_server.progress_adapter`.
+
 `init()` must run before AdaptiveCpp initialises. The first call to
 `list_devices` / `probability` / `compile` / `run` / `Session` performs a
 lazy `init("auto")`. The JIT kernel cache defaults to
