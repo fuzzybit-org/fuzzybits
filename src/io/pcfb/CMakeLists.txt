@@ -36,6 +36,13 @@ if(BUILD_TESTING)
     LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_io_ftp fuzzybits_exact_eval pcfb
   )
 
+  # Query-kind guard (#217): header-only check plus the exact evaluator; needs only pcfb.
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_io_pcfb_guard_tests
+    SOURCES tests/query_guard_tests.cc
+    LINK_LIBRARIES fuzzybits_exact_eval pcfb
+  )
+
   # Runs the fzb binary on written files; the test itself links nothing from SCRAM.
   if(NOT SKBUILD)
     fuzzybits_add_imported_test(

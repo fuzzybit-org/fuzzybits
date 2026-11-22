@@ -1806,6 +1806,7 @@ struct PyPcfbSession {
         if (!circuit) {
             throw std::runtime_error("Session: " + circuit.error().message);
         }
+        fuzzybits::runtime::require_implemented_queries(*circuit, "Session");
         const auto diags = pcfb::validate(*circuit);
         if (!diags.empty()) {
             std::string msg = "Session: pcfb validation failed (" + std::to_string(diags.size()) +

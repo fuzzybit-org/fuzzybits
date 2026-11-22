@@ -1,6 +1,7 @@
 #include "compile/exact_eval.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
+#include "io/pcfb/tests/query_guard_files.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -619,4 +620,17 @@ TEST_CASE("chinese nombrilo exact probability matches MEF compile", "[nombrilo][
   const double p_mef = fuzzybits::compile::exact_probability(*mef_c);
   const double p_nom = fuzzybits::compile::exact_probability(*nom_ir);
   REQUIRE(p_nom == Catch::Approx(p_mef).epsilon(1e-8));
+}
+
+TEST_CASE("pcfb_to_nombrilo refuses query kinds the nombrilo format cannot carry", "[nombrilo][guard]") {
+  for (auto bytes : {query_guard_files::hull_only(), query_guard_files::mixed()}) {
+    auto circuit = pcfb::io::from_bytes(bytes);
+    REQUIRE(circuit);
+    for (const bool extras : {false, true}) {
+      auto exported = fuzzybits::compile::pcfb_to_nombrilo(*circuit, NombriloExportOptions{extras});
+      REQUIRE_FALSE(exported);
+      CHECK(exported.error().message.find("pcfb.unsupported-query-kind") != std::string::npos);
+      CHECK(exported.error().message.find(query_guard_files::hull_name) != std::string::npos);
+    }
+  }
 }
