@@ -649,6 +649,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                     error("compile.pra_to_pc.invalid-circuit", "the lowered circuit failed ir::pc validation");
                     return lowering_result::fail(std::move(diagnostics_));
                 }
+                report.max_initiators_per_cutset = config_.max_initiators_per_cutset;
                 report.pc_nodes = sealed.output.node_count();
                 report.pc_edges = sealed.output.edge_count();
                 report.pc_targets = sealed.output.targets().size();

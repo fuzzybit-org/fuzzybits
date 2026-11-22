@@ -7,6 +7,7 @@
 #include "io/pcfb/descriptor.h"
 #include "ir/pra/builder.h"
 
+#include "pcfb.h"
 #include "pcfb/io.h"
 #include "pcfb/validate.h"
 #include "pcfb_generated.h"
@@ -113,16 +114,196 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
     }
 }
 
-TEST_CASE("pra_to_pc write options reject monotone-hull targets", "[compile][pra_to_pc][pcfb]") {
+namespace {
+
+    [[nodiscard]] auto query_summary(::pcfb::ir::Circuit const &circuit) -> std::vector<std::pair<std::string, ::pcfb::QueryKind>> {
+        std::vector<std::pair<std::string, ::pcfb::QueryKind>> rows;
+        for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
+            rows.emplace_back(query->name()->str(), query->kind());
+        }
+        return rows;
+    }
+
+    [[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::string> {
+        auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
+        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
+            return std::nullopt;
+        }
+        return entry->value_as_StringValue()->value()->str();
+    }
+
+    [[nodiscard]] auto int_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::int64_t> {
+        auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
+        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::IntValue) {
+            return std::nullopt;
+        }
+        return entry->value_as_IntValue()->value();
+    }
+
+    // SAFE and LIT observe the same gate shape; LIT's cone has an operand marked `literal`, SAFE's has a plain complement.
+    [[nodiscard]] auto build_literal_model() -> pra::model {
+        pra::builder builder;
+        builder.set_project("literals");
+        const auto x = builder.add_basic_event({.stable_name = "X"}, pra::expression_spec::literal(0.1));
+        const auto y = builder.add_basic_event({.stable_name = "Y"}, pra::expression_spec::literal(0.2));
+        const auto z = builder.add_basic_event({.stable_name = "Z"}, pra::expression_spec::literal(0.3));
+        const auto tree = builder.add_fault_tree({.stable_name = "FT"});
+        const auto safe = builder.add_gate({.stable_name = "SAFE_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = z, .complement = true}}, tree);
+        const auto lit =
+            builder.add_gate({.stable_name = "LIT_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = y, .complement = true, .literal = true}}, tree);
+        (void)builder.add_target({.stable_name = "SAFE"}, pra::domain_target_kind::gate, safe);
+        (void)builder.add_target({.stable_name = "LIT"}, pra::domain_target_kind::gate, lit);
+        return seal(std::move(builder));
+    }
+
+} // namespace
+
+TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[compile][pra_to_pc][pcfb]") {
     const auto model = build_model();
     lowering::quantification_config config;
     config.default_negation = pra::negation_set::both();
+    config.max_initiators_per_cutset = 1;
+    config.watch_targets = {{.name = "PARITY"}};
     const auto artifact = require_lower(model, config);
     CHECK(artifact.projection.target_bindings()[0].negation == pra::negation_set::both());
-    auto options = lowering::pcfb_write_options(artifact);
-    REQUIRE_FALSE(options);
-    CHECK(codes(options.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.unsupported-query-kind"});
+    CHECK(artifact.report.max_initiators_per_cutset == 1);
 
+    auto options = lowering::pcfb_write_options(artifact);
+    INFO(render(options.diagnostics()));
+    REQUIRE(options);
+    using kind = writer::query_kind;
+    CHECK(options.value().target_kinds.at(pc::target_id(0)) == std::vector<kind>{kind::probability, kind::monotone_hull_probability});
+    CHECK(options.value().target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::probability});
+
+    auto written = writer::write(artifact.circuit.to_handle(), options.value());
+    INFO(render(written.diagnostics()));
+    REQUIRE(written);
+    auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+    REQUIRE(circuit);
+    require_valid(*circuit);
+    CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
+    using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
+    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::PROBABILITY},
+                                          {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY},
+                                          {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    auto const *queries = (*circuit)->subcircuits()->Get(0)->queries();
+    CHECK(queries->Get(0)->target() == queries->Get(1)->target());
+
+    CHECK(string_meta(*circuit, "compile.query.0.negation") == "boolean");
+    CHECK(string_meta(*circuit, "compile.query.1.negation") == "monotone_hull");
+    CHECK(string_meta(*circuit, "compile.query.2.negation") == "boolean");
+    for (const auto index : {0, 1, 2}) {
+        const auto prefix = "compile.query." + std::to_string(index) + ".";
+        CHECK(string_meta(*circuit, prefix + "literal_mode") == "atom_split");
+        CHECK(int_meta(*circuit, prefix + "max_initiators_per_cutset") == 1);
+    }
+}
+
+TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule", "[compile][pra_to_pc][pcfb]") {
+    const auto model = build_model();
+    lowering::quantification_config config;
+    config.targets = {{.name = "FT", .negation = pra::negation_set::of(pra::negation_semantics::monotone_hull), .literals = pra::literal_mode::omega_l},
+                      {.name = "PARITY"}};
+    const auto artifact = require_lower(model, config);
+    CHECK_FALSE(artifact.report.max_initiators_per_cutset.has_value());
+    auto options = lowering::pcfb_write_options(artifact);
+    INFO(render(options.diagnostics()));
+    REQUIRE(options);
+    auto written = writer::write(artifact.circuit.to_handle(), options.value());
+    INFO(render(written.diagnostics()));
+    REQUIRE(written);
+    auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+    REQUIRE(circuit);
+    require_valid(*circuit);
+    using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
+    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    CHECK(string_meta(*circuit, "compile.query.0.literal_mode") == "omega_l");
+    CHECK(string_meta(*circuit, "compile.query.1.literal_mode") == "atom_split");
+    CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
+}
+
+TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked literals", "[compile][pra_to_pc][pcfb]") {
+    const auto model = build_literal_model();
+    const auto monotone = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+
+    SECTION("an atom_split or omega_l hull target whose cone has a marked literal") {
+        for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l}) {
+            for (const auto negation : {monotone, pra::negation_set::both()}) {
+                lowering::quantification_config config;
+                config.targets = {{.name = "LIT", .negation = negation, .literals = mode}};
+                const auto artifact = require_lower(model, config);
+                REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
+                auto options = lowering::pcfb_write_options(artifact);
+                REQUIRE_FALSE(options);
+                CHECK(codes(options.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
+                const auto text = render(options.diagnostics());
+                CHECK(text.find("'LIT'") != std::string::npos);
+                CHECK(text.find("'Y'") != std::string::npos);
+            }
+        }
+    }
+
+    SECTION("a negation-mode hull target reads marked literals as ordinary complements and is written") {
+        for (const auto negation : {monotone, pra::negation_set::both()}) {
+            lowering::quantification_config config;
+            config.targets = {{.name = "LIT", .negation = negation, .literals = pra::literal_mode::negation}};
+            const auto artifact = require_lower(model, config);
+            REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
+            auto options = lowering::pcfb_write_options(artifact);
+            INFO(render(options.diagnostics()));
+            REQUIRE(options);
+            auto written = writer::write(artifact.circuit.to_handle(), options.value());
+            INFO(render(written.diagnostics()));
+            REQUIRE(written);
+            auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+            REQUIRE(circuit);
+            require_valid(*circuit);
+            CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
+            const auto rows = query_summary(*circuit);
+            REQUIRE_FALSE(rows.empty());
+            CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+            CHECK(rows.size() == (negation.boolean ? 2U : 1U));
+            const auto hull = "compile.query." + std::to_string(rows.size() - 1) + ".";
+            CHECK(string_meta(*circuit, hull + "negation") == "monotone_hull");
+            CHECK(string_meta(*circuit, hull + "literal_mode") == "negation");
+        }
+    }
+
+    SECTION("a Boolean target with marked literals is unaffected") {
+        lowering::quantification_config config;
+        config.targets = {{.name = "LIT"}};
+        const auto artifact = require_lower(model, config);
+        REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
+        auto options = lowering::pcfb_write_options(artifact);
+        INFO(render(options.diagnostics()));
+        REQUIRE(options);
+        auto written = writer::write(artifact.circuit.to_handle(), options.value());
+        REQUIRE(written);
+        auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+        REQUIRE(circuit);
+        require_valid(*circuit);
+        CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV11);
+    }
+
+    SECTION("a hull target without marked literals next to a Boolean target with them") {
+        lowering::quantification_config config;
+        config.targets = {{.name = "SAFE", .negation = monotone}, {.name = "LIT"}};
+        const auto artifact = require_lower(model, config);
+        auto options = lowering::pcfb_write_options(artifact);
+        INFO(render(options.diagnostics()));
+        REQUIRE(options);
+        auto written = writer::write(artifact.circuit.to_handle(), options.value());
+        REQUIRE(written);
+        auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+        REQUIRE(circuit);
+        require_valid(*circuit);
+        using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
+        CHECK(query_summary(*circuit) == rows{{"SAFE", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"LIT", ::pcfb::QueryKind::PROBABILITY}});
+        CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
+    }
+}
+
+TEST_CASE("pra_to_pc write options reject a missing artifact", "[compile][pra_to_pc][pcfb]") {
     auto missing = lowering::pcfb_write_options(lowering::pra_pc_lowering{});
     REQUIRE_FALSE(missing);
     CHECK(codes(missing.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.invalid-artifact"});

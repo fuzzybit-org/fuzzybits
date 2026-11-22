@@ -245,3 +245,39 @@ TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts lat
     CHECK(later.out.find("\"name\": \"TOP\"") != std::string::npos);
     std::filesystem::remove_all(scratch);
 }
+
+TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorded quantification", "[io][pcfb][cli][kind]") {
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.25));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.5));
+    const auto both = builder.add_and({edge{.source = a}, edge{.source = b}});
+    (void)builder.add_target(both);
+    (void)builder.add_target(a);
+    auto sealed = std::move(builder).seal();
+    REQUIRE(sealed.ok());
+
+    writer::write_options options;
+    options.target_names = {{pc::target_id(0), "TOP"}, {pc::target_id(1), "A"}};
+    options.target_kinds = {{pc::target_id(0), {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}}};
+    options.quantification = {{pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split", .max_initiators_per_cutset = 1}}};
+    const auto written = writer::write(sealed.output.to_handle(), options);
+    INFO(diagnosticsText(written.diagnostics()));
+    REQUIRE(written);
+    const auto scratch = scratchDirectory("kinds");
+    const auto path = scratch / "mixed.pcfb";
+    writeFile(path, written.value().bytes);
+
+    const auto inspected = runFzb("inspect " + quoted(path.string()) + " --validate", scratch);
+    INFO(inspected.out << inspected.err);
+    REQUIRE(inspected.status == 0);
+    CHECK(inspected.err.find("validate: ok") != std::string::npos);
+    CHECK(inspected.out.find("schema_version  0x10002") != std::string::npos);
+    CHECK(inspected.out.find("compile.query.1.negation  monotone_hull") != std::string::npos);
+    CHECK(inspected.out.find("compile.query.1.max_initiators_per_cutset  1") != std::string::npos);
+
+    // The runtime and the exact evaluator refuse the hull query instead of answering it as a probability.
+    const auto exact = runFzb("inspect " + quoted(path.string()) + " --exact", scratch);
+    CHECK(exact.status != 0);
+    CHECK(exact.err.find("pcfb.unsupported-query-kind") != std::string::npos);
+    std::filesystem::remove_all(scratch);
+}
