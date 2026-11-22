@@ -105,6 +105,23 @@ def _parse_trials(text: str) -> int:
     return int(value)
 
 
+def _expand_name_args(values: Sequence[str]) -> list[str]:
+    """Replace each ``@FILE`` value by the names in FILE, one per line; never split on commas."""
+    names: list[str] = []
+    for value in values:
+        if not value.startswith("@"):
+            names.append(value)
+            continue
+        path = value[1:]
+        try:
+            with open(path, encoding="utf-8", newline="") as handle:
+                lines = handle.read().split("\n")
+        except (OSError, UnicodeDecodeError):
+            raise ValueError(f"cannot read {path}") from None
+        names.extend(line.strip() for line in lines if line.strip())
+    return names
+
+
 def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> int:
     """The FTP project path of ``fzb compile``; mirrors ``compile_ftp_inputs`` in ``targets/fzb/main.cpp``."""
     for flag in (
@@ -115,7 +132,6 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
         "recognize_xor",
         "no_recognize_xor",
         "keep_null",
-        "ccf",
         "allow_extern",
         "weights",
     ):
@@ -135,9 +151,8 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
     options: dict[str, Any] = {}
     if args.target:
         options["target"] = list(args.target)
-    watch = [part for item in args.watch for part in str(item).replace(";", ",").split(",") if part.strip()]
-    if watch:
-        options["watch"] = watch
+    if args.watch:
+        options["watch"] = list(args.watch)
     if overrides:
         options["overrides"] = overrides
     for key in ("duplicate_import", "complement_events", "negation", "literals"):
@@ -211,9 +226,10 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
 def cmd_compile(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb compile",
-        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--target NAME] [--weights FILE] [-o model.pcfb]\n"
-        "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean|hull] "
-        "[--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
+        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
+        "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
+        "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--no-ccf] "
+        "[--negation boolean|hull] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
         "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
@@ -244,14 +260,23 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--recognize-xor", action="store_true", help="recognize expanded xor (default on)")
     parser.add_argument("--no-recognize-xor", action="store_true", help="disable xor group recognition")
     parser.add_argument("--keep-null", action="store_true", help="keep NULL/pass-through gates")
-    parser.add_argument("--ccf", action="store_true", help="expand common-cause failure groups")
+    parser.add_argument(
+        "--ccf",
+        action="store_true",
+        help="deprecated no-op: common-cause groups are expanded by default",
+    )
+    parser.add_argument(
+        "--no-ccf",
+        action="store_true",
+        help="do not expand common-cause failure groups (MEF; accepted and ignored for FTP)",
+    )
     parser.add_argument("--allow-extern", action="store_true", help="**UNSAFE** allow external libraries")
     parser.add_argument(
         "--target",
         action="append",
         default=[],
-        help="MEF: top-event / gate / nombrilo name. FTP: PROCESS target, gate or basic event "
-        "(repeatable; default: every PROCESS target)",
+        help="MEF: top-event / gate / nombrilo name (one). FTP: PROCESS target, gate or basic event "
+        "(repeatable; default: every PROCESS target). @FILE reads one name per line",
     )
     parser.add_argument("--override", action="append", default=[], help="FTP: force an element, NAME=0 or NAME=1 (repeatable)")
     parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
@@ -282,7 +307,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
         "--watch",
         action="append",
         default=[],
-        help="extra gate / basic event names (MEF also PDAG indices) as additional queries (repeatable)",
+        help="extra gate / basic event written as an additional query (repeatable; NAME or @FILE)",
     )
     _add_progress_flags(parser)
     parser.add_argument(
@@ -292,6 +317,21 @@ def cmd_compile(argv: Sequence[str]) -> int:
     if not args.input_file:
         print("fzb compile: missing input file\n", file=sys.stderr)
         parser.print_help(sys.stderr)
+        return 1
+
+    if args.ccf and args.no_ccf:
+        print("fzb compile: --ccf and --no-ccf cannot be combined", file=sys.stderr)
+        return 1
+    if args.ccf:
+        print(
+            "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable",
+            file=sys.stderr,
+        )
+    try:
+        args.target = _expand_name_args(args.target)
+        args.watch = _expand_name_args(args.watch)
+    except ValueError as exc:
+        print(f"fzb compile: {exc}", file=sys.stderr)
         return 1
 
     try:
@@ -317,14 +357,23 @@ def cmd_compile(argv: Sequence[str]) -> int:
         if value:
             print(f"fzb compile: --{flag} applies to CAFTA FTP input only", file=sys.stderr)
             return 1
+    seen: set[str] = set()
+    for name in [*args.target, *args.watch]:
+        if name in seen:
+            print(f"fzb compile: target '{name}' is requested more than once", file=sys.stderr)
+            return 1
+        seen.add(name)
     if len(args.target) > 1:
-        print("fzb compile: OpenPSA/MEF input takes one --target", file=sys.stderr)
+        print(
+            "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF reader (#148)",
+            file=sys.stderr,
+        )
         return 1
 
     options: dict[str, Any] = {
         "no_xor": bool(args.no_xor),
         "keep_null": bool(args.keep_null),
-        "ccf": bool(args.ccf),
+        "ccf": not args.no_ccf,
         "allow_extern": bool(args.allow_extern),
     }
     if args.no_recognize_atleast:
@@ -339,9 +388,8 @@ def cmd_compile(argv: Sequence[str]) -> int:
         options["target"] = args.target[0]
     if args.weights:
         options["weights"] = args.weights
-    watch = [part for item in args.watch for part in str(item).replace(";", ",").split(",") if part.strip()]
-    if watch:
-        options["watch"] = watch
+    if args.watch:
+        options["watch"] = list(args.watch)
 
     try:
         blob = compile_pcfb(

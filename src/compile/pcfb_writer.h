@@ -31,6 +31,7 @@ struct Options {
   bool recognize_atleast_groups = true;
   bool recognize_xor_groups = true;
   bool keep_null_gates = false;
+  /// Off unless the caller sets it; the CLI and the Python API choose their own default.
   bool ccf = false;
   bool allow_extern = false;
   std::optional<std::string> target;

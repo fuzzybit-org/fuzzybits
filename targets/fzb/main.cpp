@@ -28,6 +28,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -505,8 +506,40 @@ std::string read_text_file(const std::filesystem::path &path, std::string &error
   return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
+/// Replaces each `@FILE` value by the names in FILE, one per line, in place. Names are never split on
+/// commas: FTP names may contain them.
+bool expand_name_args(const std::vector<std::string> &values, std::vector<std::string> &names, std::string &error) {
+  for (const auto &value : values) {
+    if (value.empty() || value.front() != '@') {
+      names.push_back(value);
+      continue;
+    }
+    const std::filesystem::path path(value.substr(1));
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+      error = "cannot read " + path.string();
+      return false;
+    }
+    std::string line;
+    while (std::getline(in, line)) {
+      const auto first = line.find_first_not_of(" \t\r\n\v\f");
+      if (first == std::string::npos) {
+        continue;
+      }
+      const auto last = line.find_last_not_of(" \t\r\n\v\f");
+      names.push_back(line.substr(first, last - first + 1));
+    }
+    if (in.bad()) {
+      error = "cannot read " + path.string();
+      return false;
+    }
+  }
+  return true;
+}
+
 /// The FTP project path of `fzb compile`: reader, quantification config, lowering, passes, writer.
 int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::string> &files,
+                       const std::vector<std::string> &targets, const std::vector<std::string> &watch,
                        const progress_flags &pf,
                        const std::unique_ptr<fuzzybits::runtime::progress::log_sink> &progress_log) {
   namespace ftp = fuzzybits::compile::ftp;
@@ -516,19 +549,15 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
     return 1;
   };
   for (const char *flag : {"no-kn", "no-xor", "recognize-atleast", "no-recognize-atleast", "recognize-xor",
-                           "no-recognize-xor", "keep-null", "ccf", "allow-extern", "weights"}) {
+                           "no-recognize-xor", "keep-null", "allow-extern", "weights"}) {
     if (vm.count(flag)) {
       return fail(std::string("--") + flag + " applies to OpenPSA/MEF input, not to FTP projects");
     }
   }
 
   ftp::options opt;
-  if (vm.count("target")) {
-    opt.targets = vm["target"].as<std::vector<std::string>>();
-  }
-  if (vm.count("watch")) {
-    opt.watch = vm["watch"].as<std::vector<std::string>>();
-  }
+  opt.targets = targets;
+  opt.watch = watch;
   if (vm.count("override")) {
     for (const auto &text : vm["override"].as<std::vector<std::string>>()) {
       auto parsed = ftp::parse_override(text);
@@ -703,13 +732,14 @@ int cmd_compile(int argc, char **argv) {
       ("recognize-xor", "recognize expanded xor (default on)")
       ("no-recognize-xor", "disable xor group recognition")
       ("keep-null", "keep NULL/pass-through gates")
-      ("ccf", "expand common-cause failure groups")
+      ("ccf", "deprecated no-op: common-cause groups are expanded by default")
+      ("no-ccf", "do not expand common-cause failure groups (MEF; accepted and ignored for FTP)")
       ("allow-extern", "**UNSAFE** allow external libraries")
       ("target", po::value<std::vector<std::string>>(),
-       "MEF: top-event / gate / nombrilo name. FTP: PROCESS target, gate or basic event "
-       "(repeatable; default: every PROCESS target)")
+       "MEF: top-event / gate / nombrilo name (one). FTP: PROCESS target, gate or basic event "
+       "(repeatable; default: every PROCESS target). @FILE reads one name per line")
       ("watch", po::value<std::vector<std::string>>(),
-       "extra gate / basic event written as an additional query (repeatable)")
+       "extra gate / basic event written as an additional query (repeatable; NAME or @FILE)")
       ("override", po::value<std::vector<std::string>>(), "FTP: force an element, NAME=0 or NAME=1 (repeatable)")
       ("duplicate-import", po::value<std::string>(),
        "FTP: event imported more than once: error|first|last (default last)")
@@ -741,9 +771,10 @@ int cmd_compile(int argc, char **argv) {
     return 1;
   }
   if (vm.count("help")) {
-    std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] "
-                 "[--target NAME] [--weights FILE] [-o model.pcfb]\n"
-                 "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean|hull] "
+    std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
+                 "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
+                 "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... "
+                 "[--no-ccf] [--negation boolean|hull] "
                  "[--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
                  "                   [--no-progress] [--quiet]\n\n"
               << desc << std::endl;
@@ -752,6 +783,26 @@ int cmd_compile(int argc, char **argv) {
   if (!vm.count("input-file")) {
     std::cerr << "fzb compile: missing input file\n\n" << desc << std::endl;
     return 1;
+  }
+
+  if (vm.count("ccf") && vm.count("no-ccf")) {
+    std::cerr << "fzb compile: --ccf and --no-ccf cannot be combined" << std::endl;
+    return 1;
+  }
+  if (vm.count("ccf")) {
+    std::cerr << "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; "
+                 "use --no-ccf to disable"
+              << std::endl;
+  }
+  std::vector<std::string> targets;
+  std::vector<std::string> watch;
+  {
+    std::string error;
+    if ((vm.count("target") && !expand_name_args(vm["target"].as<std::vector<std::string>>(), targets, error)) ||
+        (vm.count("watch") && !expand_name_args(vm["watch"].as<std::vector<std::string>>(), watch, error))) {
+      std::cerr << "fzb compile: " << error << std::endl;
+      return 1;
+    }
   }
 
   const auto files = vm["input-file"].as<std::vector<std::string>>();
@@ -768,7 +819,7 @@ int cmd_compile(int argc, char **argv) {
   const std::vector<std::filesystem::path> paths(files.begin(), files.end());
   switch (fuzzybits::compile::ftp::classify_inputs(paths)) {
     case fuzzybits::compile::ftp::input_kind::ftp:
-      return compile_ftp_inputs(vm, files, pf, progress_log);
+      return compile_ftp_inputs(vm, files, targets, watch, pf, progress_log);
     case fuzzybits::compile::ftp::input_kind::mixed:
       std::cerr << "fzb compile: FTP and non-FTP inputs cannot be combined\n";
       return 1;
@@ -798,19 +849,29 @@ int cmd_compile(int argc, char **argv) {
     opt.recognize_xor_groups = true;
   }
   opt.keep_null_gates = vm.count("keep-null") > 0;
-  opt.ccf = vm.count("ccf") > 0;
+  opt.ccf = vm.count("no-ccf") == 0;
   opt.allow_extern = vm.count("allow-extern") > 0;
-  if (vm.count("target")) {
-    const auto targets = vm["target"].as<std::vector<std::string>>();
-    if (targets.size() > 1) {
-      std::cerr << "fzb compile: OpenPSA/MEF input takes one --target\n";
-      return 1;
+  {
+    std::set<std::string> seen;
+    for (const auto *list : {&targets, &watch}) {
+      for (const auto &name : *list) {
+        if (!seen.insert(name).second) {
+          std::cerr << "fzb compile: target '" << name << "' is requested more than once" << std::endl;
+          return 1;
+        }
+      }
     }
+  }
+  if (targets.size() > 1) {
+    std::cerr << "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF "
+                 "reader (#148)"
+              << std::endl;
+    return 1;
+  }
+  if (!targets.empty()) {
     opt.target = targets.front();
   }
-  if (vm.count("watch")) {
-    opt.watch = vm["watch"].as<std::vector<std::string>>();
-  }
+  opt.watch = watch;
   if (vm.count("weights")) {
     opt.weights_file = vm["weights"].as<std::string>();
   }
