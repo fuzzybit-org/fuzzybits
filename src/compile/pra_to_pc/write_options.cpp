@@ -49,10 +49,11 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
             }
             if (target.negation.monotone_hull) {
                 kinds.push_back(writer::query_kind::monotone_hull_probability);
-                // pcfb 1.2 has no literal atoms per query (literal_samples, RFC 7.3), so a hull query could
-                // only be written with the marked operands read as plain complements, which is the
-                // `negation` mode and not what the target asked for.
-                if (const auto literals = lowering.projection.literal_events(target); !literals.empty()) {
+                // pcfb 1.2 has no literal atoms per query (literal_samples, RFC 7.3), so a hull query reads
+                // marked operands as plain complements: exactly the `negation` mode, and not what
+                // atom_split and omega_l ask for.
+                const auto literals = lowering.projection.literal_events(target);
+                if (target.literals != ir::pra::literal_mode::negation && !literals.empty()) {
                     diagnostics.push(api::make_error(
                         "compile.pra_to_pc.hull-literals-unsupported",
                         "target '" + std::string(name) + "' requests monotone-hull semantics and its cone has " + std::to_string(literals.size()) +

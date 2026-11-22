@@ -226,8 +226,8 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
     const auto model = build_literal_model();
     const auto monotone = pra::negation_set::of(pra::negation_semantics::monotone_hull);
 
-    SECTION("a hull target whose cone has a marked literal") {
-        for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l, pra::literal_mode::negation}) {
+    SECTION("an atom_split or omega_l hull target whose cone has a marked literal") {
+        for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l}) {
             for (const auto negation : {monotone, pra::negation_set::both()}) {
                 lowering::quantification_config config;
                 config.targets = {{.name = "LIT", .negation = negation, .literals = mode}};
@@ -240,6 +240,32 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
                 CHECK(text.find("'LIT'") != std::string::npos);
                 CHECK(text.find("'Y'") != std::string::npos);
             }
+        }
+    }
+
+    SECTION("a negation-mode hull target reads marked literals as ordinary complements and is written") {
+        for (const auto negation : {monotone, pra::negation_set::both()}) {
+            lowering::quantification_config config;
+            config.targets = {{.name = "LIT", .negation = negation, .literals = pra::literal_mode::negation}};
+            const auto artifact = require_lower(model, config);
+            REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
+            auto options = lowering::pcfb_write_options(artifact);
+            INFO(render(options.diagnostics()));
+            REQUIRE(options);
+            auto written = writer::write(artifact.circuit.to_handle(), options.value());
+            INFO(render(written.diagnostics()));
+            REQUIRE(written);
+            auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+            REQUIRE(circuit);
+            require_valid(*circuit);
+            CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
+            const auto rows = query_summary(*circuit);
+            REQUIRE_FALSE(rows.empty());
+            CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+            CHECK(rows.size() == (negation.boolean ? 2U : 1U));
+            const auto hull = "compile.query." + std::to_string(rows.size() - 1) + ".";
+            CHECK(string_meta(*circuit, hull + "negation") == "monotone_hull");
+            CHECK(string_meta(*circuit, hull + "literal_mode") == "negation");
         }
     }
 

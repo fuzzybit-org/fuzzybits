@@ -79,9 +79,11 @@ position `i` of the file the writer sets
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
 `compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering
-artifact: a target's negation set gives its kinds, and a monotone-hull target whose cone has marked
-literal events is refused with `compile.pra_to_pc.hull-literals-unsupported` until pcfb carries
-literal atoms (RFC 7.3, #197).
+artifact: a target's negation set gives its kinds, and an `atom_split` or `omega_l` monotone-hull
+target whose cone has marked literal events is refused with
+`compile.pra_to_pc.hull-literals-unsupported` until pcfb carries literal atoms (RFC 7.3, #197). In
+`negation` mode marked operands are ordinary complements, the plain hull a hull query means, so the
+target is written.
 
 ## Order
 

@@ -120,8 +120,10 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
     // from the target's negation semantics (boolean: probability, monotone_hull: monotone-hull
     // probability; a target with both gets both queries on one tensor) and recording the negation
     // semantics, literal mode and initiator rule of each target. Fails with
-    // compile.pra_to_pc.hull-literals-unsupported for a monotone-hull target whose cone has marked
-    // literal events: pcfb 1.2 has no per-query literal atoms yet (docs/rfc/monotone-hull-queries.md 7.3).
+    // compile.pra_to_pc.hull-literals-unsupported for an atom_split or omega_l monotone-hull target whose
+    // cone has marked literal events: pcfb 1.2 has no per-query literal atoms yet
+    // (docs/rfc/monotone-hull-queries.md 7.3). In negation mode marked operands are ordinary
+    // complements, which is the plain hull a hull query means, so such a target is written.
     [[nodiscard]] auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<io::backend::fuzzybits::pcfb::write_options>;
 
 } // namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc
