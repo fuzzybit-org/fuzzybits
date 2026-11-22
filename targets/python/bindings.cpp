@@ -8,6 +8,7 @@
 
 #include "compile/exact_eval.h"
 #include "compile/ftp/compile.h"
+#include "compile/ftp/inspect.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
@@ -1699,6 +1700,30 @@ py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py
     return py::make_tuple(py_bytes_from(compiled->value().bytes), py::str(ftp::report_json(*compiled, 0)));
 }
 
+/// CAFTA FTP project -> (JSON text, plain text) of the reader's diagnostics, structure and conventions;
+/// the JSON has the content of `fzb inspect --json`. Reader errors are in the content, not raised.
+py::tuple inspect_ftp_project(const std::vector<std::string> &input_files, const std::string &duplicate_import,
+                              const std::string &complement_events, const bool counts_only) {
+    namespace ftp = fuzzybits::compile::ftp;
+    if (input_files.empty()) {
+        throw std::invalid_argument("inspect requires at least one FTP input");
+    }
+    ftp::inspect_options opt;
+    opt.duplicate_import = duplicate_import;
+    opt.complement_events = complement_events;
+    if (const auto problem = ftp::check_options(opt); !problem.empty()) {
+        throw std::invalid_argument(problem);
+    }
+    const std::vector<std::filesystem::path> paths(input_files.begin(), input_files.end());
+    std::optional<ftp::inspection> result;
+    {
+        py::gil_scoped_release release;
+        result.emplace(ftp::inspect_project(paths, opt));
+    }
+    return py::make_tuple(py::str(ftp::json::dump(ftp::inspection_json(*result, counts_only), 0)),
+                          py::str(ftp::inspection_text(*result, counts_only)));
+}
+
 py::bytes nombrilo_to_pcfb_path(const std::string &path, const py::dict &options) {
     fuzzybits::compile::NombriloCompileOptions opt;
     if (auto value = get_option(options, {"target", "target_gate", "target-gate", "top"})) {
@@ -2229,6 +2254,20 @@ Returns:
 
     m.def("classify_compile_inputs", &classify_compile_inputs, py::arg("input_files"),
           "Returns 'ftp' (CAFTA FTP files or directories), 'mef' (anything else) or 'mixed'.");
+
+    m.def(
+        "inspect_ftp_project",
+        &inspect_ftp_project,
+        py::arg("input_files"),
+        py::arg("duplicate_import") = "last",
+        py::arg("complement_events") = "atom",
+        py::arg("counts_only") = false,
+        R"pbdoc(
+Read a CAFTA FTP project (files or directories of `*.ftp`) without compiling it.
+
+Returns:
+    `(JSON text, plain text)`: the content of `fzb inspect --json` and of `fzb inspect`.
+)pbdoc");
 
     m.def(
         "compile_ftp_pcfb",

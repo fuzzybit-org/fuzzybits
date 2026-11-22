@@ -650,6 +650,51 @@ def inspect(pcfb: bytes | str | os.PathLike[str]) -> dict[str, Any]:
     return dict(native.inspect_pcfb_path(os.fspath(pcfb)))
 
 
+def _ftp_inspect_native(
+    paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+    duplicate_import: str,
+    complement_events: str,
+    counts_only: bool,
+) -> tuple[dict[str, Any], str]:
+    if isinstance(paths, (str, os.PathLike)):
+        files = [os.fspath(paths)]
+    else:
+        files = [os.fspath(path) for path in paths]
+    if not files:
+        raise ValueError("read_project() requires at least one FTP path")
+    document, text = _runtime.native().inspect_ftp_project(files, duplicate_import, complement_events, counts_only)
+    return json.loads(document), str(text)
+
+
+def read_project(
+    paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
+    *,
+    duplicate_import: str = "last",
+    complement_events: str = "atom",
+    counts_only: bool = False,
+) -> dict[str, Any]:
+    """Read a CAFTA FTP project without compiling it; the content of ``fzb inspect --json``.
+
+    ``paths`` are FTP files and directories (all ``*.ftp``), read as one project in sorted path
+    order. The dict has ``status``, ``files``, ``diagnostics`` (``id``, ``severity``, ``file``,
+    ``line``, ``message``), ``structure`` and ``conventions``. A project with errors raises
+    :class:`RuntimeError` with the diagnostics, as a list of dicts, in its ``diagnostics`` attribute;
+    warnings are in the returned dict only. ``counts_only`` leaves element names and messages out.
+    """
+    document, _ = _ftp_inspect_native(paths, duplicate_import, complement_events, counts_only)
+    if document["status"] != "ok":
+        errors = [item for item in document["diagnostics"] if item["severity"] == "error"]
+        lines = ["read_project:"]
+        for item in errors:
+            where = f" {item['file']}:{item['line']}" if item.get("file") else ""
+            message = f": {item['message']}" if "message" in item else ""
+            lines.append(f"  {item['id']}{where}{message}")
+        failure = RuntimeError("\n".join(lines))
+        failure.diagnostics = document["diagnostics"]  # type: ignore[attr-defined]
+        raise failure
+    return document
+
+
 def exact(pcfb: bytes | str | os.PathLike[str], query_index: int = 0) -> float:
     """Exhaustive exact P(query) for small models (≤ 30 random SAMPLE events).
 
