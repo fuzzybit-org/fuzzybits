@@ -17,15 +17,19 @@ Format: `.pcfb` `QueryKind.MONOTONE_HULL_PROBABILITY`, pcfb 1.2
 ## 0. Summary
 
 PRA models built for cut-set tools write event-tree success branches and delete terms with negation, but they mean
-cut-set deletion, not Boolean complement. The same tools keep a directly complemented basic event `-B` as a literal of
-its own in cut sets. This RFC defines the **atom-split hull** $h$ of a target $g$: every direct complement of an event
-becomes an atom of its own, valued $\neg x_B$ and droppable independently of $B$, and $h$ is the plain monotone hull
-over all atoms, evaluated on the coupled sample. It proves that the minimal cut sets of $h$ are the cut sets a
-delete-term tool keeps (Theorem 10), adds the tools' at-most-one-initiator rule as a delete term, gives an unbiased Monte
-Carlo estimator of $P(h)$ that runs an exact check only on samples where two cheap bounds disagree, and fixes the
-interfaces. Two other literal modes are options: Rauzy's widening $\omega_L g$ [R01], which fixes the directly
-complemented events instead, and the *plain hull* $\uparrow g$, the least monotone function above $g$. Without direct
-complements the three coincide.
+cut-set deletion, not Boolean complement. This RFC defines hull queries on circuits with an explicit set of *literal
+atoms*: complemented basic-event operands that the source marks as atomic literals. Under the **atom-split hull** $h$,
+the default interpretation of marked literals, each marked complement $\bar B$ is an atom of its own, valued
+$\neg x_B$ and droppable independently of $B$, and $h$ is the plain monotone hull over all atoms, evaluated on the
+coupled sample; every unmarked complement is an ordinary negation, i.e. a delete term. Without marked literals $h$ is
+the *plain hull* $\uparrow g$, the least monotone function above $g$. The FTP reader marks every `-EVENT` reference
+(never `-GATE`), because cut-set tools keep `-EVENT` in cut sets as an event of its own and treat `-GATE` as a delete
+term; other sources mark nothing unless their format defines such literals (#199). The RFC proves that the minimal cut
+sets of $h$ are the cut sets a delete-term tool keeps (Theorem 10), adds the tools' at-most-one-initiator rule as a
+delete term, gives an unbiased Monte Carlo estimator of $P(h)$ that runs an exact check only on samples where two cheap
+bounds disagree, and fixes the interfaces. Two other interpretations of marked literals are explicit options: Rauzy's
+widening $\omega_L g$ [R01], which fixes the marked events, and `negation`, which reads them as ordinary negations
+(the plain hull).
 
 Decisions proposed here:
 
@@ -35,16 +39,18 @@ Decisions proposed here:
    fixed to their best value) and an upper bound $\overline g$ (negation-normal relaxation), both correct by
    construction.
 3. **pcfb 1.2**: one enum value appended; `schema_version` `0x00010002` only when the kind is used; opset unchanged;
-   runtimes reject kinds they do not implement before sampling (§7.3). The literal mode and the directly complemented
-   samples are an amendment to 1.2; without them the query is the plain hull of pcfb 1.2 as merged.
+   runtimes reject kinds they do not implement before sampling (§7.3). The literal mode and the literal samples are an
+   amendment to 1.2; without them the query is the plain hull of pcfb 1.2 as merged.
 4. **Transforms** state which query kinds they preserve. Hull targets accept passes that preserve the function over
    atoms and folding of variables that are 0 almost surely; a variable that is 1 almost surely may be folded only when
    that is shown to be safe (§7.5).
 5. **`ir::pc` is unchanged**; the kind, the literal mode and the initiator rule are chosen per target in the
    `ir::pra` quantification config (§7.1, §7.2).
-6. **Literal mode** (§3), per hull target: `atom_split` (default), `omega_l`, or `positive`. The lowering records the
-   directly complemented events of the target's cone and warns (`complement-under-negation`) where one also occurs
-   under a negated gate, the only place `atom_split` and `omega_l` can differ (Theorem 10(c)).
+6. **Literal atoms come from the source** (§2, §3, #199). `ir::pra` stays source-neutral: the FTP reader marks
+   complemented basic-event operands with the operand flag `literal` and records its conventions as inert model
+   attributes; the lowering does not infer literals. Per hull target the interpretation of marked literals is
+   `atom_split` (default), `omega_l` or `negation`; the lowering warns (`complement-under-negation`) where a marked
+   event also occurs under a negated gate, the only place `atom_split` and `omega_l` can differ (Theorem 10(c)).
 7. **Initiator rule** (§4.8): `max_initiators_per_cutset = m` is lowered as the delete term
    $\neg\,\mathrm{atleast}(m+1;\ \text{initiating events})$; under the hull it deletes exactly the minimal cut sets with
    more than $m$ initiators (Corollary 3.4, Theorem 10(f)).
@@ -77,7 +83,8 @@ both $B$ and `-B` (a mutually exclusive event check); list no consensus cut sets
 events in cut sets; and delete cut sets with two or more initiating events (`I`-tagged in `IMPORT`; probability-1
 initiator flags count). Their quantification configuration declares the initiator rule per engine (on for the engine
 used here, off for others). The atom-split hull of §3 reproduces the tools' cut sets on every fixture and every probe
-(§8.8–§8.11, Theorem 10).
+(§8.8–§8.11, Theorem 10). The FTP reader therefore marks every `-EVENT` as a literal and records the conventions
+`ftp.negation = delete_term` and `ftp.max_initiators_per_cutset = 1` as model attributes (§7.1).
 
 ## 2. Setting and notation
 
@@ -138,9 +145,14 @@ pcfb `inverted_inputs`). A target computes a function $g$; its *cone* is the set
 complement* is a complemented edge whose child is an event (FTP `-NAME` with `NAME` an imported event); a complemented
 edge into a gate, including a single-input gate, is a *gate complement*.
 
-**Atoms.** For a target with circuit $C$, let $\Delta$ be the events referenced with a direct complement in its cone.
+**Marked literals and atoms.** A *marked literal* is a direct complement that the source marks as an atomic literal of
+the event (`ir::pra` operand flag `literal`, #199); the flag does not change the Boolean meaning, and is allowed only on
+complemented operands that reference basic events. The FTP reader marks every direct complement (`-EVENT`; reader option
+`io.ftp.complement_events = atom | negation`, default `atom`) and no gate complement; other readers mark nothing unless
+their format defines such literals. For a target with circuit $C$, let $\Delta$ be the events with a marked literal in
+its cone; unmarked complements are ordinary negations.
 The *atoms* are $\mathcal{A} = V \cup \lbrace \bar v : v \in \Delta \rbrace$. The *split circuit* $\tilde C$ replaces
-every direct complement of an event $v \in \Delta$ by a positive edge into the atom $\bar v$; gate complements stay. It
+every marked literal of an event $v \in \Delta$ by a positive edge into the atom $\bar v$; every other complement stays. It
 computes $\tilde g : \lbrace 0, 1 \rbrace^{\mathcal{A}} \to \lbrace 0, 1 \rbrace$. The *coupled valuation* of a world $x$
 is $\kappa(x) \in \lbrace 0, 1 \rbrace^{\mathcal{A}}$ with $\kappa(x)_v = x_v$ and $\kappa(x)_{\bar v} = 1 - x_v$, so
 $g = \tilde g \circ \kappa$. The atom $\bar v$ has probability $q_{\bar v} = 1 - p_v$, and $q_v = p_v$; the atoms of
@@ -150,17 +162,19 @@ Restriction and quantification: $g_{v \leftarrow c}(x) = g(x[v \leftarrow c])$ a
 
 ## 3. Definition
 
-The query is a monotone hull of the target, in one of three *literal modes* that differ only in how the directly
-complemented events $\Delta$ are read.
+The query is a monotone hull of a circuit with an explicit set $\Delta$ of literal atoms (§2). The *literal mode*
+says how the marked literals are read; it does not affect unmarked complements, which are always ordinary negations.
+With no marked literal, $\Delta = \emptyset$ and every mode gives the plain hull $\uparrow g$; a model from a source
+without such literals gets the plain hull.
 
-**Atom-split hull (default, `atom_split`).**
+**Atom-split hull (`atom_split`, the default interpretation of marked literals).**
 
 $$h(x) = \uparrow\tilde g(\kappa(x)) = \bigvee_{(y, w) \le \kappa(x)} \tilde g(y, w):$$
 
 the plain monotone hull of the split circuit over all atoms, evaluated at the coupled valuation. $h(x) = 1$ iff some
 subset of the atoms that are true at $\kappa(x)$ (the true events, and $\bar v$ for every false $v \in \Delta$), with
-every other atom false, satisfies $\tilde g$. A direct complement `-B` is thus an atom of its own, which a witness may
-drop independently of $B$; gate complements are delete terms. The minimal cut sets are taken over atoms:
+every other atom false, satisfies $\tilde g$. A marked literal `-B` is thus an atom of its own, which a witness may
+drop independently of $B$; unmarked complements, including every gate complement, are delete terms. The minimal cut sets are taken over atoms:
 $K_h = \lbrace C \in \operatorname{mcs}(\uparrow\tilde g) : \lbrace v, \bar v \rbrace \not\subseteq C \text{ for every } v \rbrace$
 (a set with both atoms of an event has probability 0). The query value is $P(h(X))$.
 
@@ -172,24 +186,27 @@ $\omega_L g(x) = 1$ iff $g$ holds at some world that agrees with $x$ on the fixe
 switching off droppable events that are true in $x$ (and switching on raisable events, setting free events at will).
 Rauzy calls $\omega_L$ the widening of $g$ with respect to $L$: it adds to $g$ every world that is "more significant"
 than a world already in $g$ [R01, §IV.D]. The option uses the model's literals
-$L_g = L^+ \cup \lbrace \neg x_v : v \in \Delta \rbrace$: the directly complemented events are fixed, every other event
+$L_g = L^+ \cup \lbrace \neg x_v : v \in \Delta \rbrace$: the events with marked literals are fixed, every other event
 is droppable, $N_{L_g} = O_{L_g} = \emptyset$. Its minimal cut sets are $\operatorname{MC}_{L_g}(g)$.
 
-**Plain hull (option `positive`).** $\uparrow g = \omega_{L^+} g$, i.e. $\uparrow g(x) = \bigvee_{y \le x} g(y)$: some
-subset of the events that are true in $x$, with every other event false, satisfies $g$.
+**Plain hull (option `negation`).** The marked literals are read as ordinary negations:
+$\uparrow g = \omega_{L^+} g$, i.e. $\uparrow g(x) = \bigvee_{y \le x} g(y)$: some subset of the events that are true
+in $x$, with every other event false, satisfies $g$.
 
-Without a direct complement in the cone, $\Delta = \emptyset$, $\tilde g = g$, $L_g = L^+$, and all three are
-$\uparrow g$.
+Without marked literals, $\Delta = \emptyset$, $\tilde g = g$, $L_g = L^+$, and all three are $\uparrow g$. The
+reference tools of #179, which read only FTP, spell the modes `split` (default), `omega` and `positive`.
 
 Remarks:
 
-- *Why atoms.* The tools keep `-B` in cut sets, drop it like any other member, and remove cut sets with both $B$ and
-  `-B`: delete-term processing over atoms (Theorem 10(a)). This reproduces every fixture and probe, including those
-  where $\omega_{L_g}$ does not (a directly complemented event that also occurs under a negated gate) and the absence of
-  consensus cut sets (§4.9).
-- *Where the modes differ.* $g \le \omega_{L_g} g \le h$ always, and $h = \omega_{L_g} g$ unless a directly complemented
-  event also occurs in the cone of a negated gate (Theorem 10(b, c)); the lowering warns there (§7.1). $h \le \uparrow g$
-  fails in general (Theorem 10(d)).
+- *Why atoms, and why the FTP reader marks them.* For FTP models, the tools keep `-EVENT` in cut sets, drop it like
+  any other member, remove cut sets with both $B$ and `-B`, and treat `-GATE` (also a single-input gate) as a delete
+  term: delete-term processing over atoms (Theorem 10(a)). This reproduces every fixture and probe, including those
+  where $\omega_{L_g}$ does not (a marked event that also occurs under a negated gate) and the absence of consensus cut
+  sets (§4.9). It is an FTP convention: the reader applies it by marking, and `ir::pra` and the lowering only carry
+  the marks.
+- *Where the modes differ.* $g \le \omega_{L_g} g \le h$ always, and $h = \omega_{L_g} g$ unless a marked event also
+  occurs in the cone of a negated gate (Theorem 10(b, c)); the lowering warns there (§7.1). $h \le \uparrow g$ fails in
+  general (Theorem 10(d)).
 - *Why the cone.* A target's value does not depend on logic outside its cone. An event complemented elsewhere but used
   only positively here changes nothing (`T3` in §8.8).
 - *The literal mode and $\Delta$ are part of the query*, fixed when the target is lowered (§7.1). $h$ depends only on
@@ -312,7 +329,7 @@ $\omega_L(g \wedge \neg D) = \bigvee \lbrace C \in \operatorname{MC}_L(g) : \tex
 *Proof.* Lemma 3.0 and Theorem 3 with $F = \omega_L g$, whose minimal cut sets are $\operatorname{PI}(\omega_L g) = \operatorname{MC}_L(g)$. ∎
 
 **Corollary 3.2 (sequences).** For $SEQ = F \wedge \neg(S_1 \vee \dots \vee S_m \vee DEL)$ with $F$, $S_i$, $DEL$ built
-from AND, OR and `ATLEAST` over events and direct complements, and no directly complemented event in the cones of the
+from AND, OR and `ATLEAST` over events and marked literals, and no event with a marked literal in the cones of the
 $S_i$ and $DEL$, the hull keeps exactly the minimal cut sets of $F$ that contain no minimal cut set of any success
 system $S_i$ and no minimal cut set of $DEL$. For a delete-term group $\lbrace e_1, \dots, e_k \rbrace$ written as
 $DEL = \mathrm{atleast}(2;\ e_1, \dots, e_k)$, whose minimal cut sets are the pairs, this is the MEF post-processing rule.
@@ -508,7 +525,7 @@ one cardinality gate, omitted when $|I| \le m$. Under Boolean semantics this is 
 it is a delete term.
 
 **Corollary 3.4 (the rule).** If no initiator has a significant negative literal ($I \subseteq P_L$; for $L_g$: no
-initiator is directly complemented), then
+initiator has a marked literal), then
 $\omega_L g_m = \bigvee \lbrace C \in \operatorname{MC}_L(g) : |C \cap I| \le m \rbrace$, where $|C \cap I|$ counts the
 positive initiator literals of $C$. If moreover no event occurs with both polarities among these $C$,
 $\operatorname{MC}_L(g_m)$ is exactly this family: the rule deletes the minimal cut sets with more than $m$ initiators
@@ -526,7 +543,9 @@ Remarks:
 - Under Boolean semantics a probability-1 initiator flag makes the rule remove every world in which another initiator
   occurs; under the hull it removes only the cut sets that contain both (§8.10).
 - The vendor configuration declares the rule per quantification engine (§1), so it is a config option, not a
-  model property.
+  model property. For FTP models the reader records it, with delete-term semantics, as inert model attributes
+  (`ftp.max_initiators_per_cutset = 1`, `ftp.negation = delete_term`; #199), which the compile driver (#182) turns
+  into quantification-config defaults; neither `ir::pra` nor the lowering reads them.
 
 ### 4.9 The atom-split hull
 
@@ -621,7 +640,7 @@ complemented single-input gate is a delete term, not an atom.
 
 ## 5. Estimator
 
-§5 and §6 are written for $\omega_L g$, which includes the plain hull. For the default atom-split hull they apply
+§5 and §6 are written for $\omega_L g$, which includes the plain hull. For the atom-split hull they apply
 verbatim to $\uparrow\tilde g$ with $L = L^+$ over atoms, evaluated at $\kappa(X_k)$ (Theorem 10(e)): lanes draw events,
 the complement atoms are their complements (one draw per event), the bounds are those of the split circuit, and the
 check runs on the split circuit. In the estimates below read $\omega_L g$ as $h$.
@@ -813,22 +832,29 @@ modes and list $K_h$ and $\operatorname{MC}_L(g)$ (#190).
 - Per target: `negation: boolean | monotone_hull`, default `boolean`. Allowing both on one target is recommended: the
   writer then emits two queries on one tensor (for #185, the canonical hull target and the degeneracy check in one
   file).
-- Per hull target: literal mode `atom_split | omega_l | positive`, default `atom_split` (§3).
+- Per hull target: the interpretation of marked literals, `atom_split | omega_l | negation`, default `atom_split`
+  (§3). `omega_l` and `negation` are explicit overrides, for comparisons.
 - `max_initiators_per_cutset: integer ≥ 0`, default unset: a cut-set rule of the quantification, lowered per target as
   the delete term of §4.8 over the initiator-tagged events in the target's cone. #185's canonical target is
   `monotone_hull`, `atom_split`, `max_initiators_per_cutset: 1`.
+- Source conventions reach the config through the reader, not through `ir::pra` semantics (#199): the FTP reader
+  records `ftp.negation = delete_term` (hull queries are the intended semantics) and `ftp.max_initiators_per_cutset = 1`
+  (reader option to disable) as inert model attributes, next to `LIMIT`, and the compile driver (#182) maps them to
+  config defaults.
 - Overrides `element := TRUE | FALSE` produce constants under both semantics; a basic event with literal $p = 1$ stays
   an event. The lowering is function-preserving (#181) and must keep this distinction: house events and overrides
   become constants or `house_event` nodes, basic events with $p \in \lbrace 0, 1 \rbrace$ stay `basic_event` nodes.
-- The lowering computes $\Delta$ from the `ir::pra` model before any pass: the events referenced with a direct complement
-  in the target's cone. It keeps every direct complement as a complemented edge on the basic-event node, exactly as in
-  the source, and never turns a gate complement into a complemented event edge (a complemented single-input gate stays
-  a complemented gate): the two are read differently (§3). The kind, the literal mode and $\Delta$ are recorded per pc
-  target on the `pra_pc_lowering` artifact, next to the target bindings; the initiator rule is ordinary logic in the
-  lowered target.
-- For each event of $\Delta$ that also occurs in the cone of a complemented gate of the target (or is an initiator under
-  the initiator rule), the lowering emits a warning with the stable id `complement-under-negation`: the atom-split hull
-  and $\omega_{L_g}$ can differ there (Theorem 10(c)).
+- The lowering does not infer literals. $\Delta$ is the set of events with a marked operand (`literal` flag) in the
+  target's cone; unmarked complements, from any source, are ordinary negations. The lowering keeps every complemented
+  basic-event operand as a complemented edge on the basic-event node, exactly as in the source, and never turns a gate
+  complement into a complemented event edge (a complemented single-input gate stays a complemented gate). The kind, the
+  literal mode and $\Delta$ are recorded per pc target on the `pra_pc_lowering` artifact, next to the target bindings;
+  the initiator rule is ordinary logic in the lowered target. An event with both marked and unmarked complemented
+  operands in one target's cone cannot be represented by the per-sample list of §7.3 and gets a diagnostic; the FTP
+  reader never produces it.
+- For each marked event that also occurs in the cone of a complemented gate of the target (or is an initiator under the
+  initiator rule), the lowering emits a warning with the stable id `complement-under-negation`: the atom-split hull and
+  $\omega_{L_g}$ can differ there (Theorem 10(c)).
 
 ### 7.2 `ir::pc`: unchanged
 
@@ -845,15 +871,16 @@ carry it must diagnose non-`PROBABILITY` queries, not drop them.
   `BITWISE_ONES` are constants; `always_true` samples are droppable events.
 - **Literal mode (amendment to 1.2).** pcfb#10 is merged but untagged; this RFC proposes two optional per-query fields
   for hull queries, to be added to 1.2 before it is tagged:
-  - `literal_mode`: `ATOM_SPLIT` (default) | `OMEGA_L` | `POSITIVE`;
-  - `complemented_samples`: indices of the `SAMPLE` outputs of $\Delta$. Under `ATOM_SPLIT` every complemented edge
-    into a listed sample, within the query's target cone, reads that sample's complement atom (droppable, valued
-    $\neg x$); under `OMEGA_L` the listed samples are fixed; under `POSITIVE` the list is ignored. Complemented edges
-    into unlisted samples are Boolean complements in every mode.
+  - `literal_mode`: `ATOM_SPLIT` (default) | `OMEGA_L` | `NEGATION`;
+  - `literal_samples`: indices of the `SAMPLE` outputs of $\Delta$ (the events with marked literals). Under
+    `ATOM_SPLIT` every complemented edge into a listed sample, within the query's target cone, reads that sample's
+    complement atom (droppable, valued $\neg x$); under `OMEGA_L` the listed samples are fixed; under `NEGATION` the
+    list is ignored. Complemented edges into unlisted samples are Boolean complements in every mode.
 
   An absent or empty list gives the plain hull of 1.2 as merged, so existing files and readers are unaffected; a
   runtime that does not implement a mode rejects a query that uses it before sampling. Rejected alternative: deriving
-  $\Delta$ from the complemented edges into `SAMPLE` nodes. Passes that preserve $g$ change those edges (eliminating a
+  $\Delta$ from the complemented edges into `SAMPLE` nodes. Only the source knows which complements are literals, and
+  passes that preserve $g$ change those edges (eliminating a
   single-input gate turns a gate complement into a complemented `SAMPLE` edge; negation normalisation creates
   complemented `SAMPLE` edges), which would change the atoms (§7.5).
 - **Versioning.** A file using the kind must set `schema_version` minor ≥ 2 (`0x00010002`). The builder writes the
@@ -897,7 +924,7 @@ can produce provably tighter bounds (§9).
 
 Passes declare a semantic class (#177):
 
-- `function_preserving`: $g' = g$ on every world. Preserves `PROBABILITY` and the `omega_l` and `positive` hulls
+- `function_preserving`: $g' = g$ on every world. Preserves `PROBABILITY` and the `omega_l` and `negation` hulls
   ($\omega_L g$ depends only on $g$ and on $L$, a set of events fixed at lowering). It may change the bounds, hence
   cost.
 - *Atom-preserving* (needed for `atom_split` targets): $\tilde g' = \tilde g$ over atoms, with the same $\Delta$, which
@@ -916,7 +943,7 @@ kinds sharing a cone, apply a pass only if it is acceptable for every kind prese
 | Pass | Class | `PROBABILITY` | `MONOTONE_HULL_PROBABILITY` | Reason |
 |---|---|---|---|---|
 | `propagate_constants`, `eliminate_single_input`, `coalesce` (#177) | function | yes | yes, atom-preserving on `atom_split` targets (see above) | $g$ (and $\tilde g$) unchanged |
-| negation normalisation | function | yes | `omega_l`, `positive`; `atom_split` only away from $\Delta$ | $g$ unchanged; $g_{coh}^L$ becomes $\overline g$ |
+| negation normalisation | function | yes | `omega_l`, `negation`; `atom_split` only away from $\Delta$ | $g$ unchanged; $g_{coh}^L$ becomes $\overline g$ |
 | `fold_zero_probability` | distribution | yes | droppable and fixed events; the atom $\bar v$ of a $p_v = 0$ event only if positive-unate in $\tilde g$ | Corollary 5.1; Theorem 10(g) |
 | `fold_unit_probability` | distribution | yes | **only fixed events** (and $p = 1$ events whose atoms are positive-unate) | Corollary 5.1; Theorem 10(g); §8.2 |
 | eliminate a droppable $p = 1$ event by $g \mapsto \exists_v g$ | distribution | no | yes | Theorem 5; doubles the cone, not proposed as a pass |
@@ -952,8 +979,9 @@ complements inside and outside negated gates. The reference tests (`tests/python
 brute force on random projects with complements inside and outside negated gates, the exact value, the cut sets
 ($K_h$ and $\operatorname{MC}_L$), the per-lane check and the estimator in all three modes (Theorem 10(a), (e), (f)),
 and the per-lane check, Theorem 4's bounds and the exact closure of §6.5 for every event class; Theorem 10(g)'s
-counterexample is a test. §8.1–§8.7 have no direct complement, so all three modes are the plain hull there.
-§8.8–§8.11 are conformance fixtures of #179 (`input/ftp/conformance/`).
+counterexample is a test. §8.1–§8.7 have no marked literal, so all three modes are the plain hull there.
+§8.8–§8.11 are FTP conformance fixtures of #179 (`input/ftp/conformance/`), whose `-EVENT` references the FTP reader
+marks as literals.
 
 ### 8.1 $F = A \vee BC$, $D = AB$, $p_A = 1$, $p_B = 0.1$, $p_C = 0.2$
 
@@ -1106,14 +1134,16 @@ extra consensus term on `P3`.
 5. Whether residual polarity is recomputed per lane (§6.2 step 4): a #178 measurement.
 6. Initiator-tagged events in FTP projects (#185): resolved by the rule of §4.8 ($m = 1$ for the vendor tools). Any
    remaining gap between $P(h)$ and cut-set results must be explained by truncation (§4.7) or REA/MCUB. The tools'
-   treatment of a directly complemented initiator was not checked (Theorem 10(f) counts only event atoms).
+   treatment of an initiator with a marked literal was not checked (Theorem 10(f) counts only event atoms).
 7. Hull variants of later query kinds (importance measures) are out of scope.
-8. Direct complements under a negated gate: resolved on #190, the atom-split hull is the default and $\omega_L$ an
-   option; the lowering warns where they can differ.
+8. Direct complements under a negated gate: resolved on #190 and #199. The atom-split hull is the default
+   interpretation of marked literals, which the FTP reader produces (an FTP convention); $\omega_L$ and `negation` are
+   explicit overrides; unmarked complements are negations; the lowering warns where `atom_split` and `omega_l` can
+   differ.
 9. Cut-set listings: $K_h$ has no consensus terms and matches the tools; $\operatorname{MC}_L(g)$ of the `omega_l` option
    can contain consensus terms (§4.2, §8.11). With both atoms of an event in $K_h$ the min-cut upper bound is not an
    upper bound (§4.9), which matters when tool MCUB values are compared with $P(h)$ (#185).
-10. The `.pcfb` fields `literal_mode` and `complemented_samples` (§7.3) need a pcfb change before 1.2 is tagged.
+10. The `.pcfb` fields `literal_mode` and `literal_samples` (§7.3) need a pcfb change before 1.2 is tagged.
 
 ## 10. References
 
