@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "pcfb.h"
+#include "runtime/progress.h"
 
 namespace scram::core {
 class Pdag;
@@ -44,6 +45,11 @@ struct RunOptions {
   /// ACPP_VISIBILITY_MASK, which make_throwing_sycl_queue() reads at queue
   /// construction.
   std::string backend;
+  /// Progress sinks. Not owned; they must outlive the run. Empty means no
+  /// snapshot is ever built.
+  std::vector<progress::sink *> progress_sinks;
+  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+  double progress_max_rate_hz = 10.0;
 };
 
 struct QueryResult {
@@ -113,6 +119,17 @@ struct ReconstructedPdag {
 /// Apply `--backend` to the process environment. Must run before any
 /// AdaptiveCpp / SYCL runtime initialisation (before the first sycl::queue).
 void apply_backend_mask(const std::string &backend);
+
+namespace testing {
+
+/// Test seam (#206): makes the *next* `run_graph` call on this thread throw a
+/// `RuntimeError` right after its `passes`-th device pass, so the interrupted
+/// progress path (device fault, failed result build) can be exercised without
+/// provoking a real device error. One-shot; `0` disables it. Not used by any
+/// production path.
+void fail_next_run_after_passes(std::uint64_t passes);
+
+}  // namespace testing
 
 /// Reconstruct a preprocessed `core::Pdag` from a validated pcfb circuit.
 /// Variables are created at SAMPLE `event_id` so Philox `pdag_idx` matches

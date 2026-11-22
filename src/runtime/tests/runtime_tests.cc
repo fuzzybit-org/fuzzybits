@@ -9,7 +9,9 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -77,6 +79,410 @@ double z_score(double p_hat, double p_ref, std::uint64_t n) {
 }
 
 }  // namespace
+
+namespace {
+
+/// Records every snapshot and finish, and can throw from `on_snapshot` to simulate a callback that
+/// fails (the Python binding path).
+struct RecordingSink : fuzzybits::runtime::progress::sink {
+  std::vector<fuzzybits::runtime::progress::snapshot> snapshots;
+  bool finished = false;
+  bool interrupted = true;
+  int finish_count = 0;
+  int snapshot_count = 0;  // on_snapshot calls, including ones that threw or followed a finish
+  std::vector<bool> finishes;  // the `interrupted` flag of every on_finish
+  int throw_on = -1;  // 0-based snapshot index that raises, -1 never
+
+  void on_snapshot(const fuzzybits::runtime::progress::snapshot &s) override {
+    ++snapshot_count;
+    if (throw_on >= 0 && static_cast<int>(snapshots.size()) >= throw_on) {
+      throw fuzzybits::runtime::progress::interrupted("sink requested stop");
+    }
+    snapshots.push_back(s);
+  }
+
+  void on_finish(const fuzzybits::runtime::progress::snapshot &last, bool flag) override {
+    finished = true;
+    interrupted = flag;
+    ++finish_count;
+    finishes.push_back(flag);
+    last_snapshot = last;
+  }
+
+  fuzzybits::runtime::progress::snapshot last_snapshot;
+};
+
+using now_point = fuzzybits::runtime::progress::emitter::clock::time_point;
+
+now_point at_ms(std::int64_t ms) {
+  return now_point{} + std::chrono::milliseconds(ms);
+}
+
+}  // namespace
+
+TEST_CASE("progress::emitter with no sinks is inert", "[runtime][progress][emitter]") {
+  fuzzybits::runtime::progress::emitter emitter({});
+  CHECK_FALSE(emitter.active());
+  int built = 0;
+  emitter.maybe_emit([&built] {
+    ++built;
+    return fuzzybits::runtime::progress::snapshot{};
+  });
+  emitter.emit_now(fuzzybits::runtime::progress::snapshot{});
+  emitter.finish(fuzzybits::runtime::progress::snapshot{}, false);
+  CHECK(built == 0);
+}
+
+TEST_CASE("progress::emitter coalesces to the rate but always delivers first and last",
+          "[runtime][progress][emitter]") {
+  RecordingSink sink;
+  auto now = at_ms(1000);
+  fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0, [&now] { return now; });
+
+  int built = 0;
+  auto make = [&built] {
+    ++built;
+    fuzzybits::runtime::progress::snapshot s;
+    s.passes_done = static_cast<std::uint64_t>(built);
+    return s;
+  };
+
+  emitter.maybe_emit(make);  // first: always delivered
+  now = at_ms(1010);
+  emitter.maybe_emit(make);  // inside the 100 ms window: coalesced, make() not called
+  now = at_ms(1050);
+  emitter.maybe_emit(make);
+  now = at_ms(1099);
+  emitter.maybe_emit(make);
+  now = at_ms(1100);
+  emitter.maybe_emit(make);  // exactly one interval later: delivered
+  now = at_ms(1150);
+  emitter.maybe_emit(make);
+  now = at_ms(1200);
+  emitter.maybe_emit(make);  // delivered
+
+  CHECK(built == 3);
+  REQUIRE(sink.snapshots.size() == 3);
+  CHECK(sink.snapshots.front().passes_done == 1);
+  CHECK(sink.snapshots.back().passes_done == 3);
+
+  auto last = make();
+  last.passes_done = 99;
+  emitter.finish(last, false);
+  emitter.finish(last, true);  // exactly once
+  REQUIRE(sink.snapshots.size() == 4);
+  CHECK(sink.snapshots.back().passes_done == 99);
+  CHECK(sink.finished);
+  CHECK_FALSE(sink.interrupted);
+  CHECK(sink.finish_count == 1);
+}
+
+TEST_CASE("progress::emitter never swallows a sink exception at finish",
+          "[runtime][progress][emitter]") {
+  RecordingSink sink;
+  fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0);
+  sink.throw_on = 0;  // the first on_snapshot from finish()
+  // The sink's own exception is not rethrown (nothing to rethrow from a destructor-safe path); the
+  // emitter raises its own typed signal instead, after every sink got on_finish.
+  CHECK_THROWS_AS(emitter.finish(fuzzybits::runtime::progress::snapshot{}, false),
+                  fuzzybits::runtime::progress::interrupted);
+  // on_finish still ran, and only once.
+  CHECK(sink.finished);
+  CHECK_FALSE(sink.interrupted);
+  CHECK(sink.finish_count == 1);
+}
+
+TEST_CASE("progress::finish_guard reports interruption on any unwind, exactly once",
+          "[runtime][progress][emitter]") {
+  SECTION("unwinding with a non-sink exception") {
+    RecordingSink sink;
+    fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+    auto run = [&] {
+      fuzzybits::runtime::progress::finish_guard guard([&emitter] {
+        emitter.finish(fuzzybits::runtime::progress::snapshot{}, true);
+      });
+      emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
+      throw std::runtime_error("device failed");
+    };
+    CHECK_THROWS_AS(run(), std::runtime_error);
+    CHECK(sink.finish_count == 1);
+    CHECK(sink.interrupted);
+  }
+
+  SECTION("completing normally does not double-finish") {
+    RecordingSink sink;
+    fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+    {
+      fuzzybits::runtime::progress::finish_guard guard([&emitter] {
+        emitter.finish(fuzzybits::runtime::progress::snapshot{}, true);
+      });
+      emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
+      emitter.finish(fuzzybits::runtime::progress::snapshot{}, false);
+      guard.complete();
+    }
+    CHECK(sink.finish_count == 1);
+    CHECK_FALSE(sink.interrupted);
+  }
+
+  SECTION("a throwing finish is swallowed while unwinding and the original error survives") {
+    RecordingSink sink;
+    sink.throw_on = 0;
+    fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+    auto run = [&] {
+      fuzzybits::runtime::progress::finish_guard guard([&emitter] {
+        emitter.finish(fuzzybits::runtime::progress::snapshot{}, true);
+      });
+      throw std::runtime_error("device failed");
+    };
+    CHECK_THROWS_AS(run(), std::runtime_error);
+    CHECK(sink.finish_count == 1);
+    CHECK(sink.interrupted);
+  }
+
+  SECTION("a moved-from guard does not fire") {
+    RecordingSink sink;
+    fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+    {
+      fuzzybits::runtime::progress::finish_guard first([&emitter] {
+        emitter.finish(fuzzybits::runtime::progress::snapshot{}, true);
+      });
+      auto second = std::move(first);
+      CHECK_FALSE(first.armed());
+      CHECK(second.armed());
+    }
+    CHECK(sink.finish_count == 1);
+  }
+}
+
+TEST_CASE("progress::emitter with a non-positive rate is unlimited", "[runtime][progress][emitter]") {
+  RecordingSink sink;
+  fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+  for (int i = 0; i < 7; ++i) {
+    emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
+  }
+  CHECK(sink.snapshots.size() == 7);
+}
+
+TEST_CASE("progress::emitter reports interruption exactly once", "[runtime][progress][emitter]") {
+  RecordingSink sink;
+  fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
+  emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
+  emitter.finish(fuzzybits::runtime::progress::snapshot{}, true);
+  CHECK(sink.finished);
+  CHECK(sink.interrupted);
+}
+
+TEST_CASE("run_graph with and without a sink returns bit-identical estimates", "[runtime][progress][mc]") {
+  constexpr std::uint64_t kTrials = 1 << 16;
+  auto compiled = fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, no_kn());
+  REQUIRE(compiled);
+
+  fuzzybits::runtime::RunOptions plain;
+  plain.trials = kTrials;
+  plain.backend = "omp";
+  plain.seed = 372;
+
+  auto baseline = fuzzybits::runtime::run_pcfb(compiled->bytes, plain);
+  REQUIRE(baseline.size() == 1);
+
+  RecordingSink sink;
+  fuzzybits::runtime::RunOptions watched = plain;
+  watched.progress_sinks = {&sink};
+  auto with_sink = fuzzybits::runtime::run_pcfb(compiled->bytes, watched);
+  REQUIRE(with_sink.size() == 1);
+
+  // Exactly: same hits, same n, and therefore the same estimate and interval.
+  CHECK(with_sink[0].hits == baseline[0].hits);
+  CHECK(with_sink[0].n == baseline[0].n);
+  CHECK(with_sink[0].estimate == baseline[0].estimate);
+  CHECK(with_sink[0].ci_low == baseline[0].ci_low);
+  CHECK(with_sink[0].ci_high == baseline[0].ci_high);
+
+  REQUIRE_FALSE(sink.snapshots.empty());
+  const auto &first = sink.snapshots.front();
+  CHECK(first.schema == fuzzybits::runtime::progress::schema_version);
+  REQUIRE(first.queries.size() == with_sink.size());
+  CHECK(first.queries.front().name == with_sink.front().name);
+
+  // Work done is monotone and the last snapshot carries the final tallies.
+  for (std::size_t i = 1; i < sink.snapshots.size(); ++i) {
+    CHECK(sink.snapshots[i].trials_done >= sink.snapshots[i - 1].trials_done);
+    CHECK(sink.snapshots[i].passes_done >= sink.snapshots[i - 1].passes_done);
+  }
+  const auto &last = sink.snapshots.back();
+  CHECK(last.stage == fuzzybits::runtime::progress::phase::done);
+  CHECK(last.passes_done == last.passes_total);
+  CHECK(last.trials_done == last.trials_total);
+  CHECK(last.trials_done >= kTrials);
+  CHECK(last.queries.front().hits == with_sink.front().hits);
+  CHECK(last.queries.front().trials == with_sink.front().n);
+  CHECK(last.queries.front().estimate == with_sink.front().estimate);
+  CHECK(last.queries.front().ci_low == with_sink.front().ci_low);
+  CHECK(last.queries.front().ci_high == with_sink.front().ci_high);
+  CHECK(sink.finished);
+  CHECK_FALSE(sink.interrupted);
+}
+
+TEST_CASE("a throwing progress sink stops the run and propagates", "[runtime][progress][mc]") {
+  auto compiled = fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, no_kn());
+  REQUIRE(compiled);
+
+  RecordingSink sink;
+  sink.throw_on = 0;  // first snapshot
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = 1 << 16;
+  opt.backend = "omp";
+  opt.seed = 372;
+  opt.progress_sinks = {&sink};
+  opt.progress_max_rate_hz = 0.0;  // deliver every pass so the first snapshot arrives promptly
+
+  CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(compiled->bytes, opt),
+                  fuzzybits::runtime::progress::interrupted);
+  CHECK(sink.finished);
+  CHECK(sink.interrupted);
+  CHECK(sink.finish_count == 1);
+}
+
+TEST_CASE("a non-sink failure inside the active run still finishes the sinks once", "[runtime][progress][mc]") {
+  // The device loop fails for a reason unrelated to progress (a SYCL error, an async error, a failed
+  // result build). The renderer must still get its one chance to restore the terminal.
+  auto compiled = fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, no_kn());
+  REQUIRE(compiled);
+
+  // `trials_per_pass` comes from the shaper's memory budget, not the trial count, so probing it with
+  // a tiny run and then requesting two passes keeps this test independent of the device.
+  const auto shape = [&] {
+    auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp");
+    const auto s = session.sample_shape();
+    session.close();
+    return s;
+  }();
+  REQUIRE(shape.trials_per_pass > 0);
+
+  RecordingSink sink;
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = shape.trials_per_pass * 2;
+  opt.backend = "omp";
+  opt.seed = 372;
+  opt.progress_sinks = {&sink};
+  opt.progress_max_rate_hz = 0.0;  // a first snapshot, so the loop takes the active path
+
+  // Fail after the first pass, leaving one more to go.
+  fuzzybits::runtime::testing::fail_next_run_after_passes(1);
+  CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(compiled->bytes, opt),
+                  fuzzybits::runtime::RuntimeError);
+
+  CHECK(sink.finish_count == 1);
+  CHECK(sink.finished);
+  CHECK(sink.interrupted);
+  REQUIRE(sink.finishes.size() == 1);
+  CHECK(sink.finishes.front());
+  // The interrupted snapshot describes the work really done: one of two passes, not the total.
+  CHECK(sink.last_snapshot.stage == fuzzybits::runtime::progress::phase::sampling);
+  CHECK(sink.last_snapshot.passes_done == 1);
+  REQUIRE(sink.last_snapshot.passes_total >= 2);
+  CHECK(sink.last_snapshot.passes_done < sink.last_snapshot.passes_total);
+  CHECK(sink.last_snapshot.trials_done < sink.last_snapshot.trials_total);
+
+  // The seam is one-shot: the next run is unaffected and finishes normally.
+  RecordingSink second;
+  opt.progress_sinks = {&second};
+  const auto results = fuzzybits::runtime::run_pcfb(compiled->bytes, opt);
+  CHECK(results.size() == 1);
+  CHECK(second.finish_count == 1);
+  CHECK_FALSE(second.interrupted);
+}
+
+TEST_CASE("a sink exception raised while a run is already unwinding is swallowed",
+          "[runtime][progress][mc]") {
+  auto compiled = fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, no_kn());
+  REQUIRE(compiled);
+
+  const auto shape = [&] {
+    auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp");
+    const auto s = session.sample_shape();
+    session.close();
+    return s;
+  }();
+  REQUIRE(shape.trials_per_pass > 0);
+
+  RecordingSink sink;
+  sink.throw_on = 1;  // the snapshot emitted from the interrupted finish()
+  fuzzybits::runtime::RunOptions opt;
+  opt.trials = shape.trials_per_pass * 2;
+  opt.backend = "omp";
+  opt.seed = 372;
+  opt.progress_sinks = {&sink};
+  opt.progress_max_rate_hz = 0.0;
+
+  // First snapshot is delivered (sink records it); the injected failure then unwinds, and the
+  // finish path's delivery throws. The original RuntimeError must survive.
+  fuzzybits::runtime::testing::fail_next_run_after_passes(1);
+  CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(compiled->bytes, opt),
+                  fuzzybits::runtime::RuntimeError);
+  // on_finish still ran, even though the final delivery raised.
+  CHECK(sink.finish_count == 1);
+  CHECK(sink.interrupted);
+}
+
+TEST_CASE("compile emits parse, lower, passes, write and a final snapshot", "[runtime][progress][compile]") {
+  RecordingSink sink;
+  fuzzybits::compile::Options opt = no_kn();
+  opt.progress_sinks = {&sink};
+  auto compiled = fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt);
+  REQUIRE(compiled);
+  REQUIRE_FALSE(compiled->bytes.empty());
+
+  std::vector<std::string> steps;
+  for (const auto &s : sink.snapshots) {
+    if (s.stage == fuzzybits::runtime::progress::phase::compile) {
+      steps.push_back(s.step);
+    }
+  }
+  REQUIRE(steps.size() >= 4);
+  CHECK(steps[0] == "parse");
+  CHECK(steps[1] == "lower");
+  CHECK(steps[2] == "passes");
+  CHECK(steps.back() == "write");
+  CHECK(sink.snapshots.back().stage == fuzzybits::runtime::progress::phase::done);
+  CHECK(sink.finished);
+  CHECK_FALSE(sink.interrupted);
+}
+
+TEST_CASE("a non-sink failure inside compile still finishes the sinks once",
+          "[runtime][progress][compile]") {
+  RecordingSink sink;
+  fuzzybits::compile::Options opt = no_kn();
+  opt.progress_sinks = {&sink};
+
+  // Fail between stages, i.e. from code the sink never sees.
+  fuzzybits::compile::testing::fail_next_compile_after_stage("lower");
+  CHECK_THROWS_AS(
+      fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt),
+      std::runtime_error);
+
+  CHECK(sink.finish_count == 1);
+  REQUIRE(sink.finishes.size() == 1);
+  CHECK(sink.finishes.front());
+  CHECK(sink.last_snapshot.stage == fuzzybits::runtime::progress::phase::compile);
+  CHECK(sink.last_snapshot.step == "lower");
+}
+
+TEST_CASE("a compile sink exception on the final snapshot is not swallowed",
+          "[runtime][progress][compile]") {
+  RecordingSink sink;
+  fuzzybits::compile::Options opt = no_kn();
+  opt.progress_sinks = {&sink};
+  // Stages parse/lower/passes/write deliver four snapshots; the fifth delivery is the final one
+  // from `finish()`.
+  sink.throw_on = 4;
+
+  CHECK_THROWS_AS(
+      fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt),
+      fuzzybits::runtime::progress::interrupted);
+  CHECK(sink.finish_count == 1);
+  CHECK_FALSE(sink.interrupted);
+}
 
 TEST_CASE("fzb run refuses an invalid pcfb file", "[runtime][mc]") {
   const auto path = std::filesystem::temp_directory_path() / "fuzzybits-invalid.pcfb";

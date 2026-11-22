@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "pcfb.h"
+#include "runtime/progress.h"
 
 namespace scram::core {
 class Pdag;
@@ -39,6 +40,11 @@ struct Options {
   std::vector<std::string> watch;
   /// Nombrilo variant weights file. Ignored for MEF inputs.
   std::optional<std::string> weights_file;
+  /// Progress sinks. Not owned; they must outlive the compile. Empty means no
+  /// snapshot is ever built.
+  std::vector<runtime::progress::sink *> progress_sinks;
+  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+  double progress_max_rate_hz = 10.0;
 
   /// Reconstruct the effective CLI fragment written to `compile.options`.
   [[nodiscard]] std::string to_cli_string() const;
@@ -84,5 +90,15 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
              std::string_view query_name, std::span<const std::byte> source_sha256,
              std::string_view source_path = {}, std::span<const std::string> input_files = {},
              std::string_view target_name = {});
+
+namespace testing {
+
+/// Test seam (#206): makes the next compile on this thread throw a `std::runtime_error` right after
+/// it announces `stage` (`"parse"`, `"lower"`, `"passes"` or `"write"`), so the interrupted progress
+/// path can be exercised without a real failure. One-shot; the empty string disables it. Not used by
+/// any production path.
+void fail_next_compile_after_stage(std::string_view stage);
+
+}  // namespace testing
 
 }  // namespace fuzzybits::compile

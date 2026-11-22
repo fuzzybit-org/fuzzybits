@@ -270,6 +270,7 @@ def compile(  # noqa: A001 - public API name
     pdag_c: int = 2,
     no_kn: bool = True,
     watch: Any = None,
+    on_progress: Callable[[ProgressSnapshot], None] | None = None,
     **options: Any,
 ) -> bytes:
     """Compile OpenPSA/MEF XML or nombrilo.circuit to a pcfb 1.1 buffer.
@@ -287,6 +288,10 @@ def compile(  # noqa: A001 - public API name
         Extra MEF gate / event names (or PDAG indices) emitted as additional
         ``PROBABILITY`` queries so :class:`Session` tallies them. Boolean
         ``True``/``False`` is ignored (that is ``watch_mode``).
+    on_progress:
+        Optional callable receiving a :class:`ProgressSnapshot` at each compile
+        stage (``parse``, ``lower``, ``passes``, ``write``) and once at the end.
+        Raising from it aborts the compile and re-raises here.
     """
     _reject_seed(options.pop("seed", None) if "seed" in options else None, options)
     native = _runtime.native()
@@ -302,7 +307,9 @@ def compile(  # noqa: A001 - public API name
         opts.pop("watch", None)
     if names:
         opts["watch"] = names
-    return bytes(native.compile_pcfb(_as_input_files(model_xml), opts))
+    return bytes(
+        native.compile_pcfb(_as_input_files(model_xml), opts, _progress_callback(on_progress))
+    )
 
 
 def nombrilo_to_pcfb(
@@ -377,12 +384,102 @@ def exact(pcfb: bytes | str | os.PathLike[str], query_index: int = 0) -> float:
     return float(native.exact_pcfb_path(os.fspath(pcfb), int(query_index)))
 
 
+@dataclass(frozen=True)
+class QueryState:
+    """Per-query state inside a :class:`ProgressSnapshot`."""
+
+    name: str
+    hits: int
+    trials: int
+    estimate: float
+    ci_low: float
+    ci_high: float
+    rel_half_width: float
+    target_rel_half_width: float
+    converged: bool
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "QueryState":
+        return cls(
+            name=str(payload["name"]),
+            hits=int(payload["hits"]),
+            trials=int(payload["trials"]),
+            estimate=float(payload["estimate"]),
+            ci_low=float(payload["ci_low"]),
+            ci_high=float(payload["ci_high"]),
+            rel_half_width=float(payload["rel_half_width"]),
+            target_rel_half_width=float(payload["target_rel_half_width"]),
+            converged=bool(payload["converged"]),
+        )
+
+
+@dataclass(frozen=True)
+class ProgressSnapshot:
+    """Typed progress snapshot emitted by the engine (schema v1).
+
+    ``phase`` is one of ``"compile"``, ``"sampling"``, ``"checking"``, ``"done"``.
+    ``step`` is the compile sub-stage (``"parse"``, ``"lower"``, ``"passes"``,
+    ``"write"``) and empty otherwise. Totals are ``0`` when unknown. ``queries``
+    is in query order and may be empty during compile stages.
+
+    Values are already typed; nothing has to be parsed out of strings (unlike the
+    legacy ``run_probability`` string key-value callback).
+    """
+
+    schema: int
+    phase: str
+    step: str
+    trials_done: int
+    trials_total: int
+    passes_done: int
+    passes_total: int
+    elapsed_seconds: float
+    trials_per_second: float
+    frac_done: float
+    eta_seconds: float
+    queries: tuple[QueryState, ...]
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, Any]) -> "ProgressSnapshot":
+        return cls(
+            schema=int(payload["schema"]),
+            phase=str(payload["phase"]),
+            step=str(payload["step"]),
+            trials_done=int(payload["trials_done"]),
+            trials_total=int(payload["trials_total"]),
+            passes_done=int(payload["passes_done"]),
+            passes_total=int(payload["passes_total"]),
+            elapsed_seconds=float(payload["elapsed_seconds"]),
+            trials_per_second=float(payload["trials_per_second"]),
+            frac_done=float(payload["frac_done"]),
+            eta_seconds=float(payload["eta_seconds"]),
+            queries=tuple(QueryState.from_payload(q) for q in payload["queries"]),
+        )
+
+
+def _progress_callback(
+    on_progress: Callable[[ProgressSnapshot], None] | None,
+) -> Callable[[dict[str, Any]], None] | None:
+    """Wrap a ``ProgressSnapshot`` callable as the native dict callback."""
+    if on_progress is None:
+        return None
+
+    def _dispatch(payload: dict[str, Any]) -> None:
+        # The binding appends `finished`/`interrupted` to the last snapshot only;
+        # they are not part of the immutable snapshot value.
+        payload = {k: v for k, v in payload.items() if k not in ("finished", "interrupted")}
+        on_progress(ProgressSnapshot.from_payload(payload))
+
+    return _dispatch
+
+
 def run(
     pcfb: bytes | str | os.PathLike[str],
     *,
     trials: int | float,
     backend: str = "auto",
     seed: int | None = None,
+    on_progress: Callable[[ProgressSnapshot], None] | None = None,
     **options: Any,
 ) -> list[QueryResult]:
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
@@ -390,6 +487,10 @@ def run(
     ``seed`` is rejected (#65). ``backend`` is ``"auto"``, ``"cuda"``,
     ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`
     already applied. Metal SSCP currently rejects ``double`` until #17/#30.
+
+    ``on_progress`` receives a :class:`ProgressSnapshot` per coalesced engine
+    snapshot (first and last always included, at most ~10 per second). Raising
+    from it stops the run and re-raises the same exception here.
     """
     _reject_seed(seed, options)
     if options:
@@ -399,7 +500,9 @@ def run(
     if n <= 0:
         raise ValueError("run() requires a positive trial count")
     native = _runtime.native()
-    rows = native.run_pcfb(_pcfb_bytes(pcfb), n, _mask_backend(backend))
+    rows = native.run_pcfb(
+        _pcfb_bytes(pcfb), n, _mask_backend(backend), _progress_callback(on_progress)
+    )
     return [
         QueryResult(
             name=str(row["name"]),
@@ -531,7 +634,9 @@ __all__ = [
     "NodeTally",
     "PassResult",
     "ProbabilityEstimate",
+    "ProgressSnapshot",
     "QueryResult",
+    "QueryState",
     "Session",
     "compile",
     "compile_file",
