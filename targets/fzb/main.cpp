@@ -1,6 +1,7 @@
 #include "cli/progress_line.h"
 #include "compile/exact_eval.h"
 #include "compile/ftp/compile.h"
+#include "compile/ftp/inspect.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
@@ -943,6 +944,39 @@ int cmd_compile(int argc, char **argv) {
   return 0;
 }
 
+/// The FTP project path of `fzb inspect`: reader diagnostics, structure and conventions; no lowering.
+int inspect_ftp_inputs(const po::variables_map &vm, const std::vector<std::string> &files) {
+  namespace ftp = fuzzybits::compile::ftp;
+
+  for (const char *flag : {"validate", "exact"}) {
+    if (vm.count(flag)) {
+      std::cerr << "fzb inspect: --" << flag << " applies to .pcfb input only\n";
+      return 1;
+    }
+  }
+  ftp::inspect_options opt;
+  if (vm.count("duplicate-import")) {
+    opt.duplicate_import = vm["duplicate-import"].as<std::string>();
+  }
+  if (vm.count("complement-events")) {
+    opt.complement_events = vm["complement-events"].as<std::string>();
+  }
+  if (const auto problem = ftp::check_options(opt); !problem.empty()) {
+    std::cerr << "fzb inspect: " << problem << std::endl;
+    return 1;
+  }
+
+  const std::vector<std::filesystem::path> paths(files.begin(), files.end());
+  const auto result = ftp::inspect_project(paths, opt);
+  const bool counts_only = vm.count("counts-only") > 0;
+  if (vm.count("json")) {
+    std::cout << ftp::json::dump(ftp::inspection_json(result, counts_only), 2) << "\n";
+  } else {
+    std::cout << ftp::inspection_text(result, counts_only);
+  }
+  return ftp::inspect_exit_status(result, vm.count("strict") > 0);
+}
+
 int cmd_inspect(int argc, char **argv) {
   po::options_description desc("fzb inspect options");
   desc.add_options()
@@ -950,10 +984,16 @@ int cmd_inspect(int argc, char **argv) {
       ("validate", "run pcfb::validate; exit non-zero on diagnostics")
       ("json", "print summary as JSON")
       ("exact", "exhaustive exact P(query) for small models (≤ 30 events)")
-      ("input-file", po::value<std::string>(), ".pcfb file");
+      ("duplicate-import", po::value<std::string>(),
+       "FTP: event imported more than once: error|first|last (default last)")
+      ("complement-events", po::value<std::string>(),
+       "FTP: -EVENT operands: atom|negation (default atom: marked literals)")
+      ("strict", "FTP: exit 1 on warnings as well as errors")
+      ("counts-only", "FTP: print counts without element names")
+      ("input-file", po::value<std::vector<std::string>>(), ".pcfb file, or CAFTA FTP files / a directory of *.ftp files");
 
   po::positional_options_description pos;
-  pos.add("input-file", 1);
+  pos.add("input-file", -1);
 
   po::variables_map vm;
   try {
@@ -964,7 +1004,10 @@ int cmd_inspect(int argc, char **argv) {
     return 1;
   }
   if (vm.count("help")) {
-    std::cout << "Usage: fzb inspect model.pcfb [--validate] [--json] [--exact]\n\n" << desc << std::endl;
+    std::cout << "Usage: fzb inspect model.pcfb [--validate] [--json] [--exact]\n"
+                 "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
+                 "[--complement-events atom|negation] [--strict] [--counts-only]\n\n"
+              << desc << std::endl;
     return 0;
   }
   if (!vm.count("input-file")) {
@@ -972,7 +1015,30 @@ int cmd_inspect(int argc, char **argv) {
     return 1;
   }
 
-  const auto path = vm["input-file"].as<std::string>();
+  const auto inputs = vm["input-file"].as<std::vector<std::string>>();
+  const std::vector<std::filesystem::path> input_paths(inputs.begin(), inputs.end());
+  switch (fuzzybits::compile::ftp::classify_inputs(input_paths)) {
+    case fuzzybits::compile::ftp::input_kind::ftp:
+      return inspect_ftp_inputs(vm, inputs);
+    case fuzzybits::compile::ftp::input_kind::mixed:
+      std::cerr << "fzb inspect: FTP and non-FTP inputs cannot be combined\n";
+      return 1;
+    case fuzzybits::compile::ftp::input_kind::other:
+      break;
+  }
+  for (const char *flag : {"duplicate-import", "complement-events", "strict", "counts-only"}) {
+    if (vm.count(flag)) {
+      std::cerr << "fzb inspect: --" << flag << " applies to CAFTA FTP input only\n";
+      return 1;
+    }
+  }
+  if (inputs.size() > 1) {
+    std::cerr << "Option error: too many positional options have been specified on the command line\n\n"
+              << desc << std::endl;
+    return 1;
+  }
+
+  const auto &path = inputs.front();
   auto circuit = pcfb::io::read(path);
   if (!circuit) {
     std::cerr << "fzb inspect: " << circuit.error().message << std::endl;

@@ -34,7 +34,7 @@ if(BUILD_TESTING)
   if(NOT SKBUILD)
     fuzzybits_add_imported_test(
       TARGET fuzzybits_compile_ftp_cli_tests
-      SOURCES tests/cli_tests.cc
+      SOURCES tests/cli_tests.cc tests/inspect_cli_tests.cc
       LINK_LIBRARIES fuzzybits_compile_ftp
       ARGS "~[mc]"
     )
