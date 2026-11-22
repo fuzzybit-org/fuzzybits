@@ -156,9 +156,9 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate = argparse.ArgumentParser(add_help=False, parents=[common])
     evaluate.add_argument("--semantics", choices=("boolean", "hull"), default="boolean")
     evaluate.add_argument("--literals", choices=LITERALS, default="split",
-                          help="hull literal mode for events referenced with a direct complement in the "
-                               "target's cone: 'split' (atom-split hull: each complement is a droppable atom), "
-                               "'omega' (omega_L: those events are fixed), 'positive' (plain monotone hull)")
+                          help="hull reading of -EVENT references, which FTP marks as literals: 'split' "
+                               "(default, the FTP convention: each is a droppable atom), 'omega' (omega_L: those "
+                               "events are fixed), 'positive' (ordinary negations: the plain monotone hull)")
     evaluate.add_argument("--max-initiators-per-cutset", type=parse_count, default=None, metavar="N",
                           help="conjoin the delete term not atleast(N+1; initiator-tagged events in the cone)")
     evaluate.add_argument("--target", action="append", default=[], help="target name (repeatable)")

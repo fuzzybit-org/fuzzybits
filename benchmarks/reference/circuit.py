@@ -20,11 +20,12 @@ POS, NEG = 1, 2  # polarity bits: reachable from the root through an even / odd 
 # Which import values become constants when the circuit is built.
 CONSTANTS = ("boolean", "hull", "none")
 
-# Literal modes of a hull query (RFC §3) for the events referenced with a direct
-# complement (``-NAME`` on an event) in the target's cone: ``split`` (default)
-# makes each such complement an atom of its own, ``-NAME``, droppable and valued
-# not x (the atom-split hull); ``omega`` fixes those events (Rauzy's omega_L);
-# ``positive`` gives the plain hull, every event droppable.
+# Literal modes of a hull query (RFC §3). Following the FTP reader's convention
+# (#199), every direct complement ``-NAME`` of an event is a marked literal:
+# ``split`` (default) makes each an atom of its own, ``-NAME``, droppable and
+# valued not x (the atom-split hull); ``omega`` fixes those events (Rauzy's
+# omega_L); ``positive`` reads them as negations (the plain hull; ``negation``
+# in the RFC).
 LITERALS = ("split", "omega", "positive")
 # Per event under omega_L: which of x_v and not x_v are in L. A witness y may
 # use y_v in [lo, hi] (``bounds``).

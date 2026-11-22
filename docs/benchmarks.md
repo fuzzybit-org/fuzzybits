@@ -519,11 +519,15 @@ Vendor outputs are not committed.
 
 - **Boolean:** $P(g)$ of the literal logic. Events at p = 0 and p = 1 are
   constants.
-- **Hull** (#174, #190; [RFC](rfc/monotone-hull-queries.md) §3): the plain
-  monotone hull $\uparrow f(x) = \exists\, y \le x : f(y)$ of the target, with
-  a literal mode for the events referenced with a direct complement (`-NAME`
-  on an event) in the target's cone:
-  - `--literals split` (default), the *atom-split hull*: every such `-NAME` is
+- **Hull** (#174, #190, #199; [RFC](rfc/monotone-hull-queries.md) §3): the
+  plain monotone hull $\uparrow f(x) = \exists\, y \le x : f(y)$ of the
+  target, with a literal mode for the events referenced with a direct
+  complement (`-NAME` on an event) in the target's cone. These tools read
+  only FTP, so they apply the FTP reader's convention: every `-EVENT` is a
+  marked literal (`io.ftp.complement_events = atom`), every `-GATE` a
+  negation. Models from sources without such literals get the plain hull.
+  - `--literals split` (default, the FTP convention), the *atom-split hull*:
+    every such `-NAME` is
     an atom of its own, valued not x and dropped independently of `NAME`; the
     hull is taken over all atoms on the coupled sample, and cut sets list the
     atom as `-NAME` (a cut set with both `NAME` and `-NAME` has probability 0
@@ -531,7 +535,8 @@ Vendor outputs are not committed.
   - `--literals omega`: those events are *fixed* (a witness keeps their value):
     Rauzy's $\omega_L g$.
   - `--literals positive`: every event droppable, the plain hull of the literal
-    target.
+    target (the FTP reader's `io.ftp.complement_events = negation`; mode
+    `negation` in the RFC).
 
   A complemented gate, also a single-input one, is a delete term in every mode.
   `split` and `omega` agree wherever no directly complemented event also
