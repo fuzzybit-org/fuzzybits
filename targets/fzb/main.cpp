@@ -74,6 +74,21 @@ std::string json_escape(std::string_view s) {
   return out;
 }
 
+constexpr const char *kProgressLogHelp =
+    "write a progress log to FILE (.jsonl or .csv; all snapshot fields, "
+    "independent of the terminal display)";
+
+/// Opens the opt-in `--progress-log FILE`. Returns null when the flag is absent,
+/// so no file is ever created unless asked for. Throws `std::runtime_error` /
+/// `std::invalid_argument` (bad extension) before any work starts.
+std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(const po::variables_map &vm) {
+  if (vm.count("progress-log") == 0) {
+    return nullptr;
+  }
+  return std::make_unique<fuzzybits::runtime::progress::log_sink>(
+      std::filesystem::path(vm["progress-log"].as<std::string>()));
+}
+
 #ifdef FZB_HAS_RUNTIME
 std::uint64_t parse_trials(const std::string &text) {
   char *end = nullptr;
@@ -83,21 +98,6 @@ std::uint64_t parse_trials(const std::string &text) {
   }
   return static_cast<std::uint64_t>(v);
 }
-
-/// Opens the opt-in `--progress-log FILE`. Returns null when the flag is absent,
-/// so no file is ever created unless asked for. Throws `std::runtime_error` /
-/// `std::invalid_argument` (bad extension) before any sampling starts.
-std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(const po::variables_map &vm) {
-  if (vm.count("progress-log") == 0) {
-    return nullptr;
-  }
-  return std::make_unique<fuzzybits::runtime::progress::log_sink>(
-      std::filesystem::path(vm["progress-log"].as<std::string>()));
-}
-
-constexpr const char *kProgressLogHelp =
-    "write a progress log to FILE (.jsonl or .csv; all snapshot fields, "
-    "independent of the terminal display)";
 
 int cmd_run(int argc, char **argv) {
   po::options_description desc("fzb run options");
