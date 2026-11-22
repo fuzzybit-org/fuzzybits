@@ -1,7 +1,7 @@
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 add_executable(fzb main.cpp)
-target_link_libraries(fzb PRIVATE fuzzybits_compile Boost::program_options)
+target_link_libraries(fzb PRIVATE fuzzybits_compile fuzzybits_progress_log Boost::program_options)
 # libscram.so references DirectEval symbols that live in SYCL libmc (layering
 # inversion; proper fix is out of scope for Phase 1, see #44). Host stubs
 # satisfy the loader only when libmc is not linked. Do not compile them into

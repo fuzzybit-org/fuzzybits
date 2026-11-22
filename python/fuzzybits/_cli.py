@@ -114,6 +114,12 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--target", help="top-event / gate / nombrilo name")
     parser.add_argument("--weights", help="nombrilo variant weights file")
     parser.add_argument(
+        "--progress-log",
+        metavar="FILE",
+        help="write a progress log to FILE (.jsonl or .csv; all snapshot fields,"
+        " independent of the terminal display)",
+    )
+    parser.add_argument(
         "--watch",
         action="append",
         default=[],
@@ -153,6 +159,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
             args.input_file,
             pdag_c=int(args.compilation_passes),
             no_kn=bool(args.no_kn),
+            progress_log=args.progress_log,
             **options,
         )
     except Exception as exc:
@@ -345,6 +352,12 @@ def cmd_run(argv: Sequence[str]) -> int:
         help="AdaptiveCpp backend: auto, cuda, omp, or metal",
     )
     parser.add_argument("--json", action="store_true", help="print results as JSON")
+    parser.add_argument(
+        "--progress-log",
+        metavar="FILE",
+        help="write a progress log to FILE (.jsonl or .csv; all snapshot fields,"
+        " independent of the terminal display)",
+    )
     parser.add_argument("input_file", nargs="?", help=".pcfb file")
     args = parser.parse_args(list(argv))
     if not args.input_file:
@@ -373,7 +386,12 @@ def cmd_run(argv: Sequence[str]) -> int:
         return 1
 
     try:
-        rows = run(args.input_file, trials=trials, backend=backend)
+        rows = run(
+            args.input_file,
+            trials=trials,
+            backend=backend,
+            progress_log=args.progress_log,
+        )
     except Exception as exc:
         return _cli_error("run", exc)
 

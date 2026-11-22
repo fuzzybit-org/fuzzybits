@@ -18,6 +18,7 @@
 #include "pdag.h"
 #include "preprocessor.h"
 #include "risk_analysis.h"
+#include "runtime/progress_log.h"
 #include "runtime/runtime.h"
 #include "settings.h"
 
@@ -1399,26 +1400,55 @@ private:
     std::unique_ptr<py::error_already_set> error_;
 };
 
+/// Opens the opt-in `progress_log=` path, or null when not requested. Called
+/// before any work starts, so a bad path or extension never leaves a
+/// half-written experiment.
+std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(
+    const std::optional<std::string> &path) {
+    if (!path || path->empty()) {
+        return nullptr;
+    }
+    return std::make_unique<fuzzybits::runtime::progress::log_sink>(std::filesystem::path(*path));
+}
+
+/// A failed call still closes its log (marked interrupted) so the file never
+/// looks like a run in progress.
+void close_interrupted(const std::unique_ptr<fuzzybits::runtime::progress::log_sink> &log) {
+    if (log) {
+        fuzzybits::runtime::progress::finish_log(*log, /*interrupted=*/true);
+    }
+}
+
 py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::dict &options,
-                       py::object on_progress, double progress_rate_hz) {
+                       py::object on_progress, double progress_rate_hz,
+                       const std::optional<std::string> &progress_log) {
     if (input_files.empty()) {
         throw std::invalid_argument("compile requires at least one input file");
     }
+    auto log = open_progress_log(progress_log);
     auto opt = compile_options_from_py(options);
     opt.progress_max_rate_hz = progress_rate_hz;
 
     std::optional<PySnapshotSink> sink;
     if (!on_progress.is_none()) {
         sink.emplace(std::move(on_progress), /*with_finish=*/false);
-        opt.progress_sinks = {&*sink};
+        opt.progress_sinks.push_back(&*sink);
+    }
+    if (log) {
+        opt.progress_sinks.push_back(log.get());
     }
 
     std::optional<pcfb::Result<fuzzybits::compile::Compiled>> compiled;
     try {
         py::gil_scoped_release release;
         compiled.emplace(fuzzybits::compile::compile_files(input_files, opt));
+        if (log) {
+            fuzzybits::runtime::progress::finish_log(*log, /*interrupted=*/!*compiled);
+        }
     } catch (...) {
-        // See run_pcfb_bytes: the stored callback error, not the C++ type, decides what to re-raise.
+        // A callback failure is re-raised from the sink (see run_pcfb_bytes); any
+        // failure still closes the log, marked interrupted, before it propagates.
+        close_interrupted(log);
         py::gil_scoped_acquire acquire;
         if (sink) {
             sink->rethrow_if_failed();
@@ -1432,6 +1462,9 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
     }
     if (!*compiled) {
         throw std::runtime_error("compile: " + compiled->error().message);
+    }
+    if (log && !log->ok()) {
+        throw std::runtime_error("compile: writing the progress log failed: " + log->path().string());
     }
     return py_bytes_from((*compiled)->bytes);
 }
@@ -1538,10 +1571,12 @@ py::list query_results_to_py(const std::vector<fuzzybits::runtime::QueryResult> 
 }
 
 py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::string &backend,
-                        py::object on_progress, double progress_rate_hz) {
+                        py::object on_progress, double progress_rate_hz,
+                        const std::optional<std::string> &progress_log) {
     if (trials == 0) {
         throw std::invalid_argument("run: trials must be positive");
     }
+    auto log = open_progress_log(progress_log);
     auto owned = bytes_from_py(data);
     fuzzybits::runtime::RunOptions opt;
     opt.trials = trials;
@@ -1551,18 +1586,26 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     std::optional<PySnapshotSink> sink;
     if (!on_progress.is_none()) {
         sink.emplace(std::move(on_progress), /*with_finish=*/false);
-        opt.progress_sinks = {&*sink};
+        opt.progress_sinks.push_back(&*sink);
+    }
+    if (log) {
+        opt.progress_sinks.push_back(log.get());
     }
 
     std::vector<fuzzybits::runtime::QueryResult> results;
     try {
         py::gil_scoped_release release;
         results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(owned), opt);
+        if (log) {
+            fuzzybits::runtime::progress::finish_log(*log, results);
+        }
     } catch (...) {
         // Do not key off the C++ exception type: `run_pcfb` lives in libmc/libscram while this
         // binding is built with hidden visibility, so `catch (progress::interrupted&)` need not
         // match across the DSO boundary. The sink is the authoritative signal: if the callback
-        // raised, its exception is stored and re-raised here with the original traceback.
+        // raised, its exception is stored and re-raised here with the original traceback. Either
+        // way the log is closed first, marked interrupted.
+        close_interrupted(log);
         py::gil_scoped_acquire acquire;
         if (sink) {
             sink->rethrow_if_failed();
@@ -1581,6 +1624,9 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     if (sink) {
         py::gil_scoped_acquire acquire;
         sink->clear();
+    }
+    if (log && !log->ok()) {
+        throw std::runtime_error("run: writing the progress log failed: " + log->path().string());
     }
     return query_results_to_py(results);
 }
@@ -1964,6 +2010,7 @@ Returns:
         py::arg("options") = py::dict(),
         py::arg("on_progress") = py::none(),
         py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress_log") = py::none(),
         R"pbdoc(
 Compile OpenPSA/MEF XML or nombrilo.circuit into a pcfb 1.1 buffer.
 
@@ -1973,6 +2020,8 @@ Args:
         `weights` (nombrilo variant weights file).
     on_progress: Optional callable receiving one dict per compile-stage progress
         snapshot (`parse`, `lower`, `passes`, `write`, then a final `done`).
+    progress_log: Optional path for a progress log (`.jsonl` / `.ndjson` /
+        `.csv`, chosen by extension). Written independently of any display.
 
 Returns:
     bytes of a validated core-1.1 `.pcfb`.
@@ -2051,6 +2100,7 @@ Exhaustive exact P(query) for a small `.pcfb` file (≤ 30 random SAMPLE events)
         py::arg("backend") = "",
         py::arg("on_progress") = py::none(),
         py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress_log") = py::none(),
         R"pbdoc(
 One-shot Monte Carlo of an in-memory `.pcfb`. Same numbers as `fzb run`.
 
@@ -2061,6 +2111,9 @@ fails JIT with a Python exception until double support lands (#17/#30).
 `on_progress` receives one dict per coalesced progress snapshot
 (fuzzybits.runtime progress schema v1). It runs on the run thread with the GIL
 held; raising from it stops the run and re-raises here.
+
+`progress_log` writes every coalesced snapshot to a `.jsonl` / `.ndjson` /
+`.csv` file (chosen by extension), independently of any display.
 )pbdoc");
 
     py::class_<PyPcfbSession>(m, "PcfbSession")
