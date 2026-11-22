@@ -432,6 +432,9 @@ add_subdirectory(src/io)
 # Built for both the wheel (SKBUILD) and the in-tree fzb CLI.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/FuzzybitsPcfb.cmake")
 add_subdirectory(src/compile)
+# Terminal progress renderer (host-only, no SYCL). Needed by `fzb compile`, which builds
+# without the Monte Carlo engine, so it is not under src/runtime.
+add_subdirectory(src/cli)
 if(FUZZYBITS_WITH_MC)
   add_subdirectory(src/runtime)
 endif()
