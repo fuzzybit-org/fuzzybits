@@ -182,6 +182,8 @@ TEST_CASE("progress::emitter never swallows a sink exception at finish",
   RecordingSink sink;
   fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0);
   sink.throw_on = 0;  // the first on_snapshot from finish()
+  // The sink's own exception is not rethrown (nothing to rethrow from a destructor-safe path); the
+  // emitter raises its own typed signal instead, after every sink got on_finish.
   CHECK_THROWS_AS(emitter.finish(fuzzybits::runtime::progress::snapshot{}, false),
                   fuzzybits::runtime::progress::interrupted);
   // on_finish still ran, and only once.
