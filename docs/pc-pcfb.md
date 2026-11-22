@@ -1,9 +1,8 @@
-# ir::pc → pcfb
+# ir::pc ↔ pcfb
 
 `src/io/pcfb` writes a sealed `ir::pc::circuit` as a pcfb file (opset `core-1.1`) through
-the pinned `pcfb::builder`. It links no SCRAM code. The reverse direction
-(`.pcfb` → `ir::pc`) belongs to
-[#146](https://github.com/fuzzybit-org/fuzzybits/issues/146).
+the pinned `pcfb::builder`, and reads a pcfb file back into an `ir::pc::circuit`
+(see [Reading](#reading)). It links no SCRAM code.
 
 Related: [#176](https://github.com/fuzzybit-org/fuzzybits/issues/176),
 [#182](https://github.com/fuzzybit-org/fuzzybits/issues/182).
@@ -146,3 +145,88 @@ written circuit with `fzb run` (label `mc`) against its exact value.
 `pcfb::builder::finish()` at the pinned revision names tensors in time quadratic
 in the operator count (about 25 s at 10^5 operators); the writer itself is
 linear.
+
+## Reading
+
+```cpp
+auto read = writer::read(bytes);          // std::span<std::byte const>, or a std::filesystem::path
+if (!read) { /* read.diagnostics() holds the errors */ }
+read->circuit;                            // ir::pc::circuit
+read->options;                            // write_options: names, kinds, quantification, provenance
+read->node_by_tensor;                     // tensor -> ir::pc node
+read->metadata;                           // every metadata entry, verbatim
+read->schema_version;
+```
+
+`reader_endpoint_id()` is `io.fuzzybits.pcfb.reader`; `read(io::read_request const&)`
+returns the `ir::pc` handle (`ir.probabilistic_boolean_dag`). The reader runs
+`pcfb::validate` first (its findings are `io.pcfb.invalid_file`, an unknown query kind is
+`io.pcfb.unknown_query_kind`), then requires one subcircuit without external inputs and at least
+one query. Any minor of schema major 1 is accepted; `MONOTONE_HULL_PROBABILITY` needs minor 2, as
+in `pcfb::validate`.
+
+### Mapping
+
+| pcfb | `ir::pc` |
+|---|---|
+| `SAMPLE` | basic event with the literal `probability`; `event_id`, `name` kept in `options` / `tensor_by_node` |
+| `ZEROS` / `ONES` | constant 0 / 1 |
+| `AND` `OR` `XOR` `NAND` `NOR` `XNOR` `NOT` | the gate of the same name; `inverted_inputs` become complemented edges |
+| `ATLEAST` / `ATMOST` / `EXACTLY` (`k`) | cardinality `[k, n]` / `[0, k]` / `[k, k]` |
+| `AND(ATLEAST(k), ATMOST(m))` over the same operands | one cardinality `[k, m]`; the two unnamed tensors have no node |
+| unnamed `NOT` that only feeds operators listing its source positively | complemented edge (the writer's tensor for a source used in both polarities) |
+| `NO_OP` | one-operand AND (`io.pcfb.no_op_as_and`) |
+| `Query` | target on the tensor's node; consecutive queries with one tensor and one name and distinct kinds are one target with several kinds |
+
+Per-query `compile.query.<i>.*` metadata fills `options.quantification`; `general.*` and
+`compile.options` fill the provenance fields. Node and target names are the file's (a basic event
+without `SampleArgs.name` has none, so a rewrite generates `e<event_id>` again).
+
+### Numbering and what a round trip preserves
+
+The writer emits operators by depth-first post-order, taking roots in ascending node id and
+operands in operand order, and numbers basic events by ascending node id. The reader chooses node
+ids so that this traversal reproduces the file's operator order: operators are grouped into the
+trees the traversal would have visited, roots take ascending ids, and events take ascending ids
+in event-id order as early as their trees allow. `write(read(bytes))` is therefore byte-identical
+for files the writer produced, with one exception: `cardinality(0, n)` is a `ONES` tensor, but the
+writer emits the operands' subtrees before it. The read circuit has no edges from the constant to
+those operands, so their order may be forced differently by the ascending event ids. The rewrite
+then lists the same operators in another order (`io.pcfb.emission_order_changed`, a note), and is
+a fixed point from there on. Operand order among the positive and negative operands of one
+operator is not recorded in the file; the reader interleaves the two lists by the order in which
+the traversal first reaches their trees.
+
+Not recorded by the writer and therefore not recovered: target roles (every read target is
+primary; the writer only emits the note `io.pcfb.target-role`), house events (they were written as
+constants), the operands of a full-range cardinality, and `ir::pc` node ids as such.
+
+### Diagnostics
+
+| Id | Severity | Meaning |
+|---|---|---|
+| `io.pcfb.unreadable` | error | not a verifiable FlatBuffer, or the file cannot be read |
+| `io.pcfb.invalid_file` | error | `pcfb::validate` finding other than an unknown query kind |
+| `io.pcfb.unknown_query_kind` | error | query kind not defined by the pinned `pcfb`, or newer than the file's minor |
+| `io.pcfb.external_inputs` | error | the subcircuit has externally supplied inputs |
+| `io.pcfb.unsupported_opcode` | error | an operator `ir::pc` has no op code for, or one reserved by `core-1.1` |
+| `io.pcfb.too_large` | error | more tensors than a 32-bit node id addresses |
+| `io.pcfb.format_mismatch` | error | the read request names a format other than pcfb |
+| `io.pcfb.invalid_circuit` | error | the rebuilt circuit failed `ir::pc` sealing |
+| `io.pcfb.sample_source_dropped` | warning | a `SAMPLE` source of `COLLAPSED_MODULE` or `HOUSE_EVENT` reads as a basic event |
+| `io.pcfb.confidence_ignored` | warning | `Query.confidence` cannot be held |
+| `io.pcfb.event_ids_renumbered` | warning | event ids are not exactly `1..B`; the read circuit numbers them by ascending file id |
+| `io.pcfb.invalid_metadata` | warning | an interpreted metadata entry has the wrong type or range; it is ignored |
+| `io.pcfb.quantification_conflict` | warning | queries on one target carry different `compile.query.<i>.*` values |
+| `io.pcfb.no_op_as_and` | note | `NO_OP` read as a one-operand AND |
+| `io.pcfb.emission_order_changed` | note | a write lists some operators in another order than the file |
+
+The constants are declared in `descriptor.h` (`writer::diag`).
+
+### Tests
+
+`read_tests.cc` round-trips FTP conformance fixtures and several hundred seeded random circuits,
+checks structure through `node_by_tensor`, runs every tracked `.pcfb` file through read → write →
+read, and covers truncated and corrupted input, foreign constructs and unknown query kinds.
+`read_scale_tests.cc` (`[scale]`, separate executable) reads a 10^5-node circuit and requires it
+to take less than a second in Release.
