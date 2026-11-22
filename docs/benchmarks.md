@@ -471,7 +471,7 @@ read the sibling JSInp files directly. Delete
 [#159](https://github.com/fuzzybit-org/fuzzybits/issues/159) requires every
 reference value to come from a method other than the tool being scored.
 `benchmarks/reference/` ([#179](https://github.com/fuzzybit-org/fuzzybits/issues/179))
-provides those methods for CAFTA/FTREX `.ftp` projects. Consumers: the FTP
+provides those methods for CAFTA `.ftp` projects. Consumers: the FTP
 reader (#180), the lowering (#181), the monotone-hull work (#174, #178, #183)
 and the private large-model card (#185).
 
@@ -489,20 +489,20 @@ leading `-` complements a reference, `PROCESS` may continue on the next line,
 
 ### FTP grammar checks
 
-FTREX 2.0 and ZEBRA 1.0b were run on small models to settle what the grammar
+Vendor tools were run on small models to settle what the grammar
 requires ([#191](https://github.com/fuzzybit-org/fuzzybits/issues/191)). Where
 both reject a file, or skip lines and give the events those lines would define
 p = 1, the reference parser reports an error, so a misread file never produces
 a value. Sections never continue from one file into the next.
 
-| diagnostic | severity | rule | FTREX and ZEBRA |
+| diagnostic | severity | rule | Vendor tools |
 |---|---|---|---|
 | `missing-endtree` | error | gate lines not followed by `ENDTREE` before `PROCESS`, `IMPORT`, `LIMIT` or the end of the file | reject the file |
 | `import-without-header` | error | a record `value name [I]` outside an `IMPORT` section | skip it (the event gets p = 1); after `PROCESS`, reject the file |
-| `undefined-reference` | error | a referenced name is neither a gate nor imported | p = 1, with a warning from FTREX |
+| `undefined-reference` | error | a referenced name is neither a gate nor imported | p = 1, with a warning from a vendor tool |
 | `misplaced-gate` | error | a gate line after the tree section of its file | skip it (second tree section) or reject the file (tree after `IMPORT`) |
 | `undefined-process-target` | error | a `PROCESS` name is neither a gate nor imported | reject the file |
-| `missing-process` | warning | no `PROCESS`: the targets are the root gates | pick the root, with a warning from FTREX |
+| `missing-process` | warning | no `PROCESS`: the targets are the root gates | pick the root, with a warning from a vendor tool |
 | `duplicate-import` | warning (`last`, `first`), error (`error`) | an event imported more than once | the last value, with a warning; the `I` tag is kept |
 
 A file has at most one tree section, and it comes first. An `IMPORT` section
@@ -510,7 +510,7 @@ ends at the next keyword, header line or line that is not a record, so records
 after `LIMIT` or after a header line are not read. Header lines may appear
 between gate lines. Skipped lines define nothing, so `import-without-header`
 and `misplaced-gate` are usually followed by `undefined-reference` for the
-names they would have defined. FTREX and ZEBRA read one file; a multi-file
+names they would have defined. Vendor tools read one file; a multi-file
 project is a convention of this parser and #180, and its files are not
 equivalent to their concatenation (the second tree section would not be read).
 Vendor outputs are not committed.
@@ -555,7 +555,7 @@ Vendor outputs are not committed.
   function*. They are not probabilities: under the hull, an event overridden
   to 1 is a constant TRUE, while an imported p = 1 event stays droppable.
 - **Duplicate imports:** `--duplicate-import error|first|last`, default
-  `last` with a warning, as FTREX and ZEBRA do; `first` also warns, `error`
+  `last` with a warning, as vendor tools do; `first` also warns, `error`
   refuses evaluation. An `I` tag on any of the records keeps the event an
   initiator.
 
@@ -680,7 +680,7 @@ python -m benchmarks.reference.fixtures --write [NAME...] # after editing fixtur
 
 Fixtures named `invalid_*` are diagnostic-only: every policy has errors, so
 `expected.json` records the diagnostics per policy (results `null`) and no
-`default_targets` or `structure`. FTREX and ZEBRA reject or misread each of
+`default_targets` or `structure`. Vendor tools reject or misread each of
 them as described in its `description`.
 
 | fixture | input | diagnostics |
