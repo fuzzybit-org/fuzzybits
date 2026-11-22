@@ -728,22 +728,12 @@ TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime
   std::filesystem::remove(tmp);
 }
 
-TEST_CASE("the runtime rejects a schema minor newer than it supports", "[runtime][mc][guard]") {
-  fuzzybits::runtime::RunOptions opt;
-  opt.trials = 1 << 12;
-  opt.backend = "omp";
-  const auto bytes = query_guard_files::boolean_with_minor(3);
-  require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt)); },
-                      "pcfb.unsupported-schema-version", "1.3");
-  require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, "omp")); },
-                      "pcfb.unsupported-schema-version", "1.3");
-}
-
-TEST_CASE("the runtime still runs Boolean queries of a 1.2-capable build", "[runtime][mc][guard]") {
+TEST_CASE("the runtime runs Boolean queries whatever the schema minor", "[runtime][mc][guard]") {
   fuzzybits::runtime::RunOptions opt;
   opt.trials = 1 << 14;
   opt.backend = "omp";
-  for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2)}) {
+  for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2),
+                      query_guard_files::boolean_with_minor(3)}) {
     const auto results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt);
     REQUIRE(results.size() == 1);
     CHECK(results[0].name == query_guard_files::boolean_name);

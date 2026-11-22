@@ -32,9 +32,12 @@ namespace {
 
 } // namespace
 
-TEST_CASE("the guard accepts Boolean queries of any supported minor", "[io][pcfb][guard]") {
+TEST_CASE("the guard accepts Boolean queries whatever the schema minor", "[io][pcfb][guard]") {
     CHECK_FALSE(guard::reject_unimplemented_queries(load(files::boolean_only()).circuit));
     CHECK_FALSE(guard::reject_unimplemented_queries(load(files::boolean_with_minor(2)).circuit));
+    // Readers accept any minor of major 1 (pcfb spec 1.1 section 2).
+    CHECK_FALSE(guard::reject_unimplemented_queries(load(files::boolean_with_minor(3)).circuit));
+    CHECK_FALSE(guard::reject_unimplemented_queries(load(files::boolean_with_minor(9)).circuit));
 }
 
 TEST_CASE("the guard rejects a monotone-hull query and names it", "[io][pcfb][guard]") {
@@ -57,19 +60,9 @@ TEST_CASE("the guard looks past a leading Boolean query", "[io][pcfb][guard]") {
     CHECK_FALSE(contains(rejected->message, std::string("'") + files::boolean_name + "'"));
 }
 
-TEST_CASE("the guard rejects a schema minor newer than the pin", "[io][pcfb][guard]") {
-    const auto future = load(files::boolean_with_minor(3));
-    // pcfb::validate accepts later minors of major 1, so the runtime has to refuse on its own.
-    REQUIRE(pcfb::validate(future.circuit).empty());
-    const auto rejected = guard::reject_unimplemented_queries(future.circuit);
-    REQUIRE(rejected);
-    CHECK(rejected->id == "pcfb.unsupported-schema-version");
-    CHECK(contains(rejected->message, "1.3"));
-}
-
-TEST_CASE("the guard rejects a query kind newer than the pin", "[io][pcfb][guard]") {
+TEST_CASE("the guard rejects a query kind newer than the pin, whatever minor the file declares", "[io][pcfb][guard]") {
     const auto unknown = load(files::repacked(files::boolean_only(), [](pcfb::CircuitT &model) {
-        model.schema_version = (1U << 16U) | guard::supported_schema_minor;
+        model.schema_version = (1U << 16U) | 9U;
         model.subcircuits[0]->queries[0]->kind = static_cast<pcfb::QueryKind>(200);
     }));
     const auto diagnostics = pcfb::validate(unknown.circuit);
@@ -82,7 +75,7 @@ TEST_CASE("the guard rejects a query kind newer than the pin", "[io][pcfb][guard
     CHECK(contains(rejected->message, "unknown(200)"));
 }
 
-TEST_CASE("exact evaluation answers Boolean queries and refuses the others", "[io][pcfb][guard][exact]") {
+TEST_CASE("exact evaluation answers Boolean queries of any minor and refuses the others", "[io][pcfb][guard][exact]") {
     const auto boolean = load(files::boolean_only());
     CHECK(std::abs(fuzzybits::compile::exact_probability(boolean.circuit) - 0.125) < 1e-15);
 
@@ -100,7 +93,7 @@ TEST_CASE("exact evaluation answers Boolean queries and refuses the others", "[i
         }
     }
     const auto future = load(files::boolean_with_minor(3));
-    CHECK_THROWS_AS(fuzzybits::compile::exact_probability(future.circuit), fuzzybits::compile::ExactEvalError);
+    CHECK(std::abs(fuzzybits::compile::exact_probability(future.circuit) - 0.125) < 1e-15);
 }
 
 TEST_CASE("the committed hull fixture is a valid 1.2 file with one hull query", "[io][pcfb][guard]") {

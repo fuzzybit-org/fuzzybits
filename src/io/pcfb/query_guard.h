@@ -10,13 +10,9 @@
 namespace fuzzybits::io::pcfb_guard {
 
     inline constexpr char unsupported_query_kind_id[] = "pcfb.unsupported-query-kind";
-    inline constexpr char unsupported_schema_version_id[] = "pcfb.unsupported-schema-version";
-
-    // Highest schema minor of major 1 that the pinned pcfb (and so every consumer here) understands.
-    inline constexpr std::uint32_t supported_schema_minor = ::pcfb::kSchemaVersionV12 & 0xFFFFU;
 
     struct rejection final {
-        // One of the *_id constants above; stable across releases.
+        // unsupported_query_kind_id; stable across releases.
         std::string id;
         std::string message;
     };
@@ -34,21 +30,14 @@ namespace fuzzybits::io::pcfb_guard {
     // Sampling and exact evaluation answer Boolean probabilities only. A runtime that does not implement a
     // kind must reject the file before computing anything and never substitute another kind (pcfb spec 1.2
     // section 8), so this checks every query of every subcircuit, not only the one about to be evaluated.
-    // Structural problems are left to pcfb::validate.
+    // The schema minor is not checked: readers accept any minor of major 1 (spec 1.1 section 2), and an
+    // unknown kind is rejected here whichever minor the file declares. Structural problems are left to
+    // pcfb::validate.
     [[nodiscard]] inline auto reject_unimplemented_queries(::pcfb::ir::Circuit const &circuit) -> std::optional<rejection> {
         if (!circuit.valid()) {
             return std::nullopt;
         }
         auto const *root = circuit.get();
-        auto const version = root->schema_version();
-        auto const major = version == 0 ? 1U : (version >> 16U);
-        auto const minor = version & 0xFFFFU;
-        if (major == 1 && minor > supported_schema_minor) {
-            return rejection{unsupported_schema_version_id,
-                             "schema_version " + std::to_string(major) + "." + std::to_string(minor) +
-                                 " is newer than the highest minor this build supports (1." +
-                                 std::to_string(supported_schema_minor) + ")"};
-        }
         if (root->subcircuits() == nullptr) {
             return std::nullopt;
         }

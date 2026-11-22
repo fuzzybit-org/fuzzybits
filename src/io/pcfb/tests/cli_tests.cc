@@ -221,7 +221,7 @@ TEST_CASE("fzb inspect --exact refuses monotone-hull queries but still summarise
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb run refuses monotone-hull queries and unsupported schema minors before sampling", "[mc][io][pcfb][guard]") {
+TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts later minors", "[mc][io][pcfb][guard]") {
     const auto scratch = scratchDirectory("guard-run");
     const auto hull = scratch / "hull.pcfb";
     const auto mixed = scratch / "mixed.pcfb";
@@ -238,10 +238,10 @@ TEST_CASE("fzb run refuses monotone-hull queries and unsupported schema minors b
         CHECK(run.err.find(query_guard_files::hull_name) != std::string::npos);
         CHECK(run.out.find("estimate") == std::string::npos);
     }
-    const auto old = runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
-    INFO(old.out << old.err);
-    CHECK(old.status != 0);
-    CHECK(old.err.find("pcfb.unsupported-schema-version") != std::string::npos);
-    CHECK(old.out.find("estimate") == std::string::npos);
+    // Readers accept any minor of major 1 (pcfb spec 1.1 section 2).
+    const auto later = runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+    INFO(later.out << later.err);
+    CHECK(later.status == 0);
+    CHECK(later.out.find("\"name\": \"TOP\"") != std::string::npos);
     std::filesystem::remove_all(scratch);
 }

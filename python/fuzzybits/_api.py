@@ -538,9 +538,9 @@ def run(
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
 
     Only ``PROBABILITY`` queries are answered: a file with any other query kind (for example
-    ``MONOTONE_HULL_PROBABILITY``) or a schema minor newer than 1.2 raises :class:`RuntimeError`
-    before sampling, naming the query and its kind (``pcfb.unsupported-query-kind`` /
-    ``pcfb.unsupported-schema-version``). :class:`Session` and :func:`exact` apply the same check.
+    ``MONOTONE_HULL_PROBABILITY``) raises :class:`RuntimeError` before sampling, naming the query
+    and its kind (``pcfb.unsupported-query-kind``). :class:`Session` and :func:`exact` apply the
+    same check.
 
     ``seed`` is rejected (#65). ``backend`` is ``"auto"``, ``"cuda"``,
     ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`
