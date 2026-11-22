@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import signal
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -67,6 +68,33 @@ def _cli_error(command: str, exc: BaseException) -> int:
     return 1
 
 
+def _add_progress_flags(parser: argparse.ArgumentParser) -> None:
+    """Flags shared with `targets/fzb/main.cpp`; the C++ layer owns the decision."""
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="do not draw the progress line (it is on by default on a terminal)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="no progress line and no informational stderr; results and errors still print",
+    )
+
+
+def _progress_enabled(args: argparse.Namespace) -> bool | None:
+    """Map the flags onto the native ``progress=`` argument.
+
+    ``--no-progress`` / ``--quiet`` are passed as ``False`` so they win over the environment;
+    otherwise ``None`` leaves the automatic C++ policy (stderr TTY, ``TERM``,
+    ``FUZZYBITS_PROGRESS``) in charge.
+    """
+    if args.no_progress or args.quiet:
+        return False
+    return None
+
+
 def _parse_trials(text: str) -> int:
     try:
         value = float(text)
@@ -80,7 +108,8 @@ def _parse_trials(text: str) -> int:
 def cmd_compile(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb compile",
-        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--target NAME] [--weights FILE] [-o model.pcfb]",
+        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--target NAME] [--weights FILE] [-o model.pcfb]\n"
+        "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -114,11 +143,18 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--target", help="top-event / gate / nombrilo name")
     parser.add_argument("--weights", help="nombrilo variant weights file")
     parser.add_argument(
+        "--progress-log",
+        metavar="FILE",
+        help="write a progress log to FILE (.jsonl or .csv; all snapshot fields,"
+        " independent of the terminal display)",
+    )
+    parser.add_argument(
         "--watch",
         action="append",
         default=[],
         help="extra MEF names / PDAG indices as additional queries (repeatable)",
     )
+    _add_progress_flags(parser)
     parser.add_argument("input_file", nargs="*", help="MEF XML or nombrilo.circuit file")
     args = parser.parse_args(list(argv))
     if not args.input_file:
@@ -153,6 +189,8 @@ def cmd_compile(argv: Sequence[str]) -> int:
             args.input_file,
             pdag_c=int(args.compilation_passes),
             no_kn=bool(args.no_kn),
+            progress=_progress_enabled(args),
+            progress_log=args.progress_log,
             **options,
         )
     except Exception as exc:
@@ -178,10 +216,11 @@ def cmd_compile(argv: Sequence[str]) -> int:
         top = str(meta.get("fuzzybits.target") or "")
     except Exception:
         pass
-    print(
-        f"wrote {out_path} ({len(blob)} bytes) model={model} top={top}",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        print(
+            f"wrote {out_path} ({len(blob)} bytes) model={model} top={top}",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -325,7 +364,8 @@ def cmd_inspect(argv: Sequence[str]) -> int:
 def cmd_run(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb run",
-        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|omp|metal] [--json]",
+        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|omp|metal] [--json]\n"
+        "              [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb run options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -345,6 +385,13 @@ def cmd_run(argv: Sequence[str]) -> int:
         help="AdaptiveCpp backend: auto, cuda, omp, or metal",
     )
     parser.add_argument("--json", action="store_true", help="print results as JSON")
+    parser.add_argument(
+        "--progress-log",
+        metavar="FILE",
+        help="write a progress log to FILE (.jsonl or .csv; all snapshot fields,"
+        " independent of the terminal display)",
+    )
+    _add_progress_flags(parser)
     parser.add_argument("input_file", nargs="?", help=".pcfb file")
     args = parser.parse_args(list(argv))
     if not args.input_file:
@@ -373,7 +420,13 @@ def cmd_run(argv: Sequence[str]) -> int:
         return 1
 
     try:
-        rows = run(args.input_file, trials=trials, backend=backend)
+        rows = run(
+            args.input_file,
+            trials=trials,
+            backend=backend,
+            progress=_progress_enabled(args),
+            progress_log=args.progress_log,
+        )
     except Exception as exc:
         return _cli_error("run", exc)
 
@@ -414,14 +467,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if cmd in {"-v", "--version", "version"}:
         print(f"fzb {__version__}")
         return 0
-    if cmd == "compile":
-        return cmd_compile(args[1:])
-    if cmd == "export":
-        return cmd_export(args[1:])
-    if cmd == "inspect":
-        return cmd_inspect(args[1:])
-    if cmd == "run":
-        return cmd_run(args[1:])
+    try:
+        if cmd == "compile":
+            return cmd_compile(args[1:])
+        if cmd == "export":
+            return cmd_export(args[1:])
+        if cmd == "inspect":
+            return cmd_inspect(args[1:])
+        if cmd == "run":
+            return cmd_run(args[1:])
+    except KeyboardInterrupt:
+        # The native renderer already erased its block and printed the partial summary; a
+        # traceback here would bury it. 128 + SIGINT is what a shell reports for Ctrl-C.
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+        return 128 + signal.SIGINT
     print(f"fzb: unknown command '{cmd}'", file=sys.stderr)
     _print_root_usage(sys.stderr)
     return 1

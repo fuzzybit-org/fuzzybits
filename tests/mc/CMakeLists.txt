@@ -52,6 +52,20 @@ foreach(_case n65536 n2p24 seed smalltree bscu)
   )
 endforeach()
 
+add_executable(mc_progress_log_cli_tests progress_log_cli_tests.cc)
+target_link_libraries(mc_progress_log_cli_tests PRIVATE Catch2::Catch2WithMain)
+target_compile_definitions(mc_progress_log_cli_tests PRIVATE
+  FZB_PATH="$<TARGET_FILE:fzb>"
+  PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
+)
+add_dependencies(mc_progress_log_cli_tests fzb)
+add_test(NAME mc.progress_log_cli COMMAND mc_progress_log_cli_tests)
+set_tests_properties(mc.progress_log_cli PROPERTIES
+  LABELS "mc"
+  TIMEOUT ${MC_TEST_TIMEOUT}
+  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
+)
+
 add_executable(mc_bitpack_identity_tests bitpack_identity_tests.cc)
 target_link_libraries(mc_bitpack_identity_tests PRIVATE Catch2::Catch2WithMain mc)
 target_include_directories(mc_bitpack_identity_tests PRIVATE

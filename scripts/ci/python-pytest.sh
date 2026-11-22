@@ -27,8 +27,9 @@ whl="${whls[0]}"
 python3 -m venv /tmp/fb-venv
 /tmp/fb-venv/bin/pip install -U pip >/dev/null
 # numpy: benchmarks/reference (#179), tested by test_reference_estimators.py.
-# pyte/wcwidth: scripts/analysis/terminal_capture.py screen reconstruction and
-# cell-width measurement, tested by test_terminal_capture.py (#205).
+# pyte: the progress-line PTY golden tests replay captured bytes through a terminal emulator
+# (requirements-tests.txt); pyte/wcwidth: scripts/analysis/terminal_capture.py screen
+# reconstruction and cell-width measurement, tested by test_terminal_capture.py (#205).
 /tmp/fb-venv/bin/pip install "${whl}" pytest numpy pyte wcwidth
 # Drop pyproject pythonpath so the *installed* package is imported, not python/.
 export ACPP_VISIBILITY_MASK=omp

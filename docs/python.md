@@ -190,6 +190,70 @@ fzb --version
 payloads. `--seed` is rejected unless it is `372` (the scram-cli default),
 same as native ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)).
 
+### Progress log (`--progress-log FILE`, `progress_log=`)
+
+`fzb run` and `fzb compile` accept `--progress-log FILE`; `fuzzybits.run` and
+`fuzzybits.compile` accept `progress_log=` (a `str` or path-like). The format
+comes from the extension: `.jsonl` and `.ndjson` are JSON Lines, `.csv` is CSV;
+anything else is an error raised before any work starts. The log is written
+whether or not a terminal display is active (`--json`, redirected output and a
+disabled display do not affect it), and no file is ever created unless it is
+asked for. The legacy `scram-cli` `<input>_<timestamp>_convergence.csv` is
+unrelated and unchanged.
+
+```bash
+fzb run model.pcfb --trials 1e9 --progress-log run.jsonl
+fzb compile model.xml -o model.pcfb --progress-log compile.csv
+```
+
+```python
+rows = fuzzybits.run(pcfb, trials=1 << 24, progress_log="run.csv")
+blob = fuzzybits.compile(["model.xml"], progress_log=Path("compile.jsonl"))
+```
+
+There is one record per coalesced snapshot (about 10 per second plus the first
+and the last) and exactly one *finish* record, written last, whose per-query
+values equal the run's result. Records are flushed individually, so a killed run
+leaves a readable file whose final record is missing.
+
+JSON Lines fields (one object per line; `null` for values that were not
+computed, never `NaN`):
+
+| field | meaning |
+| --- | --- |
+| `record` | 0-based record index in the file |
+| `event` | `"snapshot"` or `"finish"` |
+| `interrupted` | `true` on the finish record of a failed or cancelled run |
+| `schema` | snapshot schema version, currently `1` |
+| `phase` | `compile`, `sampling`, `checking`, or `done` |
+| `step` | compile sub-stage (`parse`, `lower`, `passes`, `write`); empty otherwise |
+| `trials_done`, `trials_total` | Bernoulli trials; `trials_total` is `0` when unknown |
+| `passes_done`, `passes_total` | device passes; `passes_total` is `0` when unknown |
+| `elapsed_seconds` | wall time since the run started |
+| `trials_per_second` | rate over a sliding window |
+| `queries` | array, in query order, of the per-query objects below |
+
+Per query: `name`, `hits`, `trials`, `estimate`, `ci_low`, `ci_high`,
+`rel_half_width` (`(ci_high - ci_low) / (2 estimate)`, `null` when the estimate
+is 0), `target_rel_half_width` (`null` without a convergence target), and
+`converged`.
+
+CSV is long format: the header is
+
+```
+record,event,interrupted,schema,phase,step,trials_done,trials_total,passes_done,passes_total,
+elapsed_seconds,trials_per_second,query_index,query_name,hits,trials,estimate,ci_low,ci_high,
+rel_half_width,target_rel_half_width,converged
+```
+
+(written on one line) with one row per (record, query): the snapshot scalars
+repeat and `query_index` / `query_name` identify the query. Names are quoted per
+RFC 4180 when they contain a comma, a quote, a newline, or leading/trailing
+blanks, and embedded quotes are doubled. A missing double is an empty cell. A
+record without queries (compile stages) keeps one row with the query columns
+empty, so no record is lost. Doubles use shortest round-trip formatting in both
+formats, so a reader recovers the exact value the snapshot carried.
+
 ## Build wheels from source
 
 Requires the pinned toolchain in [`toolchain.env`](../toolchain.env)

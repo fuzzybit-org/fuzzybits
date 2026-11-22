@@ -1,7 +1,9 @@
+#include "cli/progress_line.h"
 #include "compile/exact_eval.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
+#include "runtime/progress_log.h"
 #include "version.h"
 
 #ifdef FZB_HAS_RUNTIME
@@ -21,6 +23,7 @@
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -29,6 +32,42 @@
 namespace po = boost::program_options;
 
 namespace {
+
+namespace progress = fuzzybits::runtime::progress;
+
+/// `--no-progress` / `--quiet`, shared by every command that can show progress.
+struct progress_flags {
+  bool no_progress = false;
+  bool quiet = false;
+
+  /// Attach a renderer to `sinks` when the policy allows it. Returns nullptr (and leaves `sinks`
+  /// alone) for pipes, `--no-progress`, `--quiet` and `FUZZYBITS_PROGRESS=0`.
+  [[nodiscard]] std::unique_ptr<progress::line_sink> attach(std::vector<progress::sink *> &sinks) const {
+    if (!progress::resolve_display(no_progress, quiet).enabled()) {
+      return nullptr;
+    }
+    auto sink = std::make_unique<progress::line_sink>(2);
+    sinks.push_back(sink.get());
+    return sink;
+  }
+
+  /// Informational stderr (`wrote …`, the run summary) is dropped by `--quiet`; results and
+  /// errors still print.
+  [[nodiscard]] bool silent() const { return quiet; }
+};
+
+void add_progress_options(po::options_description &desc) {
+  desc.add_options()
+      ("no-progress", "do not draw the progress line (it is on by default on a terminal)")
+      ("quiet,q", "no progress line and no informational stderr; results and errors still print");
+}
+
+progress_flags read_progress_flags(const po::variables_map &vm) {
+  progress_flags flags;
+  flags.no_progress = vm.count("no-progress") > 0;
+  flags.quiet = vm.count("quiet") > 0;
+  return flags;
+}
 
 void print_root_usage(std::ostream &out) {
   out << "Usage: fzb <command> [options]\n\n"
@@ -72,6 +111,21 @@ std::string json_escape(std::string_view s) {
   return out;
 }
 
+constexpr const char *kProgressLogHelp =
+    "write a progress log to FILE (.jsonl or .csv; all snapshot fields, "
+    "independent of the terminal display)";
+
+/// Opens the opt-in `--progress-log FILE`. Returns null when the flag is absent,
+/// so no file is ever created unless asked for. Throws `std::runtime_error` /
+/// `std::invalid_argument` (bad extension) before any work starts.
+std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(const po::variables_map &vm) {
+  if (vm.count("progress-log") == 0) {
+    return nullptr;
+  }
+  return std::make_unique<fuzzybits::runtime::progress::log_sink>(
+      std::filesystem::path(vm["progress-log"].as<std::string>()));
+}
+
 #ifdef FZB_HAS_RUNTIME
 std::uint64_t parse_trials(const std::string &text) {
   char *end = nullptr;
@@ -91,7 +145,9 @@ int cmd_run(int argc, char **argv) {
        "must be 372 (the scram-cli default); other values are rejected")
       ("backend", po::value<std::string>(), "AdaptiveCpp backend: cuda, metal or omp (sets ACPP_VISIBILITY_MASK)")
       ("json", "print results as JSON")
+      ("progress-log", po::value<std::string>(), kProgressLogHelp)
       ("input-file", po::value<std::string>(), ".pcfb file");
+  add_progress_options(desc);
 
   po::positional_options_description pos;
   pos.add("input-file", 1);
@@ -105,7 +161,8 @@ int cmd_run(int argc, char **argv) {
     return 1;
   }
   if (vm.count("help")) {
-    std::cout << "Usage: fzb run model.pcfb --trials N [--seed S] [--backend cuda|metal|omp] [--json]\n\n"
+    std::cout << "Usage: fzb run model.pcfb --trials N [--seed S] [--backend cuda|metal|omp] [--json]\n"
+                 "              [--no-progress] [--quiet]\n\n"
               << desc << std::endl;
     return 0;
   }
@@ -146,8 +203,33 @@ int cmd_run(int argc, char **argv) {
     return 1;
   }
 
+  // The log is opt-in and independent of the terminal display (`--no-progress`,
+  // `--quiet` and redirection do not affect it). Opening it here fails before
+  // sampling and before the progress line draws anything.
+  std::unique_ptr<fuzzybits::runtime::progress::log_sink> progress_log;
+  try {
+    progress_log = open_progress_log(vm);
+  } catch (const std::exception &ex) {
+    std::cerr << "fzb run: " << ex.what() << std::endl;
+    return 1;
+  }
+  const progress_flags pf = read_progress_flags(vm);
+  auto progress_sink = pf.attach(opt.progress_sinks);
+  if (progress_log) {
+    opt.progress_sinks.push_back(progress_log.get());
+  }
+
   try {
     const auto results = fuzzybits::runtime::run_pcfb(vm["input-file"].as<std::string>(), opt);
+    if (progress_log) {
+      // No-op when the engine already delivered its finish record.
+      fuzzybits::runtime::progress::finish_log(*progress_log, results);
+    }
+    if (progress_log && !progress_log->ok()) {
+      std::cerr << "fzb run: writing the progress log failed: " << progress_log->path().string()
+                << std::endl;
+      return 1;
+    }
     if (vm.count("json")) {
       std::cout << "{\n  \"queries\": [\n";
       for (std::size_t i = 0; i < results.size(); ++i) {
@@ -173,12 +255,28 @@ int cmd_run(int argc, char **argv) {
     }
     return 0;
   } catch (const fuzzybits::runtime::InvalidPcfbError &ex) {
+    if (progress_sink) {
+      progress_sink->stop();  // erase the block before the error text lands in it
+    }
+    if (progress_log) {
+      fuzzybits::runtime::progress::finish_log(*progress_log, /*interrupted=*/true);
+    }
     std::cerr << "fzb run: " << ex.what() << std::endl;
     for (const auto &d : ex.diagnostics) {
       std::cerr << "validate: " << d.location << ": " << d.message << std::endl;
     }
     return 1;
   } catch (const std::exception &ex) {
+    if (progress_sink) {
+      progress_sink->stop();
+    }
+    if (progress_log) {
+      // A failed run still closes its log, marked interrupted, instead of
+      // leaving a file that looks like a run in progress.
+      fuzzybits::runtime::progress::finish_log(*progress_log, /*interrupted=*/true);
+    }
+    // A partial run has already printed its own summary through on_finish; `--quiet` silences
+    // only informational lines, never an error.
     std::cerr << "fzb run: " << ex.what() << std::endl;
     return 1;
   }
@@ -411,7 +509,9 @@ int cmd_compile(int argc, char **argv) {
       ("allow-extern", "**UNSAFE** allow external libraries")
       ("target", po::value<std::string>(), "top-event / gate / nombrilo name")
       ("weights", po::value<std::string>(), "nombrilo variant weights file")
+      ("progress-log", po::value<std::string>(), kProgressLogHelp)
       ("input-file", po::value<std::vector<std::string>>(), "MEF XML or nombrilo.circuit file");
+  add_progress_options(desc);
 
   po::positional_options_description pos;
   pos.add("input-file", -1);
@@ -426,7 +526,8 @@ int cmd_compile(int argc, char **argv) {
   }
   if (vm.count("help")) {
     std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] "
-                 "[--target NAME] [--weights FILE] [-o model.pcfb]\n\n"
+                 "[--target NAME] [--weights FILE] [-o model.pcfb]\n"
+                 "                   [--no-progress] [--quiet]\n\n"
               << desc << std::endl;
     return 0;
   }
@@ -460,8 +561,24 @@ int cmd_compile(int argc, char **argv) {
   }
 
   const auto files = vm["input-file"].as<std::vector<std::string>>();
+  // Opt-in and independent of the display; opened before lowering starts.
+  std::unique_ptr<fuzzybits::runtime::progress::log_sink> progress_log;
+  try {
+    progress_log = open_progress_log(vm);
+  } catch (const std::exception &ex) {
+    std::cerr << "fzb compile: " << ex.what() << std::endl;
+    return 1;
+  }
+  const progress_flags pf = read_progress_flags(vm);
+  auto progress_sink = pf.attach(opt.progress_sinks);
+  if (progress_log) {
+    opt.progress_sinks.push_back(progress_log.get());
+  }
   auto compiled = fuzzybits::compile::compile_files(files, opt);
   if (!compiled) {
+    if (progress_sink) {
+      progress_sink->stop();
+    }
     std::cerr << "fzb compile: " << compiled.error().message << std::endl;
     return 1;
   }
@@ -475,17 +592,38 @@ int cmd_compile(int argc, char **argv) {
   }
   std::ofstream out(out_path, std::ios::binary);
   if (!out) {
+    if (progress_sink) {
+      progress_sink->stop();
+    }
     std::cerr << "fzb compile: cannot write " << out_path << std::endl;
     return 1;
   }
   out.write(reinterpret_cast<const char *>(compiled->bytes.data()),
             static_cast<std::streamsize>(compiled->bytes.size()));
   if (!out) {
+    if (progress_sink) {
+      progress_sink->stop();
+    }
     std::cerr << "fzb compile: write failed: " << out_path << std::endl;
     return 1;
   }
-  std::cerr << "wrote " << out_path << " (" << compiled->bytes.size() << " bytes)"
-            << " model=" << compiled->model_name << " top=" << compiled->target_id << std::endl;
+  if (progress_sink) {
+    // Summarise before the `wrote …` line so stderr reads in completion order.
+    progress_sink->finish_now(/*interrupted=*/false);
+  }
+  if (!pf.silent()) {
+    std::cerr << "wrote " << out_path << " (" << compiled->bytes.size() << " bytes)"
+              << " model=" << compiled->model_name << " top=" << compiled->target_id << std::endl;
+  }
+  if (progress_log) {
+    // A compile has no query results; the finishing snapshot carries the stage.
+    fuzzybits::runtime::progress::finish_log(*progress_log);
+    if (!progress_log->ok()) {
+      std::cerr << "fzb compile: writing the progress log failed: " << progress_log->path().string()
+                << std::endl;
+      return 1;
+    }
+  }
   return 0;
 }
 
