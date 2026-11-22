@@ -29,10 +29,13 @@ namespace fuzzybits::ir::pra {
         std::uint32_t high = 0;
     };
 
-    // `event` is a basic event, a house event or a gate.
+    // `event` is a basic event, a house event or a gate. `literal` marks a
+    // complemented basic-event operand that the source defines as an atomic
+    // literal; it never changes the Boolean meaning, which is the complement.
     struct gate_operand final {
         domain_ref event;
         bool complement = false;
+        bool literal = false;
     };
 
     struct gate final {

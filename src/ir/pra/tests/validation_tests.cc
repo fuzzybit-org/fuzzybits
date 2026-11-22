@@ -265,6 +265,42 @@ TEST_CASE("PRA validation: not gates take exactly one operand", "[ir][pra][valid
     }
 }
 
+TEST_CASE("PRA validation: literal markers only on complemented basic-event operands", "[ir][pra][validation]") {
+    pra::builder builder;
+    const auto event = builder.add_basic_event({.stable_name = "E"}, literal(0.1));
+    const auto house = builder.add_house_event({.stable_name = "H"}, true);
+    const auto inner = builder.add_gate({.stable_name = "I"}, pra::gate_kind::or_gate, {{.event = event}});
+
+    SECTION("uncomplemented basic event") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = event, .literal = true}});
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "marked literal but not complemented"));
+    }
+    SECTION("complemented gate") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = inner, .complement = true, .literal = true}});
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "gate 'I'"));
+    }
+    SECTION("complemented gate by name, resolved at seal") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
+                               {{.event = pra::reference::named("I"), .complement = true, .literal = true}});
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "not a basic event"));
+    }
+    SECTION("complemented house event") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = house, .complement = true, .literal = true}});
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "house event 'H'"));
+    }
+    SECTION("dangling operands are reported once, as dangling") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
+                               {{.event = pra::reference::named("NOPE"), .complement = true, .literal = true}});
+        (void)rejected_with(std::move(builder), "ir.pra.dangling-reference");
+    }
+    SECTION("complemented basic event, by id or by name") {
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
+                               {{.event = event, .complement = true, .literal = true},
+                                {.event = pra::reference::named("E"), .complement = true, .literal = true}});
+        require_ok(std::move(builder));
+    }
+}
+
 TEST_CASE("PRA validation: cardinality bounds satisfy 0 <= low <= high <= n", "[ir][pra][validation]") {
     pra::builder builder;
     std::vector<pra::operand_spec> operands;

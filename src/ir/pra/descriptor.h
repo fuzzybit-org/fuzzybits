@@ -18,6 +18,8 @@ namespace fuzzybits::ir::pra {
         std::size_t gate_count = 0;
         std::size_t operand_count = 0;
         std::size_t complemented_operand_count = 0;
+        // Complemented operands marked as literals; a subset of the above.
+        std::size_t literal_operand_count = 0;
         // Longest chain of gates; a gate whose operands are all events has depth 1.
         std::uint32_t gate_depth = 0;
         std::vector<gate_kind> gate_kinds_present;

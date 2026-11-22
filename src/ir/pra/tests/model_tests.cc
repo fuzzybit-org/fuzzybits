@@ -216,6 +216,7 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
         CHECK(summary.gate_count == 9);
         CHECK(summary.operand_count == 22);
         CHECK(summary.complemented_operand_count == 3);
+        CHECK(summary.literal_operand_count == 0);
         CHECK(summary.gate_depth == 3);
         CHECK(summary.gate_kinds_present.size() == pra::gate_kind_count);
         CHECK(contains(summary.gate_kinds_present, pra::gate_kind::cardinality));
@@ -345,4 +346,40 @@ TEST_CASE("PRA model round-trips through ir::handle", "[ir][pra][handle]") {
     auto circuit = std::move(circuit_builder).seal();
     REQUIRE(circuit.ok());
     CHECK(pra::model_from(circuit.output.to_handle()) == nullptr);
+}
+
+TEST_CASE("PRA literal markers round-trip through the model and its summary", "[ir][pra][builder]") {
+    pra::builder builder;
+    const auto a = builder.add_basic_event({.stable_name = "A"}, pra::expression_spec::literal(0.1));
+    const auto b = builder.add_basic_event({.stable_name = "B"}, pra::expression_spec::literal(0.2));
+    const auto inner = builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::or_gate, {{.event = a}, {.event = b}});
+    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
+                                      {{.event = a},
+                                       {.event = b, .complement = true, .literal = true},
+                                       {.event = inner, .complement = true},
+                                       named("B", true),
+                                       {.event = pra::reference::named("A"), .complement = true, .literal = true}});
+    auto result = std::move(builder).seal();
+    INFO(render(result.diagnostics));
+    REQUIRE(result.ok());
+
+    const auto handle = result.output.to_handle();
+    auto const *model = pra::model_from(handle);
+    REQUIRE(model != nullptr);
+    const auto operands = model->operands(top);
+    REQUIRE(operands.size() == 5);
+    CHECK_FALSE(operands[0].literal);
+    CHECK(operands[1].event == pra::domain_ref(b));
+    CHECK(operands[1].complement);
+    CHECK(operands[1].literal);
+    CHECK(operands[2].complement);
+    CHECK_FALSE(operands[2].literal);
+    CHECK(operands[3].complement);
+    CHECK_FALSE(operands[3].literal);
+    CHECK(operands[4].event == pra::domain_ref(a));
+    CHECK(operands[4].literal);
+    CHECK(model->gate_operands()[model->gates()[top.raw()].operands.offset + 1].literal);
+
+    CHECK(model->summary().complemented_operand_count == 4);
+    CHECK(model->summary().literal_operand_count == 2);
 }

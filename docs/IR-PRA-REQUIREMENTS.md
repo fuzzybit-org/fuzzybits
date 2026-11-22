@@ -81,7 +81,7 @@ expand CCF.
 - **Sealed model:** `pra::model` is immutable, shares its storage between copies and exposes spans. Lookup by stable
   name within a kind (`find`, `find_gate`, ...) uses an open-addressing index built at seal time (expected O(1)).
   `topological_gates()` lists every gate after the gates among its operands. `summary()` records gate and operand
-  counts, complemented operands, gate depth, and the gate and expression kinds present.
+  counts, complemented operands, operands marked `literal`, gate depth, and the gate and expression kinds present.
 - **Handle:** `to_handle()` wraps the model in `ir::handle` with storage type and form `ir.pra.model` (endpoint
   `ir.pra`); the form profile also satisfies `ir.probabilistic_risk_model`. `pra::is_pra(handle)` and
   `pra::model_from(handle)` extract it.
@@ -99,11 +99,19 @@ expand CCF.
 | `basic_event` | element, expression | |
 | `house_event` | element, value | |
 | `initiating_event` | element, basic event | the basic event carries the value, which may be a frequency |
-| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`, `xnor` (even parity); operands reference a basic event, house event or gate, each with a complement flag |
+| `gate` | element, kind, operands, cardinality bounds, owning fault tree | kinds `and`, `or`, `cardinality(low, high)`, `not`, `xor` (odd parity), `nand`, `nor`, `xnor` (even parity); operands reference a basic event, house event or gate, each with a complement flag and a `literal` marker (see below) |
 | `fault_tree` | element, gates, top gates | gates are those whose owner is the tree; top gates must be owned by the tree |
 | `domain_target` | element, kind, role (`primary`, `watch`), subject | kinds `fault_tree_top` (subject: a fault tree with exactly one top gate), `gate`, `basic_event`; `sequence` and `end_state` are reserved |
 
 At-least-k over n operands is `cardinality(k, n)`.
+
+**Literal marker.** `operand_spec::literal` (stored as `gate_operand::literal`) says that a complemented basic-event
+operand is an atomic literal of that event as the source wrote it. It is Boolean-neutral: the operand still means the
+complement of the event, and `ir::pra` neither interprets the marker nor infers it. Consumers that distinguish atomic
+literals from negations (for example hull queries, where a marked operand is its own droppable atom and an unmarked
+complement is a delete term) read it from the operand. The builder accepts it only on a complemented operand that
+resolves to a basic event. Only readers whose source format defines such literals set it; today that is the FTP
+reader. A model without marked operands is read as if no source convention applied.
 
 ### Construction
 
@@ -133,6 +141,7 @@ Hard IR validity errors, all with severity `error`:
 | `ir.pra.invalid-arity` | a `not` gate without exactly one operand |
 | `ir.pra.invalid-cardinality` | bounds outside `0 <= low <= high <= n` |
 | `ir.pra.invalid-literal` | a non-finite literal, a probability outside [0, 1] or a negative frequency |
+| `ir.pra.invalid-literal-operand` | an operand marked `literal` that is not complemented or does not reference a basic event |
 | `ir.pra.invalid-expression` | a parameter expression without a name or an unsupported expression without a diagnostic id |
 | `ir.pra.invalid-fault-tree-top` | a top gate not owned by its fault tree, or listed twice |
 | `ir.pra.invalid-target` | a `fault_tree_top` target on a fault tree without exactly one top gate |
