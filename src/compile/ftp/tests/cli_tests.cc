@@ -28,7 +28,11 @@ namespace {
     };
 
     [[nodiscard]] auto quoted(std::string const &text) -> std::string {
+#ifdef _WIN32
+        return "\"" + text + "\"";
+#else
         return "'" + text + "'";
+#endif
     }
 
     [[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
@@ -40,7 +44,11 @@ namespace {
         const auto out_path = scratch / "fzb.out";
         const auto err_path = scratch / "fzb.err";
         const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " + quoted(err_path.string());
+#ifdef _WIN32
+        const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
+#else
         const int status = std::system(command.c_str());
+#endif
         return run_result{.status = status, .out = read_file(out_path), .err = read_file(err_path)};
     }
 
