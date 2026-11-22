@@ -2,7 +2,8 @@
 
 `src/ir/pc/passes` rewrites an `ir::pc::circuit` into a new circuit and returns a transform report
 ([`IR-PC-REQUIREMENTS.md`](IR-PC-REQUIREMENTS.md) §12). The library is SCRAM-free (`fuzzybits_ir_pc_passes`, links only
-`fuzzybits_ir_pc`) and is not yet used by `fzb compile` (#182).
+`fuzzybits_ir_pc`). `fzb compile` runs it on CAFTA FTP input ([`ftp-input.md`](ftp-input.md)): `-c 0` is C0, `-c 1` is C1 with
+the per-target semantics and atom-split literal sets taken from the lowering's projection.
 
 ```cpp
 #include "ir/pc/passes/passes.h"

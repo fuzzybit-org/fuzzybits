@@ -7,7 +7,7 @@
 #include "compile/exact_eval.h"
 #include "io/descriptor.h"
 #include "io/formats.h"
-#include "io/ftp/descriptor.h"
+#include "compile/ftp/tests/support.h"
 #include "io/pcfb/descriptor.h"
 #include "io/pcfb/detail/model.h"
 #include "ir/pc/builder.h"
@@ -687,18 +687,17 @@ TEST_CASE("FTP fixtures write valid pcfb with exact probabilities", "[io][pcfb][
     std::size_t checked = 0;
     for (auto const &file : files) {
         INFO(file.filename().string());
-        std::ifstream input(file);
+        std::ifstream input(file, std::ios::binary);
         REQUIRE(input);
-        auto read = fuzzybits::io::backend::fuzzybits::ftp::read(input);
+        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
         INFO(diagnosticsText(read.diagnostics()));
         REQUIRE(read);
-        auto const *model = pc::circuit_from(read.value().model);
-        REQUIRE(model != nullptr);
+        auto const *model = &read.value().circuit;
 
         writer::write_options options;
         options.model_name = file.stem().string();
         options.source_format = "cafta-ftp";
-        const auto written = writer::write(read.value().model, options);
+        const auto written = writer::write(model->to_handle(), options);
         const bool literalOnly = std::ranges::all_of(model->probability_sources(), [](auto const &source) {
             return source.kind == pc::probability_source_kind::literal;
         });

@@ -17,5 +17,5 @@ fuzzybits_add_imported_test(
 fuzzybits_add_imported_test(
   TARGET fuzzybits_ir_pc_passes_io_tests
   SOURCES io_tests.cc
-  LINK_LIBRARIES fuzzybits_ir_pc_passes fuzzybits_io_ftp fuzzybits_io_pcfb fuzzybits_exact_eval pcfb
+  LINK_LIBRARIES fuzzybits_ir_pc_passes fuzzybits_compile_ftp fuzzybits_io_pcfb fuzzybits_exact_eval pcfb
 )

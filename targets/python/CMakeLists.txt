@@ -31,6 +31,8 @@ target_link_libraries(${FUZZYBITS_NATIVE_MODULE}
     scram
     mc
     fuzzybits_compile
+    fuzzybits_compile_ftp
+    fuzzybits_progress_line
     fuzzybits_progress_log
     ${LIBS}
 )

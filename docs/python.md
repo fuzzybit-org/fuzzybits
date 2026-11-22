@@ -113,9 +113,12 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
     obs = session.step(passes=16)        # 16 passes, one wait and one tally read
 ```
 
-`compile` / `compile_file` lower OpenPSA/MEF **or** nombrilo.circuit
-(safetensors, detected from the header) to a pcfb 1.1 buffer (the same host
-path as `fzb compile`). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
+`compile` / `compile_file` lower OpenPSA/MEF, nombrilo.circuit
+(safetensors, detected from the header) **or** CAFTA FTP projects to a pcfb
+buffer (the same host path as `fzb compile`). FTP input takes `target=`,
+`overrides=`, `duplicate_import=`, `complement_events=`, `negation=`,
+`max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
+returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
 explicit converters; see [`nombrilo.md`](nombrilo.md). `inspect` always runs `pcfb::validate` and
 returns its diagnostics (empty iff the circuit is core-1.1 conforming).
 `run` is the one-shot `fzb run` equivalent: `list[QueryResult(name, estimate,
@@ -184,6 +187,7 @@ to override.
 ```bash
 fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [-o model.pcfb]
 fzb compile model.safetensors [--target NAME] [--weights FILE] [-o model.pcfb]
+fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]

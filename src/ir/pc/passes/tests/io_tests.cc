@@ -3,7 +3,7 @@
 #include "support.h"
 
 #include "compile/exact_eval.h"
-#include "io/ftp/descriptor.h"
+#include "compile/ftp/tests/support.h"
 #include "io/pcfb/descriptor.h"
 
 #include "pcfb/io.h"
@@ -26,7 +26,6 @@
 namespace {
 
     using namespace pc_passes_test;
-    namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
     namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 
     [[nodiscard]] auto ftp_files(std::filesystem::path const &root) -> std::vector<std::filesystem::path> {
@@ -47,13 +46,12 @@ namespace {
     }
 
     [[nodiscard]] auto read_ftp(std::filesystem::path const &file) -> std::optional<pc::circuit> {
-        std::ifstream input(file);
-        auto read = ftp::read(input);
+        std::ifstream input(file, std::ios::binary);
+        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
         if (!read) {
             return std::nullopt;
         }
-        auto const *model = pc::circuit_from(read.value().model);
-        return model == nullptr ? std::nullopt : std::optional<pc::circuit>(*model);
+        return std::move(read).value().circuit;
     }
 
     [[nodiscard]] auto literal_only(pc::circuit const &model) -> bool {

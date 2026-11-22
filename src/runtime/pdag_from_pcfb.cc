@@ -1,4 +1,5 @@
 #include "runtime/runtime.h"
+#include "io/pcfb/query_guard.h"
 
 #include "event.h"
 #include "expression/constant.h"
@@ -438,7 +439,14 @@ void apply_backend_mask(const std::string &backend) {
   }
 }
 
+void require_implemented_queries(const pcfb::ir::Circuit &circuit, const char *op) {
+  if (auto rejected = fuzzybits::io::pcfb_guard::reject_unimplemented_queries(circuit)) {
+    throw UnsupportedPcfbError(rejected->id, std::string(op) + ": " + rejected->message);
+  }
+}
+
 ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
+  require_implemented_queries(circuit, "pdag_from_circuit");
   if (!circuit.valid() || !circuit.subcircuits() || circuit.subcircuits()->size() == 0) {
     throw RuntimeError("pdag_from_circuit: empty circuit");
   }

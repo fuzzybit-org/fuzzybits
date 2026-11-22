@@ -90,6 +90,9 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
         std::size_t pc_nodes = 0;
         std::size_t pc_edges = 0;
         std::size_t pc_targets = 0;
+        // quantification_config::max_initiators_per_cutset as applied: unset means no rule. Recorded
+        // even where a target's cone holds too few initiating events for the rule to add a node.
+        std::optional<std::uint32_t> max_initiators_per_cutset;
         // Nodes and edges of the initiator rule; included in pc_nodes and pc_edges.
         std::size_t generated_nodes = 0;
         std::size_t generated_edges = 0;
@@ -113,9 +116,14 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
     [[nodiscard]] auto lower(ir::pra::model const &model, quantification_config const &config = {}) -> lowering_result;
     [[nodiscard]] auto lower(ir::handle const &model, quantification_config const &config = {}) -> lowering_result;
 
-    // `.pcfb` writer options naming every query by its domain target (or
-    // element) and every bound node by its element. Fails for monotone-hull
-    // targets, which pcfb core-1.1 cannot express.
+    // `.pcfb` writer options naming every query by its domain target (or element), choosing its kind
+    // from the target's negation semantics (boolean: probability, monotone_hull: monotone-hull
+    // probability; a target with both gets both queries on one tensor) and recording the negation
+    // semantics, literal mode and initiator rule of each target. Fails with
+    // compile.pra_to_pc.hull-literals-unsupported for an atom_split or omega_l monotone-hull target whose
+    // cone has marked literal events: pcfb 1.2 has no per-query literal atoms yet
+    // (docs/rfc/monotone-hull-queries.md 7.3). In negation mode marked operands are ordinary
+    // complements, which is the plain hull a hull query means, so such a target is written.
     [[nodiscard]] auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<io::backend::fuzzybits::pcfb::write_options>;
 
 } // namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc

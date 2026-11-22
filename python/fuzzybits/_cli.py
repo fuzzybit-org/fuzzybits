@@ -5,19 +5,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import signal
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any, TextIO
 
-from . import __version__
+from . import __version__, _runtime
 from ._api import compile as compile_pcfb
 from ._api import exact, inspect, pcfb_to_nombrilo, run
 
 ROOT_USAGE = (
     "Usage: fzb <command> [options]\n\n"
     "Commands:\n"
-    "  compile   OpenPSA/MEF XML or nombrilo.circuit → .pcfb\n"
+    "  compile   OpenPSA/MEF XML, nombrilo.circuit or CAFTA FTP projects → .pcfb\n"
     "  export    .pcfb → nombrilo.circuit (.safetensors)\n"
     "  inspect   Summarise, validate, or exactly evaluate a .pcfb\n"
     "  run       Monte Carlo a .pcfb (estimate and CI per query)\n"
@@ -67,6 +68,33 @@ def _cli_error(command: str, exc: BaseException) -> int:
     return 1
 
 
+def _add_progress_flags(parser: argparse.ArgumentParser) -> None:
+    """Flags shared with `targets/fzb/main.cpp`; the C++ layer owns the decision."""
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="do not draw the progress line (it is on by default on a terminal)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="no progress line and no informational stderr; results and errors still print",
+    )
+
+
+def _progress_enabled(args: argparse.Namespace) -> bool | None:
+    """Map the flags onto the native ``progress=`` argument.
+
+    ``--no-progress`` / ``--quiet`` are passed as ``False`` so they win over the environment;
+    otherwise ``None`` leaves the automatic C++ policy (stderr TTY, ``TERM``,
+    ``FUZZYBITS_PROGRESS``) in charge.
+    """
+    if args.no_progress or args.quiet:
+        return False
+    return None
+
+
 def _parse_trials(text: str) -> int:
     try:
         value = float(text)
@@ -77,10 +105,116 @@ def _parse_trials(text: str) -> int:
     return int(value)
 
 
+def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> int:
+    """The FTP project path of ``fzb compile``; mirrors ``compile_ftp_inputs`` in ``targets/fzb/main.cpp``."""
+    for flag in (
+        "no_kn",
+        "no_xor",
+        "recognize_atleast",
+        "no_recognize_atleast",
+        "recognize_xor",
+        "no_recognize_xor",
+        "keep_null",
+        "ccf",
+        "allow_extern",
+        "weights",
+    ):
+        if getattr(args, flag):
+            print(
+                f"fzb compile: --{flag.replace('_', '-')} applies to OpenPSA/MEF input, not to FTP projects",
+                file=sys.stderr,
+            )
+            return 1
+    overrides: dict[str, bool] = {}
+    for text in args.override:
+        name, equals, value = text.rpartition("=")
+        if not equals or not name or value not in ("0", "1"):
+            print(f"fzb compile: override '{text}' must be NAME=0 or NAME=1", file=sys.stderr)
+            return 1
+        overrides[name] = value == "1"
+    options: dict[str, Any] = {}
+    if args.target:
+        options["target"] = list(args.target)
+    watch = [part for item in args.watch for part in str(item).replace(";", ",").split(",") if part.strip()]
+    if watch:
+        options["watch"] = watch
+    if overrides:
+        options["overrides"] = overrides
+    for key in ("duplicate_import", "complement_events", "negation", "literals"):
+        if getattr(args, key) is not None:
+            options[key] = getattr(args, key)
+    if args.max_initiators_per_cutset is not None:
+        text = args.max_initiators_per_cutset
+        if text == "none":
+            options["max_initiators_per_cutset"] = None
+        else:
+            try:
+                count = int(text)
+            except ValueError:
+                count = -1
+            if count < 0 or not text.isdigit():
+                print(
+                    f"fzb compile: --max-initiators-per-cutset must be a non-negative integer or none, not '{text}'",
+                    file=sys.stderr,
+                )
+                return 1
+            options["max_initiators_per_cutset"] = count
+    if args.config is not None:
+        try:
+            options["config"] = Path(args.config).read_text(encoding="utf-8")
+        except OSError:
+            print(f"fzb compile: cannot read {args.config}", file=sys.stderr)
+            return 1
+    try:
+        blob, document = compile_pcfb(
+            args.input_file,
+            pdag_c=args.compilation_passes,
+            report=True,
+            progress=_progress_enabled(args),
+            progress_log=args.progress_log,
+            **options,
+        )
+    except Exception as exc:
+        return _cli_error("compile", exc)
+
+    meta = inspect(blob).get("metadata") or {}
+    model = str(meta.get("general.model_name") or "")
+    out_path = Path(args.output) if args.output else Path(Path(model).name + ".pcfb")
+    try:
+        out_path.write_bytes(blob)
+        if args.report:
+            Path(args.report).write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(f"fzb compile: cannot write {exc.filename or out_path}", file=sys.stderr)
+        print(f"fzb compile: {exc}", file=sys.stderr)
+        return 1
+    if not args.quiet:
+        circuit = document["circuit"]
+        lowering = document["lowering"]
+        diagnostics = document["diagnostics"]
+        targets = [item["name"] for item in document["options"]["targets"] + document["options"]["watch"]]
+        print(
+            f"wrote {out_path} ({len(blob)} bytes) model={model} targets={len(targets)} ({','.join(targets)})\n"
+            f"  source: {len(document['source']['files'])} file(s) sha256={document['source']['sha256'][:16]}"
+            f" c{document['options']['compilation_level']}\n"
+            f"  lowered: {lowering['source_gates']} gates, {lowering['source_basic_events']} basic events, "
+            f"{lowering['source_house_events']} house events, {lowering['overridden_elements']} overrides\n"
+            f"  circuit: nodes {circuit['nodes_before']} -> {circuit['nodes_after']}, "
+            f"edges {circuit['edges_before']} -> {circuit['edges_after']}\n"
+            f"  diagnostics: {sum(d['severity'] == 'warning' for d in diagnostics)} warning(s), "
+            f"{sum(d['severity'] == 'note' for d in diagnostics)} note(s)",
+            file=sys.stderr,
+        )
+    return 0
+
+
 def cmd_compile(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb compile",
-        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--target NAME] [--weights FILE] [-o model.pcfb]",
+        usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--target NAME] [--weights FILE] [-o model.pcfb]\n"
+        "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME]... [--negation boolean|hull] "
+        "[--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
+        "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -91,8 +225,9 @@ def cmd_compile(argv: Sequence[str]) -> int:
         "-c",
         "--compilation-passes",
         type=int,
-        default=2,
-        help="0=off 1=null-only 2=optimize 4-8=multipass",
+        default=None,
+        help="MEF: 0=off 1=null-only 2=optimize 4-8=multipass (default 2). "
+        "FTP: 0=none 1=ir::pc passes (default 1)",
     )
     parser.add_argument("--no-kn", action="store_true", help="expand k/n to and/or")
     parser.add_argument("--no-xor", action="store_true", help="expand xor to and/or")
@@ -111,7 +246,31 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--keep-null", action="store_true", help="keep NULL/pass-through gates")
     parser.add_argument("--ccf", action="store_true", help="expand common-cause failure groups")
     parser.add_argument("--allow-extern", action="store_true", help="**UNSAFE** allow external libraries")
-    parser.add_argument("--target", help="top-event / gate / nombrilo name")
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        help="MEF: top-event / gate / nombrilo name. FTP: PROCESS target, gate or basic event "
+        "(repeatable; default: every PROCESS target)",
+    )
+    parser.add_argument("--override", action="append", default=[], help="FTP: force an element, NAME=0 or NAME=1 (repeatable)")
+    parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
+    parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
+    parser.add_argument(
+        "--negation",
+        help="FTP: boolean|hull (default hull when the model records ftp.negation = delete_term)",
+    )
+    parser.add_argument(
+        "--max-initiators-per-cutset",
+        help="FTP: at most N initiating events per cut set, or none (default: the model's ftp.max_initiators_per_cutset)",
+    )
+    parser.add_argument("--literals", help="FTP hull targets: atom_split|omega_l|negation (default atom_split)")
+    parser.add_argument("--config", metavar="FILE", help="FTP: quantification config FILE (JSON); flags override it")
+    parser.add_argument(
+        "--report",
+        metavar="FILE",
+        help="FTP: write the lowering and pass reports and diagnostics to FILE (JSON)",
+    )
     parser.add_argument("--weights", help="nombrilo variant weights file")
     parser.add_argument(
         "--progress-log",
@@ -123,13 +282,43 @@ def cmd_compile(argv: Sequence[str]) -> int:
         "--watch",
         action="append",
         default=[],
-        help="extra MEF names / PDAG indices as additional queries (repeatable)",
+        help="extra gate / basic event names (MEF also PDAG indices) as additional queries (repeatable)",
     )
-    parser.add_argument("input_file", nargs="*", help="MEF XML or nombrilo.circuit file")
+    _add_progress_flags(parser)
+    parser.add_argument(
+        "input_file", nargs="*", help="MEF XML, nombrilo.circuit, or CAFTA FTP files / a directory of *.ftp files"
+    )
     args = parser.parse_args(list(argv))
     if not args.input_file:
         print("fzb compile: missing input file\n", file=sys.stderr)
         parser.print_help(sys.stderr)
+        return 1
+
+    try:
+        kind = _runtime.native().classify_compile_inputs(list(args.input_file))
+    except Exception as exc:
+        return _cli_error("compile", exc)
+    if kind == "mixed":
+        print("fzb compile: FTP and non-FTP inputs cannot be combined", file=sys.stderr)
+        return 1
+    ftp_flags = {
+        "override": args.override,
+        "duplicate-import": args.duplicate_import,
+        "complement-events": args.complement_events,
+        "negation": args.negation,
+        "max-initiators-per-cutset": args.max_initiators_per_cutset,
+        "literals": args.literals,
+        "config": args.config,
+        "report": args.report,
+    }
+    if kind == "ftp":
+        return _compile_ftp_command(args, ftp_flags)
+    for flag, value in ftp_flags.items():
+        if value:
+            print(f"fzb compile: --{flag} applies to CAFTA FTP input only", file=sys.stderr)
+            return 1
+    if len(args.target) > 1:
+        print("fzb compile: OpenPSA/MEF input takes one --target", file=sys.stderr)
         return 1
 
     options: dict[str, Any] = {
@@ -147,7 +336,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
     elif args.recognize_xor:
         options["recognize_xor_groups"] = True
     if args.target:
-        options["target"] = args.target
+        options["target"] = args.target[0]
     if args.weights:
         options["weights"] = args.weights
     watch = [part for item in args.watch for part in str(item).replace(";", ",").split(",") if part.strip()]
@@ -157,8 +346,9 @@ def cmd_compile(argv: Sequence[str]) -> int:
     try:
         blob = compile_pcfb(
             args.input_file,
-            pdag_c=int(args.compilation_passes),
+            pdag_c=2 if args.compilation_passes is None else int(args.compilation_passes),
             no_kn=bool(args.no_kn),
+            progress=_progress_enabled(args),
             progress_log=args.progress_log,
             **options,
         )
@@ -185,10 +375,11 @@ def cmd_compile(argv: Sequence[str]) -> int:
         top = str(meta.get("fuzzybits.target") or "")
     except Exception:
         pass
-    print(
-        f"wrote {out_path} ({len(blob)} bytes) model={model} top={top}",
-        file=sys.stderr,
-    )
+    if not args.quiet:
+        print(
+            f"wrote {out_path} ({len(blob)} bytes) model={model} top={top}",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -332,7 +523,8 @@ def cmd_inspect(argv: Sequence[str]) -> int:
 def cmd_run(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb run",
-        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]",
+        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]\n"
+        "              [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb run options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -358,6 +550,7 @@ def cmd_run(argv: Sequence[str]) -> int:
         help="write a progress log to FILE (.jsonl or .csv; all snapshot fields,"
         " independent of the terminal display)",
     )
+    _add_progress_flags(parser)
     parser.add_argument("input_file", nargs="?", help=".pcfb file")
     args = parser.parse_args(list(argv))
     if not args.input_file:
@@ -390,6 +583,7 @@ def cmd_run(argv: Sequence[str]) -> int:
             args.input_file,
             trials=trials,
             backend=backend,
+            progress=_progress_enabled(args),
             progress_log=args.progress_log,
         )
     except Exception as exc:
@@ -432,14 +626,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if cmd in {"-v", "--version", "version"}:
         print(f"fzb {__version__}")
         return 0
-    if cmd == "compile":
-        return cmd_compile(args[1:])
-    if cmd == "export":
-        return cmd_export(args[1:])
-    if cmd == "inspect":
-        return cmd_inspect(args[1:])
-    if cmd == "run":
-        return cmd_run(args[1:])
+    try:
+        if cmd == "compile":
+            return cmd_compile(args[1:])
+        if cmd == "export":
+            return cmd_export(args[1:])
+        if cmd == "inspect":
+            return cmd_inspect(args[1:])
+        if cmd == "run":
+            return cmd_run(args[1:])
+    except KeyboardInterrupt:
+        # The native renderer already erased its block and printed the partial summary; a
+        # traceback here would bury it. 128 + SIGINT is what a shell reports for Ctrl-C.
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+        return 128 + signal.SIGINT
     print(f"fzb: unknown command '{cmd}'", file=sys.stderr)
     _print_root_usage(sys.stderr)
     return 1

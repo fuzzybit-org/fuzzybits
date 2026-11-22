@@ -7,9 +7,11 @@
 #include <sycl/sycl.hpp>
 
 #include "compile/exact_eval.h"
+#include "compile/ftp/compile.h"
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
+#include "cli/progress_line.h"
 #include "initializer.h"
 #include "mc/core/direct_eval.h"
 #include "mc/queue/layer_manager.h"
@@ -1309,20 +1311,67 @@ py::dict progress_snapshot_to_py(const fuzzybits::runtime::progress::snapshot &s
     return out;
 }
 
+/// A Python exception raised from a sink, kept until the calling Python thread can re-raise it with
+/// its original traceback. Every sink that can stop the run writes here and throws
+/// `progress::interrupted`, so the outer binding has one place to consult regardless of which sink
+/// fired.
+class PyPendingError {
+public:
+    [[nodiscard]] bool failed() const noexcept { return failed_; }
+
+    void store(py::error_already_set &error) {
+        error_ = std::make_unique<py::error_already_set>(std::move(error));
+        failed_ = true;
+        throw fuzzybits::runtime::progress::interrupted("a progress sink raised");
+    }
+
+    /// Store whatever is set in Python's error indicator (e.g. from a failed `PyErr_CheckSignals`).
+    void store_current() {
+        error_ = std::make_unique<py::error_already_set>();
+        failed_ = true;
+        throw fuzzybits::runtime::progress::interrupted("a progress sink raised");
+    }
+
+    /// Normalise a non-Python failure (e.g. a bad return conversion) to a Python error so the caller
+    /// sees a traceback rather than a bare C++ message.
+    void store(const std::exception &error) {
+        PyErr_SetString(PyExc_RuntimeError, error.what());
+        store_current();
+    }
+
+    /// Re-raise on the calling thread with the GIL held, preserving the traceback.
+    void rethrow_if_failed() {
+        auto error = std::move(error_);
+        reset();
+        if (error) {
+            throw *error;
+        }
+    }
+
+    /// Drop everything while the GIL is held.
+    void reset() {
+        error_.reset();
+        failed_ = false;
+    }
+
+private:
+    bool failed_ = false;
+    std::unique_ptr<py::error_already_set> error_;
+};
+
 /// Python `on_progress` callable as a `progress::sink`. Every call re-acquires the GIL (the run
 /// releases it). An exception raised by the callback is re-raised in the calling Python thread: the
 /// sink throws `progress::interrupted`, the engine stops cleanly, and the outer binding re-raises the
 /// stored Python exception instead of translating the C++ one.
 class PySnapshotSink : public fuzzybits::runtime::progress::sink {
 public:
-    PySnapshotSink(py::object callback, bool with_finish)
-        : callback_(std::move(callback)), with_finish_(with_finish) {}
+    PySnapshotSink(py::object callback, bool with_finish, PyPendingError &errors)
+        : callback_(std::move(callback)), with_finish_(with_finish), errors_(&errors) {}
 
     ~PySnapshotSink() override {
         if (Py_IsInitialized()) {
             py::gil_scoped_acquire acquire;
             callback_ = py::none();
-            error_.reset();
         }
     }
 
@@ -1330,21 +1379,21 @@ public:
     PySnapshotSink &operator=(const PySnapshotSink &) = delete;
 
     void on_snapshot(const fuzzybits::runtime::progress::snapshot &s) override {
-        if (failed_ || callback_.is_none()) {
+        if (errors_->failed() || callback_.is_none()) {
             return;
         }
         py::gil_scoped_acquire acquire;
         try {
             callback_(progress_snapshot_to_py(s));
         } catch (py::error_already_set &e) {
-            store(e);
+            errors_->store(e);
         } catch (const std::exception &e) {
-            store(e);
+            errors_->store(e);
         }
     }
 
     void on_finish(const fuzzybits::runtime::progress::snapshot &s, bool interrupted) override {
-        if (failed_ || !with_finish_ || callback_.is_none()) {
+        if (errors_->failed() || !with_finish_ || callback_.is_none()) {
             return;
         }
         py::gil_scoped_acquire acquire;
@@ -1354,53 +1403,102 @@ public:
             payload["interrupted"] = interrupted;
             callback_(std::move(payload));
         } catch (py::error_already_set &e) {
-            store(e);
+            errors_->store(e);
         } catch (const std::exception &e) {
-            store(e);
+            errors_->store(e);
         }
     }
 
-    /// Re-raise the callback's exception on the calling thread (GIL held). Called from the binding's
-    /// catch block, so the original Python traceback is preserved.
-    void rethrow_if_failed() {
-        auto error = std::move(error_);
-        error_.reset();
-        failed_ = false;
-        if (error) {
-            throw *error;
+    /// Drop the callback while the GIL is held, before the sink is destroyed.
+    void clear() { callback_ = py::none(); }
+
+private:
+    py::object callback_;
+    bool with_finish_ = false;
+    PyPendingError *errors_;
+};
+
+/// Makes a long native call interruptible from Python. CPython owns SIGINT, and the run releases the
+/// GIL, so no Python bytecode runs and the KeyboardInterrupt flag is never processed until the call
+/// returns. This sink takes the GIL at the engine's coalesced rate (at most ~10 times a second) and
+/// lets CPython run its own signal handlers via `PyErr_CheckSignals`; on a pending exception it
+/// stores it and throws `progress::interrupted`, so the engine unwinds, every other sink gets
+/// `on_finish(interrupted=true)` (the line prints its partial summary), and the binding re-raises
+/// KeyboardInterrupt on the calling thread.
+class PySignalSink : public fuzzybits::runtime::progress::sink {
+public:
+    explicit PySignalSink(PyPendingError &errors) : errors_(&errors) {}
+
+    PySignalSink(const PySignalSink &) = delete;
+    PySignalSink &operator=(const PySignalSink &) = delete;
+
+    void on_snapshot(const fuzzybits::runtime::progress::snapshot &) override {
+        if (errors_->failed()) {
+            return;
+        }
+        py::gil_scoped_acquire acquire;
+        if (PyErr_CheckSignals() != 0) {
+            errors_->store_current();
         }
     }
-    /// Drop the callback while the GIL is held, before the sink is destroyed.
+
+    void on_finish(const fuzzybits::runtime::progress::snapshot &, bool) override {}
+
+private:
+    PyPendingError *errors_;
+};
+
+/// Everything a binding call needs to observe a run: the sinks to attach and the exception they may
+/// have raised. Kept in one place so `run_pcfb_bytes` and `compile_pcfb` cannot attach them in a
+/// different order.
+class ProgressSinks {
+public:
+    /// `line` first so the last frame is drawn before the signal sink can stop the run with the
+    /// terminal left mid-frame; then the caller-owned `log` (may be null), so it records every
+    /// snapshot the line drew; `on_progress` next; the signal guard last.
+    ProgressSinks(py::object on_progress, py::object progress, fuzzybits::runtime::progress::sink *log,
+                  std::vector<fuzzybits::runtime::progress::sink *> &sinks) {
+        const bool line_enabled =
+            progress.is_none()
+                ? fuzzybits::runtime::progress::resolve_display(false, false).enabled()
+                : py::cast<bool>(progress);
+        if (line_enabled) {
+            // `own_signals = false`: CPython owns SIGINT/SIGTERM, and the guard below is what makes
+            // the run interruptible. Installing a C handler here would bypass the interpreter.
+            fuzzybits::runtime::progress::line_sink::options line_options;
+            line_options.own_signals = false;
+            line_.emplace(std::move(line_options));
+            sinks.push_back(&*line_);
+        }
+        if (log != nullptr) {
+            sinks.push_back(log);
+        }
+        if (!on_progress.is_none()) {
+            callback_.emplace(std::move(on_progress), /*with_finish=*/false, errors_);
+            sinks.push_back(&*callback_);
+        }
+        // Unconditional: without it a long Python run cannot be interrupted at all. It costs one
+        // GIL acquire per coalescing interval, and it keeps `fuzzybits.run` interruptible in
+        // notebooks where no other sink is attached.
+        signals_.emplace(errors_);
+        sinks.push_back(&*signals_);
+    }
+
+    /// Call with the GIL held, from the binding's catch block or after a successful call.
+    void rethrow_if_failed() { errors_.rethrow_if_failed(); }
+    /// Call with the GIL held before the sinks go out of scope.
     void clear() {
-        callback_ = py::none();
-        error_.reset();
-        failed_ = false;
+        if (callback_) {
+            callback_->clear();
+        }
+        errors_.reset();
     }
 
 private:
-    void store(py::error_already_set &error) {
-        error_ = std::make_unique<py::error_already_set>(std::move(error));
-        failed_ = true;
-        throw fuzzybits::runtime::progress::interrupted("on_progress raised");
-    }
-
-    void store(const std::exception &error) {
-        // Normalise non-Python failures (e.g. a bad return conversion) to a Python error so the
-        // caller sees a traceback rather than a bare C++ message.
-        PyErr_SetString(PyExc_RuntimeError, error.what());
-        store_current();
-    }
-
-    void store_current() {
-        error_ = std::make_unique<py::error_already_set>();
-        failed_ = true;
-        throw fuzzybits::runtime::progress::interrupted("on_progress raised");
-    }
-
-    py::object callback_;
-    bool with_finish_ = false;
-    bool failed_ = false;
-    std::unique_ptr<py::error_already_set> error_;
+    PyPendingError errors_;
+    std::optional<fuzzybits::runtime::progress::line_sink> line_;
+    std::optional<PySnapshotSink> callback_;
+    std::optional<PySignalSink> signals_;
 };
 
 /// Opens the opt-in `progress_log=` path, or null when not requested. Called
@@ -1423,7 +1521,7 @@ void close_interrupted(const std::unique_ptr<fuzzybits::runtime::progress::log_s
 }
 
 py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::dict &options,
-                       py::object on_progress, double progress_rate_hz,
+                       py::object on_progress, double progress_rate_hz, py::object progress,
                        const std::optional<std::string> &progress_log) {
     if (input_files.empty()) {
         throw std::invalid_argument("compile requires at least one input file");
@@ -1432,14 +1530,7 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
     auto opt = compile_options_from_py(options);
     opt.progress_max_rate_hz = progress_rate_hz;
 
-    std::optional<PySnapshotSink> sink;
-    if (!on_progress.is_none()) {
-        sink.emplace(std::move(on_progress), /*with_finish=*/false);
-        opt.progress_sinks.push_back(&*sink);
-    }
-    if (log) {
-        opt.progress_sinks.push_back(log.get());
-    }
+    ProgressSinks sinks(std::move(on_progress), std::move(progress), log.get(), opt.progress_sinks);
 
     std::optional<pcfb::Result<fuzzybits::compile::Compiled>> compiled;
     try {
@@ -1449,19 +1540,18 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
             fuzzybits::runtime::progress::finish_log(*log, /*interrupted=*/!*compiled);
         }
     } catch (...) {
-        // A callback failure is re-raised from the sink (see run_pcfb_bytes); any
-        // failure still closes the log, marked interrupted, before it propagates.
+        // See run_pcfb_bytes: the stored sink error, not the C++ type, decides what to re-raise.
+        // Any failure still closes the log, marked interrupted, before it propagates.
         close_interrupted(log);
         py::gil_scoped_acquire acquire;
-        if (sink) {
-            sink->rethrow_if_failed();
-            sink->clear();
-        }
+        sinks.rethrow_if_failed();
+        sinks.clear();
         throw;
     }
-    if (sink) {
+    {
         py::gil_scoped_acquire acquire;
-        sink->clear();
+        sinks.rethrow_if_failed();
+        sinks.clear();
     }
     if (!*compiled) {
         throw std::runtime_error("compile: " + compiled->error().message);
@@ -1470,6 +1560,142 @@ py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::di
         throw std::runtime_error("compile: writing the progress log failed: " + log->path().string());
     }
     return py_bytes_from((*compiled)->bytes);
+}
+
+std::vector<std::string> names_from_py(const py::handle &value, const char *what) {
+    std::vector<std::string> out;
+    if (py::isinstance<py::str>(value)) {
+        out.push_back(value.cast<std::string>());
+    } else if (py::isinstance<py::sequence>(value) && !py::isinstance<py::bytes>(value)) {
+        for (auto item : value.cast<py::sequence>()) {
+            if (!py::isinstance<py::str>(item)) {
+                throw std::invalid_argument(std::string(what) + " must be a name or a sequence of names");
+            }
+            out.push_back(item.cast<std::string>());
+        }
+    } else if (!value.is_none()) {
+        throw std::invalid_argument(std::string(what) + " must be a name or a sequence of names");
+    }
+    return out;
+}
+
+fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
+    namespace ftp = fuzzybits::compile::ftp;
+    ftp::options out;
+    const auto text = [&](std::initializer_list<const char *> keys, std::optional<std::string> &into) {
+        if (auto value = get_option(options, keys); value && !value->is_none()) {
+            into = value->cast<std::string>();
+        }
+    };
+    if (auto value = get_option(options, {"target", "targets"})) {
+        out.targets = names_from_py(*value, "target");
+    }
+    if (auto value = get_option(options, {"watch"})) {
+        out.watch = names_from_py(*value, "watch");
+    }
+    if (auto value = get_option(options, {"overrides", "override"}); value && !value->is_none()) {
+        if (py::isinstance<py::dict>(*value)) {
+            for (auto item : value->cast<py::dict>()) {
+                const auto name = py::str(item.first).cast<std::string>();
+                if (!py::isinstance<py::bool_>(item.second) && !py::isinstance<py::int_>(item.second)) {
+                    throw std::invalid_argument("override " + name + " must be True, False, 1 or 0");
+                }
+                const auto flag = item.second.cast<long>();
+                if (flag != 0 && flag != 1) {
+                    throw std::invalid_argument("override " + name + " must be True, False, 1 or 0");
+                }
+                out.overrides.push_back({name, flag == 1});
+            }
+        } else {
+            for (const auto &entry : names_from_py(*value, "overrides")) {
+                auto parsed = ftp::parse_override(entry);
+                if (!parsed) {
+                    throw std::invalid_argument(parsed.diagnostics().items().front().message);
+                }
+                out.overrides.push_back(std::move(parsed).value());
+            }
+        }
+    }
+    text({"duplicate_import", "duplicate-import"}, out.duplicate_import);
+    text({"complement_events", "complement-events"}, out.complement_events);
+    text({"negation"}, out.negation);
+    text({"literals"}, out.literals);
+    text({"config"}, out.config);
+    if (auto value = get_option(options, {"max_initiators_per_cutset", "max-initiators-per-cutset"})) {
+        if (value->is_none() || (py::isinstance<py::str>(*value) && value->cast<std::string>() == "none")) {
+            out.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+        } else if (py::isinstance<py::int_>(*value) && !py::isinstance<py::bool_>(*value) && value->cast<long long>() >= 0 &&
+                   value->cast<long long>() <= 0xFFFFFFFFLL) {
+            out.max_initiators_per_cutset = std::optional<std::uint32_t>{value->cast<std::uint32_t>()};
+        } else {
+            throw std::invalid_argument("max_initiators_per_cutset must be a non-negative integer or None");
+        }
+    }
+    if (auto value = get_option(options, {"compilation_level", "compilation-level", "pdag_c", "c"}); value && !value->is_none()) {
+        out.level = value->cast<int>();
+    }
+    return out;
+}
+
+/// "ftp", "mef" (anything else) or "mixed"; the Python layer picks the compile path from it.
+std::string classify_compile_inputs(const std::vector<std::string> &input_files) {
+    const std::vector<std::filesystem::path> paths(input_files.begin(), input_files.end());
+    switch (fuzzybits::compile::ftp::classify_inputs(paths)) {
+        case fuzzybits::compile::ftp::input_kind::ftp: return "ftp";
+        case fuzzybits::compile::ftp::input_kind::mixed: return "mixed";
+        case fuzzybits::compile::ftp::input_kind::other: break;
+    }
+    return "mef";
+}
+
+/// CAFTA FTP project -> (pcfb bytes, report JSON). Diagnostics of a failed compile are raised as
+/// RuntimeError, one `code: message` line each.
+py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py::dict &options,
+                           py::object on_progress, double progress_rate_hz, py::object progress,
+                           const std::optional<std::string> &progress_log) {
+    namespace ftp = fuzzybits::compile::ftp;
+    if (input_files.empty()) {
+        throw std::invalid_argument("compile requires at least one input file");
+    }
+    auto log = open_progress_log(progress_log);
+    auto opt = ftp_options_from_py(options);
+    opt.progress_max_rate_hz = progress_rate_hz;
+    const std::vector<std::filesystem::path> paths(input_files.begin(), input_files.end());
+
+    ProgressSinks sinks(std::move(on_progress), std::move(progress), log.get(), opt.progress_sinks);
+
+    std::optional<ftp::compile_result> compiled;
+    try {
+        py::gil_scoped_release release;
+        compiled.emplace(ftp::compile_project(paths, opt));
+        if (log) {
+            fuzzybits::runtime::progress::finish_log(*log, /*interrupted=*/!*compiled);
+        }
+    } catch (...) {
+        close_interrupted(log);
+        py::gil_scoped_acquire acquire;
+        sinks.rethrow_if_failed();
+        sinks.clear();
+        throw;
+    }
+    {
+        py::gil_scoped_acquire acquire;
+        sinks.rethrow_if_failed();
+        sinks.clear();
+    }
+    if (!*compiled) {
+        std::string message = "compile:";
+        for (const auto &item : compiled->diagnostics().items()) {
+            if (item.severity == fuzzybits::api::diagnostic_severity::error) {
+                message += "\n  " + item.code + ": " + item.message;
+            }
+        }
+        throw std::runtime_error(message);
+    }
+    if (log && !log->ok()) {
+        throw std::runtime_error("compile: writing the progress log failed: " + log->path().string());
+    }
+    return py::make_tuple(py_bytes_from(compiled->value().bytes), py::str(ftp::report_json(*compiled, 0)));
 }
 
 py::bytes nombrilo_to_pcfb_path(const std::string &path, const py::dict &options) {
@@ -1574,7 +1800,7 @@ py::list query_results_to_py(const std::vector<fuzzybits::runtime::QueryResult> 
 }
 
 py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::string &backend,
-                        py::object on_progress, double progress_rate_hz,
+                        py::object on_progress, double progress_rate_hz, py::object progress,
                         const std::optional<std::string> &progress_log) {
     if (trials == 0) {
         throw std::invalid_argument("run: trials must be positive");
@@ -1586,14 +1812,7 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     opt.backend = backend;
     opt.progress_max_rate_hz = progress_rate_hz;
 
-    std::optional<PySnapshotSink> sink;
-    if (!on_progress.is_none()) {
-        sink.emplace(std::move(on_progress), /*with_finish=*/false);
-        opt.progress_sinks.push_back(&*sink);
-    }
-    if (log) {
-        opt.progress_sinks.push_back(log.get());
-    }
+    ProgressSinks sinks(std::move(on_progress), std::move(progress), log.get(), opt.progress_sinks);
 
     std::vector<fuzzybits::runtime::QueryResult> results;
     try {
@@ -1605,15 +1824,14 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
     } catch (...) {
         // Do not key off the C++ exception type: `run_pcfb` lives in libmc/libscram while this
         // binding is built with hidden visibility, so `catch (progress::interrupted&)` need not
-        // match across the DSO boundary. The sink is the authoritative signal: if the callback
-        // raised, its exception is stored and re-raised here with the original traceback. Either
-        // way the log is closed first, marked interrupted.
+        // match across the DSO boundary. The sinks are the authoritative signal: if one of them
+        // stopped the run, its Python exception is stored and re-raised here with the original
+        // traceback (KeyboardInterrupt included). Either way the log is closed first, marked
+        // interrupted.
         close_interrupted(log);
         py::gil_scoped_acquire acquire;
-        if (sink) {
-            sink->rethrow_if_failed();
-            sink->clear();
-        }
+        sinks.rethrow_if_failed();
+        sinks.clear();
         try {
             throw;
         } catch (const sycl::exception &e) {
@@ -1624,9 +1842,10 @@ py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::
             throw std::runtime_error(std::string("Monte Carlo run failed: ") + e.what());
         }
     }
-    if (sink) {
+    {
         py::gil_scoped_acquire acquire;
-        sink->clear();
+        sinks.rethrow_if_failed();
+        sinks.clear();
     }
     if (log && !log->ok()) {
         throw std::runtime_error("run: writing the progress log failed: " + log->path().string());
@@ -1727,6 +1946,7 @@ struct PyPcfbSession {
         if (!circuit) {
             throw std::runtime_error("Session: " + circuit.error().message);
         }
+        fuzzybits::runtime::require_implemented_queries(*circuit, "Session");
         const auto diags = pcfb::validate(*circuit);
         if (!diags.empty()) {
             std::string msg = "Session: pcfb validation failed (" + std::to_string(diags.size()) +
@@ -2006,6 +2226,31 @@ Returns:
     A dict containing analysis timing, warnings, and probability results.
 )pbdoc");
 
+    m.def("classify_compile_inputs", &classify_compile_inputs, py::arg("input_files"),
+          "Returns 'ftp' (CAFTA FTP files or directories), 'mef' (anything else) or 'mixed'.");
+
+    m.def(
+        "compile_ftp_pcfb",
+        &compile_ftp_pcfb,
+        py::arg("input_files"),
+        py::arg("options") = py::dict(),
+        py::arg("on_progress") = py::none(),
+        py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress") = py::none(),
+        py::arg("progress_log") = py::none(),
+        R"pbdoc(
+Compile a CAFTA FTP project (files or directories of `*.ftp`) into a pcfb buffer.
+
+Args:
+    input_files: FTP files or directories, read as one project in sorted path order.
+    options: `target`, `watch`, `overrides` (name -> bool), `duplicate_import`,
+        `complement_events`, `negation`, `max_initiators_per_cutset`, `literals`,
+        `compilation_level` (0 or 1) and `config` (JSON text).
+
+Returns:
+    `(pcfb bytes, report JSON text)`.
+)pbdoc");
+
     m.def(
         "compile_pcfb",
         &compile_pcfb,
@@ -2013,6 +2258,7 @@ Returns:
         py::arg("options") = py::dict(),
         py::arg("on_progress") = py::none(),
         py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress") = py::none(),
         py::arg("progress_log") = py::none(),
         R"pbdoc(
 Compile OpenPSA/MEF XML or nombrilo.circuit into a pcfb 1.1 buffer.
@@ -2023,6 +2269,9 @@ Args:
         `weights` (nombrilo variant weights file).
     on_progress: Optional callable receiving one dict per compile-stage progress
         snapshot (`parse`, `lower`, `passes`, `write`, then a final `done`).
+    progress: Draw the C++ stage line on stderr. `None` (default) uses the
+        automatic policy (stderr is a terminal, `TERM` is not `dumb`,
+        `FUZZYBITS_PROGRESS` allows it); `True` / `False` override it.
     progress_log: Optional path for a progress log (`.jsonl` / `.ndjson` /
         `.csv`, chosen by extension). Written independently of any display.
 
@@ -2103,6 +2352,7 @@ Exhaustive exact P(query) for a small `.pcfb` file (≤ 30 random SAMPLE events)
         py::arg("backend") = "",
         py::arg("on_progress") = py::none(),
         py::arg("progress_max_rate_hz") = 10.0,
+        py::arg("progress") = py::none(),
         py::arg("progress_log") = py::none(),
         R"pbdoc(
 One-shot Monte Carlo of an in-memory `.pcfb`. Same numbers as `fzb run`.
@@ -2115,8 +2365,13 @@ fails JIT with a Python exception until double support lands (#17/#30).
 (fuzzybits.runtime progress schema v1). It runs on the run thread with the GIL
 held; raising from it stops the run and re-raises here.
 
+`progress` draws the C++ progress line on stderr: `None` (default) follows the
+automatic policy (stderr is a terminal, `TERM` is not `dumb`,
+`FUZZYBITS_PROGRESS` allows it), `True` forces it, `False` disables it.
+
 `progress_log` writes every coalesced snapshot to a `.jsonl` / `.ndjson` /
-`.csv` file (chosen by extension), independently of any display.
+`.csv` file (chosen by extension), independently of any display. All of
+`on_progress`, `progress` and `progress_log` may be used together.
 )pbdoc");
 
     py::class_<PyPcfbSession>(m, "PcfbSession")

@@ -203,9 +203,6 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 checkGates();
                 checkReferences();
                 selectTargets();
-                if (project_.limit) {
-                    project_.metadata.truncation_limit = project_.limit;
-                }
             }
 
         private:

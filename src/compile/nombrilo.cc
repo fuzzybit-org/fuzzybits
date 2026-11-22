@@ -1,6 +1,7 @@
 #include "compile/nombrilo.h"
 
 #include "compile/sha256.h"
+#include "io/pcfb/query_guard.h"
 #include "version.h"
 
 #include <algorithm>
@@ -2457,6 +2458,9 @@ pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit,
   const auto *sc = circuit.subcircuits()->Get(0);
   if (!sc || !sc->operators() || !sc->tensors()) {
     return std::unexpected(nombrilo_error("pcfb subcircuit missing operators"));
+  }
+  if (auto rejected = fuzzybits::io::pcfb_guard::reject_unimplemented_queries(circuit)) {
+    return std::unexpected(nombrilo_error("[" + rejected->id + "] " + rejected->message));
   }
 
   if (auto derived = try_derive_1to1(circuit, options)) {

@@ -55,6 +55,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             switch (kind) {
             case query_kind::probability:
                 return ::pcfb::QueryKind::PROBABILITY;
+            case query_kind::monotone_hull_probability:
+                return ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY;
             }
             return ::pcfb::QueryKind::PROBABILITY;
         }
@@ -185,6 +187,25 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 if (std::ranges::none_of(model.targets(), [&](auto const &view) { return view.id == target; })) {
                     diagnostics.push(api::make_error("io.pcfb.invalid-name", "target name '" + name + "' refers to target " + idText(target) +
                                                                                  ", which is not in the circuit"));
+                }
+            }
+            const auto isTarget = [&](ir::pc::target_id target) {
+                return std::ranges::any_of(model.targets(), [&](auto const &view) { return view.id == target; });
+            };
+            for (auto const &[target, kinds] : options.target_kinds) {
+                if (!isTarget(target)) {
+                    diagnostics.push(api::make_error("io.pcfb.invalid-query-kind",
+                                                     "query kinds are given for target " + idText(target) + ", which is not in the circuit"));
+                } else if (kinds.empty()) {
+                    diagnostics.push(api::make_error("io.pcfb.invalid-query-kind", "target " + idText(target) + " has an empty list of query kinds"));
+                } else if (std::ranges::any_of(kinds, [&](const query_kind kind) { return std::ranges::count(kinds, kind) > 1; })) {
+                    diagnostics.push(api::make_error("io.pcfb.invalid-query-kind", "target " + idText(target) + " lists a query kind twice"));
+                }
+            }
+            for (auto const &entry : options.quantification) {
+                if (!isTarget(entry.first)) {
+                    diagnostics.push(api::make_error("io.pcfb.invalid-quantification",
+                                                     "quantification metadata is given for target " + idText(entry.first) + ", which is not in the circuit"));
                 }
             }
             return diagnostics;
@@ -389,14 +410,25 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
 
             [[nodiscard]] auto emitQueries() -> bool {
                 std::size_t nonPrimary = 0;
+                std::size_t index = 0;
                 for (auto const &target : model_.targets()) {
                     const auto named = options_.target_names.find(target.id);
                     const auto name = named == options_.target_names.end() || named->second.empty() ? "t" + std::to_string(target.id.raw())
                                                                                                      : named->second;
-                    if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(options_.query), name); !added) {
-                        diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected target " + std::to_string(target.id.raw()) +
-                                                                                 ": " + added.error().message));
-                        return false;
+                    const auto kinds = options_.target_kinds.find(target.id);
+                    const std::vector<query_kind> defaulted{options_.query};
+                    const auto &list = kinds == options_.target_kinds.end() ? defaulted : kinds->second;
+                    const auto quantification = options_.quantification.find(target.id);
+                    for (const auto kind : list) {
+                        if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name); !added) {
+                            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected target " + std::to_string(target.id.raw()) +
+                                                                                     ": " + added.error().message));
+                            return false;
+                        }
+                        if (quantification != options_.quantification.end() && !emitQuantification(index, kind, quantification->second)) {
+                            return false;
+                        }
+                        ++index;
                     }
                     nonPrimary += target.role == ir::pc::observable_role::primary ? 0 : 1;
                 }
@@ -406,6 +438,20 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                                                                                 "core-1.1 has no observable roles"));
                 }
                 return true;
+            }
+
+            [[nodiscard]] auto emitQuantification(const std::size_t index, const query_kind kind, target_quantification const &entry) -> bool {
+                const auto prefix = "compile.query." + std::to_string(index) + ".";
+                const auto negation = kind == query_kind::probability ? std::string_view{"boolean"} : std::string_view{"monotone_hull"};
+                bool ok = setMetadata(prefix + "negation", builder_.set(prefix + "negation", negation));
+                if (ok && !entry.literal_mode.empty()) {
+                    ok = setMetadata(prefix + "literal_mode", builder_.set(prefix + "literal_mode", std::string_view{entry.literal_mode}));
+                }
+                if (ok && entry.max_initiators_per_cutset) {
+                    ok = setMetadata(prefix + "max_initiators_per_cutset",
+                                     builder_.set(prefix + "max_initiators_per_cutset", static_cast<std::int64_t>(*entry.max_initiators_per_cutset)));
+                }
+                return ok;
             }
 
             [[nodiscard]] auto setMetadata(std::string_view key, ::pcfb::Result<void> const &result) -> bool {

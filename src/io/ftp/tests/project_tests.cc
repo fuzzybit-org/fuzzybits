@@ -368,10 +368,6 @@ TEST_CASE("FTP initiator values above 1 are frequencies; other values must be pr
     REQUIRE(expression.quantity == pra::quantity_kind::frequency);
     REQUIRE(expression.value == 2.5);
 
-    const auto legacy = ftp::read(sources({{"m.ftp", "TOP * IE A\nENDTREE\nPROCESS TOP\nIMPORT\n  2.5E+00 IE I\n  1.0E-01 A\n"}}));
-    REQUIRE(legacy);
-    REQUIRE(count(legacy.diagnostics(), diagnostic_severity::warning, "io.ftp.non-probability-import") == 1);
-
     for (const auto *bad : {"  1.5E+00 A\n", "  -1.0E-01 A\n", "  1.0E+999 A\n", "  -2.0E+00 A I\n"}) {
         const auto rejected = readText(std::string("TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n") + bad);
         INFO(bad);
@@ -444,27 +440,11 @@ TEST_CASE("FTP LIMIT repeated with another value warns", "[io][ftp][project]") {
     REQUIRE(attribute(model, model.project_attributes(), "ftp.limit") == std::vector<std::string>{"1.0E-06"});
 }
 
-TEST_CASE("FTP gate cycles are reported by both outputs", "[io][ftp][project]") {
+TEST_CASE("FTP gate cycles are reported", "[io][ftp][project]") {
     constexpr std::string_view text = "TOP + G1\nG1 * G2 A\nG2 + G1 A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n";
     const auto read = readText(text);
     REQUIRE_FALSE(read);
     REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "ir.pra.cycle") == 1);
-    const auto legacy = ftp::read(sources({{"m.ftp", text}}));
-    REQUIRE_FALSE(legacy);
-    REQUIRE(count(legacy.diagnostics(), diagnostic_severity::error, "io.ftp.cycle") == 1);
-}
-
-TEST_CASE("FTP legacy target option must name a gate or event", "[io][ftp][project]") {
-    fuzzybits::api::option_set options;
-    options.set(ftp::target_option(), std::string("NOPE"));
-    const auto legacy = ftp::read(sources({{"m.ftp", kSimple}}), options);
-    REQUIRE_FALSE(legacy);
-    REQUIRE(count(legacy.diagnostics(), diagnostic_severity::error, "io.ftp.unknown-target") == 1);
-
-    options.set(ftp::target_option(), std::string("G1"));
-    const auto selected = ftp::read(sources({{"m.ftp", kSimple}}), options);
-    REQUIRE(selected);
-    REQUIRE(fuzzybits::ir::pc::circuit_from(selected.value().model)->targets().size() == 1);
 }
 
 TEST_CASE("FTP reader handles a 1e5-gate chain without recursion", "[io][ftp][project][scale]") {
@@ -492,11 +472,6 @@ TEST_CASE("FTP reader handles a 1e5-gate chain without recursion", "[io][ftp][pr
 #else
     (void)elapsed;
 #endif
-
-    const auto legacy = ftp::read(sources({{"m.ftp", text}}));
-    INFO(diagnosticsText(legacy.diagnostics()));
-    REQUIRE(legacy);
-    REQUIRE(fuzzybits::ir::pc::circuit_from(legacy.value().model)->node_count() == gates + 64);
 }
 
 namespace {

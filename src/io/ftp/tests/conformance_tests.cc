@@ -223,12 +223,6 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
                 const bool success = !legacyHeaderLimit && !outcome["results"].is_null();
                 REQUIRE(static_cast<bool>(read) == success);
 
-                std::vector<ftp::source_text> sources;
-                for (auto const &file : files) {
-                    sources.push_back(ftp::source_text{.path = file.generic_string(), .text = readText(file)});
-                }
-                const auto legacy = ftp::read(sources, options);
-                REQUIRE(static_cast<bool>(legacy) == success);
                 if (!success) {
                     continue;
                 }
@@ -238,7 +232,6 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
                 const auto counts = ftp_test::structure_of(*model, read.diagnostics());
                 requireStructure(counts, (*spec)["structure"]);
                 REQUIRE(counts.targets == names((*spec)["default_targets"]));
-                REQUIRE(fuzzybits::ir::pc::circuit_from(legacy.value().model)->targets().size() == counts.targets.size());
 
                 for (auto const &[target, values] : outcome["results"].object()) {
                     INFO("target " << target);
