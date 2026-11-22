@@ -427,3 +427,206 @@ TEST_CASE("fzb compile rejects bad FTP options and mixed inputs", "[compile][ftp
     fails(quoted((scratch / "m.xml").string()) + " --negation boolean", "applies to CAFTA FTP input only");
     std::filesystem::remove_all(scratch);
 }
+
+namespace {
+
+        // `std::system` reports the wait status on POSIX.
+    [[nodiscard]] auto exit_code(run_result const &ran) -> int {
+#ifdef _WIN32
+        return ran.status;
+#else
+        return ran.status >> 8;
+#endif
+    }
+
+    constexpr const char *kDeprecatedCcf =
+        "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable";
+
+    [[nodiscard]] auto ccf_model() -> std::string {
+        return quoted((std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "input" / "core" / "beta_factor_ccf.xml").string());
+    }
+
+    [[nodiscard]] auto count_of(std::string const &text, std::string const &needle) -> std::size_t {
+        std::size_t count = 0;
+        for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
+            ++count;
+        }
+        return count;
+    }
+
+    [[nodiscard]] auto summary_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> json::value {
+        const auto inspected = run_fzb("inspect " + quoted(pcfb.string()) + " --json", scratch);
+        REQUIRE(inspected.status == 0);
+        auto parsed = json::parse(inspected.out);
+        REQUIRE(parsed);
+        return std::move(parsed).value();
+    }
+
+    [[nodiscard]] auto query_names_of(json::value const &summary) -> std::vector<std::string> {
+        std::vector<std::string> out;
+        for (auto const &item : summary.find("query_names")->items) {
+            out.push_back(item.string);
+        }
+        return out;
+    }
+
+} // namespace
+
+TEST_CASE("fzb compile expands common-cause groups by default and --no-ccf disables it", "[compile][mef][cli][ccf]") {
+    const auto scratch = scratch_directory("ccf");
+    const auto expanded = scratch / "expanded.pcfb";
+    const auto plain = scratch / "plain.pcfb";
+
+    auto ran = run_fzb("compile " + ccf_model() + " --no-progress -o " + quoted(expanded.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    REQUIRE(ran.err.find("deprecated") == std::string::npos);
+    ran = run_fzb("compile " + ccf_model() + " --no-ccf --no-progress -o " + quoted(plain.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+
+    // Beta-factor groups add common-cause events, so the circuits and the probabilities differ.
+    const auto with_ccf = summary_of(expanded, scratch);
+    const auto without_ccf = summary_of(plain, scratch);
+    REQUIRE(with_ccf.find("samples")->integer > without_ccf.find("samples")->integer);
+    REQUIRE(std::abs(exact_of(expanded, scratch) - exact_of(plain, scratch)) > 1e-6);
+
+    // The effective choice is recorded both in the flag fragment and as a boolean.
+    REQUIRE(with_ccf.find("metadata")->find("compile.options")->string.find("--no-ccf") == std::string::npos);
+    REQUIRE(without_ccf.find("metadata")->find("compile.options")->string.find("--no-ccf") != std::string::npos);
+    REQUIRE(with_ccf.find("metadata")->find("compile.ccf")->string == "1");
+    REQUIRE(without_ccf.find("metadata")->find("compile.ccf")->string == "0");
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile --ccf is a deprecated no-op and conflicts with --no-ccf", "[compile][mef][cli][ccf]") {
+    const auto scratch = scratch_directory("ccf-deprecated");
+    const auto expanded = scratch / "expanded.pcfb";
+    const auto legacy = scratch / "legacy.pcfb";
+
+    auto ran = run_fzb("compile " + ccf_model() + " --no-progress -o " + quoted(expanded.string()), scratch);
+    REQUIRE(ran.status == 0);
+    ran = run_fzb("compile " + ccf_model() + " --ccf --no-progress -o " + quoted(legacy.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    REQUIRE(count_of(ran.err, kDeprecatedCcf) == 1);
+    require_close(exact_of(legacy, scratch), exact_of(expanded, scratch));
+    REQUIRE(summary_of(legacy, scratch).find("metadata")->find("compile.ccf")->string == "1");
+
+    ran = run_fzb("compile " + ccf_model() + " --ccf --no-ccf --no-progress -o " + quoted(legacy.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("--ccf and --no-ccf cannot be combined") != std::string::npos);
+
+    const auto ftp = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
+    ran = run_fzb("compile " + ftp + " --ccf --no-ccf --no-progress -o " + quoted(legacy.string()), scratch);
+    REQUIRE(exit_code(ran) == 1);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile accepts --no-ccf and the deprecated --ccf for FTP input", "[compile][ftp][cli][ccf]") {
+    const auto scratch = scratch_directory("ccf-ftp");
+    const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
+    const auto flags = std::string(" --negation boolean --no-progress -o ");
+    const auto base = scratch / "base.pcfb";
+    const auto other = scratch / "other.pcfb";
+
+    REQUIRE(run_fzb("compile " + model + flags + quoted(base.string()), scratch).status == 0);
+    auto ran = run_fzb("compile " + model + " --no-ccf" + flags + quoted(other.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    REQUIRE(ran.err.find("deprecated") == std::string::npos);
+    REQUIRE(read_file(other) == read_file(base));
+
+    ran = run_fzb("compile " + model + " --ccf" + flags + quoted(other.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    REQUIRE(count_of(ran.err, kDeprecatedCcf) == 1);
+    REQUIRE(read_file(other) == read_file(base));
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][ftp][cli][target]") {
+    const auto scratch = scratch_directory("name-files");
+    const auto model = scratch / "model.ftp";
+    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    const auto targets = scratch / "targets.txt";
+    // Blank lines, surrounding blanks and CRLF line ends are dropped; there is no comment syntax and no comma split.
+    std::ofstream(targets, std::ios::binary) << "  G1 \r\n\r\n\nE1\r\n";
+    const auto watched = scratch / "watch.txt";
+    std::ofstream(watched) << "E3\n";
+    const auto pcfb = scratch / "m.pcfb";
+    const auto flags = std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
+
+    // Plain names and files mix; file contents expand in place.
+    auto ran = run_fzb("compile " + quoted(model.string()) + " --target TOP --target @" + quoted(targets.string()) + " --target E2 --watch @" +
+                           quoted(watched.string()) + flags,
+                       scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    REQUIRE(query_names_of(summary_of(pcfb, scratch)) == std::vector<std::string>{"TOP", "G1", "E1", "E2", "E3"});
+
+    ran = run_fzb("compile " + quoted(model.string()) + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    INFO(ran.err);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("cannot read " + (scratch / "missing.txt").string()) != std::string::npos);
+    ran = run_fzb("compile " + quoted(model.string()) + " --watch @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+
+    // The FTP driver rejects a repeated target; so does an expanded one.
+    ran = run_fzb("compile " + quoted(model.string()) + " --target G1 --target @" + quoted(targets.string()) + flags, scratch);
+    INFO(ran.err);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("compile.pra_to_pc.duplicate-target") != std::string::npos);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile MEF input takes one target and watches from @FILE", "[compile][mef][cli][target]") {
+    const auto scratch = scratch_directory("mef-targets");
+    const auto pcfb = scratch / "m.pcfb";
+    const auto flags = " --no-progress -o " + quoted(pcfb.string());
+    const auto one = scratch / "one.txt";
+    std::ofstream(one) << "TopEvent\n";
+    const auto two = scratch / "two.txt";
+    std::ofstream(two) << "TopEvent\nTrainOne\n";
+    const auto watched = scratch / "watch.txt";
+    std::ofstream(watched) << "TrainOne\r\nTrainTwo\r\n";
+
+    auto ran = run_fzb("compile " + ccf_model() + " --target @" + quoted(one.string()) + " --watch @" + quoted(watched.string()) + flags, scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    const auto names = query_names_of(summary_of(pcfb, scratch));
+    REQUIRE(names.size() == 3);
+    REQUIRE(names[1] == "TrainOne");
+    REQUIRE(names[2] == "TrainTwo");
+
+    const auto several = "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF reader (#148)";
+    for (auto const &arguments : std::vector<std::string>{" --target TopEvent --target TrainOne", " --target @" + quoted(two.string())}) {
+        ran = run_fzb("compile " + ccf_model() + arguments + flags, scratch);
+        INFO(arguments << "\n" << ran.err);
+        REQUIRE(exit_code(ran) == 1);
+        REQUIRE(ran.err.find(several) != std::string::npos);
+    }
+    ran = run_fzb("compile " + ccf_model() + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("cannot read " + (scratch / "missing.txt").string()) != std::string::npos);
+
+    ran = run_fzb("compile " + ccf_model() + " --target TopEvent --watch TopEvent" + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("target 'TopEvent' is requested more than once") != std::string::npos);
+    ran = run_fzb("compile " + ccf_model() + " --watch TrainOne --watch @" + quoted(watched.string()) + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("target 'TrainOne' is requested more than once") != std::string::npos);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb compile help shows the new target and CCF flags", "[compile][cli]") {
+    const auto scratch = scratch_directory("help");
+    const auto ran = run_fzb("compile --help", scratch);
+    REQUIRE(ran.status == 0);
+    for (auto const *needle : {"--target NAME|@FILE", "--watch NAME|@FILE", "--no-ccf"}) {
+        INFO(needle);
+        REQUIRE(ran.out.find(needle) != std::string::npos);
+    }
+    std::filesystem::remove_all(scratch);
+}
