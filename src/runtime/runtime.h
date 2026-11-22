@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "pcfb.h"
+#include "runtime/progress.h"
 
 namespace scram::core {
 class Pdag;
@@ -44,6 +45,11 @@ struct RunOptions {
   /// ACPP_VISIBILITY_MASK, which make_throwing_sycl_queue() reads at queue
   /// construction.
   std::string backend;
+  /// Progress sinks. Not owned; they must outlive the run. Empty means no
+  /// snapshot is ever built.
+  std::vector<progress::sink *> progress_sinks;
+  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+  double progress_max_rate_hz = 10.0;
 };
 
 struct QueryResult {

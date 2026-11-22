@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "pcfb.h"
+#include "runtime/progress.h"
 
 namespace scram::core {
 class Pdag;
@@ -39,6 +40,11 @@ struct Options {
   std::vector<std::string> watch;
   /// Nombrilo variant weights file. Ignored for MEF inputs.
   std::optional<std::string> weights_file;
+  /// Progress sinks. Not owned; they must outlive the compile. Empty means no
+  /// snapshot is ever built.
+  std::vector<runtime::progress::sink *> progress_sinks;
+  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+  double progress_max_rate_hz = 10.0;
 
   /// Reconstruct the effective CLI fragment written to `compile.options`.
   [[nodiscard]] std::string to_cli_string() const;
