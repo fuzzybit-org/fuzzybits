@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "Event-tree sequences: SEQ-2 = IE and SYS-1 and not(SYS-2 or DEL) (success branch with delete term DEL = TM-A and TM-B), SEQ-3 = IE and SYS-1 and SYS-2 and not DEL. Hull semantics deletes the cut set {IE, TM-A, TM-B} from SEQ-3.",
   "covers": [
     "complemented gate references",
@@ -57,16 +57,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
+          "hull_positive": 0.006325000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }
@@ -77,16 +89,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
+          "hull_positive": 0.006325000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }
@@ -97,16 +121,28 @@
         "TOP": {
           "boolean": 0.023000000000000003,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-2": {
           "boolean": 0.01785,
           "hull": 0.028000000000000004,
+          "hull_omega": 0.028000000000000004,
+          "hull_positive": 0.028000000000000004,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         },
         "SEQ-3": {
           "boolean": 0.005150000000000001,
           "hull": 0.006325000000000001,
+          "hull_omega": 0.006325000000000001,
+          "hull_positive": 0.006325000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 5
         }
       }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "One model split over three files: top logic, system logic (gates referenced across files) and a separate IMPORT file.",
   "covers": [
     "multi-file project",
@@ -54,6 +54,10 @@
         "TOP": {
           "boolean": 0.0019254481299999999,
           "hull": 0.0019254481299999999,
+          "hull_omega": 0.0019254481299999999,
+          "hull_positive": 0.0019254481299999999,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 8
         }
       }
@@ -64,6 +68,10 @@
         "TOP": {
           "boolean": 0.0019254481299999999,
           "hull": 0.0019254481299999999,
+          "hull_omega": 0.0019254481299999999,
+          "hull_positive": 0.0019254481299999999,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 8
         }
       }
@@ -74,6 +82,10 @@
         "TOP": {
           "boolean": 0.0019254481299999999,
           "hull": 0.0019254481299999999,
+          "hull_omega": 0.0019254481299999999,
+          "hull_positive": 0.0019254481299999999,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 8
         }
       }

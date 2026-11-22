@@ -12,7 +12,7 @@ from typing import Any, Callable, Sequence
 
 import numpy as np
 
-from .circuit import NEG, POS, Circuit, Plan
+from .circuit import NEG, ONLY_POS, POS, Circuit, Plan, bounds, relaxed, relaxed_below
 from .ftp import AND, OR
 
 ALL = np.uint64(0xFFFFFFFFFFFFFFFF)
@@ -101,23 +101,44 @@ def sample_event(rng: np.random.Generator, p: float, n_words: int) -> np.ndarray
     return np.packbits(rng.random(n) < p, bitorder="little").view(np.uint64)
 
 
+def atom_sampler(c: Circuit, rng: np.random.Generator, n_words: int, ones: np.ndarray) -> Callable[[int], np.ndarray]:
+    """Lane values of the variables of ``c``, to be requested in increasing
+    order. A complement atom and its event (``c.twins``) are coupled: the event
+    is drawn once, at the first of the two, and the other gets its complement."""
+    partner = {**c.twins, **{e: a for a, e in c.twins.items()}}
+    drawn: dict[int, np.ndarray] = {}
+
+    def sample(v: int) -> np.ndarray:
+        u = partner.get(v)
+        if u is None:
+            return sample_event(rng, c.probs[v], n_words)
+        if u in drawn:
+            return drawn.pop(u) ^ ones
+        drawn[v] = sample_event(rng, c.probs[v], n_words)
+        return drawn[v]
+
+    return sample
+
+
 def evaluate(
     c: Circuit,
     pl: Plan,
     leaf: Callable[[int], Any],
     ones: Any,
     zeros: Any,
-    coherent: list | None = None,
+    coherent: tuple[list, bool] | None = None,
 ) -> tuple[Any, Any]:
     """Root value of ``c`` (and of its coherent bound when ``coherent`` is
     given), freeing values after their last use. ``leaf(v)`` produces event
-    ``v`` and is called in event order. ``coherent[g]`` is ``None`` when gate
-    ``g`` has no complement below it, ``1`` when its coherent version is TRUE,
-    or ``(kind, k, positive literals)``."""
+    ``v`` and is called in event order. ``coherent = (specs, relax_root)`` from
+    :func:`coherent_specs`: ``specs[g]`` is ``None`` when gate ``g`` has no
+    relaxed literal below it, ``1`` when its coherent version is TRUE, or
+    ``(kind, k, kept literals)``."""
     n = c.n_nodes
     vals: list[Any] = [None] * n
     vals[0] = zeros
     cvals = vals if coherent is None else [None] * n
+    specs, relax_root = coherent if coherent is not None else (None, False)
     if coherent is not None:
         cvals[0] = zeros
     first = c.first_gate
@@ -126,7 +147,7 @@ def evaluate(
         if v:
             vals[v] = leaf(v)
         x = vals[v] ^ ones if c.root & 1 else vals[v]
-        return x, (x if coherent is None else (ones if c.root & 1 else x))
+        return x, (ones if relax_root else x)
     for g, kids in enumerate(c.kids):
         for v in pl.new_vars[g]:
             vals[v] = leaf(v)
@@ -135,15 +156,16 @@ def evaluate(
         xs = [vals[lit >> 1] ^ ones if lit & 1 else vals[lit >> 1] for lit in kids]
         node = first + g
         vals[node] = combine(c.kinds[g], c.ks[g], xs, ones, zeros)
-        if coherent is not None:
-            spec = coherent[g]
+        if specs is not None:
+            spec = specs[g]
             if spec is None:
                 cvals[node] = vals[node]
             elif spec == 1:
                 cvals[node] = ones
             else:
                 kind, k, lits = spec
-                cvals[node] = combine(kind, k, [cvals[lit >> 1] for lit in lits], ones, zeros)
+                xs = [cvals[lit >> 1] ^ ones if lit & 1 else cvals[lit >> 1] for lit in lits]
+                cvals[node] = combine(kind, k, xs, ones, zeros)
         for f in pl.free[g]:
             vals[f] = None
             cvals[f] = None
@@ -151,27 +173,30 @@ def evaluate(
     out = vals[r] ^ ones if c.root & 1 else vals[r]
     if coherent is None:
         return out, out
-    return out, (ones if c.root & 1 else cvals[r])
+    return out, (ones if relax_root else cvals[r] ^ ones if c.root & 1 else cvals[r])
 
 
-def coherent_specs(c: Circuit, neg_below: list[bool]) -> list:
-    """Coherent bound g_coh: every complemented input replaced by TRUE."""
+def coherent_specs(c: Circuit, modes: list) -> tuple[list, bool]:
+    """Coherent bound g_coh^L (RFC §4.4): complemented gate inputs and event
+    literals not in L replaced by TRUE; literals of L kept. With L the positive
+    literals this is g_coh (every complemented input TRUE)."""
+    below = relaxed_below(c, modes)
     specs: list = []
     for g, kids in enumerate(c.kids):
-        if not neg_below[g]:
+        if not below[g]:
             specs.append(None)
             continue
         kind, k = c.kinds[g], c.ks[g]
-        pos = [lit for lit in kids if not lit & 1]
-        n_true = len(kids) - len(pos)
+        kept = tuple(lit for lit in kids if not relaxed(c, modes, lit))
+        n_true = len(kids) - len(kept)
         if kind == OR:
-            specs.append(1 if n_true else (OR, 0, tuple(pos)))
+            specs.append(1 if n_true else (OR, 0, kept))
         elif kind == AND:
-            specs.append((AND, 0, tuple(pos)) if pos else 1)
+            specs.append((AND, 0, kept) if kept else 1)
         else:
             k2 = k - n_true
-            specs.append(1 if k2 <= 0 else (kind, k2, tuple(pos)))
-    return specs
+            specs.append(1 if k2 <= 0 else (kind, k2, kept))
+    return specs, relaxed(c, modes, c.root)
 
 
 def rails(
@@ -181,15 +206,19 @@ def rails(
     ones: Any,
     zeros: Any,
     pl: Plan | None = None,
+    modes: list | None = None,
 ) -> tuple[list[Any], list[Any]]:
     """Kleene (three-valued) evaluation in dual rail: ``T[n]`` = definitely 1,
     ``F[n]`` = definitely 0, neither = undetermined.
 
-    Event leaves encode the hull check of a lane ``x``: events false in ``x``
-    are 0; true events reachable only positively are 1 and only negatively 0
-    (the optimal choice for satisfiability); true binate events are free.
-    With ``pl`` values are freed after their last use (only the root rails
-    remain); without it every node keeps its rails.
+    Event leaves encode the omega_L check of a lane ``x`` (RFC §6.2): a witness
+    may give event ``v`` any value in ``bounds(modes[v], x_v)`` (default
+    ONLY_POS, the plain hull: events false in ``x`` are 0, true events free).
+    An event with one allowed value is fixed to it; a free event reachable only
+    positively is 1 and only negatively 0 (the optimal choice for
+    satisfiability, which drops p = 1 flags under a complement); free binate
+    events are undetermined. With ``pl`` values are freed after their last use
+    (only the root rails remain); without it every node keeps its rails.
     """
     n = c.n_nodes
     T: list[Any] = [None] * n
@@ -199,12 +228,17 @@ def rails(
 
     def put_leaf(v: int) -> None:
         p = pol[v]
-        if p == NEG:
+        mode = ONLY_POS if modes is None else modes[v]
+        if mode == ONLY_POS and p == NEG:
             T[v], F[v] = zeros, ones
             return
-        xv = x(v)
-        T[v] = xv if p == POS else zeros
-        F[v] = xv ^ ones
+        lo, hi = bounds(mode, x(v), ones, zeros)
+        if p == POS:
+            T[v], F[v] = hi, hi ^ ones
+        elif p == NEG:
+            T[v], F[v] = lo, lo ^ ones
+        else:
+            T[v], F[v] = lo, hi ^ ones
 
     if pl is None:
         for v in range(1, first):

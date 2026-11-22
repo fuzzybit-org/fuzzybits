@@ -4,11 +4,16 @@
     python -m benchmarks.reference.fixtures --write [NAME...]     # regenerate computed fields
 
 Hand-written fields (``description``, ``covers``, ``files``, ``targets``,
-``variants[].policy`` / ``overrides``) are kept; structure counts, diagnostics
-and exact probabilities are recomputed with the exact evaluators. A fixture
-with errors under every duplicate-import policy is diagnostic-only: it records
-the diagnostics per policy (results ``null``) and no ``default_targets`` or
-``structure``.
+``variants[].policy`` / ``overrides`` / ``max_initiators_per_cutset``) are
+kept; structure counts, diagnostics and exact probabilities are recomputed with
+the exact evaluators. Per target: ``boolean`` P(g), ``hull`` the atom-split hull
+(default), ``hull_omega`` P(omega_L g), ``hull_positive`` the plain monotone hull
+P(up g), ``complemented_events`` (events referenced with a direct complement in
+the target's cone) and ``complement_under_negation`` (those of them that also
+occur under a complemented gate, where ``hull`` and ``hull_omega`` can differ).
+A fixture with errors under every duplicate-import policy is diagnostic-only:
+it records the diagnostics per policy (results ``null``) and no
+``default_targets`` or ``structure``.
 """
 
 from __future__ import annotations
@@ -25,8 +30,9 @@ from .ftp import POLICIES, Project, parse_project
 from .structure import structure_counts
 
 FIXTURES = Path(__file__).resolve().parents[2] / "input" / "ftp" / "conformance"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 INPUT_KEYS = ("description", "covers", "files", "targets")
+VARIANT_KEYS = ("policy", "overrides", "max_initiators_per_cutset", "targets")
 
 
 def fixture_dirs(root: Path = FIXTURES) -> list[Path]:
@@ -42,14 +48,27 @@ def project_of(fixture: Path, spec: Mapping[str, Any]) -> Project:
 
 
 def exact_results(
-    project: Project, policy: str, targets: Sequence[str], overrides: Mapping[str, int] | None = None
+    project: Project,
+    policy: str,
+    targets: Sequence[str],
+    overrides: Mapping[str, int] | None = None,
+    max_initiators: int | None = None,
 ) -> dict:
     probs, _ = project.probabilities(policy)
     out = {}
     for target in targets:
-        b = exact_probability(project, target, probs, "boolean", overrides)
-        h = exact_probability(project, target, probs, "hull", overrides)
-        out[target] = {"boolean": b["probability"], "hull": h["probability"], "variables": b["variables"]}
+        b = exact_probability(project, target, probs, "boolean", overrides, max_initiators=max_initiators)
+        h = {lit: exact_probability(project, target, probs, "hull", overrides, lit, max_initiators)
+             for lit in ("split", "omega", "positive")}
+        out[target] = {
+            "boolean": b["probability"],
+            "hull": h["split"]["probability"],
+            "hull_omega": h["omega"]["probability"],
+            "hull_positive": h["positive"]["probability"],
+            "complemented_events": h["split"]["complemented_events"],
+            "complement_under_negation": h["split"]["complement_under_negation"],
+            "variables": b["variables"],
+        }
     return out
 
 
@@ -81,14 +100,13 @@ def compute(fixture: Path, spec: Mapping[str, Any]) -> dict:
     out["policies"] = policies
     variants = []
     for v in spec.get("variants", []):
-        overrides = {k: int(x) for k, x in v["overrides"].items()}
-        variants.append(
-            {
-                "policy": v["policy"],
-                "overrides": overrides,
-                "results": exact_results(project, v["policy"], v.get("targets") or targets, overrides),
-            }
-        )
+        given = {k: v[k] for k in VARIANT_KEYS if k in v}
+        overrides = {k: int(x) for k, x in v.get("overrides", {}).items()}
+        if "overrides" in given:
+            given["overrides"] = overrides
+        rule = v.get("max_initiators_per_cutset")
+        given["results"] = exact_results(project, v["policy"], v.get("targets") or targets, overrides, rule)
+        variants.append(given)
     if variants:
         out["variants"] = variants
     return out

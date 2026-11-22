@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "C is referenced but neither a gate nor imported. FTREX and ZEBRA set its probability to 1 (FTREX warns that it is undefined); here it is an error.",
   "covers": [
     "undefined-reference"

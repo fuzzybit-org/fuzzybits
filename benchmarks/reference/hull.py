@@ -1,25 +1,40 @@
-"""Monte Carlo estimator of the monotone hull P(up g) (#174).
+"""Monte Carlo estimator of hull probabilities (#174, #190).
 
-``up g (x) = exists y <= x : g(y)``. It lies between ``g`` and ``g_coh`` (every
-complemented input replaced by TRUE), so per pass:
+The query is a hull of the target, ``exists y below x : g(y)``, for one of three
+literal modes (RFC §3):
 
-1. Sample events bit-parallel and evaluate ``g`` and ``g_coh`` together.
-   Lanes with ``g = 1`` are in the hull; lanes with ``g_coh = 0`` are not.
+- ``split`` (default): every direct complement ``-B`` of an event in the
+  target's cone is an atom of its own (variable ``-B``, valued ``not x_B`` and
+  droppable on its own); the hull is taken over the split circuit on the
+  coupled sample (``Circuit.twins``).
+- ``omega``: those events are fixed (``y_B = x_B``): Rauzy's omega_L.
+- ``positive``: every event droppable, the plain hull of the literal target.
+
+The hull lies between ``g`` and the coherent bound (complemented gate inputs,
+and event literals that are not kept, replaced by TRUE), so per pass:
+
+1. Sample events (and coupled atoms) bit-parallel and evaluate ``g`` and the
+   coherent bound together. Lanes with ``g = 1`` are in the hull; lanes with
+   coherent bound 0 are not.
 2. On the remaining candidates, redraw the pass, gather their lanes and run a
-   Kleene (three-valued) evaluation in dual rail: events false in the lane are
-   0, true events reachable only positively are 1 and only negatively 0 (the
-   optimal choice, so p = 1 flags under a complement are dropped), true binate
-   events are free. Lanes whose root is decided are counted directly.
+   Kleene (three-valued) evaluation in dual rail: variables false in the lane
+   are 0 and fixed events keep their value; true droppable variables reachable only
+   positively are 1 and only negatively 0 (the optimal choice, so p = 1 flags
+   under a complement are dropped), true binate droppable events are free.
+   Lanes whose root is decided are counted directly.
 3. Undecided lanes (up to ``max_checks``) get an exact check: the residual
    circuit of undetermined nodes is reduced by repeated pure-literal fixing and
    decided by a truth table (<= 16 free events), a budgeted BDD, or a complete
    branching search.
 
+``max_initiators = m`` conjoins the delete term ``not atleast(m + 1; I)`` over
+the initiator-tagged events of the cone (RFC §4.8).
+
 With ``n_T`` lanes decided true, ``n_C`` undecided lanes of which ``m`` were
 checked and ``h`` found true, the estimate ``(n_T + n_C h / m) / N`` is unbiased
 and its variance is ``[pi_T + f^2 pi_C - P^2] / N + pi_C^2 f (1 - f) / m``
 (law of total variance; equals ``P (1 - P) / N`` when every undecided lane is
-checked). Weights are unaffected by importance sampling because ``up g`` is a
+checked). Weights are unaffected by importance sampling because the hull is a
 function of the lane.
 """
 
@@ -35,6 +50,7 @@ import numpy as np
 from .bdd import BudgetExceeded, circuit_bdd
 from .bitpar import (
     ALL,
+    atom_sampler,
     coherent_specs,
     combine,
     evaluate,
@@ -43,10 +59,19 @@ from .bitpar import (
     pack,
     popcount,
     rails,
-    sample_event,
     to_int,
 )
-from .circuit import NEG, POS, Circuit, build_circuit, negation_below, plan, polarity
+from .circuit import (
+    NEG,
+    POS,
+    Circuit,
+    build_circuit,
+    event_modes,
+    hull_record,
+    literal_sets,
+    plan,
+    polarity,
+)
 from .ftp import AND, ATLEAST, OR, Project
 from .montecarlo import DEFAULT_MEMORY_MIB, interval, pass_words, run_passes
 
@@ -195,11 +220,15 @@ def search_sat(res: Circuit) -> bool:
 
 
 class LaneChecker:
-    """Exact hull check for lanes left undecided by the Kleene stage."""
+    """Exact omega_L check for lanes left undecided by the Kleene stage.
+    ``modes[v]`` says which literals of event ``v`` are in L (default: positive
+    literals only, the plain hull)."""
 
-    def __init__(self, c: Circuit, pol: list[int], bdd_budget: int = DEFAULT_BDD_BUDGET):
+    def __init__(self, c: Circuit, pol: list[int], bdd_budget: int = DEFAULT_BDD_BUDGET,
+                 modes: list | None = None):
         self.c = c
         self.pol = pol
+        self.modes = modes
         self.bdd_budget = bdd_budget
         self.methods = {"pure-literal": 0, "truth-table": 0, "bdd": 0, "search": 0}
         self.free_vars: list[int] = []
@@ -207,7 +236,7 @@ class LaneChecker:
     def check(self, x: list[int], m: int) -> list[bool]:
         """``x[v]`` holds event ``v`` for ``m`` lanes as an int bit set."""
         mask = (1 << m) - 1
-        T, F = rails(self.c, self.pol, x.__getitem__, mask, 0)
+        T, F = rails(self.c, self.pol, x.__getitem__, mask, 0, modes=self.modes)
         D = [t | f for t, f in zip(T, F, strict=True)]
         return [self.decide(extract(self.c, self.c.root, _lane_value(T, D, j))) for j in range(m)]
 
@@ -242,11 +271,16 @@ def estimate_hull(
     max_checks: int | None = None,
     bdd_budget: int = DEFAULT_BDD_BUDGET,
     memory_mib: int = DEFAULT_MEMORY_MIB,
+    literals: str = "split",
+    max_initiators: int | None = None,
 ) -> dict:
     t0 = time.perf_counter()
-    c = build_circuit(project, target, probs, overrides, constants="hull", fold=True)
+    fixed, split = literal_sets(project, target, literals, overrides)
+    c = build_circuit(project, target, probs, overrides, constants="hull", fold=True, max_initiators=max_initiators,
+                      split=split)
     n = 64 * -(-trials // 64)
-    base = {"target": target, "semantics": "hull", "seed": seed}
+    base = {"target": target, "semantics": "hull", "literals": literals, **hull_record(project, target, overrides,
+            max_initiators), "max_initiators_per_cutset": max_initiators, "seed": seed}
     const = c.constant()
     if const is not None:
         v = float(const)
@@ -254,8 +288,9 @@ def estimate_hull(
                 "bounds": {"lower": v, "upper": v}, "seconds": time.perf_counter() - t0}
     pl = plan(c)
     pol = polarity(c)
-    coh = coherent_specs(c, negation_below(c))
-    checker = LaneChecker(c, pol, bdd_budget)
+    modes = event_modes(c.names, c.n_vars, fixed)
+    coh = coherent_specs(c, modes)
+    checker = LaneChecker(c, pol, bdd_budget, modes)
     words = pass_words(pl, memory_mib, arrays_per_node=2)
     rng = np.random.Generator(np.random.PCG64(seed))
     n_g = n_coh = n_kt = n_kf = n_und = checked = checked_true = 0
@@ -271,13 +306,12 @@ def estimate_hull(
             continue
         redraw = np.random.Generator(np.random.PCG64())
         redraw.bit_generator.state = state
-        xs: list = [None] + [
-            pack(gather(sample_event(redraw, c.probs[v], w), cand)) for v in range(1, c.first_gate)
-        ]
+        resample = atom_sampler(c, redraw, w, ones)
+        xs: list = [None] + [pack(gather(resample(v), cand)) for v in range(1, c.first_gate)]
         cw = len(xs[1]) if len(xs) > 1 else 1
         cones = np.full(cw, ALL, dtype=np.uint64)
         czeros = np.zeros(cw, dtype=np.uint64)
-        T, F = rails(c, pol, xs.__getitem__, cones, czeros, pl)
+        T, F = rails(c, pol, xs.__getitem__, cones, czeros, pl, modes)
         r = c.root >> 1
         tr, fr = (F[r], T[r]) if c.root & 1 else (T[r], F[r])
         m = len(cand)

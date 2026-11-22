@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "PROCESS names three targets over two lines; UNUSED is a root that is not a target. T2 complements an event.",
   "covers": [
     "PROCESS with several targets",
@@ -60,16 +60,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
+          "hull_positive": 0.622,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
-          "hull": 0.58,
+          "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
+          "hull_positive": 0.58,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
+          "hull_positive": 0.09800000000000002,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -80,16 +94,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
+          "hull_positive": 0.622,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
-          "hull": 0.58,
+          "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
+          "hull_positive": 0.58,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
+          "hull_positive": 0.09800000000000002,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -100,16 +128,30 @@
         "T1": {
           "boolean": 0.622,
           "hull": 0.622,
+          "hull_omega": 0.622,
+          "hull_positive": 0.622,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T2": {
           "boolean": 0.46399999999999997,
-          "hull": 0.58,
+          "hull": 0.46399999999999997,
+          "hull_omega": 0.46399999999999997,
+          "hull_positive": 0.58,
+          "complemented_events": [
+            "B"
+          ],
+          "complement_under_negation": [],
           "variables": 3
         },
         "T3": {
           "boolean": 0.09800000000000002,
           "hull": 0.09800000000000002,
+          "hull_omega": 0.09800000000000002,
+          "hull_positive": 0.09800000000000002,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }

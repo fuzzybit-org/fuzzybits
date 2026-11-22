@@ -8,7 +8,8 @@ import math
 import sys
 from typing import Mapping, Sequence
 
-from .exact import exact_probability
+from .circuit import LITERALS, complement_under_negation
+from .exact import exact_cut_sets, exact_probability
 from .ftp import DEFAULT_POLICY, POLICIES, ModelError, parse_project
 from .hull import DEFAULT_BDD_BUDGET, estimate_hull
 from .montecarlo import DEFAULT_MEMORY_MIB, estimate_boolean
@@ -34,6 +35,12 @@ def parse_trials(text: str) -> int:
     return value
 
 
+def parse_count(text: str) -> int:
+    if not text.isdigit():
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {text!r}")
+    return int(text)
+
+
 def run(
     command: str,
     files: Sequence[str],
@@ -46,9 +53,16 @@ def run(
     max_checks: int | None = None,
     bdd_budget: int = DEFAULT_BDD_BUDGET,
     memory_mib: int = DEFAULT_MEMORY_MIB,
+    literals: str = "split",
+    max_initiators: int | None = None,
+    cut_sets: bool = False,
 ) -> dict:
     """Run one command and return the JSON document. Raises :class:`ModelError`
     (with diagnostics) when the project has errors under ``policy``."""
+    if literals not in LITERALS:
+        raise ValueError(f"literals must be one of {LITERALS}, got {literals!r}")
+    if cut_sets and (command != "exact" or semantics != "hull"):
+        raise ValueError("cut sets are available for 'exact' with hull semantics only")
     project = parse_project(files)
     diags = project.all_diagnostics(policy)
     out: dict = {
@@ -69,15 +83,27 @@ def run(
     if not chosen:
         raise ModelError("no target: the project has no PROCESS targets and no root gate")
     out.update(semantics=semantics, overrides=dict(overrides or {}), targets=chosen)
+    if semantics == "hull":
+        out["literals"] = literals
+        if literals != "positive":
+            for target in chosen:
+                out["diagnostics"] += [d.to_json() for d in
+                                       complement_under_negation(project, target, overrides, max_initiators)]
+    out["max_initiators_per_cutset"] = max_initiators
     results = []
     for target in chosen:
         if command == "exact":
-            results.append(exact_probability(project, target, probs, semantics, overrides))
+            r = exact_probability(project, target, probs, semantics, overrides, literals, max_initiators)
+            if cut_sets:
+                r["cut_sets"] = exact_cut_sets(project, target, probs, overrides, literals, max_initiators)
+            results.append(r)
         elif semantics == "boolean":
-            results.append(estimate_boolean(project, target, probs, overrides, trials, seed, memory_mib))
+            results.append(estimate_boolean(project, target, probs, overrides, trials, seed, memory_mib,
+                                            max_initiators=max_initiators))
         else:
             results.append(
-                estimate_hull(project, target, probs, overrides, trials, seed, max_checks, bdd_budget, memory_mib)
+                estimate_hull(project, target, probs, overrides, trials, seed, max_checks, bdd_budget, memory_mib,
+                              literals=literals, max_initiators=max_initiators)
             )
     out["results"] = results
     return out
@@ -94,8 +120,15 @@ def _print_text(doc: dict) -> None:
         return
     for r in doc["results"]:
         head = f"{r['target']}  {r['semantics']}"
+        if r["semantics"] == "hull" and r["literals"] != "positive" and r.get("complemented_events"):
+            kind = "atoms" if r["literals"] == "split" else "fixed"
+            head += f"  {r['literals']} ({kind}: {', '.join(r['complemented_events'])})"
+        if r.get("max_initiators_per_cutset") is not None:
+            head += f"  max-initiators {r['max_initiators_per_cutset']}"
         if "probability" in r:
             print(f"{head}  exact  P = {_fmt(r['probability'])}  ({r['variables']} variables)")
+            for cs in r.get("cut_sets", []):
+                print(f"    {_fmt(cs['probability'])}  {' '.join(cs['literals']) or '(empty)'}")
             continue
         line = f"{head}  {r['method']}  P = {_fmt(r['estimate'])} +- {_fmt(r['se'])}  n = {r['trials']}"
         if "bounds" in r:
@@ -122,10 +155,17 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("structure", parents=[common], help="structure counts and diagnostics")
     evaluate = argparse.ArgumentParser(add_help=False, parents=[common])
     evaluate.add_argument("--semantics", choices=("boolean", "hull"), default="boolean")
+    evaluate.add_argument("--literals", choices=LITERALS, default="split",
+                          help="hull reading of -EVENT references, which FTP marks as literals: 'split' "
+                               "(default, the FTP convention: each is a droppable atom), 'omega' (omega_L: those "
+                               "events are fixed), 'positive' (ordinary negations: the plain monotone hull)")
+    evaluate.add_argument("--max-initiators-per-cutset", type=parse_count, default=None, metavar="N",
+                          help="conjoin the delete term not atleast(N+1; initiator-tagged events in the cone)")
     evaluate.add_argument("--target", action="append", default=[], help="target name (repeatable)")
     evaluate.add_argument("--override", action="append", type=parse_override, default=[], metavar="NAME=V",
                           help="replace a gate or event by a constant (repeatable)")
-    sub.add_parser("exact", parents=[evaluate], help="exact probability by enumeration (<= 22 events)")
+    exact = sub.add_parser("exact", parents=[evaluate], help="exact probability by enumeration (<= 22 events)")
+    exact.add_argument("--cut-sets", action="store_true", help="also list the minimal cut sets (hull only)")
     est = sub.add_parser("estimate", parents=[evaluate], help="bit-parallel Monte Carlo estimate")
     est.add_argument("--trials", type=parse_trials, default=1 << 20)
     est.add_argument("--seed", type=int, default=0)
@@ -136,10 +176,16 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    ap = build_parser()
+    args = ap.parse_args(argv)
     kwargs: dict = {"policy": args.duplicate_import}
     if args.command != "structure":
-        kwargs.update(semantics=args.semantics, targets=args.target, overrides=dict(args.override))
+        kwargs.update(semantics=args.semantics, targets=args.target, overrides=dict(args.override),
+                      literals=args.literals, max_initiators=args.max_initiators_per_cutset)
+    if args.command == "exact":
+        if args.cut_sets and args.semantics != "hull":
+            ap.error("--cut-sets needs --semantics hull")
+        kwargs.update(cut_sets=args.cut_sets)
     if args.command == "estimate":
         kwargs.update(trials=args.trials, seed=args.seed, max_checks=args.max_checks,
                       bdd_budget=args.bdd_budget, memory_mib=args.memory_mib)

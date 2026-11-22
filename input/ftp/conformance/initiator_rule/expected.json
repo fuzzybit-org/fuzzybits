@@ -1,0 +1,239 @@
+{
+  "schema_version": 2,
+  "description": "SEQ-1 has two initiators in one cut set and SEQ-4 an initiator next to a p = 1 initiator flag; the variant applies max_initiators_per_cutset = 1, which deletes both. SEQ-2 has a success branch (delete term), SEQ-3 a directly complemented event.",
+  "covers": [
+    "two initiators in one cut set",
+    "p = 1 initiator flag",
+    "max_initiators_per_cutset variant",
+    "initiator rule with a success branch",
+    "initiator rule with a complemented event"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "targets": [
+    "TOP",
+    "SEQ-1",
+    "SEQ-3",
+    "SEQ-4"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 6,
+    "gates_by_kind": {
+      "or": 2,
+      "and": 4,
+      "atleast": 0
+    },
+    "atleast_k_of_n": {},
+    "edges": 18,
+    "single_input_gates": 0,
+    "max_fan_in": 4,
+    "depth": 3,
+    "basic_events": 7,
+    "import_lines": 7,
+    "complemented_edges": 2,
+    "complemented_edges_to_basic_events": 1,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 3,
+    "initiator_tagged_events_with_p_1": 1,
+    "events_p_eq_1": 1,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.45000000000000007,
+          "hull": 0.4585600000000001,
+          "hull_omega": 0.4585600000000001,
+          "hull_positive": 0.5488000000000001,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 7
+        },
+        "SEQ-1": {
+          "boolean": 0.006000000000000001,
+          "hull": 0.006000000000000001,
+          "hull_omega": 0.006000000000000001,
+          "hull_positive": 0.006000000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-3": {
+          "boolean": 0.4,
+          "hull": 0.4,
+          "hull_omega": 0.4,
+          "hull_positive": 0.5,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-4": {
+          "boolean": 0.06,
+          "hull": 0.06,
+          "hull_omega": 0.06,
+          "hull_positive": 0.06,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.45000000000000007,
+          "hull": 0.4585600000000001,
+          "hull_omega": 0.4585600000000001,
+          "hull_positive": 0.5488000000000001,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 7
+        },
+        "SEQ-1": {
+          "boolean": 0.006000000000000001,
+          "hull": 0.006000000000000001,
+          "hull_omega": 0.006000000000000001,
+          "hull_positive": 0.006000000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-3": {
+          "boolean": 0.4,
+          "hull": 0.4,
+          "hull_omega": 0.4,
+          "hull_positive": 0.5,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-4": {
+          "boolean": 0.06,
+          "hull": 0.06,
+          "hull_omega": 0.06,
+          "hull_positive": 0.06,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [],
+      "results": {
+        "TOP": {
+          "boolean": 0.45000000000000007,
+          "hull": 0.4585600000000001,
+          "hull_omega": 0.4585600000000001,
+          "hull_positive": 0.5488000000000001,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 7
+        },
+        "SEQ-1": {
+          "boolean": 0.006000000000000001,
+          "hull": 0.006000000000000001,
+          "hull_omega": 0.006000000000000001,
+          "hull_positive": 0.006000000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-3": {
+          "boolean": 0.4,
+          "hull": 0.4,
+          "hull_omega": 0.4,
+          "hull_positive": 0.5,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-4": {
+          "boolean": 0.06,
+          "hull": 0.06,
+          "hull_omega": 0.06,
+          "hull_positive": 0.06,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    }
+  },
+  "variants": [
+    {
+      "policy": "error",
+      "max_initiators_per_cutset": 1,
+      "results": {
+        "TOP": {
+          "boolean": 0.28800000000000003,
+          "hull": 0.42400000000000004,
+          "hull_omega": 0.42400000000000004,
+          "hull_positive": 0.52,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 7
+        },
+        "SEQ-1": {
+          "boolean": 0.0,
+          "hull": 0.0,
+          "hull_omega": 0.0,
+          "hull_positive": 0.0,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-3": {
+          "boolean": 0.4,
+          "hull": 0.4,
+          "hull_omega": 0.4,
+          "hull_positive": 0.5,
+          "complemented_events": [
+            "OPER"
+          ],
+          "complement_under_negation": [],
+          "variables": 3
+        },
+        "SEQ-4": {
+          "boolean": 0.0,
+          "hull": 0.0,
+          "hull_omega": 0.0,
+          "hull_positive": 0.0,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 3
+        }
+      }
+    }
+  ]
+}

@@ -8,7 +8,7 @@ from typing import Mapping
 
 import numpy as np
 
-from .bitpar import ALL, evaluate, popcount, sample_event
+from .bitpar import ALL, atom_sampler, evaluate, popcount
 from .circuit import Circuit, Plan, build_circuit, plan
 from .ftp import Project
 
@@ -39,11 +39,7 @@ def run_passes(c: Circuit, pl: Plan, trials: int, rng: np.random.Generator, word
         state = rng.bit_generator.state
         ones = np.full(w, ALL, dtype=np.uint64)
         zeros = np.zeros(w, dtype=np.uint64)
-
-        def sampler(v: int, w: int = w) -> np.ndarray:
-            return sample_event(rng, c.probs[v], w)
-
-        yield w, state, ones, zeros, sampler
+        yield w, state, ones, zeros, atom_sampler(c, rng, w, ones)
         done += 64 * w
 
 
@@ -55,11 +51,12 @@ def estimate_boolean(
     trials: int = 1 << 20,
     seed: int = 0,
     memory_mib: int = DEFAULT_MEMORY_MIB,
+    max_initiators: int | None = None,
 ) -> dict:
     t0 = time.perf_counter()
-    c = build_circuit(project, target, probs, overrides, constants="boolean", fold=True)
+    c = build_circuit(project, target, probs, overrides, constants="boolean", fold=True, max_initiators=max_initiators)
     n = 64 * -(-trials // 64)
-    base = {"target": target, "semantics": "boolean", "seed": seed}
+    base = {"target": target, "semantics": "boolean", "max_initiators_per_cutset": max_initiators, "seed": seed}
     const = c.constant()
     if const is not None:
         return {

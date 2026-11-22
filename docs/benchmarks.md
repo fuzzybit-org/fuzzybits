@@ -519,11 +519,38 @@ Vendor outputs are not committed.
 
 - **Boolean:** $P(g)$ of the literal logic. Events at p = 0 and p = 1 are
   constants.
-- **Monotone hull** (#174): $P(\uparrow g)$ with
-  $\uparrow g(x) = \exists\, y \le x : g(y)$, so
-  $g \le \uparrow g \le g_{coh}$, where $g_{coh}$ replaces every complemented
-  input by TRUE. Events at p = 1 are droppable, not constants; events at
-  p = 0 are constants.
+- **Hull** (#174, #190, #199; [RFC](rfc/monotone-hull-queries.md) §3): the
+  plain monotone hull $\uparrow f(x) = \exists\, y \le x : f(y)$ of the
+  target, with a literal mode for the events referenced with a direct
+  complement (`-NAME` on an event) in the target's cone. These tools read
+  only FTP, so they apply the FTP reader's convention: every `-EVENT` is a
+  marked literal (`io.ftp.complement_events = atom`), every `-GATE` a
+  negation. Models from sources without such literals get the plain hull.
+  - `--literals split` (default, the FTP convention), the *atom-split hull*:
+    every such `-NAME` is
+    an atom of its own, valued not x and dropped independently of `NAME`; the
+    hull is taken over all atoms on the coupled sample, and cut sets list the
+    atom as `-NAME` (a cut set with both `NAME` and `-NAME` has probability 0
+    and is not listed).
+  - `--literals omega`: those events are *fixed* (a witness keeps their value):
+    Rauzy's $\omega_L g$.
+  - `--literals positive`: every event droppable, the plain hull of the literal
+    target (the FTP reader's `io.ftp.complement_events = negation`; mode
+    `negation` in the RFC).
+
+  A complemented gate, also a single-input one, is a delete term in every mode.
+  `split` and `omega` agree wherever no directly complemented event also
+  occurs under a complemented gate; elsewhere the tools report a warning
+  `complement-under-negation` (they can differ there, and `split` can exceed
+  the plain hull). `positive` drops the complements and differs whenever one
+  matters (T2 below). Droppable variables at p = 1 are not constants;
+  variables at p = 0 are constants. The atom `-NAME` of an event at p = 0 is a
+  droppable variable at p = 1, not TRUE.
+- **Initiator rule** (#190): `--max-initiators-per-cutset N` conjoins
+  $\neg\,\mathrm{atleast}(N+1;\ I)$, with $I$ the `I`-tagged events in the
+  target's cone (p = 1 initiator flags count). Under the hull this deletes the
+  minimal cut sets with more than N initiators (the vendor tools use N = 1);
+  under Boolean semantics it is the literal conjunction.
 - **Overrides** `NAME=0|1` replace a gate or an event by a constant *in the
   function*. They are not probabilities: under the hull, an event overridden
   to 1 is a constant TRUE, while an imported p = 1 event stays droppable.
@@ -536,20 +563,23 @@ Vendor outputs are not committed.
 
 | command | method | scope |
 |---|---|---|
-| `exact --semantics boolean\|hull` | enumeration of every event in the cone (≤ 22), weights include p = 0 and p = 1; the hull is the subset-OR (zeta) transform of the truth table. No folding or polarity reasoning, so it checks the estimators independently. | small models |
+| `exact --semantics boolean\|hull` | enumeration of every variable in the cone (≤ 22: events, and for `split` the complement atoms), weights include p = 0 and p = 1 (for `split`, an atom and its event take opposite values); the hull is the subset-OR (zeta) transform over the droppable axes. No folding or polarity reasoning, so it checks the estimators independently. `--cut-sets` (hull only) lists the minimal cut sets with `-NAME` for complement atoms (`split`) or negative literals (`omega`: $\operatorname{MC}_L(g)$, the prime implicants of $\omega_L g$). | small models |
 | `estimate --semantics boolean` | bit-parallel Monte Carlo, PCG64 seeded, 64 lanes per word; Binomial-position draws for p < 1/32, uniforms otherwise. The circuit is folded first (constants, aliases, structural hashing); a target that folds to a constant is reported exactly (`method: constant-folding`). | any size |
 | `estimate --semantics hull` | two-stage estimator below | any size |
 
 Hull estimator, per pass:
 
-1. Evaluate $g$ and $g_{coh}$ together. Lanes with $g = 1$ are in the hull,
-   lanes with $g_{coh} = 0$ are not.
+1. Sample the events (for `split`, an atom and its event are drawn once and
+   complement each other) and evaluate $g$ and the coherent bound together:
+   complemented gate inputs, and event literals that are not kept, replaced by
+   TRUE (atoms and fixed literals are kept). Lanes with $g = 1$ are in the
+   hull, lanes with coherent bound 0 are not.
 2. Redraw the pass (saved generator state), gather the candidate lanes and run
-   a Kleene (three-valued) evaluation in dual rail. Events false in the lane
-   are 0; true events reachable from the target only through an even number
-   of complements are fixed to 1, only through an odd number to 0 (optimal
-   for satisfiability, which drops p = 1 flags under a complement); true
-   binate events are free.
+   a Kleene (three-valued) evaluation in dual rail. Variables false in the lane
+   are 0 and fixed events keep their value; true droppable variables reachable
+   from the target only through an even number of complements are fixed to 1,
+   only through an odd number to 0 (optimal for satisfiability, which drops
+   p = 1 flags under a complement); true binate droppable events are free.
 3. Lanes still undetermined (up to `--max-checks`) get an exact check on the
    residual circuit of undetermined nodes: repeated pure-literal fixing, then
    a truth table (≤ 16 free events), a BDD with a node budget
@@ -563,10 +593,11 @@ $\pi_C = n_C/N$, $f = h/m$,
 $$\widehat{\mathrm{Var}}(\hat P) = \frac{\pi_T + f^2 \pi_C - \hat P^2}{N} + \frac{\pi_C^2 f (1 - f)}{m},$$
 
 which is $\hat P(1-\hat P)/N$ when every undetermined lane is checked. The
-result reports `estimate`, `se`, `ci95`, the per-run bounds
-$\hat P(g) \le \hat P \le \hat P(g_{coh})$, lane counts per stage, the checked
-fraction, `lanes_per_second` of the exact check, residual sizes and which
-decision procedure was used.
+result reports `literals`, `complemented_events`,
+`complement_under_negation`, `max_initiators_per_cutset`, `estimate`, `se`,
+`ci95`, the per-run bounds $\hat P(g) \le \hat P \le$ coherent bound, lane counts per stage, the
+checked fraction, `lanes_per_second` of the exact check, residual sizes and
+which decision procedure was used.
 
 Results are deterministic for a given seed, trial count and `--memory-mib`
 (which fixes the pass size). Trials are rounded up to a multiple of 64.
@@ -580,6 +611,14 @@ python -m benchmarks.reference exact --semantics boolean --override DEL=0 \
     input/ftp/conformance/delete_term_flags
 python -m benchmarks.reference estimate --semantics hull --trials 1e6 --seed 1 \
     --max-checks 2000 --target SEQ-3 --json input/ftp/conformance/success_branch_delete_term
+python -m benchmarks.reference exact --semantics hull --cut-sets \
+    --target T2 input/ftp/conformance/process_multi_target          # {-B, C}, {-B, D}
+python -m benchmarks.reference exact --semantics hull --literals positive \
+    --target T2 input/ftp/conformance/process_multi_target          # plain hull
+python -m benchmarks.reference exact --semantics hull --literals omega --cut-sets \
+    input/ftp/conformance/complement_under_negation                 # warns; differs from split
+python -m benchmarks.reference exact --semantics hull --max-initiators-per-cutset 1 \
+    --cut-sets input/ftp/conformance/initiator_rule
 ```
 
 `FILES` are `.ftp` files or directories (all `*.ftp`, sorted) read as one
@@ -589,28 +628,50 @@ means error diagnostics (printed to stderr; `--json` puts them in the document).
 
 ### Conformance fixtures (`input/ftp/conformance/`)
 
-One directory per fixture, ≤ 20 events each, with `expected.json`:
-hand-written `description`, `covers`, `files` (project order), optional
-`targets` and override `variants`; computed `default_targets`, `structure`
+One directory per fixture, ≤ 20 events each, with `expected.json`
+(`schema_version` 2): hand-written `description`, `covers`, `files` (project
+order), optional `targets` and `variants` (`policy`, `overrides`,
+`max_initiators_per_cutset`); computed `default_targets`, `structure`
 (policy-independent counts; an event counts as I-tagged or at a value when
 any of its import lines is), and per duplicate-import policy the expected
-diagnostics (`severity`, `code`, `name`, `locations`) and the exact Boolean
-and hull probabilities (`null` when the policy is an error).
+diagnostics (`severity`, `code`, `name`, `locations`) and, per target, the
+exact `boolean`, `hull` (atom-split, the default), `hull_omega` and
+`hull_positive` probabilities, `complemented_events` and
+`complement_under_negation` (`results` is `null` when the policy is an error).
+`hull` and `hull_omega` are equal on every fixture except
+`complement_under_negation`.
 
-| fixture | covers | target | Boolean | hull |
-|---|---|---|---|---|
-| `multi_file_project` | three files, cross-file gate references, separate IMPORT file | TOP | 0.00192544813 | 0.00192544813 |
-| `process_multi_target` | PROCESS with three targets over two lines, non-target root | T1 / T2 / T3 | 0.622 / 0.464 / 0.098 | 0.622 / 0.58 / 0.098 |
-| `no_process` | no PROCESS, two roots, no header lines | R1 / R2 | 0.208 / 0.024 | 0.208 / 0.024 |
-| `imports_tags_duplicates` | I tags, values 0 and 1, duplicated import | TOP (first / last) | 0.1108 / 0.1072 | 0.1108 / 0.1072 |
-| `header_limit` | `**CHAR32`, `**DBNAME:`, `**FTITLE:`, `*XEQ`, LIMIT, no PROCESS | TOP | 0.224 | 0.224 |
-| `success_branch_delete_term` | complemented gate references, SEQ = F ∧ ¬(S ∨ DEL) | TOP / SEQ-2 / SEQ-3 | 0.023 / 0.01785 / 0.00515 | 0.028 / 0.028 / 0.006325 |
-| `delete_term_flags` | DEL = two p = 1 flags; variants `DEL=0`, `FLAG-A=0` | SEQ | 0 (variants 0.00802) | 0.0107 |
-| `k_of_n_continuation` | k = 1, k = n, 1 < k < n, single-input gates, 564-character continuation line | TOP | 0.6372981032253088 | same |
-| `names_special` | names starting with digits, containing `/` or `--` | 1-TOP | 0.507 | 0.51 |
+| fixture | covers | target | Boolean | hull (split = omega) | plain hull |
+|---|---|---|---|---|---|
+| `multi_file_project` | three files, cross-file gate references, separate IMPORT file | TOP | 0.00192544813 | same | same |
+| `process_multi_target` | PROCESS with three targets over two lines, non-target root, complemented event | T1 / T2 / T3 | 0.622 / 0.464 / 0.098 | 0.622 / 0.464 / 0.098 | 0.622 / 0.58 / 0.098 |
+| `no_process` | no PROCESS, two roots, no header lines | R1 / R2 | 0.208 / 0.024 | same | same |
+| `imports_tags_duplicates` | I tags, values 0 and 1, duplicated import | TOP (first / last) | 0.1108 / 0.1072 | same | same |
+| `initiator_rule` | two initiators in one cut set, p = 1 initiator flag; variant `max_initiators_per_cutset: 1` | TOP (no rule / rule) | 0.45 / 0.288 | 0.45856 / 0.424 | 0.5488 / 0.52 |
+| `header_limit` | `**CHAR32`, `**DBNAME:`, `**FTITLE:`, `*XEQ`, LIMIT, no PROCESS | TOP | 0.224 | same | same |
+| `success_branch_delete_term` | complemented gate references, SEQ = F ∧ ¬(S ∨ DEL) | TOP / SEQ-2 / SEQ-3 | 0.023 / 0.01785 / 0.00515 | 0.028 / 0.028 / 0.006325 | same as hull |
+| `delete_term_flags` | DEL = two p = 1 flags; variants `DEL=0`, `FLAG-A=0` | SEQ | 0 (variants 0.00802) | 0.0107 | same as hull |
+| `k_of_n_continuation` | k = 1, k = n, 1 < k < n, single-input gates, 564-character continuation line | TOP | 0.6372981032253088 | same | same |
+| `names_special` | names starting with digits, containing `/` or `--`, complemented event | 1-TOP | 0.507 | 0.507 | 0.51 |
+
+| `complement_under_negation` | target | Boolean | split | omega | plain hull |
+|---|---|---|---|---|---|
+| B complemented directly and under the negated gate G | P1 | 0.2736 | 0.316 | 0.296 | 0.37 |
+| F complemented inside the negated gate H | P4 | 0.3 | 0.5 | 0.3 | 0.3 |
+| P1 ∨ P4 | TOP | 0.49152 | 0.658 | 0.5072 | 0.559 |
+| KM ∨ N¬M, no negated gate (no consensus {K, N} over atoms) | P3 | 0.5 | 0.5 | 0.5 | 0.78125 |
 
 `imports_tags_duplicates` under `error` has no results and one
-`duplicate-import` error. Check or regenerate the computed fields:
+`duplicate-import` error. The vendor tools list exactly the minimal
+cut sets of `exact --semantics hull --cut-sets --duplicate-import last` above
+each fixture's `LIMIT`, with `--max-initiators-per-cutset 1` (the tools apply
+that rule) and, with the `I` tags removed, without it, as checked for #190
+([RFC](rfc/monotone-hull-queries.md) §8.8–§8.11), including
+`complement_under_negation`, where omega and the plain hull do not match them.
+For that check
+`multi_file_project` must be merged into one tree section: the tools stop
+reading a concatenation at the first `ENDTREE`/`*XEQ` and treat the gates of
+later files as undefined events. Check or regenerate the computed fields:
 
 ```bash
 python -m benchmarks.reference.fixtures                   # check
@@ -632,10 +693,15 @@ them as described in its `description`.
 
 `tests/python/test_reference_estimators.py` checks the fixtures (the
 diagnostics of the `invalid_*` fixtures are also written out by hand in the
-test), closed-form values for several of them, Boolean and hull estimates
-within 4 standard errors, the per-lane hull check against the exact upward
-closure (truth table, BDD and search paths), the parser rules and their
-diagnostics, seed determinism and the CLI.
+test), closed-form values and minimal cut sets for several of them, the
+initiator rule on every fixture, Boolean and hull estimates (all three literal
+modes) within 4 standard errors, the per-lane hull check against the exact
+closure (truth table, BDD and search paths), brute force on random projects
+(exact values, cut sets, per-lane check and estimates for all three modes,
+with complements inside and outside negated gates) and random circuits
+(per-lane check and bounds for every kind of significant literal), the atom
+sampler's coupling, the `complement-under-negation` warning, the parser rules
+and their diagnostics, seed determinism and the CLI.
 
 ### Private models
 
@@ -643,9 +709,12 @@ When `FUZZYBITS_PRIVATE_FIXTURES_DIR` is set, the `private` tests check every
 `ftp/<MODEL>/` directory that has `<MODEL>.card.json`: the card's structure
 counts, and each variant (`semantics`, `overrides`, `policy`, `expected`)
 within 4 combined standard errors (Boolean: `FUZZYBITS_PRIVATE_TRIALS`,
-default 2^22; hull: 2^18 trials, at most 400 checked lanes). Variants that
-need a file edit are skipped; variants with only an observed value are
-reported, not asserted. Output is pass/fail and aggregates only: no
+default 2^22; hull: 2^18 trials, at most 400 checked lanes, default literal
+mode). A variant's initiator rule is its `max_initiators_per_cutset`; a
+variant that states a rule only otherwise (`extra_delete_term`) is skipped, as
+is one that needs a file edit. A policy may carry a comment after its keyword
+(`last (...)`). Variants with only an observed value are reported, not
+asserted. Output is pass/fail and aggregates only: no
 identifiers, per-event values or card values (#38).
 `scripts/ci/docker-toolchain-run.sh` mounts the directory read-only at
 `/private` and passes `FUZZYBITS_PRIVATE_FIXTURES_DIR=/private`.

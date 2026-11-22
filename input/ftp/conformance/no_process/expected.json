@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "A project without PROCESS and without header lines; the targets are the two roots.",
   "covers": [
     "project without PROCESS",
@@ -57,11 +57,19 @@
         "R1": {
           "boolean": 0.208,
           "hull": 0.208,
+          "hull_omega": 0.208,
+          "hull_positive": 0.208,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "R2": {
           "boolean": 0.024,
           "hull": 0.024,
+          "hull_omega": 0.024,
+          "hull_positive": 0.024,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -79,11 +87,19 @@
         "R1": {
           "boolean": 0.208,
           "hull": 0.208,
+          "hull_omega": 0.208,
+          "hull_positive": 0.208,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "R2": {
           "boolean": 0.024,
           "hull": 0.024,
+          "hull_omega": 0.024,
+          "hull_positive": 0.024,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }
@@ -101,11 +117,19 @@
         "R1": {
           "boolean": 0.208,
           "hull": 0.208,
+          "hull_omega": 0.208,
+          "hull_positive": 0.208,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         },
         "R2": {
           "boolean": 0.024,
           "hull": 0.024,
+          "hull_omega": 0.024,
+          "hull_positive": 0.024,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 3
         }
       }

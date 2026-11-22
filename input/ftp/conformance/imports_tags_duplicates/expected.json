@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "description": "I-tagged imports, events with value 0 and 1 (one I-tagged at 1), and an event imported twice with different values.",
   "covers": [
     "IMPORT with I tags",
@@ -103,6 +103,10 @@
         "TOP": {
           "boolean": 0.11080000000000001,
           "hull": 0.11080000000000001,
+          "hull_omega": 0.11080000000000001,
+          "hull_positive": 0.11080000000000001,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 9
         }
       }
@@ -129,6 +133,10 @@
         "TOP": {
           "boolean": 0.10720000000000002,
           "hull": 0.10720000000000002,
+          "hull_omega": 0.10720000000000002,
+          "hull_positive": 0.10720000000000002,
+          "complemented_events": [],
+          "complement_under_negation": [],
           "variables": 9
         }
       }

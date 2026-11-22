@@ -9,16 +9,27 @@ in which samplers draw them.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Mapping
+from dataclasses import dataclass, field
+from typing import Collection, Mapping
 
-from .ftp import AND, ATLEAST, OR, ModelError, Project
+from .ftp import AND, ATLEAST, OR, Diagnostic, Location, ModelError, Project
 
 FALSE, TRUE = 0, 1
 POS, NEG = 1, 2  # polarity bits: reachable from the root through an even / odd number of complements
 
 # Which import values become constants when the circuit is built.
 CONSTANTS = ("boolean", "hull", "none")
+
+# Literal modes of a hull query (RFC §3). Following the FTP reader's convention
+# (#199), every direct complement ``-NAME`` of an event is a marked literal:
+# ``split`` (default) makes each an atom of its own, ``-NAME``, droppable and
+# valued not x (the atom-split hull); ``omega`` fixes those events (Rauzy's
+# omega_L); ``positive`` reads them as negations (the plain hull; ``negation``
+# in the RFC).
+LITERALS = ("split", "omega", "positive")
+# Per event under omega_L: which of x_v and not x_v are in L. A witness y may
+# use y_v in [lo, hi] (``bounds``).
+ONLY_POS, BOTH, ONLY_NEG, NEITHER = "pos", "both", "neg", "neither"
 
 
 @dataclass
@@ -30,6 +41,7 @@ class Circuit:
     ks: list[int]
     kids: list[tuple[int, ...]]
     root: int  # literal
+    twins: dict[int, int] = field(default_factory=dict)  # complement atom -> its event, when both are variables
 
     @property
     def first_gate(self) -> int:
@@ -72,31 +84,11 @@ def _fold(kind: str, k: int, lits: list[int]) -> int | tuple[str, int, tuple[int
     return (kind, k, tuple(lits))
 
 
-def build_circuit(
-    project: Project,
-    target: str,
-    probs: Mapping[str, float],
-    overrides: Mapping[str, int | bool] | None = None,
-    constants: str = "boolean",
-    fold: bool = True,
-) -> Circuit:
-    """Circuit for ``target`` restricted to its cone.
-
-    ``overrides`` replace gates or events by Boolean constants (in the function,
-    not in the measure). ``constants`` selects which import values are folded:
-    ``boolean`` folds p = 0 and p = 1, ``hull`` folds only p = 0 (p = 1 events
-    stay droppable), ``none`` keeps every event as a variable. ``fold`` enables
-    constant propagation, alias removal and structural hashing.
-    """
-    if constants not in CONSTANTS:
-        raise ValueError(f"constants must be one of {CONSTANTS}")
+def cone_gates(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Gates in the cone of ``target`` in topological order (children first);
+    overridden gates are leaves."""
     gates = project.gates
-    over = {name: int(bool(v)) for name, v in (overrides or {}).items()}
-    unknown = sorted(n for n in over if n not in gates and n not in probs)
-    if unknown:
-        raise ModelError(f"override names unknown nodes: {', '.join(unknown)}")
-    if target not in gates and target not in probs and target not in over:
-        raise ModelError(f"unknown target {target}")
+    over = overrides or {}
 
     def expandable(name: str) -> bool:
         return name in gates and name not in over
@@ -122,6 +114,153 @@ def build_circuit(
             state[name] = 2
             order.append(name)
             stack.pop()
+    return order
+
+
+def cone_events(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Events referenced in the cone of ``target`` (the target itself if it is
+    an event), in order of first reference, including overridden events."""
+    gates = project.gates
+    out = dict.fromkeys([target] if target not in gates else [])
+    for name in cone_gates(project, target, overrides):
+        out.update((c, None) for c, _ in gates[name].children if c not in gates)
+    return list(out)
+
+
+def complemented_events(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None) -> list[str]:
+    """Events referenced with a direct complement (``-NAME``) by a gate in the
+    cone of ``target``, sorted: the events whose complements are atoms for
+    ``literals="split"`` and fixed for ``"omega"`` (RFC §3). Complements of gates
+    (also of single-input gates) are delete terms and add nothing."""
+    gates, over = project.gates, overrides or {}
+    return sorted({
+        c for name in cone_gates(project, target, over) for c, neg in gates[name].children
+        if neg and c not in gates and c not in over
+    })
+
+
+def literal_sets(project: Project, target: str, literals: str,
+                 overrides: Mapping[str, int | bool] | None = None) -> tuple[list[str], list[str]]:
+    """(fixed, split) events under ``literals``: the directly complemented events
+    are fixed for ``omega``, split into atoms for ``split``, neither for
+    ``positive``."""
+    if literals not in LITERALS:
+        raise ValueError(f"literals must be one of {LITERALS}, got {literals!r}")
+    events = complemented_events(project, target, overrides) if literals != "positive" else []
+    return (events, []) if literals == "omega" else ([], events)
+
+
+def complement_under_negation(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None,
+                              max_initiators: int | None = None) -> list[Diagnostic]:
+    """Warnings ``complement-under-negation``: directly complemented events of the
+    target's cone that also occur in the cone of a complemented gate (or, with
+    the initiator rule, are initiators). The atom-split hull and omega_L can
+    differ only there (RFC Theorem 10(c))."""
+    gates, over = project.gates, overrides or {}
+    cone = cone_gates(project, target, over)
+    direct: dict[str, Location] = {}
+    for name in cone:
+        for c, neg in gates[name].children:
+            if neg and c not in gates and c not in over:
+                direct.setdefault(c, gates[name].location)
+    if not direct:
+        return []
+    under: dict[str, Location | None] = {}
+    for name in cone:
+        for c, neg in gates[name].children:
+            if neg and c in gates and c not in over:
+                for e in cone_events(project, c, over):
+                    under.setdefault(e, gates[name].location)
+    if max_initiators is not None:
+        for e in project.initiators() & set(direct):
+            under.setdefault(e, None)
+    out = []
+    for e in sorted(direct):
+        if e not in under:
+            continue
+        where = "the initiator rule" if under[e] is None else "a complemented gate"
+        locs = (direct[e],) if under[e] is None else (direct[e], under[e])
+        out.append(Diagnostic("warning", "complement-under-negation",
+                              f"{e} is complemented directly and also occurs under {where} in the cone of {target}; "
+                              "the atom-split hull and omega_L can differ", e, locs))
+    return out
+
+
+def hull_record(project: Project, target: str, overrides: Mapping[str, int | bool] | None = None,
+                max_initiators: int | None = None) -> dict:
+    """The directly complemented events of the target's cone (atoms under
+    ``split``, fixed under ``omega``) and those that also occur under a
+    complemented gate (the ``complement-under-negation`` warnings)."""
+    return {
+        "complemented_events": complemented_events(project, target, overrides),
+        "complement_under_negation": [
+            d.name for d in complement_under_negation(project, target, overrides, max_initiators)
+        ],
+    }
+
+
+def event_modes(names: list[str], n_vars: int, negative: Collection[str]) -> list:
+    """Per node (index 0 and gates unused): BOTH for events in ``negative``,
+    else ONLY_POS."""
+    neg = set(negative)
+    return [None] + [BOTH if names[v] in neg else ONLY_POS for v in range(1, n_vars + 1)]
+
+
+def bounds(mode: str, x, ones, zeros):
+    """Values a witness may give an event whose value in the world is ``x``:
+    the interval ``[lo, hi]`` (bitwise over lanes)."""
+    if mode == ONLY_POS:
+        return zeros, x
+    if mode == BOTH:
+        return x, x
+    if mode == ONLY_NEG:
+        return x, ones
+    return zeros, ones
+
+
+def build_circuit(
+    project: Project,
+    target: str,
+    probs: Mapping[str, float],
+    overrides: Mapping[str, int | bool] | None = None,
+    constants: str = "boolean",
+    fold: bool = True,
+    max_initiators: int | None = None,
+    split: Collection[str] = (),
+) -> Circuit:
+    """Circuit for ``target`` restricted to its cone.
+
+    ``overrides`` replace gates or events by Boolean constants (in the function,
+    not in the measure). ``constants`` selects which import values are folded:
+    ``boolean`` folds p = 0 and p = 1, ``hull`` folds only p = 0 (p = 1 events
+    stay droppable), ``none`` keeps every event as a variable. ``fold`` enables
+    constant propagation, alias removal and structural hashing.
+
+    ``max_initiators = m`` conjoins the delete term ``not atleast(m + 1; I)``,
+    with I the initiator-tagged events in the cone (RFC §4.8); it is omitted
+    when ``|I| <= m``.
+
+    ``split``: events whose direct complements become atoms of their own (the
+    split circuit of RFC §3): a complemented edge into such an event reads a
+    variable ``-NAME`` with probability 1 - p, and ``Circuit.twins`` couples it
+    to ``NAME`` when both occur. Gate complements are unchanged.
+    """
+    if constants not in CONSTANTS:
+        raise ValueError(f"constants must be one of {CONSTANTS}")
+    if max_initiators is not None and max_initiators < 0:
+        raise ValueError("max_initiators must be non-negative")
+    gates = project.gates
+    over = {name: int(bool(v)) for name, v in (overrides or {}).items()}
+    unknown = sorted(n for n in over if n not in gates and n not in probs)
+    if unknown:
+        raise ModelError(f"override names unknown nodes: {', '.join(unknown)}")
+    if target not in gates and target not in probs and target not in over:
+        raise ModelError(f"unknown target {target}")
+
+    def expandable(name: str) -> bool:
+        return name in gates and name not in over
+
+    order = cone_gates(project, target, over)
 
     # Temporary nodes: 0 = FALSE, then events and gates as they are met.
     tmp: list[tuple] = [("const",)]
@@ -148,25 +287,53 @@ def build_circuit(
     def ref(name: str) -> int:
         return lit_of[name] if expandable(name) else leaf(name)
 
-    for name in order:
-        g = gates[name]
-        lits = [ref(c) ^ neg for c, neg in g.children]
+    split_set = set(split)
+
+    def atom(name: str) -> int:
+        """The complement atom of event ``name`` (folded like an event of
+        probability 1 - p)."""
+        if name not in probs:
+            raise ModelError(f"no probability for event {name}")
+        q = 1.0 - probs[name]
+        if constants != "none" and q == 0.0:
+            return FALSE
+        key = "-" + name
+        node = var_of.get(key)
+        if node is None:
+            node = var_of[key] = len(tmp)
+            tmp.append(("var", key, q))
+        return 2 * node
+
+    def child(c: str, neg: bool) -> int:
+        if neg and c in split_set and not expandable(c) and c not in over:
+            return atom(c)
+        return ref(c) ^ neg
+
+    def add(name: str, kind: str, k: int, lits: list[int]) -> int:
         if not fold:
-            lit_of[name] = 2 * len(tmp)
-            tmp.append(("gate", name, g.kind, g.k, tuple(lits)))
-            continue
-        res = _fold(g.kind, g.k, lits)
+            tmp.append(("gate", name, kind, k, tuple(lits)))
+            return 2 * (len(tmp) - 1)
+        res = _fold(kind, k, lits)
         if isinstance(res, int):
-            lit_of[name] = res
-            continue
+            return res
         kind, k, flits = res
         key = (kind, k, tuple(sorted(flits)))
         node = hashed.get(key)
         if node is None:
             node = hashed[key] = len(tmp)
             tmp.append(("gate", name, kind, k, flits))
-        lit_of[name] = 2 * node
+        return 2 * node
+
+    for name in order:
+        g = gates[name]
+        lit_of[name] = add(name, g.kind, g.k, [child(c, neg) for c, neg in g.children])
     root = ref(target)
+    if max_initiators is not None:
+        tagged = project.initiators()
+        lits = [leaf(e) for e in cone_events(project, target, over) if e in tagged]
+        if len(lits) > max_initiators:
+            delete = add("$INITIATORS", ATLEAST, max_initiators + 1, lits)
+            root = add("$TARGET", AND, 0, [root, delete ^ 1])
     return _finalize(tmp, root)
 
 
@@ -194,6 +361,9 @@ def _finalize(tmp: list[tuple], root: int) -> Circuit:
         new[i] = len(new)
     names = ["$FALSE"] + [tmp[i][1] for i in var_ids] + [tmp[i][1] for i in gate_ids]
     probs = [0.0] + [tmp[i][2] for i in var_ids] + [0.0] * len(gate_ids)
+    var_index = {names[v]: v for v in range(1, 1 + len(var_ids))}
+    twins = {v: var_index[names[v][1:]] for v in var_index.values()
+             if names[v].startswith("-") and names[v][1:] in var_index}
     return Circuit(
         names=names,
         n_vars=len(var_ids),
@@ -202,6 +372,7 @@ def _finalize(tmp: list[tuple], root: int) -> Circuit:
         ks=[tmp[i][3] for i in gate_ids],
         kids=[tuple(2 * new[lit >> 1] + (lit & 1) for lit in tmp[i][4]) for i in gate_ids],
         root=2 * new[root >> 1] + (root & 1),
+        twins=twins,
     )
 
 
@@ -257,10 +428,21 @@ def polarity(c: Circuit) -> list[int]:
     return pol
 
 
-def negation_below(c: Circuit) -> list[bool]:
-    """Per gate: whether a complemented edge occurs in its cone."""
+def relaxed(c: Circuit, modes: list, lit: int) -> bool:
+    """Whether the coherent bound g_coh^L replaces ``lit`` by TRUE: complemented
+    gates (and TRUE itself), and event literals that are not in L."""
+    node = lit >> 1
+    if node == 0 or node >= c.first_gate:
+        return bool(lit & 1)
+    if lit & 1:
+        return modes[node] in (ONLY_POS, NEITHER)
+    return modes[node] in (ONLY_NEG, NEITHER)
+
+
+def relaxed_below(c: Circuit, modes: list) -> list[bool]:
+    """Per gate: whether a relaxed literal occurs in its cone."""
     first = c.first_gate
     out = [False] * len(c.kinds)
     for g, kids in enumerate(c.kids):
-        out[g] = any((lit & 1) or (lit >> 1 >= first and out[(lit >> 1) - first]) for lit in kids)
+        out[g] = any(relaxed(c, modes, lit) or (lit >> 1 >= first and out[(lit >> 1) - first]) for lit in kids)
     return out
