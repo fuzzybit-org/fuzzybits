@@ -3,6 +3,7 @@
 # defines that target after src/io; link names resolve at generate time).
 add_library(fuzzybits_io_pcfb STATIC
   write.cpp
+  read.cpp
   detail/order.cpp
   detail/writer.cpp
   detail/reader.cpp

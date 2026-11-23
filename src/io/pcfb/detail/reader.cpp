@@ -18,8 +18,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <map>
-#include <numeric>
 #include <optional>
 #include <span>
 #include <string>
@@ -93,9 +91,6 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             std::uint32_t positive_end = 0;
             std::uint32_t negative_begin = 0;
             std::uint32_t negative_end = 0;
-            // Operands in the order chosen by layout().
-            std::uint32_t edge_begin = 0;
-            std::uint32_t edge_end = 0;
         };
 
         [[nodiscard]] auto gateCode(const ::pcfb::OpCode opcode) -> std::optional<ir::pc::op_code> {
@@ -155,10 +150,10 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                     return pcfb_read_result::fail(std::move(diagnostics_));
                 }
                 layout();
+                readMetadata();
                 if (!assemble()) {
                     return pcfb_read_result::fail(std::move(diagnostics_));
                 }
-                readMetadata();
                 fillOptions();
                 output_.schema_version = file_->schema_version();
                 return pcfb_read_result::ok(std::move(output_), std::move(diagnostics_));
@@ -243,6 +238,11 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         for (std::uint32_t position = 0; position < list.size(); ++position) {
                             const auto source = producer(list[position]);
                             if (source == kNone) {
+                                return false;
+                            }
+                            if (source >= index) {
+                                diagnostics_.push(error(diag::invalid_file, "operator " + std::to_string(index) + " reads tensor " +
+                                                                                std::to_string(list[position]) + ", which a later operator writes"));
                                 return false;
                             }
                             ++fanout_[source];
@@ -448,140 +448,14 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 return op(nodes_[node].op)->args_as_SampleArgs();
             }
 
-            // Chooses the node numbering. The writer emits operators by depth-first post-order with
-            // roots in ascending node id, and numbers basic events by ascending node id. A numbering
-            // reproduces the file's operator order when a node is a root of the traversal exactly where
-            // the file has it, so:
-            //  - a node is adopted by the first later node that lists it, when the nodes adopted by one
-            //    node sit on top of the stack of pending nodes in the order the node lists them;
-            //  - roots take ascending ids in file order, followed by the other nodes of their trees;
-            //  - basic events take ascending ids in event-id order, each placed as early as its tree and
-            //    the events below it allow.
+            // The canonical numbering: basic events first, by ascending file event id, then every other node
+            // in file operator order. The file lists an operator after the operators it reads, so every
+            // operand has a smaller id than its consumer, except through the events, which come first.
             void layout() {
                 const auto count = static_cast<std::uint32_t>(nodes_.size());
-                std::vector<std::uint32_t> parent(count, kNone);
-                std::vector<std::uint32_t> mark(count, kNone);
-                std::vector<std::uint32_t> listed(count, 0);
-                // The nodes of a pending root's tree are the contiguous file range [first[root], root].
-                std::vector<std::uint32_t> first(count);
-                std::iota(first.begin(), first.end(), 0U);
-                struct Member {
-                    std::uint32_t owner;
-                    std::uint32_t listed;
-                    std::uint32_t node;
-                };
-                std::vector<Member> members;
-                std::vector<std::uint32_t> stack;
-                // The pending root that contains each node.
-                std::vector<std::uint32_t> representative(count);
-                std::iota(representative.begin(), representative.end(), 0U);
-                const auto find = [&](std::uint32_t node) {
-                    auto root = node;
-                    while (representative[root] != root) {
-                        root = representative[root];
-                    }
-                    while (representative[node] != root) {
-                        node = std::exchange(representative[node], root);
-                    }
-                    return root;
-                };
-                edgeSource_.reserve(positive_.size() + negative_.size());
-                edgeComplement_.reserve(positive_.size() + negative_.size());
-                for (std::uint32_t node = 0; node < count; ++node) {
-                    auto &info = nodes_[node];
-                    // Visiting a pending root visits the nodes it adopted, so a root precedes the nodes of its
-                    // tree in the operand order and roots go in file order; the order inside `inputs` and
-                    // inside `inverted_inputs` is the file's.
-                    const auto rank = [&](Operand const &operand) {
-                        const auto root = find(operand.source);
-                        return std::pair{root, root == operand.source ? 0U : 1U};
-                    };
-                    info.edge_begin = static_cast<std::uint32_t>(edgeSource_.size());
-                    for (auto left = info.positive_begin, right = info.negative_begin; left < info.positive_end || right < info.negative_end;) {
-                        const bool takePositive = right == info.negative_end || (left < info.positive_end && rank(positive_[left]) <= rank(negative_[right]));
-                        auto const &next = takePositive ? positive_[left++] : negative_[right++];
-                        edgeSource_.push_back(next.source);
-                        edgeComplement_.push_back(next.complement ? 1 : 0);
-                    }
-                    info.edge_end = static_cast<std::uint32_t>(edgeSource_.size());
-
-                    for (auto edge = info.edge_begin; edge < info.edge_end; ++edge) {
-                        const auto source = edgeSource_[edge];
-                        if (mark[source] != node) {
-                            mark[source] = node;
-                            listed[source] = edge - info.edge_begin;
-                        }
-                        const auto owner = find(source);
-                        if (owner != source) {
-                            members.push_back({owner, edge - info.edge_begin, source});
-                        }
-                    }
-                    std::ranges::sort(members, [](Member const &left, Member const &right) {
-                        return std::tie(left.owner, left.listed) < std::tie(right.owner, right.listed);
-                    });
-                    std::size_t top = stack.size();
-                    // The traversal of this node visits a pending root itself only if the members of the root's tree
-                    // that the node lists before the root emit, in listing order, exactly the file operators in front
-                    // of the root's own run; otherwise the root was visited on its own, earlier.
-                    const auto adoptable = [&](const std::uint32_t pending) {
-                        if (mark[pending] != node) {
-                            return false;
-                        }
-                        std::int64_t end = static_cast<std::int64_t>(first[pending]) - 1;
-                        for (auto at = std::ranges::lower_bound(members, pending, {}, &Member::owner);
-                             at != members.end() && at->owner == pending && at->listed < listed[pending]; ++at) {
-                            if (static_cast<std::int64_t>(at->node) <= end) {
-                                continue;
-                            }
-                            if (static_cast<std::int64_t>(first[at->node]) > end + 1) {
-                                return false;
-                            }
-                            end = at->node;
-                        }
-                        return true;
-                    };
-                    while (top > 0 && adoptable(stack[top - 1]) && (top == stack.size() || listed[stack[top - 1]] < listed[stack[top]])) {
-                        --top;
-                    }
-                    for (auto at = top; at < stack.size(); ++at) {
-                        parent[stack[at]] = node;
-                        representative[stack[at]] = node;
-                        first[node] = std::min(first[node], first[stack[at]]);
-                    }
-                    members.clear();
-                    stack.resize(top);
-                    stack.push_back(node);
-                }
-
-                std::vector<std::uint32_t> rootOf(count);
-                for (auto node = count; node-- > 0;) {
-                    rootOf[node] = parent[node] == kNone ? node : rootOf[parent[node]];
-                }
-                std::vector<std::uint32_t> rootPosition(count, kNone);
-                for (std::uint32_t position = 0; position < stack.size(); ++position) {
-                    rootPosition[stack[position]] = position;
-                }
-                std::vector<std::uint32_t> bucketStart(stack.size() + 1, 0);
-                const auto isEvent = [&](const std::uint32_t node) { return nodes_[node].code == ir::pc::op_code::basic_event; };
-                for (std::uint32_t node = 0; node < count; ++node) {
-                    if (parent[node] != kNone && !isEvent(node)) {
-                        ++bucketStart[rootPosition[rootOf[node]] + 1];
-                    }
-                }
-                for (std::size_t position = 0; position < stack.size(); ++position) {
-                    bucketStart[position + 1] += bucketStart[position];
-                }
-                std::vector<std::uint32_t> bucket(bucketStart.back());
-                std::vector<std::uint32_t> fill(bucketStart.begin(), bucketStart.end() - 1);
-                for (std::uint32_t node = 0; node < count; ++node) {
-                    if (parent[node] != kNone && !isEvent(node)) {
-                        bucket[fill[rootPosition[rootOf[node]]]++] = node;
-                    }
-                }
-
                 std::vector<std::uint32_t> events;
                 for (std::uint32_t node = 0; node < count; ++node) {
-                    if (isEvent(node)) {
+                    if (nodes_[node].code == ir::pc::op_code::basic_event) {
                         events.push_back(node);
                     }
                 }
@@ -595,65 +469,17 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         break;
                     }
                 }
-
-                std::vector<std::uint8_t> placed(count, 0);
-                std::vector<std::uint32_t> order;
-                order.reserve(count);
-                const auto place = [&](const std::uint32_t node) {
-                    placed[node] = 1;
-                    order.push_back(node);
-                };
-                std::size_t next = 0;
-                const auto skipPlaced = [&] {
-                    while (next < events.size() && placed[events[next]] != 0) {
-                        ++next;
+                order_ = std::move(events);
+                order_.reserve(count);
+                for (std::uint32_t node = 0; node < count; ++node) {
+                    if (nodes_[node].code != ir::pc::op_code::basic_event) {
+                        order_.push_back(node);
                     }
-                };
-                bool reordered = false;
-                for (std::uint32_t position = 0; position < stack.size(); ++position) {
-                    const auto root = stack[position];
-                    if (isEvent(root)) {
-                        if (placed[root] == 0) {
-                            skipPlaced();
-                            while (events[next] != root) {
-                                const auto flushed = events[next];
-                                const bool early = parent[flushed] == kNone || rootPosition[rootOf[flushed]] > position;
-                                reordered = reordered || early;
-                                place(events[next]);
-                                skipPlaced();
-                            }
-                            place(root);
-                        }
-                        continue;
-                    }
-                    place(root);
-                    for (auto at = bucketStart[position]; at < bucketStart[position + 1]; ++at) {
-                        place(bucket[at]);
-                    }
-                    for (skipPlaced(); next < events.size(); skipPlaced()) {
-                        const auto event = events[next];
-                        if (parent[event] == kNone || rootPosition[rootOf[event]] > position) {
-                            break;
-                        }
-                        place(event);
-                    }
-                }
-                for (const auto event : events) {
-                    if (placed[event] == 0) {
-                        reordered = true;
-                        place(event);
-                    }
-                }
-                if (reordered) {
-                    diagnostics_.push(note(diag::emission_order_changed,
-                                           "the operator order of the file is not an emission order of any circuit numbering that "
-                                           "keeps events in ascending id; a write lists some operators elsewhere"));
                 }
                 idOfNode_.assign(count, 0);
                 for (std::uint32_t id = 0; id < count; ++id) {
-                    idOfNode_[order[id]] = id;
+                    idOfNode_[order_[id]] = id;
                 }
-                order_ = std::move(order);
             }
 
             [[nodiscard]] auto assemble() -> bool {
@@ -665,16 +491,17 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 for (std::uint32_t id = 0; id < count; ++id) {
                     auto const &info = nodes_[order_[id]];
                     operands.clear();
-                    for (auto edge = info.edge_begin; edge < info.edge_end; ++edge) {
-                        operands.push_back(ir::pc::edge_ref{.source = ir::pc::bool_node_id(idOfNode_[edgeSource_[edge]]),
-                                                            .complement = edgeComplement_[edge] != 0});
+                    for (const auto list : {std::span{positive_}.subspan(info.positive_begin, info.positive_end - info.positive_begin),
+                                            std::span{negative_}.subspan(info.negative_begin, info.negative_end - info.negative_begin)}) {
+                        for (auto const &operand : list) {
+                            operands.push_back(ir::pc::edge_ref{.source = ir::pc::bool_node_id(idOfNode_[operand.source]), .complement = operand.complement});
+                        }
                     }
                     switch (info.code) {
                     case ir::pc::op_code::basic_event:
                         (void)builder.add_basic_event(builder.add_literal_probability(sampleOf(order_[id])->probability()));
                         break;
                     case ir::pc::op_code::constant:
-                    case ir::pc::op_code::house_event:
                         (void)builder.add_constant(info.value);
                         break;
                     case ir::pc::op_code::cardinality:
@@ -730,11 +557,13 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                     if (query->confidence() != nullptr && query->confidence()->size() != 0) {
                         ++confidenceDropped_;
                     }
+                    const auto role = roleOfQuery(index);
                     auto &kinds = targetKinds_;
-                    const bool joins = !kinds.empty() && node == previousNode && name == previousName &&
+                    const bool joins = !kinds.empty() && node == previousNode && name == previousName && role == targetRoles_.back() &&
                                        std::ranges::find(kinds.back(), kind) == kinds.back().end();
                     if (!joins) {
-                        (void)builder.add_target(ir::pc::bool_node_id(idOfNode_[node]));
+                        (void)builder.add_target(ir::pc::bool_node_id(idOfNode_[node]), role);
+                        targetRoles_.push_back(role);
                         targetNames_.emplace_back(name);
                         kinds.emplace_back();
                     }
@@ -797,6 +626,25 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 }
                 diagnostics_.push(warning(diag::invalid_metadata, "metadata '" + key + "' is not a string and is ignored"));
                 return std::nullopt;
+            }
+
+            // compile.query.<i>.role is written only for targets that are not primary.
+            [[nodiscard]] auto roleOfQuery(const std::uint32_t index) -> ir::pc::observable_role {
+                const auto key = "compile.query." + std::to_string(index) + ".role";
+                if (!metadataIndex_.contains(key)) {
+                    return ir::pc::observable_role::primary;
+                }
+                const auto text = metadataText(key);
+                if (text && *text == "watch") {
+                    return ir::pc::observable_role::watch;
+                }
+                if (text && *text == "projection_anchor") {
+                    return ir::pc::observable_role::projection_anchor;
+                }
+                if (text) {
+                    diagnostics_.push(warning(diag::invalid_metadata, "metadata '" + key + "' is '" + *text + "', not watch or projection_anchor; the target is read as primary"));
+                }
+                return ir::pc::observable_role::primary;
             }
 
             void fillQuantification() {
@@ -897,14 +745,13 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             std::vector<NodeInfo> nodes_;
             std::vector<Operand> positive_;
             std::vector<Operand> negative_;
-            std::vector<std::uint32_t> edgeSource_;
-            std::vector<std::uint8_t> edgeComplement_;
             std::vector<std::uint32_t> order_;
             std::vector<std::uint32_t> idOfNode_;
 
             std::vector<std::string> targetNames_;
             std::vector<std::vector<query_kind>> targetKinds_;
-                    std::vector<std::uint32_t> queryTarget_;
+            std::vector<std::uint32_t> queryTarget_;
+            std::vector<ir::pc::observable_role> targetRoles_;
             std::unordered_map<std::string, std::size_t> metadataIndex_;
         };
 

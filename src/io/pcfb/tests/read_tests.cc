@@ -128,8 +128,8 @@ namespace {
     }
 
     // The read circuit has the structure of the written one, seen through the maps. Differences that
-    // follow from what pcfb records: observable roles are not stored (every read target is primary);
-    // house events and the full-range cardinality (a ONES tensor without operands) read as constants;
+    // follow from what pcfb records: house events and a cardinality without operands (a ONES tensor)
+    // read as constants;
     // an unnamed NOT gate whose consumers also list its operand is a complemented edge in the read
     // circuit (see operand_view); the interleaving of complemented and plain operands is not stored.
     void requireSameStructure(RandomModel const &model, writer::write_output const &written, writer::read_output const &read) {
@@ -150,8 +150,6 @@ namespace {
         };
 
         std::size_t skipped = 0;
-        std::vector<bool> covered(circuit.node_count(), false);
-        bool anyFullRange = false;
         for (std::uint32_t v = 0; v < original.node_count(); ++v) {
             INFO("node " << v);
             const auto node = pc::bool_node_id(v);
@@ -169,9 +167,7 @@ namespace {
                 continue;
             }
             const auto r = mapped(node).raw();
-            covered[r] = true;
-            const bool fullRange = code == pc::op_code::cardinality && original.cardinality_low()[v] == 0 && original.cardinality_high()[v] == fanIn;
-            anyFullRange = anyFullRange || fullRange;
+            const bool fullRange = code == pc::op_code::cardinality && fanIn == 0;
             auto expected = code == pc::op_code::house_event || fullRange ? pc::op_code::constant : code;
             REQUIRE(circuit.op_codes()[r] == expected);
             REQUIRE(read.tensor_by_node.at(r) == written.tensor_by_node[v]);
@@ -207,47 +203,17 @@ namespace {
                 }
                 auto before = operandsOf(original, node, mappedId);
                 auto after = operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); });
-                if (before.through_not || after.through_not) {
-                    std::vector<edge_key> left = before.inputs;
-                    left.insert(left.end(), before.inverted.begin(), before.inverted.end());
-                    std::vector<edge_key> right = after.inputs;
-                    right.insert(right.end(), after.inverted.begin(), after.inverted.end());
-                    std::ranges::sort(left);
-                    std::ranges::sort(right);
-                    REQUIRE(left == right);
-                } else {
-                    REQUIRE(before.inputs == after.inputs);
-                    REQUIRE(before.inverted == after.inverted);
-                }
+                std::vector<edge_key> left = before.inputs;
+                left.insert(left.end(), before.inverted.begin(), before.inverted.end());
+                std::vector<edge_key> right = after.inputs;
+                right.insert(right.end(), after.inverted.begin(), after.inverted.end());
+                std::ranges::sort(left);
+                std::ranges::sort(right);
+                REQUIRE(left == right);
                 break;
             }
         }
-        // A NOT tensor the writer created for a consumer without operands (cardinality(0, n)) has no user
-        // left to fold into, so it reads back as a gate of its own.
-        std::size_t extra = 0;
-        for (std::uint32_t r = 0; r < circuit.node_count(); ++r) {
-            if (!covered[r]) {
-                {
-                    std::ostringstream d;
-                    d << "extra read node " << r << " tensor " << read.tensor_by_node.at(r) << " operands";
-                    for (auto const &e : circuit.operands(pc::bool_node_id(r))) d << ' ' << e.source.raw() << (e.complement ? "~" : "");
-                    std::size_t users = 0;
-                    for (std::uint32_t q = 0; q < circuit.node_count(); ++q)
-                        for (auto const &e : circuit.operands(pc::bool_node_id(q))) users += e.source.raw() == r;
-                    d << " users " << users;
-                    for (std::uint32_t q = 0; q < circuit.node_count(); ++q)
-                        for (auto const &e : circuit.operands(pc::bool_node_id(q)))
-                            if (e.source.raw() == r) d << " [user " << q << " op " << int(circuit.op_codes()[q]) << " name " << (read.options.node_names.contains(pc::bool_node_id(q)) ? read.options.node_names.at(pc::bool_node_id(q)) : "") << "]";
-                    for (std::uint32_t v = 0; v < original.node_count(); ++v)
-                        if (written.tensor_by_node[v] == read.tensor_by_node.at(r)) d << " orig node " << v << " op " << int(original.op_codes()[v]);
-                    UNSCOPED_INFO(d.str());
-                }
-                REQUIRE(anyFullRange);
-                REQUIRE(circuit.op_codes()[r] == pc::op_code::not_gate);
-                ++extra;
-            }
-        }
-        REQUIRE(circuit.node_count() - extra + skipped == original.node_count());
+        REQUIRE(circuit.node_count() + skipped == original.node_count());
 
         REQUIRE(circuit.targets().size() == original.targets().size());
         for (std::size_t index = 0; index < original.targets().size(); ++index) {
@@ -256,7 +222,7 @@ namespace {
             auto const &after = circuit.targets()[index];
             REQUIRE(after.id == before.id);
             REQUIRE(after.node == mapped(before.node));
-            REQUIRE(after.role == pc::observable_role::primary);
+            REQUIRE(after.role == before.role);
             const auto named = options.target_names.find(before.id);
             const auto readNamed = read.options.target_names.find(after.id);
             REQUIRE(readNamed != read.options.target_names.end());
@@ -315,99 +281,24 @@ namespace {
         REQUIRE(left.options.quantification.size() == right.options.quantification.size());
     }
 
-    // The first operator at which two files differ, for failure messages.
-    [[nodiscard]] auto firstDifference(std::span<std::byte const> left, std::span<std::byte const> right) -> std::string {
-        auto a = ::pcfb::io::from_bytes(left);
-        auto b = ::pcfb::io::from_bytes(right);
-        if (!a || !b) {
-            return "unreadable";
-        }
-        auto const *x = (*a)->subcircuits()->Get(0);
-        auto const *y = (*b)->subcircuits()->Get(0);
-        std::ostringstream text;
-        const auto list = [](flatbuffers::Vector<std::uint32_t> const *values) {
-            std::string out = "[";
-            for (std::uint32_t index = 0; values != nullptr && index < values->size(); ++index) {
-                out += std::to_string(values->Get(index)) + " ";
-            }
-            return out + "]";
-        };
-        const auto describe = [&](::pcfb::Op const *op) {
-            return std::to_string(static_cast<int>(op->opcode())) + " in" + list(op->inputs()) + " inv" + list(op->inverted_inputs()) + " name '" +
-                   (op->name() == nullptr ? "" : op->name()->str()) + "'";
-        };
-        text << "operators " << x->operators()->size() << " vs " << y->operators()->size() << '\n';
-        for (std::uint32_t index = 0; index < std::min(x->operators()->size(), y->operators()->size()); ++index) {
-            if (describe(x->operators()->Get(index)) != describe(y->operators()->Get(index))) {
-                text << "first difference at operator " << index << ":\n";
-                for (auto at = index > 4 ? index - 4 : 0; at < std::min(x->operators()->size(), index + 12); ++at) {
-                    text << "  " << at << ": " << describe(x->operators()->Get(at)) << "   |   " << describe(y->operators()->Get(at)) << '\n';
-                }
-                const auto wanted = describe(y->operators()->Get(index));
-                for (std::uint32_t at = 0; at < x->operators()->size(); ++at) {
-                    if (describe(x->operators()->Get(at)) == wanted) {
-                        text << "the operator moved to " << at << ", used by:\n";
-                        for (std::uint32_t user = 0; user < x->operators()->size(); ++user) {
-                            auto const *op = x->operators()->Get(user);
-                            for (auto const *values : {op->inputs(), op->inverted_inputs()}) {
-                                for (std::uint32_t k = 0; values != nullptr && k < values->size(); ++k) {
-                                    if (values->Get(k) == x->operators()->Get(at)->output()) {
-                                        text << "  " << user << ": " << describe(op) << '\n';
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                return text.str();
-            }
-        }
-        text << "operators agree; queries or metadata differ";
-        return text.str();
-    }
-
-    // Same operator multiset, queries and metadata; only the operator order may differ.
-    void requireSameFile(std::span<std::byte const> left, std::span<std::byte const> right) {
-        auto a = ::pcfb::io::from_bytes(left);
-        auto b = ::pcfb::io::from_bytes(right);
-        REQUIRE(a);
-        REQUIRE(b);
-        auto const *x = (*a)->subcircuits()->Get(0);
-        auto const *y = (*b)->subcircuits()->Get(0);
-        INFO(firstDifference(left, right));
-        const auto histogram = [](::pcfb::SubCircuit const *sub) {
-            std::map<std::pair<int, std::string>, std::size_t> counts;
-            for (auto const *op : *sub->operators()) {
-                ++counts[{static_cast<int>(op->opcode()), op->name() == nullptr ? std::string{} : op->name()->str()}];
-            }
-            return counts;
-        };
-        {
-            std::ostringstream d;
-            auto hx = histogram(x);
-            auto hy = histogram(y);
-            for (auto const &[key, n] : hx) if (hy[key] != n) d << "orig " << key.first << " '" << key.second << "' x" << n << " vs " << hy[key] << "\n";
-            for (auto const &[key, n] : hy) if (hx[key] != n) d << "rewrite " << key.first << " '" << key.second << "' x" << n << " vs " << hx[key] << "\n";
-            INFO(d.str());
-            REQUIRE(x->operators()->size() == y->operators()->size());
-            REQUIRE(hx == hy);
-        }
-        REQUIRE(x->queries()->size() == y->queries()->size());
-        for (std::uint32_t index = 0; index < x->queries()->size(); ++index) {
-            REQUIRE(x->queries()->Get(index)->kind() == y->queries()->Get(index)->kind());
-            REQUIRE(x->queries()->Get(index)->name()->str() == y->queries()->Get(index)->name()->str());
-        }
-        REQUIRE((*a)->schema_version() == (*b)->schema_version());
-        REQUIRE((*a)->metadata()->size() == (*b)->metadata()->size());
+    // Rewriting a read circuit and reading that back keeps its structure through the tensor maps, and
+    // a second rewrite reproduces the numbering exactly.
+    void requireStable(writer::read_output const &read) {
+        auto rewritten = writer::write(read.circuit.to_handle(), read.options);
+        INFO(diagnosticsText(rewritten.diagnostics()));
+        REQUIRE(rewritten);
+        const auto reread = readOk(rewritten.value().bytes);
+        requireSameStructure(RandomModel{read.circuit, read.options}, rewritten.value(), reread);
+        requireEqual(reread, readOk(writeBack(reread)));
     }
 
     struct round_trip_stats final {
         std::size_t circuits = 0;
         std::size_t nodes = 0;
-        std::size_t reordered = 0;
-        std::size_t exact = 0;
     };
 
+    // The read circuit has the structure of the written one, and rewriting it and reading that back
+    // changes nothing under the same comparison.
     void roundTripRandom(RandomModel const &model, round_trip_stats &stats) {
         auto written = writer::write(model.circuit.to_handle(), model.options);
         INFO(diagnosticsText(written.diagnostics()));
@@ -423,28 +314,7 @@ namespace {
         });
         REQUIRE(read.schema_version == (hull ? 0x00010002U : 0x00010001U));
         requireSameStructure(model, output, read);
-        // Byte-identical rewrite. The one exception: cardinality(0, n) is a ONES tensor without operands, but
-        // the writer still emits the operands' subtrees before it, so the file orders operators by a
-        // traversal through edges that the read circuit no longer has. Those operands become roots of
-        // their own and may be forced into another order by the ascending event ids. The rewrite then
-        // lists the same operators in another order: it is a fixed point from there on, with every other
-        // part of the file unchanged.
-        const bool lossy = std::ranges::any_of(std::views::iota(0U, model.circuit.node_count()), [&](const std::uint32_t node) {
-            return model.circuit.op_codes()[node] == pc::op_code::cardinality && model.circuit.cardinality_low()[node] == 0 &&
-                   model.circuit.cardinality_high()[node] == model.circuit.operand_counts()[node];
-        });
-        const auto again = writeBack(read);
-        if (!lossy) {
-            ++stats.exact;
-            INFO(firstDifference(output.bytes, again));
-            REQUIRE(again == output.bytes);
-        } else if (again != output.bytes) {
-            ++stats.reordered;
-            const auto second = readOk(again);
-            REQUIRE(second.circuit.node_count() == read.circuit.node_count());
-            REQUIRE(writeBack(second) == again);
-            requireSameFile(output.bytes, again);
-        }
+        requireStable(read);
         ++stats.circuits;
         stats.nodes += model.circuit.node_count();
     }
@@ -594,7 +464,7 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     CHECK(std::get<std::string>(*find("compile.query.2.negation")) == "monotone_hull");
     CHECK(std::get<std::vector<std::byte>>(*find("general.source_sha256")).size() == 32);
 
-    CHECK(writeBack(read) == written.bytes);
+    requireStable(read);
 }
 
 TEST_CASE("pcfb reader accepts any minor of schema major 1 and keeps the version it read", "[io][pcfb][read]") {
@@ -611,7 +481,7 @@ TEST_CASE("pcfb reader accepts any minor of schema major 1 and keeps the version
     CHECK((*view)->schema_version() == 0x00010001U);
 }
 
-TEST_CASE("pcfb reader round-trips writer output byte for byte on random circuits", "[io][pcfb][read][random]") {
+TEST_CASE("pcfb reader keeps the structure of random circuits and rewrites them stably", "[io][pcfb][read][random]") {
     std::mt19937_64 rng(0x219219);
     Coverage coverage;
     round_trip_stats stats;
@@ -621,8 +491,6 @@ TEST_CASE("pcfb reader round-trips writer output byte for byte on random circuit
         roundTripRandom(model, stats);
     }
     CHECK(stats.circuits == 360);
-    INFO(stats.exact << " circuits rewrote byte for byte, " << stats.reordered << " reordered operators");
-    CHECK(stats.exact >= 60);
     CHECK(stats.nodes > 100'000);
     for (std::size_t code = 0; code < coverage.op_codes.size(); ++code) {
         INFO("op_code " << code);
@@ -665,11 +533,24 @@ TEST_CASE("pcfb reader keeps the event order of a circuit whose gates come first
         }
     }
     CHECK(probabilities == std::vector<double>{0.1, 0.2, 0.3});
-    CHECK(writeBack(read) == written.bytes);
-    static_cast<void>(b);
+    // Canonical numbering: events by file event id, then the other operators in file order; operands
+    // as the file lists them, inputs before inverted_inputs.
+    for (std::uint32_t node = 0; node < 3; ++node) {
+        CHECK(read.circuit.op_codes()[node] == pc::op_code::basic_event);
+    }
+    CHECK(read.circuit.op_codes()[3] == pc::op_code::and_gate);
+    const auto operands = read.circuit.operands(pc::bool_node_id(3));
+    REQUIRE(operands.size() == 3);
+    CHECK(operands[0].source == read.node_by_tensor[written.tensor_by_node[c.raw()]]);
+    CHECK_FALSE(operands[0].complement);
+    CHECK(operands[1].source == read.node_by_tensor[written.tensor_by_node[a.raw()]]);
+    CHECK_FALSE(operands[1].complement);
+    CHECK(operands[2].source == read.node_by_tensor[written.tensor_by_node[b.raw()]]);
+    CHECK(operands[2].complement);
+    requireStable(read);
 }
 
-TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite byte for byte", "[io][pcfb][read][ftp]") {
+TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to the same structure", "[io][pcfb][read][ftp]") {
     const auto root = projectRoot() / "input" / "ftp" / "conformance";
     std::vector<std::filesystem::path> directories;
     for (auto const &entry : std::filesystem::directory_iterator(root)) {
@@ -726,15 +607,12 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite byte 
             ++compiled;
             auto const &bytes = result.value().bytes;
             const auto read = readOk(bytes);
-            CHECK(writeBack(read) == bytes);
+            requireStable(read);
             ++roundTrips;
             hullFiles += read.schema_version == 0x00010002U ? 1 : 0;
             for (auto const &[target, kinds] : read.options.target_kinds) {
                 twoKindTargets += kinds.size() > 1 ? 1 : 0;
             }
-            // Fixed point on the structure as well.
-            const auto second = readOk(writeBack(read));
-            requireEqual(read, second);
         }
     }
     INFO(compiled << " compiled files, " << hullFiles << " with hull queries, " << twoKindTargets << " two-kind targets");
@@ -774,11 +652,9 @@ TEST_CASE("pcfb reader: tracked .pcfb files read to a fixed point or are rejecte
             CHECK(first.diagnostics().has_errors());
             continue;
         }
-        const auto once = writeBack(first.value());
-        const auto second = readOk(once);
-        requireEqual(first.value(), second);
+        const auto second = readOk(writeBack(first.value()));
         CHECK(first.value().schema_version == second.schema_version);
-        CHECK(writeBack(second) == once);
+        requireStable(first.value());
     }
 }
 
@@ -815,8 +691,7 @@ TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", 
     CHECK(codesOf(result.diagnostics()) == std::set<std::string>{std::string(writer::diag::sample_source_dropped),
                                                                 std::string(writer::diag::confidence_ignored),
                                                                 std::string(writer::diag::event_ids_renumbered),
-                                                                std::string(writer::diag::no_op_as_and),
-                                                                std::string(writer::diag::emission_order_changed)});
+                                                                std::string(writer::diag::no_op_as_and)});
     auto const &read = result.value();
     auto const &circuit = read.circuit;
     REQUIRE(circuit.targets().size() == 2);
@@ -880,7 +755,7 @@ TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is 
     CHECK_FALSE(read.node_by_tensor[*least].valid());
     CHECK_FALSE(read.node_by_tensor[*most].valid());
     CHECK(read.node_by_tensor[*namedLeast].valid());
-    requireEqual(read, readOk(writeBack(read)));
+    requireStable(read);
 }
 
 TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with stable ids", "[io][pcfb][read][negative]") {
@@ -976,6 +851,15 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
         CHECK_FALSE(writer::read(pack(*model)));
     }
 
+    SECTION("an operator listed before an operator whose tensor it reads") {
+        auto model = unpack(written.bytes);
+        std::ranges::reverse(model->subcircuits[0]->operators);
+        const auto result = writer::read(pack(*model));
+        INFO(diagnosticsText(result.diagnostics()));
+        CHECK_FALSE(result);
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::invalid_file);
+    }
+
     SECTION("a second subcircuit") {
         auto model = unpack(written.bytes);
         model->subcircuits.push_back(std::make_unique<::pcfb::SubCircuitT>(*model->subcircuits[0]));
@@ -1020,4 +904,109 @@ TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][
     CHECK(read.options.model_name == "demo");
     // The entries stay as they were.
     CHECK(std::ranges::any_of(read.metadata, [](auto const &entry) { return entry.first == "general.model_name" && std::holds_alternative<std::int64_t>(entry.second); }));
+}
+
+TEST_CASE("pcfb reader: a watch or projection-anchor target keeps its role", "[io][pcfb][read]") {
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+    const auto both = builder.add_and({pc::edge_ref{.source = a}, pc::edge_ref{.source = b}});
+    (void)builder.add_target(both);
+    (void)builder.add_target(a, pc::observable_role::watch);
+    (void)builder.add_target(b, pc::observable_role::projection_anchor);
+    (void)builder.add_target(both, pc::observable_role::watch);
+    const auto model = sealed(std::move(builder));
+    auto options = writer::write_options{};
+    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
+                            {pc::target_id(3), {kind::monotone_hull_probability}}};
+    const auto written = requireWrite(model, options);
+
+    auto file = ::pcfb::io::from_bytes(written.bytes);
+    REQUIRE(file);
+    std::map<std::string, std::string> roles;
+    for (auto const *entry : *(*file)->metadata()) {
+        if (entry->key()->str().ends_with(".role")) {
+            roles[entry->key()->str()] = entry->value_as_StringValue()->value()->str();
+        }
+    }
+    // One entry per query of a non-primary target, none for the primary one.
+    CHECK(roles == std::map<std::string, std::string>{{"compile.query.2.role", "watch"},
+                                                     {"compile.query.3.role", "projection_anchor"},
+                                                     {"compile.query.4.role", "watch"}});
+
+    const auto read = readOk(written.bytes);
+    REQUIRE(read.circuit.targets().size() == 4);
+    CHECK(read.circuit.targets()[0].role == pc::observable_role::primary);
+    CHECK(read.circuit.targets()[1].role == pc::observable_role::watch);
+    CHECK(read.circuit.targets()[2].role == pc::observable_role::projection_anchor);
+    CHECK(read.circuit.targets()[3].role == pc::observable_role::watch);
+    requireStable(read);
+}
+
+TEST_CASE("pcfb reader: files with only primary targets carry no role metadata", "[io][pcfb][read]") {
+    const auto written = requireWrite(threeTargetModel());
+    auto file = ::pcfb::io::from_bytes(written.bytes);
+    REQUIRE(file);
+    for (auto const *entry : *(*file)->metadata()) {
+        CHECK_FALSE(entry->key()->str().ends_with(".role"));
+    }
+}
+
+TEST_CASE("pcfb reader: an unknown role value reads as primary with a warning", "[io][pcfb][read][negative]") {
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    (void)builder.add_target(a, pc::observable_role::watch);
+    auto model = unpack(requireWrite(sealed(std::move(builder))).bytes);
+    for (auto &entry : model->metadata) {
+        if (entry->key == "compile.query.0.role") {
+            ::pcfb::StringValueT value;
+            value.value = "decoration";
+            entry->value.Set(value);
+        }
+    }
+    auto result = writer::read(pack(*model));
+    INFO(diagnosticsText(result.diagnostics()));
+    REQUIRE(result);
+    CHECK(codesOf(result.diagnostics()) == std::set<std::string>{std::string(writer::diag::invalid_metadata)});
+    CHECK(result.value().circuit.targets()[0].role == pc::observable_role::primary);
+}
+
+TEST_CASE("pcfb reader: FTP --watch compiles to a file that reads back with the watch role", "[io][pcfb][read][ftp]") {
+    const std::string text = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    ftp::options settings;
+    settings.negation = "boolean";
+    settings.watch = {"G1"};
+    const std::vector<fuzzybits::io::backend::fuzzybits::ftp::source_text> sources{{.path = "model.ftp", .text = text}};
+    const auto compiled = ftp::compile_sources(sources, settings);
+    INFO(diagnosticsText(compiled.diagnostics()));
+    REQUIRE(compiled);
+    const auto read = readOk(compiled.value().bytes);
+    REQUIRE(read.circuit.targets().size() == 2);
+    CHECK(read.circuit.targets()[0].role == pc::observable_role::primary);
+    CHECK(read.circuit.targets()[1].role == pc::observable_role::watch);
+    CHECK(read.options.target_names.at(read.circuit.targets()[1].id) == "G1");
+    requireStable(read);
+}
+
+TEST_CASE("pcfb reader: cardinality(0, n) is written as ATLEAST 0 and read back with its operands", "[io][pcfb][read]") {
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+    const auto any = builder.add_cardinality(0, 2, {pc::edge_ref{.source = a}, pc::edge_ref{.source = b, .complement = true}});
+    (void)builder.add_target(any);
+    const auto model = sealed(std::move(builder));
+    const auto written = requireWrite(model);
+    auto file = ::pcfb::io::from_bytes(written.bytes);
+    REQUIRE(file);
+    auto const *last = (*file)->subcircuits()->Get(0)->operators()->Get(written.tensor_by_node[any.raw()]);
+    CHECK(last->opcode() == ::pcfb::OpCode::BITWISE_ATLEAST);
+    CHECK(last->args_as_KofNArgs()->k() == 0);
+
+    const auto read = readOk(written.bytes);
+    const auto node = read.circuit.targets()[0].node;
+    CHECK(read.circuit.op_codes()[node.raw()] == pc::op_code::cardinality);
+    CHECK(read.circuit.cardinality_low()[node.raw()] == 0);
+    CHECK(read.circuit.cardinality_high()[node.raw()] == 2);
+    CHECK(read.circuit.operands(node).size() == 2);
+    requireStable(read);
 }
