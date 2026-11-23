@@ -315,7 +315,16 @@ Pins:
 `ACPP_COMMIT` / `v25.10.0`), `LLVM_REF_WINDOWS=llvmorg-20.1.8`,
 `CUDA_VERSION=12.8.1`. Hosted CI lives in
 [`.github/workflows/windows.yml`](../.github/workflows/windows.yml)
-(`windows-2025`). GPU execution is untested: GitHub-hosted runners have no
+(`windows-2025`), in two jobs that mirror Linux and macOS: `windows-omp`
+builds this preset and runs ctest on the OpenMP backend, and `windows-wheel`
+builds, repairs and smoke-tests a wheel for every CPython in
+[`scripts/ci/python-versions`](../scripts/ci/python-versions). Both share the
+toolchain setup in
+[`.github/actions/windows-toolchain`](../.github/actions/windows-toolchain/action.yml),
+and both are allowed to fail (visible, not gating) until the repository
+variable `WINDOWS_CI_STRICT` is `true`; `release.yml` always runs them
+strictly. A future CUDA or OpenCL test job gets its own name
+(`windows-cuda`, `windows-opencl`). GPU execution is untested: GitHub-hosted runners have no
 NVIDIA device. CUDA kernels need an NVIDIA driver at run time (`nvcuda.dll`
 is **not** bundled). Hosted `windows-2025` images flap between MSVC 14.51
 and 14.52; LLVM 20 clang-cl + the 14.52 STL hits `STL1000` (Clang 22
@@ -326,7 +335,8 @@ required). The hatch is `-D_ALLOW_COMPILER_VERSION_MISMATCH` **appended**
 FetchContent TUs. CI still prefers toolset 14.51 when vswhere lists it.
 Native `ctest --preset windows-generic`
 still has known failures (CLI `std::system` ACCESS_VIOLATION, aiger corpus
-diagnostic, BSCU mean/sigma); the Python wheel smoke is the #76 gate.
+diagnostic, BSCU mean/sigma). They now fail `windows-omp` visibly instead of
+being hidden by a step-level `continue-on-error`.
 
 ```powershell
 # Host compiler: LLVM 20 clang-cl (MSVC ABI + GNU __atomic_* builtins).

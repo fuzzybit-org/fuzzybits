@@ -24,7 +24,8 @@ Publishing uses PyPI trusted publishing (OIDC), so there are no API tokens or se
 
    The server is uploaded only after the engine upload for the same version succeeds.
 3. Optional repository variables:
-   - `RELEASE_INCLUDE_WINDOWS=true` builds the Windows wheel in releases. It is off by default until Windows CI is reliable (#108, #109).
+   - `RELEASE_INCLUDE_WINDOWS=true` builds the Windows wheels in releases, strictly (a failed Windows wheel fails the release). It is off by default until Windows CI is reliable (#108, #109).
+   - `WINDOWS_CI_STRICT=true` makes `windows-omp` and `windows-wheel` failures fail PR and `develop` runs. Unset, they are reported but allowed to fail.
    - `PYPI_MAX_FILE_MB`: set this once PyPI raises the per-file limit (see Limits).
 
 ## Dry run

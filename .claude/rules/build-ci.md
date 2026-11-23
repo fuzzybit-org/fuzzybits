@@ -29,5 +29,9 @@ paths:
   Fix locally with `scripts/ci/clang-format.sh --fix`.
 - Wheel jobs build the same wheels on every event (PR, `develop`, `ci/**`, `release.yml`): Linux
   (`python-generic` / `linux-wheel`), macOS arm64 (`macos-wheel`) and Intel (`macos-wheel-intel`),
-  for every CPython in `scripts/ci/python-versions`. Do not add release-only wheel jobs or
+  and Windows (`windows-wheel`), for every CPython in `scripts/ci/python-versions`. Do not add release-only wheel jobs or
   version lists; change `scripts/ci/python-versions` instead.
+- Windows jobs are named by backend (`windows-omp`; later `windows-cuda`, `windows-opencl`) and
+  share `.github/actions/windows-toolchain`. They are allowed to fail through job-level
+  `continue-on-error` tied to `WINDOWS_CI_STRICT`; never hide a failure with step-level
+  `continue-on-error`.
