@@ -111,6 +111,15 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
         if tally.total_bits >= 1_000_000:
             break                        # early stop; Session.close() on __exit__
     obs = session.step(passes=16)        # 16 passes, one wait and one tally read
+
+
+# Exact values follow the query kind; hull queries are evaluated, not refused.
+value = fuzzybits.exact(pcfb)                        # query 0
+value = fuzzybits.exact(pcfb, 2)                     # query 2
+value = fuzzybits.exact(pcfb, query="TOP")           # by name
+value = fuzzybits.exact(pcfb, query="TOP", kind="hull")  # a name written as both kinds
+checked = fuzzybits.hull_check(pcfb, ["A", "B"], witness=True)  # one sample of a hull query
+print(checked["hit"], checked["tier"], checked["witness"])
 ```
 
 `compile` / `compile_file` lower OpenPSA/MEF, nombrilo.circuit
@@ -137,6 +146,17 @@ Python `fzb` console script instead.
 Results are deterministic for a given model and trial count (Philox
 counters). `seed=` raises `NotImplementedError` on `probability`, `compile`,
 `run`, and `Session` ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)).
+
+`exact(pcfb, query_index=0, *, query=None, kind=None)` is `fzb inspect --exact`: a
+`PROBABILITY` query is the exact probability of the target function (≤ 30 random events), a
+`MONOTONE_HULL_PROBABILITY` query is its exact plain monotone hull ↑g (≤ 24 events with a
+probability above 0). `query` selects by name instead of `query_index` (mutually exclusive) and
+`kind` (`"probability"` or `"hull"`) picks one of the two queries a target may have; errors raise
+`ValueError`. `hull_check(pcfb, true_events, *, query=None, kind=None, witness=False)` is one
+`fzb inspect --hull-check --json` object: `hit`, `lower`, `upper` (the bounds, `lower <= hit <=
+upper`), `tier`, `residual_variables`, `witness` (a minimal set of the sample's true cone events in
+ascending event order, or `None`) and `query` `{index, name, kind}`. `true_events` are the
+`.pcfb` basic-event names; an unknown name or gate raises `ValueError`.
 
 ### Progress callbacks
 
@@ -191,7 +211,8 @@ fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [--no-ccf] [--target NAME|
 fzb compile model.safetensors [--target NAME|@FILE] [--weights FILE] [-o model.pcfb]
 fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
-fzb inspect model.pcfb [--validate] [--json] [--exact]
+fzb inspect model.pcfb [--validate] [--json] [--exact] [--query NAME [--kind probability|hull]]
+fzb inspect model.pcfb --hull-check EVENTS [--query NAME] [--kind hull] [--witness] [--json]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]
 fzb --help
 fzb --version
@@ -200,6 +221,31 @@ fzb --version
 `--json` keys match the native `fzb inspect --json` / `fzb run --json`
 payloads. `--seed` is rejected unless it is `372` (the scram-cli default),
 same as native ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)).
+
+### Exact values and hull checks (`--exact`, `--hull-check`)
+
+`fzb inspect --exact` follows the query kind. A `PROBABILITY` query prints
+`exact_probability  <p>` as before; a `MONOTONE_HULL_PROBABILITY` query prints
+`exact_hull_probability  <p>`, the exact plain monotone hull ↑g of the target
+(∃ y ≤ x : g(y)), by the subset-OR transform. The hull path is limited to 24
+random events in the target's cone and exits 1 with the count and the limit when
+a model exceeds it. `--query NAME` selects by name, and `--kind
+probability|hull` picks a kind when a target is written as two queries that
+share its name; without `--kind`, such a name is ambiguous and exits 1 listing
+the kinds.
+
+`fzb inspect --hull-check EVENTS` evaluates the per-sample checker on samples
+instead of a whole probability. `EVENTS` is a comma-separated list of the
+`.pcfb`'s basic-event names (the empty string is the empty set), or `@FILE`
+with one set per line (`-` is the empty set, blank lines are skipped). Names
+outside the query's cone are allowed and ignored; an unknown or gate name exits
+1 naming it. Each set prints one line, `hull_check  hit=… L=… U=… tier=… residual=…`,
+where `L` and `U` are the RFC 4.4 bounds (so `L ≤ hit ≤ U`) and `tier` is the
+decision tier that settled the sample; `--witness` adds a `witness` line with a
+minimal set of the sample's true cone events (empty when g holds on the empty
+set). `--json` prints an array with `hit`, `lower`, `upper`, `tier`,
+`residual_variables`, `witness` (array or null) and `query` `{index, name, kind}`
+per set. `--hull-check` needs a hull query and exits 1 for any other kind.
 
 ### Progress log (`--progress-log FILE`, `progress_log=`)
 

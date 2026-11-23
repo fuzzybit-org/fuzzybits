@@ -86,6 +86,26 @@ target whose cone has marked literal events is refused with
 `negation` mode marked operands are ordinary complements, the plain hull a hull query means, so the
 target is written.
 
+### What a hull query means
+
+A `.pcfb` hull query is the **plain monotone hull** ↑g of the target, with every event in the
+checker's `down` mode: ↑g(x) = ∃ y ≤ x : g(y), evaluated on the circuit as written (RFC §6, §6.5).
+pcfb 1.2 carries no literal atoms, so an `atom_split` or `omega_l` interpretation of marked operands
+cannot be recovered from the file; `fzb compile` writes a hull query only when the value it produces
+equals the requested one — for `atom_split` and `omega_l` only when the cone has no marked operands,
+and for `negation` always (there the hull of the plain complements *is* the requested value). The
+initiator rule is already part of the circuit (g ∧ ¬atleast(k+1; initiators)), so it is evaluated as
+written rather than re-derived from the metadata.
+
+`fzb inspect --exact` and `fuzzybits.exact` evaluate a hull query exactly by the subset-OR (zeta)
+transform: tabulate g over the cone's random events, close the table along every event axis,
+T[x] |= T[x \ {i}] for each event i, and sum P(x)·T[x] over every sample. It is limited to 24 events
+with a probability above 0. A probability-0 event is substituted by FALSE (x_e = 0 forces y_e = 0); a
+probability-1 event stays a variable with weight 1, because x_e = 1 still allows y_e = 0 and
+substituting TRUE would be wrong. `fzb inspect --hull-check` and `fuzzybits.hull_check` evaluate one
+sample through the per-sample checker instead, reporting which tier decided the lane, its bounds, and
+a minimal witness of the sample's true cone events.
+
 ## Order
 
 Operators are written in depth-first post-order: roots in ascending node id,
@@ -143,6 +163,9 @@ with up to 16 basic events, that `compile::exact_probability` of the written
 file equals exhaustive evaluation of the `ir::pc` circuit to 1e-12, runs the
 FTP fixtures through `fzb inspect --validate` and `--exact`, and checks a
 written circuit with `fzb run` (label `mc`) against its exact value.
+`src/ir/pc/hull/tests` checks the hull evaluators the same way: the exact hull
+of a written file against the subset-OR transform and against the conformance
+fixtures' reference values.
 
 `pcfb::builder::finish()` at the pinned revision names tensors in time quadratic
 in the operator count (about 25 s at 10^5 operators); the writer itself is
@@ -155,6 +178,7 @@ auto read = writer::read(bytes);          // std::span<std::byte const>, or a st
 if (!read) { /* read.diagnostics() holds the errors */ }
 read->circuit;                            // ir::pc::circuit
 read->options;                            // write_options: names, kinds, quantification, provenance
+read->queries;                            // one entry per query in file order: target and kind
 read->node_by_tensor;                     // tensor -> ir::pc node
 read->metadata;                           // every metadata entry, verbatim
 read->schema_version;

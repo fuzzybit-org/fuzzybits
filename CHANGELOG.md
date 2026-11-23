@@ -17,6 +17,15 @@
 
 ### Changes
 
+- `fzb inspect --exact` follows the query kind: a `MONOTONE_HULL_PROBABILITY` query is evaluated exactly
+  (`exact_hull_probability  <p>`, the plain monotone hull of the circuit as written) by the subset-OR
+  transform instead of refusing the file; `PROBABILITY` output is unchanged. `--query NAME` selects a query
+  by name, and `--kind probability|hull` picks a kind for a name that is written as two queries.
+- `fzb inspect --hull-check EVENTS` evaluates the per-sample hull check on named samples (`@FILE` reads one
+  set per line), with `--witness` (a minimal witness of the sample's true cone events) and `--json`.
+- Python `fuzzybits.exact` answers hull queries and takes `query=` / `kind=`; `fuzzybits.hull_check` reports
+  one sample's hit, bounds, decision tier and minimal witness. `run` and `Session` still refuse hull queries
+  until the estimator of #183 lands.
 - `fzb compile` and `fuzzybits.compile` take `--target` and `--watch` repeatedly, and
   `--target @FILE` / `--watch @FILE` read one name per line (the Python API takes a name or a
   sequence). A file that is missing, is not a regular file or lists no names is an error.
