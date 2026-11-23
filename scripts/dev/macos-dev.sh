@@ -112,6 +112,8 @@ export METAL_CPP_DIR="${METAL_CPP_DIR}"
 export LLVM_PREFIX="${LLVM_PREFIX}"
 export OMP_PREFIX="${OMP_PREFIX}"
 export ACPP_LLD_PATH="${ACPP_LLD_PATH}"
+# Formatter from the pinned LLVM (same major as CI), not whatever is first on PATH.
+export CLANG_FORMAT="${LLVM_PREFIX}/bin/clang-format"
 export AdaptiveCpp_DIR="${ACPP_PREFIX}/lib/cmake/AdaptiveCpp"
 # xcrun and CMake (CMAKE_OSX_SYSROOT default) read SDKROOT; Homebrew clang
 # ignores it, so builds must pass -isysroot, which CMake does from the cache.
@@ -177,6 +179,13 @@ doctor() {
         fail "${f} not installed"
       fi
     done
+  fi
+  local cf llvm
+  if llvm="$(brew --prefix --installed llvm@20 2>/dev/null)" && [[ -x "${llvm}/bin/clang-format" ]]; then
+    cf="$("${llvm}/bin/clang-format" --version)"
+    ok "clang-format ${cf##*version } (llvm@20; \$CLANG_FORMAT in macos-dev.env)"
+  else
+    fail "clang-format missing from llvm@20; run: brew reinstall llvm@20"
   fi
   if command -v uv >/dev/null 2>&1; then
     ok "$(uv --version) (wheel builds)"

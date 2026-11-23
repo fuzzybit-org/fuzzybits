@@ -282,7 +282,8 @@ dissertation, North Carolina State University, 2025.
 More
 ----
 
-- Building from source and developer notes: docs/
+- Documentation index: docs/README.md
+- Contributing, building and testing: CONTRIBUTING.md
 - Converting nombrilo circuit files to and from .pcfb: docs/nombrilo.md
 - Benchmark dataset, harness and CI gates: docs/benchmarks.md
 - Questions and bug reports: https://github.com/fuzzybit-org/fuzzybits/issues

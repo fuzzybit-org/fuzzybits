@@ -116,4 +116,5 @@ change moves the hash before CI publishes the new tag; then `ws.sh` falls back t
 - *macOS `._*` files in the container*: `ws.sh` sets `COPYFILE_DISABLE=1` and strips macOS metadata;
   remove stray ones with `--clean`.
 
-For coding agents, `scripts/dev/agent-brief.md` is a block to paste into task instructions.
+Coding agents get these conventions from [`CLAUDE.md`](../../CLAUDE.md) and
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md); nothing needs to be pasted into a task.

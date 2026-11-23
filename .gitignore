@@ -1,6 +1,3 @@
-# Qt Generated Project Configuration
-CMakeLists.txt.user
-
 # Build directories
 build/
 
@@ -66,3 +63,11 @@ tools/server/webui/dist/
 .DS_Store
 
 *convergence.csv
+
+# Run outputs written at the repository root (tracked fixtures live under tests/ and input/).
+/*.pcfb
+/*.csv
+
+# Personal agent settings (shared ones are .claude/settings.json and CLAUDE.md).
+CLAUDE.local.md
+.claude/settings.local.json
