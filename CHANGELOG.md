@@ -23,3 +23,15 @@
 - OpenPSA/MEF and nombrilo input take one target; several targets, a repeated name, and
   `--watch` on nombrilo input are errors instead of being ignored.
 - FTP projects accept `--no-ccf` (and the deprecated `--ccf`) as no-ops.
+- Benchmarks: dataset manifest v2 is a draft (`benchmarks/datasets/v2/manifest.json`) with a card
+  per model — formats with hashes, computed structure, origin, licence, reader status and tags —
+  and a private entry for a model that cannot be published (#158, #184).
+  - `python -m benchmarks.datasets.structure` computes a card's structure counts.
+  - `python -m benchmarks.datasets.v2_freeze` regenerates the draft (`--check` reports a stale
+    one). `python -m benchmarks.datasets.freeze` now only validates; `--write-v1` regenerates v1
+    and `--freeze` is the only way to set `frozen: true`. v1 stays byte-identical.
+  - `python -m benchmarks private` runs the private entries, and `run --private DIR` runs them
+    beside the public models. Private files are found by sha256, so the repository holds no path,
+    name or value for them, and published output carries only
+    `private <id> <mode>: pass|fail|skipped[ (<reason>)]`.
+

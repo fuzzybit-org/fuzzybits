@@ -21,8 +21,71 @@ version (`v2`, …).
 Regenerate only when cutting a new version:
 
 ```bash
-python -m benchmarks.datasets.freeze
+python -m benchmarks.datasets.freeze --write-v1
 ```
+
+`python -m benchmarks.datasets.freeze` on its own only *validates*: schema
+conformance for v1 and v2, on-disk files and digests for every public v2 card,
+and the v1 sha256 pin (v1 is byte-identical;
+`test_bench_private.py::test_v1_manifest_is_byte_identical` fails if it moves).
+A private v2 entry is checked only when `FUZZYBITS_PRIVATE_FIXTURES_DIR` is
+set; otherwise it is reported as unchecked, never as failed. `--freeze` is the
+only way to set `frozen: true` on the v2 draft, and it refuses to run without
+the flag.
+
+## Dataset v2 (draft)
+
+`benchmarks/datasets/v2/manifest.json` holds a **card** per model
+([#158](https://github.com/fuzzybit-org/fuzzybits/issues/158)) and the private
+entry ([#184](https://github.com/fuzzybit-org/fuzzybits/issues/184)). It is a
+draft: `"frozen": false`, and `freeze.py --freeze` is the only way to flip it.
+The schema is `benchmarks/schemas/dataset-manifest.v2.json`.
+
+Regenerate after changing a model, a licence or the migration code:
+
+```bash
+python -m benchmarks.datasets.v2_freeze            # write the draft
+python -m benchmarks.datasets.v2_freeze --check    # exit 1 when it is stale
+python -m benchmarks.datasets.v2_freeze --no-private   # keep the existing private entry
+```
+
+Without `--no-private` the private entry's digests are recomputed from
+`$FUZZYBITS_PRIVATE_FIXTURES_DIR`, which must then hold exactly one model.
+
+### Card fields
+
+| field | contents |
+|---|---|
+| `id` | model id (the v1 id; `source/…` for event-tree groups) |
+| `source` | `aralia`, `pwr`, `synthetic`, `saphire` |
+| `formats` | every available form of the same model — `format` (`openpsa-mef`, `cafta-ftp`, `jsinp`, `mar-d`, `saphire-project`, `nombrilo`, `aiger`), `path`, `sha256`, and `primary` on exactly one |
+| `structure` | `basic_events`, `gates`, `gates_by_type` (`AND`, `OR`, `VOT`, `XOR`, `NOT`, `other`), `edges`, `depth`, `event_tree_sequences`, `ccf_groups`, `coherent`, `fault_trees`, `query_cone`, and `compiled` (`fzb inspect --json`: tensors, operators, samples, opcodes) |
+| `origin` | `kind` (`hand-built`, `published`, `synthetic`), `citation`, and for synthetic models the `generator` and its `parameters` |
+| `licence` | `spdx`, `attribution`, `url`, `note` |
+| `reader` | the fuzzybits reader that loads it (`name`) and its `status` (`ok`, `known-failure`) |
+| `reference` | `probability`, `source`, `kind` (`exact`, `approximate`), `uncertainty`, `citation` |
+| `tags` | `accuracy`, `perf`, `hard`, `pwr`, plus `large`, `rare`, `non-coherent`, `event-tree`, `ccf`, `ftp` |
+| `trials`, `time_budget_s`, `accuracy`, `perf_reason`, `compat`, `notes` | as in v1 |
+
+Structure counts are computed, never typed by hand:
+
+```bash
+python -m benchmarks.datasets.structure input/Aralia/das9201.xml --query r1
+python -m benchmarks.datasets.structure --ftp input/ftp/conformance/multi_file_project
+python -m benchmarks.datasets.structure input/Aralia/das9201.xml --query r1 --pcfb /tmp/x.pcfb
+```
+
+MEF gate names are scoped per `define-fault-tree`, and a generic-PWR group has
+several; `depth` is the deepest root-to-event path over every fault tree and
+`query_cone` is the same for the compiled query. `--pcfb` adds the lowered
+circuit size. `benchmarks/reference/structure.py` supplies the FTP counts, so
+an FTP card and a private card count the same way.
+
+v2 currently migrates every v1 entry — 43 Aralia cards and 95 generic-PWR
+cards, the latter with the MEF file, its `.JSInp` source and the shared
+basic-event CSV as separate formats — plus the private entry. Aralia's licence
+is recorded as `NOASSERTION`: the upstream repository states no redistribution
+terms for the model data.
 
 ## Dataset v1
 
@@ -178,6 +241,141 @@ python -m benchmarks summarize results.json
 image. Models are mounted from the docker host (`/tmp/fuzzybits-bench/input` by
 default). Results are versioned JSON (`benchmarks/schemas/results.v1.json`)
 plus a Markdown table suitable for a PR comment.
+
+## Private models
+
+A model whose redistribution terms are unknown never enters the repository
+([#38](https://github.com/fuzzybit-org/fuzzybits/issues/38),
+[#184](https://github.com/fuzzybit-org/fuzzybits/issues/184)). Its v2 entry is
+the reduced form — an opaque `id`, `private: true`, the sorted sha256 of its
+`.ftp` files and the modes it may run in — and the schema accepts nothing else
+on such an entry.
+
+### Why there is no path in the repository
+
+The obvious design stores the card's path relative to
+`FUZZYBITS_PRIVATE_FIXTURES_DIR`. Under the fixture layout that path contains
+the model's directory name, which is itself an identifier, so the repository
+would leak exactly what it is meant to keep. The entry therefore carries the
+**content**: a directory under `$FUZZYBITS_PRIVATE_FIXTURES_DIR/ftp/` matches
+when the sorted set of sha256 digests of its `.ftp` files equals the entry's
+`files`. The card is then `<dir>/<dir.name>.card.json` and the bench settings
+and results file `<dir>/<dir.name>.bench.json` — the convention the FTP tests
+already use. Zero matches or two is a `skipped` row with a reason code.
+
+### Discovery and the verdict
+
+```text
+private <id> <mode>: pass|fail|skipped[ (<reason code>)]
+```
+
+That line is the **only** private content any published output may carry: the
+results JSON, the Markdown summary, `benchmarks/history` and the PR comment
+(`bench.yml` → `bench_comment.py`). Details — trial counts, estimates, z,
+timings, node and edge counts — go to the private `.bench.json`
+(`--private-results FILE`, or `FUZZYBITS_PRIVATE_RESULTS`) or nowhere. stdout
+and stderr follow the same rule: a self-hosted runner may have the variable
+set, so CI logs are treated as public. Reason codes:
+
+| code | meaning |
+|---|---|
+| `no-match` | the variable is unset, or no directory has exactly these digests |
+| `ambiguous` | two or more directories have exactly these digests |
+| `no-reference` | the mode needs a reference the card does not carry |
+| `hull` | the mode is reserved for [#183](https://github.com/fuzzybit-org/fuzzybits/issues/183) and refused until then |
+| `not-declared` | the mode is not in the entry's `modes` |
+| `error` | the harness could not run it (recorded as `fail`) |
+
+### Modes
+
+**`compile`** runs `fzb compile` on the project at each level the compiler
+exposes for CAFTA FTP input and records the wall time, the node and edge counts
+before and after every `ir::pc` pass, and the lowered circuit size. `fzb
+compile` takes `-c 0` (no passes) and `-c 1` (the pass pipeline,
+`--compilation-passes`), so a private entry's `compile.levels` is `[0, 1]`;
+`-c 2`…`-c 8` are MEF-only multipass and are rejected for FTP input.
+
+**`perf`** measures `sample_s` exactly as the public CPU entries do:
+`fuzzybits.run` after AdaptiveCpp init and a 2^20 warm-up, at the entry's
+`perf.trials`, repeated `perf.rounds` times. The first run records the baseline
+in the `.bench.json` and passes. Later runs compare the median against it with
+the public CPU rule (`cpu_wall_verdict`): warn when the paired ratio exceeds
++5%, never block, since the CPU gate is report-only
+([#124](https://github.com/fuzzybit-org/fuzzybits/issues/124)). With fewer than
+two rounds on either side the ratio is reported without an interval.
+
+**`accuracy-boolean`** runs each Boolean variant in the card that the compiler
+can express — `semantics: "boolean"`, with `overrides` and a duplicate-import
+policy, and without a file `edit`, an `extra_delete_term` or a
+`max_initiators_per_cutset` rule. For each variant with a reference, the check
+is |z| ≤ 4 with
+
+$$z = \frac{\hat p - p_{\text{ref}}}{\sqrt{\hat p(1-\hat p)/n + \sigma_{\text{ref}}^2}}$$
+
+using the null variance when `p̂` is 0 or 1. The reference is the card's
+`expected` block: `kind: exact` means σ_ref = 0, `se` is used directly, and
+`rel_tolerance_95` becomes σ_ref = p_ref·tol/1.96. A variant with only an
+`observed` row has no independent reference
+([#159](https://github.com/fuzzybit-org/fuzzybits/issues/159)) and is
+`skipped (no-reference)`; so is the whole mode when no variant has one. Once
+[#179](https://github.com/fuzzybit-org/fuzzybits/issues/179) references exist
+for a variant, "consensus" is that estimator's value with its own standard
+error as σ_ref — the reference must come from a method other than fuzzybits —
+and the two are combined only if both are present.
+
+### `.bench.json`
+
+Next to the model, never in the tree. The harness fills the settings from the
+v2 `defaults.private` block when the file is absent, and writes back settings
+plus results; a rerun keeps the earlier settings.
+
+```json
+{
+  "schema_version": 1,
+  "id": "<opaque id>",
+  "compile":  { "levels": [0, 1], "negation": "boolean|hull", "duplicate_import": "error|first|last",
+                "complement_events": "atom|negation", "overrides": ["NAME=0|1"],
+                "time_budget_s": 600 },
+  "perf":     { "level": 0, "trials": 1048576, "warmup": 1048576, "rounds": 5, "time_budget_s": 600 },
+  "accuracy": { "level": 0, "trials": 1048576, "warmup": 1048576, "time_budget_s": 1800 },
+  "results":  { "compile": {...}, "perf": {...}, "accuracy_boolean": {...} }
+}
+```
+
+`results` is written by the harness; `results.perf.baseline.samples` is the
+baseline the next run compares against.
+
+### Running them locally
+
+```bash
+export FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/private-fixtures
+
+# inside the toolchain container: the directory is copied to /private (mode 700)
+FZB_WS_CONTEXT=<context> scripts/dev/ws.sh run <ws> \
+  --private="$FUZZYBITS_PRIVATE_FIXTURES_DIR" --tail 20 -- \
+  'PYTHONPATH=/src python3 -m benchmarks private --mode compile --execute local'
+
+# on a host with fzb and the wheel installed
+python -m benchmarks private --mode run --private "$FUZZYBITS_PRIVATE_FIXTURES_DIR" \
+  --out /tmp/private.json
+```
+
+`--execute local` runs the inner script with the current interpreter (the
+engine and `fzb` must be on `PATH`); `--execute container` goes through a
+runtime image, as `run` does. `--show-details` prints the details to stdout and
+is for a local terminal only. `run --private DIR` also runs the private entries
+next to the public models of that invocation.
+
+The FTP reference tests read the same directory:
+
+```bash
+FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/private-fixtures \
+  pytest tests/python/test_reference_estimators.py -m private -s
+```
+
+The bench harness has its own tests, which build a fake private directory so
+they need no private data at all: `tests/python/test_bench_private.py`.
+
 
 ### A/B mode (what the PR gate uses)
 
@@ -726,7 +924,7 @@ with complements inside and outside negated gates) and random circuits
 sampler's coupling, the `complement-under-negation` warning, the parser rules
 and their diagnostics, seed determinism and the CLI.
 
-### Private models
+### Private models in the reference tests
 
 When `FUZZYBITS_PRIVATE_FIXTURES_DIR` is set, the `private` tests check every
 `ftp/<MODEL>/` directory that has `<MODEL>.card.json`: the card's structure
