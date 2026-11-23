@@ -55,6 +55,19 @@ local development, for people and agents alike.
     with `--update-baseline` and commit the result.
   - Retiring SCRAM is tracked in [#144](https://github.com/fuzzybit-org/fuzzybits/issues/144).
 
+### Rebasing a branch across the clang-format commit
+
+`b173731d` reformatted every C++ source. To move a branch that started before it:
+
+```bash
+git rebase b173731d^       # 1. resolve real conflicts by hand, as usual
+git rebase -X theirs --exec 'scripts/ci/clang-format.sh --fix && git add -u && git commit -q --amend --no-edit --allow-empty' b173731d
+```
+
+Step 2 is safe only after step 1. `b173731d` changes nothing but C++ layout, so the only conflicts
+left are formatting, and each replayed commit is reformatted. Run step 2 without step 1 and
+`-X theirs` silently drops `develop`'s side of any real conflict.
+
 ## Private fixtures
 
 Some tests and benchmarks use private models (`--private` in `ws.sh`,

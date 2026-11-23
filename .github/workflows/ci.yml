@@ -100,6 +100,9 @@ jobs:
       - name: SCRAM provenance must not grow (#144)
         run: uv run --no-project --python 3.12 python scripts/ci/scram_provenance.py
 
+      - name: C++ formatting (clang-format 20.1.8)
+        run: bash scripts/ci/clang-format.sh
+
       - name: REUSE/SPDX report (informational)
         continue-on-error: true
         run: |
