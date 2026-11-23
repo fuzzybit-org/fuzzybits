@@ -2,6 +2,7 @@
 
 #include "compile/ftp/json.h"
 
+#include "runtime/tests/test_backend.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -300,7 +301,8 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     REQUIRE(
         run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
         0);
-    const auto run = run_fzb("run " + quoted(out.string()) + " --trials 1024 --backend omp", scratch);
+    const auto run =
+        run_fzb("run " + quoted(out.string()) + " --trials 1024" + fuzzybits::testing::backend_flag(), scratch);
     INFO(run.err);
     REQUIRE(run.status != 0);
     REQUIRE(run.err.find("pcfb.unsupported-query-kind") != std::string::npos);
@@ -312,7 +314,8 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
         run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()),
                 scratch)
             .status == 0);
-    const auto boolean = run_fzb("run " + quoted(out.string()) + " --trials 65536 --backend omp --json", scratch);
+    const auto boolean = run_fzb(
+        "run " + quoted(out.string()) + " --trials 65536" + fuzzybits::testing::backend_flag() + " --json", scratch);
     INFO(boolean.err);
     REQUIRE(boolean.status == 0);
     std::filesystem::remove_all(scratch);

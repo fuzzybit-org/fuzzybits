@@ -235,6 +235,7 @@ jobs:
         timeout-minutes: 15
         env:
           ACPP_VISIBILITY_MASK: metal
+          FUZZYBITS_BACKEND: metal
           ACPP_DEBUG_LEVEL: "0"
           ACPP_PERSISTENT_RUNTIME: "1"
           METAL_REPORT_ONLY: ${{ steps.probe.outputs.metal_report_only }}
@@ -254,6 +255,7 @@ jobs:
         continue-on-error: true
         env:
           ACPP_VISIBILITY_MASK: metal
+          FUZZYBITS_BACKEND: metal
           ACPP_DEBUG_LEVEL: "0"
           ACPP_PERSISTENT_RUNTIME: "1"
           METAL_REPORT_ONLY: ${{ steps.probe.outputs.metal_report_only }}

@@ -10,6 +10,7 @@
 #include "ir/pc/edge.h"
 #include "ir/pc/op_code.h"
 
+#include "runtime/tests/test_backend.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -188,7 +189,8 @@ TEST_CASE("fzb run estimates a written pcfb within 4 standard errors of the exac
     const auto path = scratch / "io_pcfb_mc.pcfb";
     writeFile(path, written.value().bytes);
 
-    const auto run = runFzb("run " + quoted(path.string()) + " --trials 1048576 --backend omp --json", scratch);
+    const auto run = runFzb(
+        "run " + quoted(path.string()) + " --trials 1048576" + fuzzybits::testing::backend_flag() + " --json", scratch);
     INFO(run.out << run.err);
     REQUIRE(run.status == 0);
     const auto estimate = numberAfter(run.out, "\"estimate\": ");
@@ -240,8 +242,9 @@ TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts lat
     query_guard_files::write(future, query_guard_files::boolean_with_minor(3));
 
     for (auto const &path : {hull, mixed}) {
-        const auto run =
-            runFzb("run " + quoted(path.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+        const auto run = runFzb("run " + quoted(path.string()) + " --trials 1024" + fuzzybits::testing::backend_flag() +
+                                    " --json --no-progress",
+                                scratch);
         INFO(run.out << run.err);
         CHECK(run.status != 0);
         CHECK(run.err.find("pcfb.unsupported-query-kind") != std::string::npos);
@@ -249,8 +252,9 @@ TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts lat
         CHECK(run.out.find("estimate") == std::string::npos);
     }
     // Readers accept any minor of major 1 (pcfb spec 1.1 section 2).
-    const auto later =
-        runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+    const auto later = runFzb("run " + quoted(future.string()) + " --trials 1024" + fuzzybits::testing::backend_flag() +
+                                  " --json --no-progress",
+                              scratch);
     INFO(later.out << later.err);
     CHECK(later.status == 0);
     CHECK(later.out.find("\"name\": \"TOP\"") != std::string::npos);

@@ -54,6 +54,7 @@ endforeach()
 
 add_executable(mc_progress_log_cli_tests progress_log_cli_tests.cc)
 target_link_libraries(mc_progress_log_cli_tests PRIVATE Catch2::Catch2WithMain)
+target_include_directories(mc_progress_log_cli_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_compile_definitions(mc_progress_log_cli_tests PRIVATE
   FZB_PATH="$<TARGET_FILE:fzb>"
   PROJECT_SOURCE_DIR="${PROJECT_SOURCE_DIR}"
