@@ -194,3 +194,117 @@ def test_rare_events_are_infeasible_not_vacuous_pass():
     assert chinese.accuracy.check == "feasible"
     nus = manifest.by_id("nus9601")
     assert nus.accuracy.check == "feasible"
+
+
+# --- v2 draft, freeze validation and the structure tool (#158, #184) ---------
+
+
+def test_freeze_validates_both_datasets_without_writing():
+    from benchmarks.datasets import freeze
+
+    assert freeze.main(["--dataset", "v1"]) == 0
+    assert freeze.main(["--dataset", "v2"]) == 0
+    assert freeze.main([]) == 0
+
+
+def test_freeze_reports_v2_digest_and_discovery_problems(tmp_path: Path):
+    from benchmarks.datasets import freeze
+
+    repo = tmp_path / "repo"
+    (repo / "benchmarks" / "datasets" / "v1").mkdir(parents=True)
+    (repo / "benchmarks" / "datasets" / "v2").mkdir(parents=True)
+    (repo / "benchmarks" / "schemas").mkdir(parents=True)
+    (repo / "input").mkdir()
+    (repo / "toolchain.env").write_text("", encoding="utf-8")
+    for name in ("dataset-manifest.v1.json", "dataset-manifest.v2.json"):
+        (repo / "benchmarks" / "schemas" / name).write_text(
+            (ROOT / "benchmarks" / "schemas" / name).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    document = {
+        "schema_version": 2,
+        "dataset": "v2",
+        "frozen": False,
+        "description": "d",
+        "versioning": "v",
+        "models": [{"id": "private-ftp-1", "private": True, "files": ["a" * 64], "modes": ["compile"]}],
+    }
+    (repo / "benchmarks" / "datasets" / "v2" / "manifest.json").write_text(
+        json.dumps(document), encoding="utf-8"
+    )
+    # v1 has no manifest here, so validation of the whole tree fails, but the v2
+    # document itself is valid and its private entry is checked only when the
+    # directory is supplied.
+    assert freeze.validate_all(repo, dataset="v2") == []
+    # A private entry whose digests match nothing is a problem, not a silent skip.
+    problems, _notes = freeze.validate_v2(repo, private_root=tmp_path / "empty")
+    assert problems and "discovery" in problems[0]
+    # A public card with a wrong digest is a problem too.
+    document["models"].append(
+        {
+            "id": "public-model",
+            "private": False,
+            "source": "aralia",
+            "formats": [{"format": "openpsa-mef", "path": "input/x.xml", "sha256": "b" * 64,
+                         "primary": True}],
+            "query": "r1",
+            "structure": {"basic_events": 1, "gates": 1,
+                          "gates_by_type": {"AND": 0, "OR": 1, "VOT": 0, "XOR": 0, "NOT": 0},
+                          "edges": 1, "depth": 1, "event_tree_sequences": 0, "ccf_groups": 0,
+                          "coherent": True},
+            "origin": {"kind": "published"},
+            "licence": {"spdx": "NOASSERTION", "attribution": "x"},
+            "reader": {"name": "io.mef", "status": "ok"},
+            "tags": ["accuracy"],
+            "trials": {"accuracy": 1048576},
+            "time_budget_s": {"cpu_accuracy": 60},
+        }
+    )
+    (repo / "benchmarks" / "datasets" / "v2" / "manifest.json").write_text(
+        json.dumps(document), encoding="utf-8"
+    )
+    (repo / "input" / "x.xml").write_text("<opsa-mef/>", encoding="utf-8")
+    problems, _notes = freeze.validate_v2(repo)
+    assert any("sha256 mismatch" in problem for problem in problems), problems
+
+
+def test_v2_draft_entry_counts_match_v1():
+    from benchmarks.datasets.v2 import load_v2
+
+    v1 = load_manifest(root=ROOT)
+    v2 = load_v2(root=ROOT)
+    assert {model.id for model in v1.models} == {model.id for model in v2.models}
+    assert len(v2.private) == 1
+    assert v2.frozen is False
+    for model in v2.models:
+        assert model.primary_path, model.id
+        assert (ROOT / model.primary_path).is_file(), model.id
+
+
+def test_structure_counts_are_computed_and_match_the_fixtures():
+    from benchmarks.datasets.structure import ftp_structure, mef_structure
+
+    counts = mef_structure(ROOT / "input" / "Aralia" / "chinese.xml", query="r1")
+    assert counts["basic_events"] == 25
+    assert counts["gates"] == 36
+    assert counts["gates_by_type"] == {
+        "AND": 13,
+        "OR": 23,
+        "VOT": 0,
+        "XOR": 0,
+        "NOT": 0,
+        "other": 0,
+    }
+    assert counts["edges"] == 94
+    assert counts["depth"] == 9
+    assert counts["coherent"] is True
+    assert counts["query_cone"] == {"gates": 36, "basic_events": 25, "depth": 9}
+
+    project = ROOT / "input" / "ftp" / "conformance" / "multi_file_project"
+    files = sorted(project.glob("*.ftp"))
+    spec = json.loads((project / "expected.json").read_text(encoding="utf-8"))
+    ftp = ftp_structure(files)
+    assert ftp["gates"] == spec["structure"]["gates"]
+    assert ftp["edges"] == spec["structure"]["edges"]
+    assert ftp["basic_events"] == spec["structure"]["basic_events"]
+    assert ftp["depth"] == spec["structure"]["depth"]
+    assert ftp["coherent"] is True

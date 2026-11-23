@@ -1,0 +1,301 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/fuzzybit-org/fuzzybits/blob/develop/benchmarks/schemas/dataset-manifest.v2.json",
+  "title": "fuzzybits benchmark dataset manifest v2 (draft)",
+  "description": "Draft dataset v2 (#158) with a card per model (#184). Not frozen: a dataset version never changes once used, so a v2 draft may still change until `freeze.py` freezes it. A private entry carries only an opaque id, the sorted sha256 of its files and the modes it may be run in; a public card carries formats, structure, origin, licence, tags, reader status and the reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset", "frozen", "description", "versioning", "models"],
+  "properties": {
+    "schema_version": { "type": "integer", "const": 2 },
+    "dataset": { "type": "string", "const": "v2" },
+    "frozen": {
+      "type": "boolean",
+      "description": "False for a draft. freeze.py refuses to write true unless asked (--freeze)."
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "versioning": { "type": "string", "minLength": 1 },
+    "submodules": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "private": { "$ref": "#/$defs/private_defaults" }
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "oneOf": [
+        { "$ref": "#/$defs/private_entry" },
+        { "$ref": "#/$defs/public_card" }
+      ]
+    },
+    "private_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "No path, no name, no values: the harness finds the files by content and keeps every result out of published output.",
+      "required": ["id", "private", "files", "modes"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^private-[a-z0-9][a-z0-9-]*$",
+          "description": "Opaque id; the model's own name never appears in the repository."
+        },
+        "private": { "type": "boolean", "const": true },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Sorted sha256 of the model's .ftp files only.",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "modes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["compile", "perf", "accuracy-boolean", "hull"] }
+        }
+      }
+    },
+    "public_card": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "source",
+        "formats",
+        "query",
+        "structure",
+        "origin",
+        "licence",
+        "tags",
+        "reader",
+        "trials",
+        "time_budget_s"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "private": { "type": "boolean", "const": false },
+        "source": { "type": "string", "enum": ["aralia", "pwr", "synthetic", "saphire"] },
+        "submodule_commit": { "type": ["string", "null"], "pattern": "^[0-9a-f]{40}$" },
+        "formats": {
+          "type": "array",
+          "minItems": 1,
+          "description": "Every available form of the same model; exactly one is primary.",
+          "items": { "$ref": "#/$defs/format" }
+        },
+        "query": { "type": "string", "minLength": 1 },
+        "query_note": { "type": ["string", "null"] },
+        "structure": { "$ref": "#/$defs/structure" },
+        "origin": { "$ref": "#/$defs/origin" },
+        "licence": { "$ref": "#/$defs/licence" },
+        "reader": { "$ref": "#/$defs/reader" },
+        "reference": {
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/reference" }]
+        },
+        "tags": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["accuracy", "perf", "hard", "pwr", "large", "rare", "non-coherent", "event-tree", "ccf", "ftp"]
+          }
+        },
+        "perf_reason": { "type": ["string", "null"] },
+        "notes": { "type": ["string", "null"] },
+        "accuracy": { "$ref": "#/$defs/accuracy" },
+        "trials": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "accuracy": { "type": ["integer", "null"], "minimum": 1 },
+            "perf": { "type": ["integer", "null"], "minimum": 1 },
+            "cpu_perf": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        },
+        "expected_hits_accuracy": { "type": ["number", "null"], "minimum": 0 },
+        "compile": { "$ref": "#/$defs/compile" },
+        "compat": { "$ref": "#/$defs/compat" },
+        "time_budget_s": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 1 },
+          "properties": {
+            "cpu_accuracy": { "type": "integer", "minimum": 1 },
+            "cpu_perf": { "type": "integer", "minimum": 1 },
+            "gpu_perf": { "type": "integer", "minimum": 1 },
+            "cpu_compile": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "path", "sha256"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["openpsa-mef", "cafta-ftp", "jsinp", "mar-d", "saphire-project", "nombrilo", "aiger"]
+        },
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "primary": { "type": "boolean" },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basic_events", "gates", "gates_by_type", "edges", "depth", "event_tree_sequences", "ccf_groups", "coherent"],
+      "description": "Computed by `python -m benchmarks.datasets.structure`, never by hand.",
+      "properties": {
+        "basic_events": { "type": "integer", "minimum": 0 },
+        "gates": { "type": "integer", "minimum": 0 },
+        "gates_by_type": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["AND", "OR", "VOT", "XOR", "NOT"],
+          "properties": {
+            "AND": { "type": "integer", "minimum": 0 },
+            "OR": { "type": "integer", "minimum": 0 },
+            "VOT": { "type": "integer", "minimum": 0 },
+            "XOR": { "type": "integer", "minimum": 0 },
+            "NOT": { "type": "integer", "minimum": 0 },
+            "other": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "edges": { "type": "integer", "minimum": 0 },
+        "depth": { "type": ["integer", "null"], "minimum": 0 },
+        "event_tree_sequences": { "type": "integer", "minimum": 0 },
+        "ccf_groups": { "type": "integer", "minimum": 0 },
+        "coherent": { "type": "boolean" },
+        "fault_trees": { "type": "integer", "minimum": 0 },
+        "query_cone": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "gates": { "type": "integer", "minimum": 0 },
+            "basic_events": { "type": "integer", "minimum": 0 },
+            "depth": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "compiled": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The lowered circuit as `fzb inspect --json` reports it.",
+          "properties": {
+            "tensors": { "type": "integer", "minimum": 0 },
+            "operators": { "type": "integer", "minimum": 0 },
+            "samples": { "type": "integer", "minimum": 0 },
+            "opcodes": { "type": "object" }
+          }
+        }
+      }
+    },
+    "origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["hand-built", "published", "synthetic"] },
+        "citation": { "type": ["string", "null"] },
+        "generator": { "type": ["string", "null"] },
+        "parameters": { "type": ["object", "null"] },
+        "note": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "synthetic" } } },
+          "then": { "required": ["generator", "parameters"] }
+        }
+      ]
+    },
+    "licence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spdx", "attribution"],
+      "properties": {
+        "spdx": { "type": "string", "minLength": 1, "description": "SPDX identifier, or NOASSERTION when unknown." },
+        "attribution": { "type": "string", "minLength": 1 },
+        "url": { "type": ["string", "null"] },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "reader": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["ok", "known-failure"] },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "accuracy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check"],
+      "properties": {
+        "check": { "type": "string", "enum": ["feasible", "low_power", "infeasible", "n/a"] },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "compat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shim", "version"],
+      "properties": {
+        "shim": { "type": "string", "enum": ["generic_pwr"] },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "compile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected"],
+      "properties": {
+        "expected": { "type": "string", "enum": ["ok", "undefined_element", "validity_error"] },
+        "missing_elements": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "reason": { "type": ["string", "null"] }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["probability", "source", "kind", "uncertainty"],
+      "properties": {
+        "probability": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "enum": ["exact", "approximate"] },
+        "uncertainty": { "type": "number", "minimum": 0 },
+        "citation": { "type": ["string", "null"] }
+      }
+    },
+    "private_defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Defaults for a private entry's .bench.json, which lives next to the model.",
+      "properties": {
+        "compile_levels": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "compile_budget_s": { "type": "integer", "minimum": 1 },
+        "perf_level": { "type": "integer", "minimum": 0 },
+        "perf_trials": { "type": "integer", "minimum": 1 },
+        "perf_rounds": { "type": "integer", "minimum": 2 },
+        "perf_budget_s": { "type": "integer", "minimum": 1 },
+        "accuracy_level": { "type": "integer", "minimum": 0 },
+        "accuracy_trials": { "type": "integer", "minimum": 1 },
+        "accuracy_budget_s": { "type": "integer", "minimum": 1 },
+        "perf_tolerance": { "type": "number", "minimum": 0 }
+      }
+    }
+  }
+}

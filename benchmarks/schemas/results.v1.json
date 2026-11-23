@@ -26,6 +26,31 @@
     },
     "context": { "type": "object" },
     "models": { "type": "array" },
+    "private": {
+      "type": "array",
+      "description": "One row per private v2 entry and mode, and nothing else (#184): a private model's names, paths and values never reach a results file.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "mode", "verdict"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "mode": { "type": "string", "enum": ["compile", "perf", "accuracy-boolean", "hull"] },
+          "verdict": { "type": "string", "enum": ["pass", "fail", "skipped"] },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no-match",
+              "ambiguous",
+              "no-reference",
+              "hull",
+              "not-declared",
+              "error"
+            ]
+          }
+        }
+      }
+    },
     "summary": { "type": "object" }
   }
 }

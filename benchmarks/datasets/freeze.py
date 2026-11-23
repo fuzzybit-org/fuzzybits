@@ -1,9 +1,21 @@
-"""Regenerate ``datasets/v1/manifest.json`` from the tree. Do not edit v1 in place."""
+"""Validate and freeze dataset manifests. v1 is generated; never edit it in place.
+
+``python -m benchmarks.datasets.freeze`` validates the committed manifests:
+schema conformance for both versions, on-disk files and digests for every
+public v2 card, and the v1 sha256 pin. A private v2 entry is checked only when
+``FUZZYBITS_PRIVATE_FIXTURES_DIR`` is set, because it exists only there; when
+the variable is unset the entry is reported as unchecked rather than failing.
+
+``--freeze`` is the only way to set ``frozen: true`` on a v2 draft, and it also
+regenerates v1 from the tree (``--write-v1``). Both refuse to run unless asked.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -29,14 +41,23 @@ from ..loader import (
     PWR_SUBMODULE,
     SAMPLER_MIN_P,
     TARGET_HITS,
+    ManifestError,
     accuracy_trials,
     classify_accuracy,
     expected_hits,
+    load_manifest,
     manifest_path,
     repo_root,
     sha256_file,
+    validate_manifest,
 )
+from . import jsonschema_lite
 from .compat import SHIM_ID, SHIM_VERSION
+from .v2 import DATASET_DIR as DATASET_DIR_V2
+from .v2 import PRIVATE_ENV
+
+# v1 is frozen: its bytes must never change. This pin is the test.
+V1_MANIFEST_SHA256 = "907efec549bcd27c8d388854679a811089efe82bd7c3d49b82fd05e9a67674b7"
 
 GATE_RE = re.compile(r'<define-gate\s+name="([^"]+)"')
 FT_RE = re.compile(r'<define-fault-tree\s+name="([^"]+)"')
@@ -274,10 +295,161 @@ def freeze(root: Path | None = None) -> Path:
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
-    out = freeze()
-    print(f"wrote {out}", file=sys.stderr)
+    parser = argparse.ArgumentParser(
+        prog="python -m benchmarks.datasets.freeze",
+        description="Validate the committed dataset manifests; regenerate or freeze only when asked.",
+    )
+    parser.add_argument(
+        "--write-v1", action="store_true", help="regenerate datasets/v1/manifest.json from the tree"
+    )
+    parser.add_argument(
+        "--freeze", action="store_true", help="set frozen: true on the v2 draft (after validation)"
+    )
+    parser.add_argument("--dataset", default=None, help="validate one dataset id (default: all)")
+    args = parser.parse_args(argv)
+
+    if args.write_v1:
+        out = freeze()
+        print(f"wrote {out}", file=sys.stderr)
+    problems = validate_all(dataset=args.dataset)
+    for line in problems:
+        print(line, file=sys.stderr)
+    if problems:
+        return 1
+    if args.freeze:
+        frozen = set_frozen()
+        print(f"froze {frozen}", file=sys.stderr)
     return 0
+
+
+def set_frozen(root: Path | None = None) -> Path:
+    """Set ``frozen: true`` on the v2 draft. Callers validate first."""
+    repo = root or repo_root()
+    out = repo / DATASET_DIR_V2 / "manifest.json"
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 2:
+        raise SystemExit(f"{out} is not a v2 manifest")
+    payload["frozen"] = True
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
+def validate_v1(root: Path | None = None) -> list[str]:
+    """v1 is frozen: its schema, its digests and its sha256 pin."""
+    repo = root or repo_root()
+    path = repo / "benchmarks" / "datasets" / "v1" / "manifest.json"
+    problems: list[str] = []
+    digest = sha256_file(path)
+    if digest != V1_MANIFEST_SHA256:
+        problems.append(
+            f"v1 manifest sha256 {digest} != pinned {V1_MANIFEST_SHA256}; v1 is frozen, "
+            "cut v3 instead"
+        )
+    problems.extend(f"v1: {item}" for item in jsonschema_lite.validate_file(
+        repo / "benchmarks" / "schemas" / "dataset-manifest.v1.json", path
+    ))
+    try:
+        validate_manifest(load_manifest(path, root=repo, check_files=False), root=repo)
+    except ManifestError as exc:
+        problems.append(f"v1: {exc}")
+    return problems
+
+
+def validate_v2(
+    root: Path | None = None, *, private_root: str | Path | None = None
+) -> tuple[list[str], list[str]]:
+    """Schema, digests and private-entry checks for the v2 draft.
+
+    Returns ``(problems, notes)``. Notes record what was not checked: a private
+    entry is checked only with the private directory present, since it is the
+    only place its files exist.
+    """
+    from . import jsonschema_lite
+    from .v2 import SCHEMA_REL, discover, load_v2
+
+    repo = root or repo_root()
+    path = repo / DATASET_DIR_V2 / "manifest.json"
+    problems: list[str] = []
+    notes: list[str] = []
+    if not path.is_file():
+        return [f"v2: {path} is missing"], notes
+    problems.extend(f"v2: {item}" for item in jsonschema_lite.validate_file(repo / SCHEMA_REL, path))
+    try:
+        manifest = load_v2(path, root=repo)
+    except ManifestError as exc:
+        return [*problems, f"v2: {exc}"], notes
+    if manifest.frozen:
+        notes.append("v2 is frozen: edits need a new version")
+    seen: set[str] = set()
+    for model in manifest.models:
+        if model.id in seen:
+            problems.append(f"v2 {model.id}: duplicate id")
+        seen.add(model.id)
+        formats = list(model.raw.get("formats") or ())
+        if sum(1 for form in formats if form.get("primary")) != 1:
+            problems.append(f"v2 {model.id}: exactly one format must be primary")
+        for form in formats:
+            target = repo / str(form.get("path") or "")
+            if not target.is_file():
+                problems.append(f"v2 {model.id}: missing file {form.get('path')}")
+                continue
+            actual = sha256_file(target)
+            if actual != form.get("sha256"):
+                problems.append(
+                    f"v2 {model.id}: sha256 mismatch for {form.get('path')}: "
+                    f"manifest={form.get('sha256')} disk={actual}"
+                )
+        source = model.source
+        if source == "pwr":
+            expected = manifest.submodules.get(PWR_SUBMODULE)
+            if expected and model.raw.get("submodule_commit") != expected:
+                problems.append(
+                    f"v2 {model.id}: submodule_commit {model.raw.get('submodule_commit')} "
+                    f"!= submodules[{PWR_SUBMODULE!r}] {expected}"
+                )
+    for entry in manifest.private:
+        if not entry.files:
+            problems.append(f"v2 {entry.id}: private entry lists no files")
+        if sorted(set(entry.files)) != list(entry.files):
+            problems.append(f"v2 {entry.id}: files must be sorted and unique")
+        if private_root is None:
+            notes.append(f"v2 {entry.id}: not checked (no {PRIVATE_ENV})")
+            continue
+        found = discover(entry, private_root)
+        if found.status != "match":
+            problems.append(f"v2 {entry.id}: discovery {found.status} under {PRIVATE_ENV}")
+            continue
+        card = found.card
+        if not card:
+            problems.append(f"v2 {entry.id}: matched directory has no card")
+            continue
+        if card.get("files") and len(card["files"]) != len(entry.files):
+            problems.append(f"v2 {entry.id}: card lists a different file count")
+        notes.append(f"v2 {entry.id}: matched")
+    return problems, notes
+
+
+def validate_all(
+    root: Path | None = None,
+    *,
+    dataset: str | None = None,
+    private_root: str | Path | None = None,
+) -> list[str]:
+    """Every committed dataset: problems only. Prints nothing."""
+    repo = root or repo_root()
+    if private_root is None:
+        private_root = os.environ.get(PRIVATE_ENV) or None
+    problems: list[str] = []
+    notes: list[str] = []
+    if dataset in (None, "v1"):
+        problems.extend(validate_v1(repo))
+    if dataset in (None, "v2"):
+        found, notes = validate_v2(repo, private_root=private_root)
+        problems.extend(found)
+    for note in notes:
+        print(f"note: {note}", file=sys.stderr)
+    return problems
 
 
 if __name__ == "__main__":
