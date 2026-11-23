@@ -110,16 +110,18 @@ def test_hull_is_the_default_and_carries_its_metadata(tmp_path: Path):
         fuzzybits.run(blob, trials=1024, backend="omp")
 
 
-def test_hull_targets_with_marked_literals_are_refused(tmp_path: Path):
+def test_hull_targets_with_marked_literals_carry_their_atoms(tmp_path: Path):
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
-    for options in ({}, {"literals": "omega_l"}):
-        with pytest.raises(RuntimeError) as failure:
-            fuzzybits.compile([model], **options)
-        assert "compile.ftp.hull-literals-unsupported" in str(failure.value)
-        assert "--literals negation" in str(failure.value)
-    blob = fuzzybits.compile([model], literals="negation")
-    assert fuzzybits.inspect(blob)["metadata"]["compile.query.0.literal_mode"] == "negation"
-    assert fuzzybits.compile([model], complement_events="negation")
+    # Every literal mode writes the file: the atoms travel in the Query fields (pcfb 1.2 amendment, RFC 7.3),
+    # which the reader turns back into `options.quantification[...].literal_events`.
+    for mode, expected_samples in (("atom_split", 1), ("omega_l", 1), ("negation", 1)):
+        blob = fuzzybits.compile([model], literals=mode)
+        summary = fuzzybits.inspect(blob)
+        assert summary["metadata"]["compile.query.0.literal_mode"] == mode
+        assert summary["literal_atoms"] == [{"TOP": {"mode": mode, "samples": expected_samples}}]
+    # `--complement-events negation` marks nothing, so there are no atoms.
+    unmarked = fuzzybits.inspect(fuzzybits.compile([model], complement_events="negation"))
+    assert unmarked["literal_atoms"] == []
 
 
 def test_targets_watch_overrides_and_levels(tmp_path: Path):
@@ -276,9 +278,10 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
     assert json.loads(report.read_text())["options"]["overrides"][0]["name"] == "OPER"
 
     hull = _run_fzb("compile", str(model), "--no-progress", "-o", str(pcfb), cwd=tmp_path)
-    assert hull.returncode != 0
-    assert "hull-literals-unsupported" in hull.stderr
-    assert "--literals negation" in hull.stderr
+    assert hull.returncode == 0, hull.stderr
+    assert "hull-literals-unsupported" not in hull.stderr
+    summary = fuzzybits.inspect(pcfb)
+    assert summary["literal_atoms"] == [{"TOP": {"mode": "atom_split", "samples": 1}}]
 
     bad = _run_fzb("compile", str(model), "--negation", "boolean", "--override", "OPER", "-o", str(pcfb), cwd=tmp_path)
     assert bad.returncode != 0

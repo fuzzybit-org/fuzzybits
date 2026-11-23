@@ -343,6 +343,18 @@ const char *source_name(pcfb::SampleSource s) {
   }
 }
 
+const char *literal_mode_name(pcfb::LiteralMode mode) {
+  switch (mode) {
+    case pcfb::LiteralMode::ATOM_SPLIT:
+      return "atom_split";
+    case pcfb::LiteralMode::OMEGA_L:
+      return "omega_l";
+    case pcfb::LiteralMode::NEGATION:
+      return "negation";
+  }
+  return "unknown";
+}
+
 struct InspectSummary {
   std::uint32_t schema_version = 0;
   std::size_t n_tensors = 0;
@@ -352,6 +364,14 @@ struct InspectSummary {
   std::map<std::string, int> opcode_counts;
   std::map<std::string, int> sample_sources;
   std::map<std::string, std::string> metadata;
+  /// One row per hull query with literal mode NEGATION, OMEGA_L, or a non-empty literal sample list; a
+  /// query written without literal atoms has no row (pcfb 1.2 amendment, spec 5.1.1).
+  struct LiteralQuery {
+    std::string name;
+    std::string mode;
+    std::size_t samples = 0;
+  };
+  std::vector<LiteralQuery> literal_queries;
   std::vector<std::string> queries;
 };
 
@@ -414,7 +434,14 @@ InspectSummary summarise(const pcfb::ir::Circuit &circuit) {
         continue;
       }
       std::string name = q->name() ? q->name()->str() : "";
-      s.queries.push_back(name.empty() ? ("t" + std::to_string(q->target())) : name);
+      const auto display = name.empty() ? ("t" + std::to_string(q->target())) : name;
+      s.queries.push_back(display);
+      const auto literals = pcfb::read_literals(*q);
+      if (q->kind() == pcfb::QueryKind::MONOTONE_HULL_PROBABILITY &&
+          (literals.mode != pcfb::LiteralMode::ATOM_SPLIT || !literals.samples.empty())) {
+        s.literal_queries.push_back(
+            {display, literal_mode_name(literals.mode), literals.samples.size()});
+      }
     }
   }
   return s;
@@ -442,6 +469,12 @@ void print_text(const InspectSummary &s, std::ostream &out) {
     out << "query_names\n";
     for (const auto &q : s.queries) {
       out << "  " << q << "\n";
+    }
+  }
+  if (!s.literal_queries.empty()) {
+    out << "literal_atoms\n";
+    for (const auto &q : s.literal_queries) {
+      out << "  " << q.name << "  mode " << q.mode << "  |delta| " << q.samples << "\n";
     }
   }
   if (!s.metadata.empty()) {
@@ -485,6 +518,16 @@ void print_json(const InspectSummary &s, std::ostream &out) {
     }
     first = false;
     out << "\"" << json_escape(q) << "\"";
+  }
+  out << "],\n  \"literal_atoms\": [";
+  first = true;
+  for (const auto &q : s.literal_queries) {
+    if (!first) {
+      out << ", ";
+    }
+    first = false;
+    out << "{\"" << json_escape(q.name) << "\": {\"mode\": \"" << json_escape(q.mode)
+        << "\", \"samples\": " << q.samples << "}}";
   }
   out << "],\n  \"metadata\": {";
   first = true;

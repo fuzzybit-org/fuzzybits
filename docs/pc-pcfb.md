@@ -79,12 +79,45 @@ position `i` of the file the writer sets
 | `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
-`compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering
-artifact: a target's negation set gives its kinds, and an `atom_split` or `omega_l` monotone-hull
-target whose cone has marked literal events is refused with
-`compile.pra_to_pc.hull-literals-unsupported` until pcfb carries literal atoms (RFC 7.3, #197). In
-`negation` mode marked operands are ordinary complements, the plain hull a hull query means, so the
-target is written.
+
+### Literal atoms: one source of truth
+
+A hull target's literal mode and its Δ (the events whose marked literal operands the hull reads) are
+written **in the `Query` fields**, appended by the pcfb 1.2 literal-atom amendment
+([`rfc/monotone-hull-queries.md`](rfc/monotone-hull-queries.md) §7.3, pcfb
+`SPEC-v1.2.md` §5.1.1):
+
+| pcfb field | Content |
+|---|---|
+| `Query.literal_mode` | `ATOM_SPLIT` (default), `OMEGA_L` or `NEGATION`, only on a `MONOTONE_HULL_PROBABILITY` query |
+| `Query.literal_samples` | pcfb tensor indices of the `SAMPLE` outputs in Δ, ascending, duplicates removed |
+
+Both are written only when they differ from the default (`ATOM_SPLIT`) or are non-empty, so a file without
+literal atoms is byte-identical to one written before the amendment, and a `PROBABILITY` query never carries
+them. If a literal event that the passes folded or dropped leaves the circuit, its tensor is not written: a
+listed sample outside the target's cone is valid and has no effect (spec §5.1.1).
+
+`compile.query.<i>.literal_mode` stays as an **informative copy** of `Query.literal_mode` and is not read
+back as the mode: the reader takes the mode from the `Query` field and replaces the metadata value with it,
+warning `io.pcfb.quantification-conflict` if the two disagree. There is therefore exactly one source of
+truth — the `Query` field — and these are the consumers of it:
+
+| Consumer | Uses |
+|---|---|
+| `pcfb::read_literals(query)` (pcfb library) | the mode and the tensor list |
+| `src/io/pcfb/detail/reader.cpp` (`fillQuantification`, `readQueryLiterals`) | `read_output.options.quantification[id].literal_mode` and `.literal_events` (ir::pc node ids) |
+| `src/io/pcfb/detail/writer.cpp` (`collectLiteralSamples`, `pcfbLiteralMode`) | writes both fields from `target_quantification` |
+| `targets/fzb/main.cpp` (`fzb inspect`) | the `literal_atoms` section: mode and \|Δ\| per hull query |
+| `targets/python/bindings.cpp` (`fuzzybits.inspect`) | the same, as the `literal_atoms` key |
+| `src/compile/pra_to_pc/write_options.cpp` | fills `target_quantification.literal_events` from `lowering.projection.literal_events(target)` |
+
+The writer must not create or remove an inverted edge into a listed sample under `ATOM_SPLIT` (spec §5.2,
+RFC §7.5); the pass pipeline enforces that, see [`ir-pc-passes.md`](ir-pc-passes.md#atom-split-hull-targets).
+
+`compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills the maps from the lowering artifact: a
+target's negation set gives its kinds, its literal mode and Δ come from the projection, and an `atom_split` or
+`omega_l` monotone-hull target is written in every mode. `compose_write_options` re-keys Δ through the pass
+pipeline's node map, so the written list names the tensors of the final circuit.
 
 ## Order
 

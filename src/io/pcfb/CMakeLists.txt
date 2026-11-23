@@ -34,7 +34,7 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_pcfb_tests
-    SOURCES tests/write_tests.cc tests/kind_tests.cc tests/read_tests.cc
+    SOURCES tests/write_tests.cc tests/kind_tests.cc tests/read_tests.cc tests/literal_diff_tests.cc
     LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
   )
 
