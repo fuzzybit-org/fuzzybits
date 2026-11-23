@@ -64,3 +64,5 @@ tools/server/webui/node_modules/
 tools/server/webui/dist/
 
 .DS_Store
+
+input

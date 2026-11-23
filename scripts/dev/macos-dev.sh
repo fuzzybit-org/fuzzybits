@@ -25,7 +25,7 @@ if [[ "${arch}" == "arm64" ]]; then
   deployment_target=26.0
 else
   metal=OFF
-  deployment_target=15.0
+  deployment_target=26.0
 fi
 # Same targets as the macos-wheel jobs, so prebuilt Boost/AdaptiveCpp objects
 # link into wheels without "built for newer macOS" mismatches.
@@ -45,8 +45,18 @@ export RUNNER_TEMP="${cache}/tmp"
 export WITH_METAL_BACKEND="${metal}"
 export HOMEBREW_NO_AUTO_UPDATE="${HOMEBREW_NO_AUTO_UPDATE:-1}"
 export HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK="${HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK:-1}"
+# Intel (Tier 3) Homebrew has no bottles, so `brew install` upgrading an
+# outdated keg means rebuilding it (llvm@20: hours) from source.
+export HOMEBREW_NO_INSTALL_UPGRADE="${HOMEBREW_NO_INSTALL_UPGRADE:-1}"
 
 formulae=(llvm@20 lld@20 libomp ninja ccache coreutils cmake)
+
+formulae_installed() {
+  local f
+  for f in "${formulae[@]}"; do
+    [[ -n "$(brew list --versions "${f}" 2>/dev/null)" ]] || return 1
+  done
+}
 
 # SDK 27's math.h includes <float.h> under __need_infinity_nan when
 # __has_feature(modules), which Homebrew clang 20 reports in C++20+ modes.
@@ -242,7 +252,13 @@ bootstrap() {
   test "${METAL_CPP_VERSION}" != "TBD"
 
   echo "== Homebrew"
-  bash scripts/ci/macos-brew-deps.sh
+  # Any `brew install` may still upgrade outdated dependencies of a missing
+  # formula, so skip it entirely once every keg is present.
+  if formulae_installed && resolve_brew_prefixes; then
+    echo "all formulae installed; skipping brew install (brew upgrade to refresh)"
+  else
+    bash scripts/ci/macos-brew-deps.sh
+  fi
   command -v uv >/dev/null 2>&1 || brew install uv
   resolve_brew_prefixes \
     || die "llvm@20, lld@20 (with bin/ld64.lld) and libomp must be installed kegs"
