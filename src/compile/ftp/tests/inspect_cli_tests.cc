@@ -58,7 +58,8 @@ namespace {
     [[nodiscard]] auto run_fzb(std::string const &arguments, std::filesystem::path const &scratch) -> run_result {
         const auto out_path = scratch / "fzb.out";
         const auto err_path = scratch / "fzb.err";
-        const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " + quoted(err_path.string());
+        const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " +
+                             quoted(err_path.string());
 #ifdef _WIN32
         const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
 #else
@@ -225,7 +226,8 @@ TEST_CASE("fzb inspect FTP: a directory and a file list read the same project", 
     REQUIRE(std::filesystem::path(document.find("files")->items[2].string).filename() == "03_imports.ftp");
 
     const auto reversed = run_fzb("inspect " + quoted((fixture / "03_imports.ftp").string()) + " " +
-                                      quoted((fixture / "02_systems.ftp").string()) + " " + quoted((fixture / "01_top.ftp").string()) + " --json",
+                                      quoted((fixture / "02_systems.ftp").string()) + " " +
+                                      quoted((fixture / "01_top.ftp").string()) + " --json",
                                   scratch);
     const auto order = parse_output(reversed.out);
     REQUIRE(std::filesystem::path(order.find("files")->items[0].string).filename() == "03_imports.ftp");
@@ -236,7 +238,8 @@ TEST_CASE("fzb inspect FTP: --counts-only prints no element names", "[compile][f
     const auto project = scratch / "wombat";
     std::filesystem::create_directories(project);
     write_file(project / "m.ftp",
-               "**DBNAME: WOMBAT_HEADER\nZEBRA_TOP * QUOKKA_G -QUOKKA_B\nQUOKKA_G + QUOKKA_B QUOKKA_C\nENDTREE\nPROCESS ZEBRA_TOP\nIMPORT\n"
+               "**DBNAME: WOMBAT_HEADER\nZEBRA_TOP * QUOKKA_G -QUOKKA_B\nQUOKKA_G + QUOKKA_B QUOKKA_C\n"
+               "ENDTREE\nPROCESS ZEBRA_TOP\nIMPORT\n"
                "  1.0E-01 QUOKKA_B\n  2.0E-01 QUOKKA_C\n  3.0E-01 QUOKKA_B\n");
     const std::vector<std::string> names{"ZEBRA_TOP", "QUOKKA_G", "QUOKKA_B", "QUOKKA_C", "WOMBAT_HEADER"};
 
@@ -256,7 +259,8 @@ TEST_CASE("fzb inspect FTP: --counts-only prints no element names", "[compile][f
     REQUIRE(full.out.find("ZEBRA_TOP") != std::string::npos);
     REQUIRE(full.out.find("WOMBAT_HEADER") != std::string::npos);
 
-    const auto fixture = run_fzb("inspect " + quoted((fixtures_root() / "imports_tags_duplicates").string()) + " --counts-only", scratch);
+    const auto duplicates = quoted((fixtures_root() / "imports_tags_duplicates").string());
+    const auto fixture = run_fzb("inspect " + duplicates + " --counts-only", scratch);
     for (auto const *name : {"TOP", "A"}) {
         REQUIRE_FALSE(contains_word(fixture.out, name));
     }

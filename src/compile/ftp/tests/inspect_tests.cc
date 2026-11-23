@@ -54,10 +54,43 @@ namespace {
         return value.is(json::value::kind_type::integer) || value.is(json::value::kind_type::number);
     }
 
-    // Every key of `expected` is present in `actual` with the same value. The
-    // duplicate-import entries only agree on the names, and an empty
-    // `process_targets` stands for the implicit root targets.
-    void require_same(json::value const &actual, json::value const &expected, std::string const &path) {
+    [[nodiscard]] auto base_name(std::string const &path) -> std::string {
+        return std::filesystem::path(path).filename().string();
+    }
+
+    // `actual` holds, for each duplicated name, the occurrences the fixture lists, and the record the
+    // policy chose with its file, line and value.
+    void require_duplicates(json::value const &actual, json::value const &expected, std::string const &policy) {
+        REQUIRE(actual.is_object());
+        REQUIRE(actual.keys == expected.keys);
+        for (std::size_t index = 0; index < expected.keys.size(); ++index) {
+            INFO("duplicate import " << expected.keys[index]);
+            auto const &records = expected.items[index].items;
+            REQUIRE_FALSE(records.empty());
+            auto const &chosen_expected = policy == "first" ? records.front() : records.back();
+            std::size_t chosen_count = 0;
+            for (auto const &occurrence : actual.items[index].items) {
+                const auto file = base_name(occurrence.find("file")->string);
+                const auto line = occurrence.find("line")->integer;
+                const bool listed = std::ranges::any_of(records, [&](json::value const &record) {
+                    return record.find("file")->string == file && record.find("line")->integer == line;
+                });
+                REQUIRE(listed);
+                if (occurrence.find("chosen")->boolean) {
+                    ++chosen_count;
+                    REQUIRE(file == chosen_expected.find("file")->string);
+                    REQUIRE(line == chosen_expected.find("line")->integer);
+                    REQUIRE(as_number(*occurrence.find("value")) == as_number(*chosen_expected.find("value")));
+                }
+            }
+            REQUIRE(chosen_count == 1);
+            REQUIRE(actual.items[index].items.size() == records.size());
+        }
+    }
+
+    // Every key of `expected` is present in `actual` with the same value.
+    void require_same(json::value const &actual, json::value const &expected, std::string const &path,
+                      std::string const &policy) {
         INFO("at " << path);
         if (is_numeric(expected)) {
             REQUIRE(is_numeric(actual));
@@ -71,22 +104,20 @@ namespace {
             REQUIRE(actual.is_array());
             REQUIRE(actual.items.size() == expected.items.size());
             for (std::size_t index = 0; index < expected.items.size(); ++index) {
-                require_same(actual.items[index], expected.items[index], path + "[" + std::to_string(index) + "]");
+                require_same(actual.items[index], expected.items[index], path + "[" + std::to_string(index) + "]",
+                             policy);
             }
         } else if (expected.is_object()) {
             REQUIRE(actual.is_object());
-            REQUIRE(actual.keys.size() >= expected.keys.size());
             for (std::size_t index = 0; index < expected.keys.size(); ++index) {
-                auto const *found = actual.find(expected.keys[index]);
-                INFO("key " << expected.keys[index]);
+                auto const &key = expected.keys[index];
+                auto const *found = actual.find(key);
+                INFO("key " << key);
                 REQUIRE(found != nullptr);
-                if (path == "structure" && expected.keys[index] == "duplicate_imports") {
-                    REQUIRE(found->is_object());
-                    REQUIRE(found->keys == expected.items[index].keys);
-                } else if (path == "structure" && expected.keys[index] == "process_targets" && expected.items[index].items.empty()) {
-                    continue;
+                if (path == "structure" && key == "duplicate_imports") {
+                    require_duplicates(*found, expected.items[index], policy);
                 } else {
-                    require_same(*found, expected.items[index], path.empty() ? expected.keys[index] : path + "." + expected.keys[index]);
+                    require_same(*found, expected.items[index], path.empty() ? key : path + "." + key, policy);
                 }
             }
         }
@@ -103,7 +134,8 @@ namespace {
         return out;
     }
 
-    [[nodiscard]] auto expected_ids(json::value const &outcome, const bool documents_structure_without_targets) -> std::multiset<std::string> {
+    [[nodiscard]] auto expected_ids(json::value const &outcome, const bool documents_structure_without_targets)
+        -> std::multiset<std::string> {
         std::multiset<std::string> out;
         bool missing_process = false;
         for (auto const &item : outcome.find("diagnostics")->items) {
@@ -154,14 +186,17 @@ TEST_CASE("inspect: JSON structure and diagnostic ids of every conformance fixtu
                     continue;
                 }
                 REQUIRE(structure != nullptr);
-                require_same(*document.find("structure"), *structure, "structure");
+                require_same(*document.find("structure"), *structure, "structure", name);
+                require_same(*document.find("structure")->find("default_targets"), *spec.find("default_targets"),
+                             "default_targets", name);
             }
         }
     }
 }
 
 TEST_CASE("inspect: diagnostics carry the file and line named by the reader", "[compile][ftp][inspect]") {
-    const auto fixture = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / "invalid_undefined_event";
+    const auto fixture =
+        std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / "invalid_undefined_event";
     const auto spec = parse_text(read_file(fixture / "expected.json"));
     const std::vector<std::filesystem::path> files{fixture / "model.ftp"};
     const auto result = ftp::inspect_project(files);
@@ -205,10 +240,12 @@ TEST_CASE("inspect: duplicate imports name the chosen record and its value", "[c
     REQUIRE(rejected.diagnostics.front().line == 5);
 }
 
-TEST_CASE("inspect: structure counts literal operands, complemented gates, house events and conventions", "[compile][ftp][inspect]") {
-    const std::vector<reader::source_text> sources{{.path = "s.ftp",
-                                                    .text = "**CHAR32\n**DBNAME: sample\nTOP * G -B -H\nG + A B\nH + A B\nENDTREE\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n"
-                                                            "LIMIT 1.0E-09\n"}};
+TEST_CASE("inspect: structure counts literal operands, complemented gates, house events and conventions",
+          "[compile][ftp][inspect]") {
+    const std::vector<reader::source_text> sources{
+        {.path = "s.ftp",
+         .text = "**CHAR32\n**DBNAME: sample\nTOP * G -B -H\nG + A B\nH + A B\nENDTREE\nIMPORT\n"
+                 "  1.0E-01 A\n  2.0E-01 B\nLIMIT 1.0E-09\n"}};
     ftp::inspect_options options;
     const auto atom = ftp::inspect_sources(sources, options);
     REQUIRE(atom.ok());
@@ -232,8 +269,9 @@ TEST_CASE("inspect: structure counts literal operands, complemented gates, house
 TEST_CASE("inspect: --counts-only output holds no element, file-content or header text", "[compile][ftp][inspect]") {
     const std::vector<reader::source_text> sources{
         {.path = "c.ftp",
-         .text = "**DBNAME: WOMBAT_HEADER\nZEBRA_TOP * QUOKKA_G -QUOKKA_B\nQUOKKA_G + QUOKKA_B QUOKKA_C\nENDTREE\nPROCESS ZEBRA_TOP\nIMPORT\n"
-                 "  1.0E-01 QUOKKA_B\n  2.0E-01 QUOKKA_C\n  3.0E-01 QUOKKA_B\n  1.0E-01 NO_GATE_USES_ME\n"}};
+         .text = "**DBNAME: WOMBAT_HEADER\nZEBRA_TOP * QUOKKA_G -QUOKKA_B\nQUOKKA_G + QUOKKA_B QUOKKA_C\n"
+                 "ENDTREE\nPROCESS ZEBRA_TOP\nIMPORT\n  1.0E-01 QUOKKA_B\n  2.0E-01 QUOKKA_C\n"
+                 "  3.0E-01 QUOKKA_B\n  1.0E-01 NO_GATE_USES_ME\n"}};
     const auto result = ftp::inspect_sources(sources);
     REQUIRE(result.ok());
     REQUIRE(result.warnings() >= 1);
@@ -262,9 +300,11 @@ TEST_CASE("inspect: --counts-only output holds no element, file-content or heade
 }
 
 TEST_CASE("inspect: exit status and option checks", "[compile][ftp][inspect]") {
-    const std::vector<reader::source_text> clean{{.path = "a.ftp", .text = "TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n"}};
+    const std::vector<reader::source_text> clean{
+        {.path = "a.ftp", .text = "TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n"}};
     const std::vector<reader::source_text> warns{{.path = "w.ftp", .text = "TOP + A\nENDTREE\nIMPORT\n  1.0E-01 A\n"}};
-    const std::vector<reader::source_text> broken{{.path = "b.ftp", .text = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n"}};
+    const std::vector<reader::source_text> broken{
+        {.path = "b.ftp", .text = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n"}};
 
     REQUIRE(ftp::inspect_exit_status(ftp::inspect_sources(clean), false) == 0);
     REQUIRE(ftp::inspect_exit_status(ftp::inspect_sources(clean), true) == 0);
@@ -275,4 +315,39 @@ TEST_CASE("inspect: exit status and option checks", "[compile][ftp][inspect]") {
     REQUIRE(ftp::check_options({}).empty());
     REQUIRE_FALSE(ftp::check_options({.duplicate_import = "newest"}).empty());
     REQUIRE_FALSE(ftp::check_options({.complement_events = "both"}).empty());
+}
+
+TEST_CASE("inspect: a diagnostic's position is the reader's, however the path is spelled or the message reads",
+          "[compile][ftp][inspect]") {
+    const std::vector<reader::source_text> sources{
+        {.path = "dir/./a b.ftp", .text = "TOP + A\nTOP * A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n"},
+        {.path = "b.ftp", .text = "OTHER + A\nENDTREE\nIMPORT\n  2.0E-01 A\n"}};
+    ftp::inspect_options options;
+    const auto result = ftp::inspect_sources(sources, options);
+
+    REQUIRE_FALSE(result.ok());
+    const auto duplicate_gate = std::ranges::find_if(result.diagnostics, [](auto const &item) {
+        return item.id == "io.ftp.duplicate-gate";
+    });
+    REQUIRE(duplicate_gate != result.diagnostics.end());
+    REQUIRE(duplicate_gate->message.find("dir/./a b.ftp:1") != std::string::npos);
+    REQUIRE(duplicate_gate->file == "dir/./a b.ftp");
+    REQUIRE(duplicate_gate->line == 2);
+    for (auto const &item : result.diagnostics) {
+        REQUIRE((item.line == 0) == item.file.empty());
+    }
+}
+
+TEST_CASE("inspect: process_targets are the declared names and default_targets the effective ones",
+          "[compile][ftp][inspect]") {
+    const std::vector<reader::source_text> declared{
+        {.path = "p.ftp", .text = "R1 + A\nR2 + A\nENDTREE\nPROCESS R2\nIMPORT\n  1.0E-01 A\n"}};
+    const std::vector<reader::source_text> implicit{
+        {.path = "q.ftp", .text = "R1 + A\nR2 + A\nENDTREE\nIMPORT\n  1.0E-01 A\n"}};
+    const auto with = ftp::inspect_sources(declared);
+    REQUIRE(with.structure->process_targets == std::vector<std::string>{"R2"});
+    REQUIRE(with.structure->default_targets == std::vector<std::string>{"R2"});
+    const auto without = ftp::inspect_sources(implicit);
+    REQUIRE(without.structure->process_targets.empty());
+    REQUIRE(without.structure->default_targets == std::vector<std::string>{"R1", "R2"});
 }

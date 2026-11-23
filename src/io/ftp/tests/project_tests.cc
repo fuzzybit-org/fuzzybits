@@ -2,8 +2,8 @@
 
 #include "api/diagnostics.h"
 #include "io/formats.h"
-#include "compile/ftp/inspect.h"
 #include "io/ftp/descriptor.h"
+#include "io/ftp/summary.h"
 #include "ir/pc/circuit.h"
 #include "ir/pra/model.h"
 
@@ -491,7 +491,8 @@ namespace {
     }
 
     // Field names that differ from the card; never their values (#38).
-    [[nodiscard]] auto cardMismatches(fuzzybits::compile::ftp::structure_summary const &actual, ftp_test::json const &card) -> std::vector<std::string> {
+    [[nodiscard]] auto cardMismatches(ftp::structure_summary const &actual, ftp_test::json const &card)
+        -> std::vector<std::string> {
         std::vector<std::string> out;
         const auto number = [](ftp_test::json const &value) { return static_cast<std::size_t>(value.number()); };
         const auto check = [&out](const bool equal, std::string field) {
@@ -573,7 +574,7 @@ TEST_CASE("FTP private projects match their cards", "[io][ftp][private]") {
             }
             std::cout << "private FTP project " << index + 1 << ": FAIL (read failed with " << errors << " errors)\n";
         } else {
-            const auto counts = fuzzybits::compile::ftp::structure_of(*pra::model_from(read.value()));
+            const auto counts = ftp::structure_of(*pra::model_from(read.value()));
             mismatches = cardMismatches(counts, (*card)["structure"]);
             ok = mismatches.empty();
             std::cout << "private FTP project " << index + 1 << ": " << (ok ? "pass" : "FAIL") << " (policy " << policy << ", read "

@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "api/diagnostics.h"
-#include "compile/ftp/inspect.h"
 #include "io/ftp/descriptor.h"
+#include "io/ftp/summary.h"
 #include "ir/pc/circuit.h"
 #include "ir/pra/model.h"
 
@@ -139,7 +139,7 @@ namespace {
         return out;
     }
 
-    void requireStructure(fuzzybits::compile::ftp::structure_summary const &actual, ftp_test::json const &expected) {
+    void requireStructure(ftp::structure_summary const &actual, ftp_test::json const &expected) {
         REQUIRE(actual.gates == static_cast<std::size_t>(expected["gates"].number()));
         REQUIRE(actual.or_gates == static_cast<std::size_t>(expected["gates_by_kind"]["or"].number()));
         REQUIRE(actual.and_gates == static_cast<std::size_t>(expected["gates_by_kind"]["and"].number()));
@@ -158,9 +158,7 @@ namespace {
         REQUIRE(actual.complemented_edges_to_basic_events ==
                 static_cast<std::size_t>(expected["complemented_edges_to_basic_events"].number()));
         REQUIRE(actual.roots == names(expected["roots"]));
-        if (!expected["process_targets"].array().empty()) {
-            REQUIRE(actual.process_targets == names(expected["process_targets"]));
-        }
+        REQUIRE(actual.process_targets == names(expected["process_targets"]));
         if (expected["limit"].is_null()) {
             REQUIRE_FALSE(actual.limit);
         } else {
@@ -230,9 +228,9 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
 
                 auto const *model = pra::model_from(read.value());
                 REQUIRE(model != nullptr);
-                const auto counts = fuzzybits::compile::ftp::structure_of(*model);
+                const auto counts = ftp::structure_of(*model);
                 requireStructure(counts, (*spec)["structure"]);
-                REQUIRE(counts.process_targets == names((*spec)["default_targets"]));
+                REQUIRE(counts.default_targets == names((*spec)["default_targets"]));
 
                 for (auto const &[target, values] : outcome["results"].object()) {
                     INFO("target " << target);

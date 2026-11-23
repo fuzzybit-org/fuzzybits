@@ -3,20 +3,16 @@
 #include "api/diagnostics.h"
 #include "compile/ftp/json.h"
 #include "io/ftp/descriptor.h"
+#include "io/ftp/summary.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <map>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
-
-namespace fuzzybits::ir::pra {
-    class model;
-}
 
 namespace fuzzybits::compile::ftp {
 
@@ -31,60 +27,13 @@ namespace fuzzybits::compile::ftp {
     // Empty when the options are valid, else the message of the first problem.
     [[nodiscard]] auto check_options(inspect_options const &options) -> std::string;
 
-    // `file` is empty and `line` 0 when the message names no project location.
+    // `file` is empty and `line` 0 when the diagnostic has no source position.
     struct inspected_diagnostic final {
         std::string id;
         api::diagnostic_severity severity = api::diagnostic_severity::note;
         std::string file;
         std::uint32_t line = 0;
         std::string message;
-    };
-
-    struct import_occurrence final {
-        std::string file;
-        std::uint32_t line = 0;
-        // The record whose value (and position in the model) the policy kept.
-        bool chosen = false;
-    };
-
-    struct duplicate_import final {
-        std::string name;
-        double value = 0.0;
-        // Project order.
-        std::vector<import_occurrence> occurrences;
-    };
-
-    struct structure_summary final {
-        std::size_t gates = 0;
-        std::size_t or_gates = 0;
-        std::size_t and_gates = 0;
-        std::size_t atleast_gates = 0;
-        // "k/n" -> number of at-least gates.
-        std::map<std::string, std::size_t> atleast_k_of_n;
-        std::size_t edges = 0;
-        std::size_t single_input_gates = 0;
-        std::size_t max_fan_in = 0;
-        std::uint32_t depth = 0;
-        std::size_t basic_events = 0;
-        std::size_t house_events = 0;
-        std::size_t import_lines = 0;
-        std::size_t initiating_events = 0;
-        std::size_t initiating_events_p_1 = 0;
-        std::size_t events_p_1 = 0;
-        std::size_t events_p_0 = 0;
-        // Basic events with 0 < p < 2^-32.
-        std::size_t events_p_tiny = 0;
-        std::size_t complemented_edges = 0;
-        std::size_t complemented_edges_to_basic_events = 0;
-        std::size_t complemented_edges_to_gates = 0;
-        // Complemented basic-event operands marked as atomic literals.
-        std::size_t literal_operands = 0;
-        std::vector<std::string> roots;
-        // The model's targets: the PROCESS names, or the roots when there are none.
-        std::vector<std::string> process_targets;
-        std::optional<double> limit;
-        std::size_t names_not_ncname = 0;
-        std::vector<duplicate_import> duplicate_imports;
     };
 
     struct conventions_summary final {
@@ -100,7 +49,7 @@ namespace fuzzybits::compile::ftp {
         std::vector<std::string> files;
         std::vector<inspected_diagnostic> diagnostics;
         // Present when the project was read without errors.
-        std::optional<structure_summary> structure;
+        std::optional<io::backend::fuzzybits::ftp::structure_summary> structure;
         conventions_summary conventions;
 
         [[nodiscard]] auto count(api::diagnostic_severity severity) const -> std::size_t;
@@ -115,13 +64,10 @@ namespace fuzzybits::compile::ftp {
         }
     };
 
-    // Counts of a model read from FTP; the record the reader kept for a repeated import is the
-    // model's first source of the event.
-    [[nodiscard]] auto structure_of(ir::pra::model const &model) -> structure_summary;
-
     // Files and directories (all `*.ftp`) form one project, as for `compile_project`.
     // Invalid options are not checked here; see `check_options`.
-    [[nodiscard]] auto inspect_project(std::span<std::filesystem::path const> inputs, inspect_options const &options = {}) -> inspection;
+    [[nodiscard]] auto inspect_project(std::span<std::filesystem::path const> inputs,
+                                       inspect_options const &options = {}) -> inspection;
     [[nodiscard]] auto inspect_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources,
                                        inspect_options const &options = {}) -> inspection;
 
