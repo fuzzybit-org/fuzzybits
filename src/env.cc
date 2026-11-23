@@ -27,16 +27,10 @@
 
 namespace scram::env {
 
-const std::string_view& project_schema() {
-  return schemas::get_PROJECT_SCHEMA();
-}
+const std::string_view &project_schema() { return schemas::get_PROJECT_SCHEMA(); }
 
-const std::string_view& input_schema() {
-  return schemas::get_INPUT_SCHEMA();
-}
+const std::string_view &input_schema() { return schemas::get_INPUT_SCHEMA(); }
 
-const std::string_view& report_schema() {
-  return schemas::get_REPORT_SCHEMA();
-}
+const std::string_view &report_schema() { return schemas::get_REPORT_SCHEMA(); }
 
-}  // namespace scram::env
+} // namespace scram::env

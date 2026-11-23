@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "ir/pc/edge.h"
-#include "ir/pc/circuit.h"
 #include "ir/pc/builder.h"
+#include "ir/pc/circuit.h"
+#include "ir/pc/edge.h"
 
 #include <utility>
 

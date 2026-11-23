@@ -25,14 +25,12 @@
 
 namespace scram::mef {
 
-double TestInitiatingEvent::value()  {
-  return context_.initiating_event == name_;
+double TestInitiatingEvent::value() { return context_.initiating_event == name_; }
+
+double TestFunctionalEvent::value() {
+    if (auto it = ext::find(context_.functional_events, name_))
+        return it->second == state_;
+    return false;
 }
 
-double TestFunctionalEvent::value()  {
-  if (auto it = ext::find(context_.functional_events, name_))
-    return it->second == state_;
-  return false;
-}
-
-}  // namespace scram::mef
+} // namespace scram::mef

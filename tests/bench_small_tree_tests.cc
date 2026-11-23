@@ -23,23 +23,23 @@ namespace scram::core::test {
 // Benchmark Tests for Small Tree fault tree from XFTA.
 // This benchmark is for uncertainty analysis.
 TEST_P(RiskAnalysisTest, SmallTree) {
-  std::string tree_input = "input/SmallTree/SmallTree.xml";
-  settings.uncertainty_analysis(true);
-  settings.num_trials(10000);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  std::set<std::set<std::string>> mcs = {{"e1", "e2"}, {"e3", "e4"}};
-  EXPECT_EQ(2, products().size());
-  EXPECT_EQ(mcs, products());
-  if (settings.approximation() == Approximation::kRareEvent) {
-    EXPECT_NEAR(0.02696, p_total(), 1e-5);
-    EXPECT_NEAR(0.0255, mean(), 1e-3);
-    EXPECT_NEAR(0.0225, sigma(), 2e-3);
-  } else {
-    EXPECT_NEAR(0.02678, p_total(), 1e-5);
-    EXPECT_NEAR(0.0253, mean(), 1e-3);
-    EXPECT_NEAR(0.022, sigma(), 2e-3);
-  }
+    std::string tree_input = "input/SmallTree/SmallTree.xml";
+    settings.uncertainty_analysis(true);
+    settings.num_trials(10000);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    std::set<std::set<std::string>> mcs = {{"e1", "e2"}, {"e3", "e4"}};
+    EXPECT_EQ(2, products().size());
+    EXPECT_EQ(mcs, products());
+    if (settings.approximation() == Approximation::kRareEvent) {
+        EXPECT_NEAR(0.02696, p_total(), 1e-5);
+        EXPECT_NEAR(0.0255, mean(), 1e-3);
+        EXPECT_NEAR(0.0225, sigma(), 2e-3);
+    } else {
+        EXPECT_NEAR(0.02678, p_total(), 1e-5);
+        EXPECT_NEAR(0.0253, mean(), 1e-3);
+        EXPECT_NEAR(0.022, sigma(), 2e-3);
+    }
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

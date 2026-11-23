@@ -30,46 +30,43 @@
 namespace scram::mc {
 
 class DirectEval : private boost::noncopyable {
- public:
-  /// Prepares a PDAG
-  ///
-  /// @param[in] graph  Preprocessed PDAG.
-  /// @param[in] settings  The analysis settings.
-  ///
-  /// @pre The passed PDAG already has variable ordering.
-  DirectEval(const core::Pdag* graph, const core::Settings& settings) : graph_(graph), kSettings_(settings) {
-  }
+  public:
+    /// Prepares a PDAG
+    ///
+    /// @param[in] graph  Preprocessed PDAG.
+    /// @param[in] settings  The analysis settings.
+    ///
+    /// @pre The passed PDAG already has variable ordering.
+    DirectEval(const core::Pdag *graph, const core::Settings &settings) : graph_(graph), kSettings_(settings) {}
 
-  /// Finds minimal cut sets from the PDAG.
-  /// STUB implementation:: broken
-  /// @param[in] graph  The optional PDAG with non-declarative substitutions.
-  void Analyze(const core::Pdag* /*graph*/ = nullptr)  {
-      zbdd_ = std::make_unique<core::Zbdd>(graph_, kSettings_);
-  }
+    /// Finds minimal cut sets from the PDAG.
+    /// STUB implementation:: broken
+    /// @param[in] graph  The optional PDAG with non-declarative substitutions.
+    void Analyze(const core::Pdag * /*graph*/ = nullptr) { zbdd_ = std::make_unique<core::Zbdd>(graph_, kSettings_); }
 
-  /// @returns Generated minimal cut sets with basic event indices.
-  const core::Zbdd& products() const {
-     return *zbdd_;
-  }
+    /// @returns Generated minimal cut sets with basic event indices.
+    const core::Zbdd &products() const { return *zbdd_; }
 
- private:
-  /// Runs analysis on a module gate.
-  /// All sub-modules are analyzed and joined recursively.
-  ///
-  /// @param[in] gate  A PDAG gate for analysis.
-  /// @param[in] settings  Settings for analysis.
-  ///
-  /// @returns stub/empty ZBDD container
-  std::unique_ptr<core::zbdd::CutSetContainer>
-  AnalyzeModule(const core::Gate& gate, const core::Settings& /*settings*/)  {
-      const int kMaxVariableIndex = core::Pdag::kVariableStartIndex + static_cast<int>(graph_->basic_events().size()) - 1;
-      auto empty_container = std::make_unique<core::zbdd::CutSetContainer>(kSettings_, gate.index(), kMaxVariableIndex);
-      return empty_container;
-  }
+  private:
+    /// Runs analysis on a module gate.
+    /// All sub-modules are analyzed and joined recursively.
+    ///
+    /// @param[in] gate  A PDAG gate for analysis.
+    /// @param[in] settings  Settings for analysis.
+    ///
+    /// @returns stub/empty ZBDD container
+    std::unique_ptr<core::zbdd::CutSetContainer> AnalyzeModule(const core::Gate &gate,
+                                                               const core::Settings & /*settings*/) {
+        const int kMaxVariableIndex =
+            core::Pdag::kVariableStartIndex + static_cast<int>(graph_->basic_events().size()) - 1;
+        auto empty_container =
+            std::make_unique<core::zbdd::CutSetContainer>(kSettings_, gate.index(), kMaxVariableIndex);
+        return empty_container;
+    }
 
-  const core::Pdag* graph_;  ///< The analysis PDAG.
-  const core::Settings kSettings_;  ///< Analysis settings.
-  std::unique_ptr<core::Zbdd> zbdd_; ///< Stub ZBDD
+    const core::Pdag *graph_;          ///< The analysis PDAG.
+    const core::Settings kSettings_;   ///< Analysis settings.
+    std::unique_ptr<core::Zbdd> zbdd_; ///< Stub ZBDD
 };
 
-}  // namespace scram::core
+} // namespace scram::mc

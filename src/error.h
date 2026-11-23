@@ -43,10 +43,9 @@
 /// the resultant exception type to conform to boost::exception.
 ///
 /// @param[in] err  The error type deriving from boost::exception.
-#define SCRAM_THROW(err)                                                       \
-  throw err << ::boost::throw_function(BOOST_CURRENT_FUNCTION) \
-            << ::boost::throw_file(FILE_REL_PATH)                              \
-            << ::boost::throw_line(__LINE__)
+#define SCRAM_THROW(err)                                                                                               \
+    throw err << ::boost::throw_function(BOOST_CURRENT_FUNCTION) << ::boost::throw_file(FILE_REL_PATH)                 \
+              << ::boost::throw_line(__LINE__)
 
 namespace scram {
 
@@ -62,62 +61,59 @@ using errinfo_value = boost::error_info<struct tag_value, std::string>;
 ///       which may be produced anyway
 ///       even if the copy constructor were .
 class Error : virtual public std::exception, virtual public boost::exception {
- public:
-  /// Constructs a new error with a provided message.
-  ///
-  /// @param[in] msg  The message to be passed with this error.
-  explicit Error(std::string msg) : msg_(std::move(msg)) {}
+  public:
+    /// Constructs a new error with a provided message.
+    ///
+    /// @param[in] msg  The message to be passed with this error.
+    explicit Error(std::string msg) : msg_(std::move(msg)) {}
 
-  /// @returns The formatted error message to be printed.
-  const char* what() const noexcept final { return msg_.c_str(); }
+    /// @returns The formatted error message to be printed.
+    const char *what() const noexcept final { return msg_.c_str(); }
 
- private:
-  std::string msg_;  ///< The error message.
+  private:
+    std::string msg_; ///< The error message.
 };
 
 /// For input/output related errors.
 struct IOError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// Dynamic library errors.
 struct DLError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// Signals internal logic errors,
 /// for example, pre-condition failure
 /// or use of functionality in ways not designed to.
 struct LogicError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// This error can be used to indicate
 /// that call for a function or operation is not legal.
 struct IllegalOperation : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// The error in analysis settings.
 struct SettingsError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// The minimum required version is not satisfied.
 struct VersionError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
-namespace mef {  // MEF specific errors.
+namespace mef { // MEF specific errors.
 
 /// The MEF container element as namespace.
 /// @{
-using errinfo_container_id =
-    boost::error_info<struct tag_contianer_id, std::string>;
-using errinfo_container_type =
-    boost::error_info<struct tag_container_type, const char*>;
-using errinfo_container =
-    boost::tuple<errinfo_container_id, errinfo_container_type>;
+using errinfo_container_id = boost::error_info<struct tag_contianer_id, std::string>;
+using errinfo_container_type = boost::error_info<struct tag_container_type, const char *>;
+using errinfo_container = boost::tuple<errinfo_container_id, errinfo_container_type>;
 /// @}
 
 /// MEF Element Attribute.
@@ -125,10 +121,8 @@ using errinfo_attribute = boost::error_info<struct tag_attribute, std::string>;
 
 /// The MEF element identifier data in errors.
 /// @{
-using errinfo_element_id =
-    boost::error_info<struct tag_element_id, std::string>;
-using errinfo_element_type =
-    boost::error_info<struct tag_element_type, const char*>;
+using errinfo_element_id = boost::error_info<struct tag_element_id, std::string>;
+using errinfo_element_type = boost::error_info<struct tag_element_type, const char *>;
 using errinfo_element = boost::tuple<errinfo_element_id, errinfo_element_type>;
 /// @}
 
@@ -141,65 +135,63 @@ using errinfo_base_path = boost::error_info<struct tag_base_path, std::string>;
 using errinfo_cycle = boost::error_info<struct tag_cycle, std::string>;
 
 /// Connectives in formulae.
-using errinfo_connective =
-    boost::error_info<struct tag_connective, std::string>;
+using errinfo_connective = boost::error_info<struct tag_connective, std::string>;
 
 /// Model validity errors.
 struct ValidityError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// This error indicates that elements must be unique.
 struct DuplicateElementError : public ValidityError {
-  DuplicateElementError() : ValidityError("Duplicate Element Error") {}
+    DuplicateElementError() : ValidityError("Duplicate Element Error") {}
 };
 
 /// The error for undefined elements in a model.
 struct UndefinedElement : public ValidityError {
-  UndefinedElement() : ValidityError("Undefined Element Error") {}
+    UndefinedElement() : ValidityError("Undefined Element Error") {}
 };
 
 /// Unacceptable cycles in model structures.
 struct CycleError : public ValidityError {
-  CycleError() : ValidityError("Cycle Error") {}
+    CycleError() : ValidityError("Cycle Error") {}
 };
 
 /// Invalid domain for values or arguments.
 struct DomainError : public ValidityError {
-  using ValidityError::ValidityError;
+    using ValidityError::ValidityError;
 };
 
-}  // namespace mef
+} // namespace mef
 
 namespace xml {
 
 /// The base for all XML related errors.
 struct Error : public scram::Error {
-  using scram::Error::Error;
+    using scram::Error::Error;
 };
 
 /// XML parsing errors.
 struct ParseError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// XInclude resolution issues.
 struct XIncludeError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// XML document validity errors.
 struct ValidityError : public Error {
-  using Error::Error;
+    using Error::Error;
 };
 
 /// The XML attribute name.
-using errinfo_attribute =
-    boost::error_info<struct tag_xml_attribute, std::string>;
+using errinfo_attribute = boost::error_info<struct tag_xml_attribute, std::string>;
 
 /// The XML element name.
 using errinfo_element = boost::error_info<struct tag_xml_element, std::string>;
 
-}  // namespace xml
+} // namespace xml
 
-}  // namespace scram
+} // namespace scram

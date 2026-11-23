@@ -45,28 +45,21 @@ namespace scram::mc::stats {
  * Expected information gained (bits) when moving from (α_prev,β_prev) to
  * (α_new,β_new).
  */
-[[nodiscard]] double information_gain_bits(double alpha_prev,
-                                           double beta_prev,
-                                           double alpha_new,
-                                           double beta_new);
+[[nodiscard]] double information_gain_bits(double alpha_prev, double beta_prev, double alpha_new, double beta_new);
 
 /**
  * Information-gain rate (bits per second).
  * @param seconds  Wall-clock time elapsed.  Values ≤0 return NaN.
  */
-[[nodiscard]] double info_gain_bits_per_second(double alpha_prev,
-                                               double beta_prev,
-                                               double alpha_new,
-                                               double beta_new,
+[[nodiscard]] double info_gain_bits_per_second(double alpha_prev, double beta_prev, double alpha_new, double beta_new,
                                                double seconds);
 
 /**
  * Simple accumulator that tracks the Beta parameters
  */
 class info_gain {
-public:
-    explicit info_gain(const double alpha0 = 0.5, const double beta0 = 0.5)
-        : alpha_(alpha0), beta_(beta0) {}
+  public:
+    explicit info_gain(const double alpha0 = 0.5, const double beta0 = 0.5) : alpha_(alpha0), beta_(beta0) {}
 
     /**
      * Register a batch of Bernoulli results and return the information gained
@@ -75,11 +68,11 @@ public:
     [[nodiscard]] double add_batch(std::size_t successes, std::size_t failures);
 
     [[nodiscard]] double alpha() const { return alpha_; }
-    [[nodiscard]] double beta()  const { return beta_;  }
+    [[nodiscard]] double beta() const { return beta_; }
     [[nodiscard]] double cumulative_bits() const { return cumulative_bits_; }
     [[nodiscard]] double last_bits() const { return last_bits_; }
 
-private:
+  private:
     double alpha_;
     double beta_;
     double cumulative_bits_ = 0.0;

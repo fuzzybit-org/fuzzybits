@@ -19,34 +19,34 @@
 
 namespace {
 
-    namespace pc = fuzzybits::ir::pc;
-    namespace hull = fuzzybits::ir::pc::hull;
-    namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
+namespace pc = fuzzybits::ir::pc;
+namespace hull = fuzzybits::ir::pc::hull;
+namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
 
-    auto read_text(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        REQUIRE(input);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    }
+auto read_text(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
 
-    auto close(const double left, const double right) -> bool {
-        return std::abs(left - right) <= 1e-12 * std::max(1.0, std::abs(right));
-    }
+auto close(const double left, const double right) -> bool {
+    return std::abs(left - right) <= 1e-12 * std::max(1.0, std::abs(right));
+}
 
-    // The lowering's default for hull targets (#190): directly complemented
-    // events are split into an atom and a complement atom.
-    auto split_modes(pc::circuit const &model, hull::checker const &check) -> std::vector<hull::event_mode> {
-        std::vector<hull::event_mode> modes(check.event_count(), hull::event_mode::down);
-        for (std::uint32_t event = 0; event < check.event_count(); ++event) {
-            const auto node = check.event_node(event);
-            for (auto const &edge : model.edges()) {
-                if (edge.complement && edge.source == node) {
-                    modes[event] = hull::event_mode::split;
-                }
+// The lowering's default for hull targets (#190): directly complemented
+// events are split into an atom and a complement atom.
+auto split_modes(pc::circuit const &model, hull::checker const &check) -> std::vector<hull::event_mode> {
+    std::vector<hull::event_mode> modes(check.event_count(), hull::event_mode::down);
+    for (std::uint32_t event = 0; event < check.event_count(); ++event) {
+        const auto node = check.event_node(event);
+        for (auto const &edge : model.edges()) {
+            if (edge.complement && edge.source == node) {
+                modes[event] = hull::event_mode::split;
             }
         }
-        return modes;
     }
+    return modes;
+}
 
 } // namespace
 

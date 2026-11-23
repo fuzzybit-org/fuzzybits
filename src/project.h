@@ -36,54 +36,53 @@ namespace scram {
 /// The class contains all the setup and state
 /// to initialize general analysis.
 class Project {
- public:
-  /// A constructor with project configurations for analysis.
-  /// Reads and validates the configurations.
-  ///
-  /// All relative paths in the configuration are resolved
-  /// with respect to the location of the original configuration file.
-  ///
-  /// @param[in] project_file  The path to the project file with configurations.
-  ///
-  /// @throws VersionError  The version required by the file is incompatible.
-  /// @throws ValidityError  The configurations have problems.
-  /// @throws SettingsError  Settings values contain errors.
-  /// @throws IOError  The file is not accessible.
-  explicit Project(const std::string& project_file);
+  public:
+    /// A constructor with project configurations for analysis.
+    /// Reads and validates the configurations.
+    ///
+    /// All relative paths in the configuration are resolved
+    /// with respect to the location of the original configuration file.
+    ///
+    /// @param[in] project_file  The path to the project file with configurations.
+    ///
+    /// @throws VersionError  The version required by the file is incompatible.
+    /// @throws ValidityError  The configurations have problems.
+    /// @throws SettingsError  Settings values contain errors.
+    /// @throws IOError  The file is not accessible.
+    explicit Project(const std::string &project_file);
 
-  /// @returns normalized, absolute paths to input files for analysis.
-  const std::vector<std::string>& input_files() const { return input_files_; }
+    /// @returns normalized, absolute paths to input files for analysis.
+    const std::vector<std::string> &input_files() const { return input_files_; }
 
-  /// @returns the settings for analysis.
-  const core::Settings& settings() const { return settings_; }
+    /// @returns the settings for analysis.
+    const core::Settings &settings() const { return settings_; }
 
- private:
-  /// Gathers input files with analysis constructs.
-  ///
-  /// @param[in] root  The root XML element.
-  /// @param[in] base_path  The base path for relative path resolution.
-  void GatherInputFiles(const xml::Element& root,
-                        const boost::filesystem::path& base_path);
+  private:
+    /// Gathers input files with analysis constructs.
+    ///
+    /// @param[in] root  The root XML element.
+    /// @param[in] base_path  The base path for relative path resolution.
+    void GatherInputFiles(const xml::Element &root, const boost::filesystem::path &base_path);
 
-  /// Gathers options for analysis.
-  ///
-  /// @param[in] root  The root XML element.
-  void GatherOptions(const xml::Element& root);
+    /// Gathers options for analysis.
+    ///
+    /// @param[in] root  The root XML element.
+    void GatherOptions(const xml::Element &root);
 
-  /// Extracts analysis types to be performed from analysis element.
-  ///
-  /// @param[in] analysis  Analysis element node.
-  void SetAnalysis(const xml::Element& analysis);
+    /// Extracts analysis types to be performed from analysis element.
+    ///
+    /// @param[in] analysis  Analysis element node.
+    void SetAnalysis(const xml::Element &analysis);
 
-  /// Extracts limits for analysis.
-  ///
-  /// @param[in] limits  An XML element containing various limits.
-  void SetLimits(const xml::Element& limits);
+    /// Extracts limits for analysis.
+    ///
+    /// @param[in] limits  An XML element containing various limits.
+    void SetLimits(const xml::Element &limits);
 
-  /// Container for input files for analysis.
-  /// These input files contain fault trees, events, etc.
-  std::vector<std::string> input_files_;
-  core::Settings settings_;  ///< Settings for specific analysis.
+    /// Container for input files for analysis.
+    /// These input files contain fault trees, events, etc.
+    std::vector<std::string> input_files_;
+    core::Settings settings_; ///< Settings for specific analysis.
 };
 
-}  // namespace scram
+} // namespace scram

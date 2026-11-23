@@ -25,53 +25,53 @@
 namespace scram::mef::test {
 
 TEST_CASE("FaultTreeTest.AddGate", "[mef::fault_tree]") {
-  FaultTree ft("never_fail");
-  Gate gate("Golden");
-  CHECK_NOTHROW(ft.Add(&gate));
-  CHECK_THROWS_AS(ft.Add(&gate), ValidityError);  // Trying to re-add.
+    FaultTree ft("never_fail");
+    Gate gate("Golden");
+    CHECK_NOTHROW(ft.Add(&gate));
+    CHECK_THROWS_AS(ft.Add(&gate), ValidityError); // Trying to re-add.
 
-  Gate gate_two("Iron");
-  CHECK_NOTHROW(ft.Add(&gate_two));  // No parent.
+    Gate gate_two("Iron");
+    CHECK_NOTHROW(ft.Add(&gate_two)); // No parent.
 }
 
 TEST_CASE("FaultTreeTest.AddBasicEvent", "[mef::fault_tree]") {
-  FaultTree ft("never_fail");
-  BasicEvent event("Golden");
-  CHECK_NOTHROW(ft.Add(&event));
-  CHECK_THROWS_AS(ft.Add(&event), ValidityError);  // Trying to re-add.
+    FaultTree ft("never_fail");
+    BasicEvent event("Golden");
+    CHECK_NOTHROW(ft.Add(&event));
+    CHECK_THROWS_AS(ft.Add(&event), ValidityError); // Trying to re-add.
 
-  BasicEvent event_two("Iron");
-  CHECK_NOTHROW(ft.Add(&event_two));  // No parent.
+    BasicEvent event_two("Iron");
+    CHECK_NOTHROW(ft.Add(&event_two)); // No parent.
 }
 
 TEST_CASE("FaultTreeTest.AddHouseEvent", "[mef::fault_tree]") {
-  FaultTree ft("never_fail");
-  HouseEvent event("Golden");
-  CHECK_NOTHROW(ft.Add(&event));
-  CHECK_THROWS_AS(ft.Add(&event), ValidityError);  // Trying to re-add.
+    FaultTree ft("never_fail");
+    HouseEvent event("Golden");
+    CHECK_NOTHROW(ft.Add(&event));
+    CHECK_THROWS_AS(ft.Add(&event), ValidityError); // Trying to re-add.
 
-  HouseEvent event_two("Iron");
-  CHECK_NOTHROW(ft.Add(&event_two));  // No parent.
+    HouseEvent event_two("Iron");
+    CHECK_NOTHROW(ft.Add(&event_two)); // No parent.
 }
 
 TEST_CASE("FaultTreeTest.AddCcfGroup", "[mef::fault_tree]") {
-  FaultTree ft("never_fail");
-  BetaFactorModel group("Golden");
-  CHECK_NOTHROW(ft.Add(&group));
-  CHECK_THROWS_AS(ft.Add(&group), DuplicateElementError);  // Trying to re-add.
+    FaultTree ft("never_fail");
+    BetaFactorModel group("Golden");
+    CHECK_NOTHROW(ft.Add(&group));
+    CHECK_THROWS_AS(ft.Add(&group), DuplicateElementError); // Trying to re-add.
 
-  BetaFactorModel group_two("Iron");
-  CHECK_NOTHROW(ft.Add(&group_two));
+    BetaFactorModel group_two("Iron");
+    CHECK_NOTHROW(ft.Add(&group_two));
 }
 
 TEST_CASE("FaultTreeTest.AddParameter", "[mef::fault_tree]") {
-  FaultTree ft("never_fail");
-  Parameter parameter("Golden");
-  CHECK_NOTHROW(ft.Add(&parameter));
-  CHECK_THROWS_AS(ft.Add(&parameter), ValidityError);
+    FaultTree ft("never_fail");
+    Parameter parameter("Golden");
+    CHECK_NOTHROW(ft.Add(&parameter));
+    CHECK_THROWS_AS(ft.Add(&parameter), ValidityError);
 
-  Parameter parameter_two("Iron");
-  CHECK_NOTHROW(ft.Add(&parameter_two));
+    Parameter parameter_two("Iron");
+    CHECK_NOTHROW(ft.Add(&parameter_two));
 }
 
-}  // namespace scram::mef::test
+} // namespace scram::mef::test

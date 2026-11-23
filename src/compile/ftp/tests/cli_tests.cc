@@ -19,111 +19,113 @@
 
 namespace {
 
-    namespace json = fuzzybits::compile::ftp::json;
+namespace json = fuzzybits::compile::ftp::json;
 
-    struct run_result final {
-        int status = -1;
-        std::string out;
-        std::string err;
-    };
+struct run_result final {
+    int status = -1;
+    std::string out;
+    std::string err;
+};
 
-    [[nodiscard]] auto quoted(std::string const &text) -> std::string {
+[[nodiscard]] auto quoted(std::string const &text) -> std::string {
 #ifdef _WIN32
-        return "\"" + text + "\"";
+    return "\"" + text + "\"";
 #else
-        return "'" + text + "'";
+    return "'" + text + "'";
 #endif
-    }
+}
 
-    [[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    }
+[[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
 
-    [[nodiscard]] auto run_fzb(std::string const &arguments, std::filesystem::path const &scratch) -> run_result {
-        const auto out_path = scratch / "fzb.out";
-        const auto err_path = scratch / "fzb.err";
-        const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " + quoted(err_path.string());
+[[nodiscard]] auto run_fzb(std::string const &arguments, std::filesystem::path const &scratch) -> run_result {
+    const auto out_path = scratch / "fzb.out";
+    const auto err_path = scratch / "fzb.err";
+    const auto command =
+        quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " + quoted(err_path.string());
 #ifdef _WIN32
-        const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
+    const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
 #else
-        const int status = std::system(command.c_str());
+    const int status = std::system(command.c_str());
 #endif
-        return run_result{.status = status, .out = read_file(out_path), .err = read_file(err_path)};
-    }
+    return run_result{.status = status, .out = read_file(out_path), .err = read_file(err_path)};
+}
 
-    [[nodiscard]] auto scratch_directory(std::string const &name) -> std::filesystem::path {
-        const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-compile-ftp-cli-" + name);
-        std::filesystem::remove_all(path);
-        std::filesystem::create_directories(path);
-        return path;
-    }
+[[nodiscard]] auto scratch_directory(std::string const &name) -> std::filesystem::path {
+    const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-compile-ftp-cli-" + name);
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
+    return path;
+}
 
-    [[nodiscard]] auto number_after(std::string const &text, std::string const &key) -> double {
-        const auto position = text.rfind(key);
-        INFO(text);
-        REQUIRE(position != std::string::npos);
-        return std::strtod(text.c_str() + position + key.size(), nullptr);
-    }
+[[nodiscard]] auto number_after(std::string const &text, std::string const &key) -> double {
+    const auto position = text.rfind(key);
+    INFO(text);
+    REQUIRE(position != std::string::npos);
+    return std::strtod(text.c_str() + position + key.size(), nullptr);
+}
 
-    [[nodiscard]] auto fixtures_root() -> std::filesystem::path {
-        return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
-    }
+[[nodiscard]] auto fixtures_root() -> std::filesystem::path {
+    return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
+}
 
-    [[nodiscard]] auto parse_file(std::filesystem::path const &path) -> json::value {
-        auto parsed = json::parse(read_file(path));
-        INFO(path.string());
-        REQUIRE(parsed);
-        return std::move(parsed).value();
-    }
+[[nodiscard]] auto parse_file(std::filesystem::path const &path) -> json::value {
+    auto parsed = json::parse(read_file(path));
+    INFO(path.string());
+    REQUIRE(parsed);
+    return std::move(parsed).value();
+}
 
-    // `fzb inspect --exact` of query 0.
-    [[nodiscard]] auto exact_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> double {
-        const auto inspected = run_fzb("inspect " + quoted(pcfb.string()) + " --validate --exact", scratch);
-        INFO(inspected.out << inspected.err);
-        REQUIRE(inspected.status == 0);
-        REQUIRE(inspected.err.find("validate: ok") != std::string::npos);
-        return number_after(inspected.out, "exact_probability");
-    }
+// `fzb inspect --exact` of query 0.
+[[nodiscard]] auto exact_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> double {
+    const auto inspected = run_fzb("inspect " + quoted(pcfb.string()) + " --validate --exact", scratch);
+    INFO(inspected.out << inspected.err);
+    REQUIRE(inspected.status == 0);
+    REQUIRE(inspected.err.find("validate: ok") != std::string::npos);
+    return number_after(inspected.out, "exact_probability");
+}
 
-    // The error ids a fixture expects, "io.ftp." prefixed.
-    [[nodiscard]] auto expected_errors(json::value const &outcome) -> std::multiset<std::string> {
-        std::multiset<std::string> out;
-        for (auto const &item : outcome.find("diagnostics")->items) {
-            if (item.find("severity")->string == "error") {
-                out.insert("io.ftp." + item.find("code")->string);
-            }
+// The error ids a fixture expects, "io.ftp." prefixed.
+[[nodiscard]] auto expected_errors(json::value const &outcome) -> std::multiset<std::string> {
+    std::multiset<std::string> out;
+    for (auto const &item : outcome.find("diagnostics")->items) {
+        if (item.find("severity")->string == "error") {
+            out.insert("io.ftp." + item.find("code")->string);
         }
-        return out;
     }
+    return out;
+}
 
-    [[nodiscard]] auto report_errors(std::filesystem::path const &report) -> std::multiset<std::string> {
-        const auto document = parse_file(report);
-        std::multiset<std::string> out;
-        for (auto const &item : document.find("diagnostics")->items) {
-            if (item.find("severity")->string == "error") {
-                out.insert(item.find("code")->string);
-            }
+[[nodiscard]] auto report_errors(std::filesystem::path const &report) -> std::multiset<std::string> {
+    const auto document = parse_file(report);
+    std::multiset<std::string> out;
+    for (auto const &item : document.find("diagnostics")->items) {
+        if (item.find("severity")->string == "error") {
+            out.insert(item.find("code")->string);
         }
-        return out;
     }
+    return out;
+}
 
-    void require_close(const double actual, const double expected) {
-        INFO("actual " << actual << " expected " << expected);
-        REQUIRE(std::abs(actual - expected) <= 1e-9 * std::abs(expected) + 1e-15);
-    }
+void require_close(const double actual, const double expected) {
+    INFO("actual " << actual << " expected " << expected);
+    REQUIRE(std::abs(actual - expected) <= 1e-9 * std::abs(expected) + 1e-15);
+}
 
-    [[nodiscard]] auto inputs_of(json::value const &spec, std::filesystem::path const &fixture) -> std::string {
-        std::string out;
-        for (auto const &file : spec.find("files")->items) {
-            out += " " + quoted((fixture / file.string).string());
-        }
-        return out;
+[[nodiscard]] auto inputs_of(json::value const &spec, std::filesystem::path const &fixture) -> std::string {
+    std::string out;
+    for (auto const &file : spec.find("files")->items) {
+        out += " " + quoted((fixture / file.string).string());
     }
+    return out;
+}
 
 } // namespace
 
-TEST_CASE("fzb compile --negation boolean reproduces the conformance values under fzb inspect --exact", "[compile][ftp][cli][conformance]") {
+TEST_CASE("fzb compile --negation boolean reproduces the conformance values under fzb inspect --exact",
+          "[compile][ftp][cli][conformance]") {
     std::vector<std::filesystem::path> fixtures;
     for (auto const &entry : std::filesystem::directory_iterator(fixtures_root())) {
         if (entry.is_directory() && std::filesystem::is_regular_file(entry.path() / "expected.json")) {
@@ -148,7 +150,8 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                 auto const &outcome = spec.find("policies")->items[policy_index];
                 INFO("policy " << policy);
                 std::filesystem::remove(pcfb);
-                const auto base = "compile" + inputs + " --negation boolean --max-initiators-per-cutset none --duplicate-import " + policy +
+                const auto base = "compile" + inputs +
+                                  " --negation boolean --max-initiators-per-cutset none --duplicate-import " + policy +
                                   " --no-progress -o " + quoted(pcfb.string()) + " --report " + quoted(report.string());
 
                 if (outcome.find("results")->is(json::value::kind_type::null)) {
@@ -186,19 +189,23 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                     std::string flags;
                     if (auto const *overrides = variant.find("overrides")) {
                         for (std::size_t index = 0; index < overrides->keys.size(); ++index) {
-                            flags += " --override " + quoted(overrides->keys[index] + "=" + std::to_string(overrides->items[index].integer));
+                            flags += " --override " + quoted(overrides->keys[index] + "=" +
+                                                             std::to_string(overrides->items[index].integer));
                         }
                     }
                     flags += " --max-initiators-per-cutset ";
-                    flags += variant.find("max_initiators_per_cutset") != nullptr ? std::to_string(variant.find("max_initiators_per_cutset")->integer)
-                                                                                    : "none";
+                    flags += variant.find("max_initiators_per_cutset") != nullptr
+                                 ? std::to_string(variant.find("max_initiators_per_cutset")->integer)
+                                 : "none";
                     auto const &results = variant.find("results");
                     for (std::size_t index = 0; index < results->items.size(); ++index) {
                         const auto &target = results->keys[index];
                         INFO("variant target " << target << flags);
-                        const auto ran = run_fzb("compile" + inputs + " --negation boolean --duplicate-import " + variant.find("policy")->string +
-                                                     flags + " --no-progress --target " + quoted(target) + " -o " + quoted(pcfb.string()),
-                                                 scratch);
+                        const auto ran =
+                            run_fzb("compile" + inputs + " --negation boolean --duplicate-import " +
+                                        variant.find("policy")->string + flags + " --no-progress --target " +
+                                        quoted(target) + " -o " + quoted(pcfb.string()),
+                                    scratch);
                         INFO(ran.err);
                         REQUIRE(ran.status == 0);
                         require_close(exact_of(pcfb, scratch), results->items[index].find("boolean")->number);
@@ -218,9 +225,11 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     const auto out = scratch / "m.pcfb";
     // No complemented event: no marked literals, so the default hull target can be written.
     const auto model = scratch / "m.ftp";
-    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    std::ofstream(model)
+        << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
-    const auto ran = run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch);
+    const auto ran =
+        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
     auto inspected = run_fzb("inspect " + quoted(out.string()) + " --validate --json", scratch);
@@ -234,7 +243,8 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset")->string == "1");
 
     // --negation boolean: a minor-1 file, which the exact evaluator still reads.
-    const auto boolean = run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch);
+    const auto boolean = run_fzb(
+        "compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch);
     REQUIRE(boolean.status == 0);
     summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
@@ -244,7 +254,9 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     // Both kinds on one target: two queries with the target's name.
     const auto config = scratch / "both.json";
     std::ofstream(config) << R"({"targets": [{"name": "TOP", "negation": "both"}]})";
-    const auto both = run_fzb("compile " + quoted(model.string()) + " --config " + quoted(config.string()) + " --no-progress -o " + quoted(out.string()), scratch);
+    const auto both = run_fzb("compile " + quoted(model.string()) + " --config " + quoted(config.string()) +
+                                  " --no-progress -o " + quoted(out.string()),
+                              scratch);
     INFO(both.err);
     REQUIRE(both.status == 0);
     summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
@@ -255,7 +267,8 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile refuses hull targets with marked literals and says how to proceed", "[compile][ftp][cli][hull]") {
+TEST_CASE("fzb compile refuses hull targets with marked literals and says how to proceed",
+          "[compile][ftp][cli][hull]") {
     const auto scratch = scratch_directory("literals");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
     const auto out = (scratch / "m.pcfb");
@@ -282,8 +295,11 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     const auto scratch = scratch_directory("run");
     const auto model = scratch / "m.ftp";
     const auto out = scratch / "m.pcfb";
-    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
-    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status == 0);
+    std::ofstream(model)
+        << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    REQUIRE(
+        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
+        0);
     const auto run = run_fzb("run " + quoted(out.string()) + " --trials 1024 --backend omp", scratch);
     INFO(run.err);
     REQUIRE(run.status != 0);
@@ -292,7 +308,10 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     REQUIRE(run.out.find("estimate") == std::string::npos);
 
     // The same model as a Boolean file runs.
-    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch).status == 0);
+    REQUIRE(
+        run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()),
+                scratch)
+            .status == 0);
     const auto boolean = run_fzb("run " + quoted(out.string()) + " --trials 65536 --backend omp --json", scratch);
     INFO(boolean.err);
     REQUIRE(boolean.status == 0);
@@ -305,11 +324,12 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     const auto pcfb = scratch / "m.pcfb";
     const auto report = scratch / "report.json";
     const auto config = scratch / "config.json";
-    std::ofstream(config) << R"({"negation": "boolean", "max_initiators_per_cutset": null, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
+    std::ofstream(config)
+        << R"({"negation": "boolean", "max_initiators_per_cutset": null, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
 
     // The file alone: no initiator rule, SEQ-3 first with OPER forced FALSE.
-    auto ran = run_fzb("compile " + model + " --config " + quoted(config.string()) + " --no-progress -o " + quoted(pcfb.string()) + " --report " +
-                           quoted(report.string()),
+    auto ran = run_fzb("compile " + model + " --config " + quoted(config.string()) + " --no-progress -o " +
+                           quoted(pcfb.string()) + " --report " + quoted(report.string()),
                        scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
@@ -321,14 +341,17 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
         REQUIRE(document.find("options")->find("targets")->items.size() == 2);
         REQUIRE(document.find("options")->find("overrides")->items[0].find("name")->string == "OPER");
         REQUIRE(document.find("lowering")->find("overridden_elements")->integer == 1);
-        REQUIRE(document.find("circuit")->find("nodes_after")->integer <= document.find("circuit")->find("nodes_before")->integer);
+        REQUIRE(document.find("circuit")->find("nodes_after")->integer <=
+                document.find("circuit")->find("nodes_before")->integer);
         REQUIRE(document.find("passes")->items.size() >= 4);
         REQUIRE(document.find("source")->find("files")->items.size() == 1);
     }
 
     // Flags override the file: another target, the initiator rule on, the override flipped.
-    ran = run_fzb("compile " + model + " --config " + quoted(config.string()) + " --target SEQ-4 --target TOP --max-initiators-per-cutset 1 --override OPER=1 "
-                      "--no-progress -c 0 -o " + quoted(pcfb.string()) + " --report " + quoted(report.string()),
+    ran = run_fzb("compile " + model + " --config " + quoted(config.string()) +
+                      " --target SEQ-4 --target TOP --max-initiators-per-cutset 1 --override OPER=1 "
+                      "--no-progress -c 0 -o " +
+                      quoted(pcfb.string()) + " --report " + quoted(report.string()),
                   scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
@@ -380,7 +403,8 @@ TEST_CASE("fzb compile takes several files and a directory as one project", "[co
     const auto scratch = scratch_directory("project");
     const auto directory = fixtures_root() / "multi_file_project";
     const auto pcfb = scratch / "p.pcfb";
-    const auto flags = std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
+    const auto flags =
+        std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
 
     const auto by_directory = run_fzb("compile " + quoted(directory.string()) + flags, scratch);
     INFO(by_directory.err);
@@ -392,7 +416,8 @@ TEST_CASE("fzb compile takes several files and a directory as one project", "[co
         return summary.value().find("metadata")->find("general.source_sha256")->string;
     };
     const auto first = digest();
-    const auto scrambled = run_fzb("compile " + quoted((directory / "03_imports.ftp").string()) + " " + quoted((directory / "01_top.ftp").string()) + " " +
+    const auto scrambled = run_fzb("compile " + quoted((directory / "03_imports.ftp").string()) + " " +
+                                       quoted((directory / "01_top.ftp").string()) + " " +
                                        quoted((directory / "02_systems.ftp").string()) + flags,
                                    scratch);
     REQUIRE(scrambled.status == 0);
@@ -430,45 +455,46 @@ TEST_CASE("fzb compile rejects bad FTP options and mixed inputs", "[compile][ftp
 
 namespace {
 
-    // `std::system` reports the wait status on POSIX.
-    [[nodiscard]] auto exit_code(run_result const &ran) -> int {
+// `std::system` reports the wait status on POSIX.
+[[nodiscard]] auto exit_code(run_result const &ran) -> int {
 #ifdef _WIN32
-        return ran.status;
+    return ran.status;
 #else
-        return ran.status >> 8;
+    return ran.status >> 8;
 #endif
-    }
+}
 
-    constexpr const char *kDeprecatedCcf =
-        "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable";
+constexpr const char *kDeprecatedCcf =
+    "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable";
 
-    [[nodiscard]] auto ccf_model() -> std::string {
-        return quoted((std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "input" / "core" / "beta_factor_ccf.xml").string());
-    }
+[[nodiscard]] auto ccf_model() -> std::string {
+    return quoted(
+        (std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "input" / "core" / "beta_factor_ccf.xml").string());
+}
 
-    [[nodiscard]] auto count_of(std::string const &text, std::string const &needle) -> std::size_t {
-        std::size_t count = 0;
-        for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
-            ++count;
-        }
-        return count;
+[[nodiscard]] auto count_of(std::string const &text, std::string const &needle) -> std::size_t {
+    std::size_t count = 0;
+    for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
+        ++count;
     }
+    return count;
+}
 
-    [[nodiscard]] auto summary_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> json::value {
-        const auto inspected = run_fzb("inspect " + quoted(pcfb.string()) + " --json", scratch);
-        REQUIRE(inspected.status == 0);
-        auto parsed = json::parse(inspected.out);
-        REQUIRE(parsed);
-        return std::move(parsed).value();
-    }
+[[nodiscard]] auto summary_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> json::value {
+    const auto inspected = run_fzb("inspect " + quoted(pcfb.string()) + " --json", scratch);
+    REQUIRE(inspected.status == 0);
+    auto parsed = json::parse(inspected.out);
+    REQUIRE(parsed);
+    return std::move(parsed).value();
+}
 
-    [[nodiscard]] auto query_names_of(json::value const &summary) -> std::vector<std::string> {
-        std::vector<std::string> out;
-        for (auto const &item : summary.find("query_names")->items) {
-            out.push_back(item.string);
-        }
-        return out;
+[[nodiscard]] auto query_names_of(json::value const &summary) -> std::vector<std::string> {
+    std::vector<std::string> out;
+    for (auto const &item : summary.find("query_names")->items) {
+        out.push_back(item.string);
     }
+    return out;
+}
 
 } // namespace
 
@@ -549,35 +575,42 @@ TEST_CASE("fzb compile accepts --no-ccf and the deprecated --ccf for FTP input",
 TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][ftp][cli][target]") {
     const auto scratch = scratch_directory("name-files");
     const auto model = scratch / "model.ftp";
-    std::ofstream(model) << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    std::ofstream(model)
+        << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
     const auto targets = scratch / "targets.txt";
     // Blank lines, surrounding blanks and CRLF line ends are dropped; there is no comment syntax and no comma split.
     std::ofstream(targets, std::ios::binary) << "  G1 \r\n\r\n\nE1\r\n";
     const auto watched = scratch / "watch.txt";
     std::ofstream(watched) << "E3\n";
     const auto pcfb = scratch / "m.pcfb";
-    const auto flags = std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
+    const auto flags =
+        std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
 
     // Plain names and files mix; file contents expand in place.
-    auto ran = run_fzb("compile " + quoted(model.string()) + " --target TOP --target @" + quoted(targets.string()) + " --target E2 --watch @" +
-                           quoted(watched.string()) + flags,
+    auto ran = run_fzb("compile " + quoted(model.string()) + " --target TOP --target @" + quoted(targets.string()) +
+                           " --target E2 --watch @" + quoted(watched.string()) + flags,
                        scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
     REQUIRE(query_names_of(summary_of(pcfb, scratch)) == std::vector<std::string>{"TOP", "G1", "E1", "E2", "E3"});
 
-    ran = run_fzb("compile " + quoted(model.string()) + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    ran = run_fzb("compile " + quoted(model.string()) + " --target @" + quoted((scratch / "missing.txt").string()) +
+                      flags,
+                  scratch);
     INFO(ran.err);
     REQUIRE(exit_code(ran) == 1);
     REQUIRE(ran.err.find("cannot read " + (scratch / "missing.txt").string()) != std::string::npos);
-    ran = run_fzb("compile " + quoted(model.string()) + " --watch @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    ran =
+        run_fzb("compile " + quoted(model.string()) + " --watch @" + quoted((scratch / "missing.txt").string()) + flags,
+                scratch);
     REQUIRE(exit_code(ran) == 1);
 
     // A file without names must not fall back to every PROCESS target; neither may a directory.
     const auto empty = scratch / "empty.txt";
     std::ofstream(empty) << "\n  \r\n";
     for (auto const &flag : {"--target", "--watch"}) {
-        ran = run_fzb("compile " + quoted(model.string()) + " " + flag + " @" + quoted(empty.string()) + flags, scratch);
+        ran =
+            run_fzb("compile " + quoted(model.string()) + " " + flag + " @" + quoted(empty.string()) + flags, scratch);
         INFO(ran.err);
         REQUIRE(exit_code(ran) == 1);
         REQUIRE(ran.err.find("fzb compile: " + empty.string() + " lists no names") != std::string::npos);
@@ -588,7 +621,8 @@ TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][
     REQUIRE(ran.err.find(scratch.string() + " is not a regular file") != std::string::npos);
 
     // The FTP driver rejects a repeated target; so does an expanded one.
-    ran = run_fzb("compile " + quoted(model.string()) + " --target G1 --target @" + quoted(targets.string()) + flags, scratch);
+    ran = run_fzb("compile " + quoted(model.string()) + " --target G1 --target @" + quoted(targets.string()) + flags,
+                  scratch);
     INFO(ran.err);
     REQUIRE(exit_code(ran) == 1);
     REQUIRE(ran.err.find("compile.pra_to_pc.duplicate-target") != std::string::npos);
@@ -606,7 +640,9 @@ TEST_CASE("fzb compile MEF input takes one target and watches from @FILE", "[com
     const auto watched = scratch / "watch.txt";
     std::ofstream(watched) << "TrainOne\r\nTrainTwo\r\n";
 
-    auto ran = run_fzb("compile " + ccf_model() + " --target @" + quoted(one.string()) + " --watch @" + quoted(watched.string()) + flags, scratch);
+    auto ran = run_fzb("compile " + ccf_model() + " --target @" + quoted(one.string()) + " --watch @" +
+                           quoted(watched.string()) + flags,
+                       scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
     const auto names = query_names_of(summary_of(pcfb, scratch));
@@ -614,14 +650,17 @@ TEST_CASE("fzb compile MEF input takes one target and watches from @FILE", "[com
     REQUIRE(names[1] == "TrainOne");
     REQUIRE(names[2] == "TrainTwo");
 
-    const auto several = "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF reader (#148)";
-    for (auto const &arguments : std::vector<std::string>{" --target TopEvent --target TrainOne", " --target @" + quoted(two.string())}) {
+    const auto several =
+        "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF reader (#148)";
+    for (auto const &arguments :
+         std::vector<std::string>{" --target TopEvent --target TrainOne", " --target @" + quoted(two.string())}) {
         ran = run_fzb("compile " + ccf_model() + arguments + flags, scratch);
         INFO(arguments << "\n" << ran.err);
         REQUIRE(exit_code(ran) == 1);
         REQUIRE(ran.err.find(several) != std::string::npos);
     }
-    ran = run_fzb("compile " + ccf_model() + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
+    ran =
+        run_fzb("compile " + ccf_model() + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
     REQUIRE(exit_code(ran) == 1);
     REQUIRE(ran.err.find("cannot read " + (scratch / "missing.txt").string()) != std::string::npos);
 

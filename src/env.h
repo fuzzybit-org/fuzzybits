@@ -31,12 +31,12 @@
 namespace scram::env {
 
 /// @returns The embedded RELAX NG schema content for project files.
-const std::string_view& project_schema();
+const std::string_view &project_schema();
 
 /// @returns The embedded RELAX NG schema content for input files.
-const std::string_view& input_schema();
+const std::string_view &input_schema();
 
 /// @returns The embedded RELAX NG schema content for output report files.
-const std::string_view& report_schema();
+const std::string_view &report_schema();
 
-}  // namespace scram::env
+} // namespace scram::env

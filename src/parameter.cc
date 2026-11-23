@@ -28,16 +28,16 @@ namespace scram::mef {
 MissionTime::MissionTime(double time, Units unit) : unit_(unit) { value(time); }
 
 void MissionTime::value(double time) {
-  if (time < 0)
-    SCRAM_THROW(LogicError("Mission time cannot be negative."));
-  value_ = time;
+    if (time < 0)
+        SCRAM_THROW(LogicError("Mission time cannot be negative."));
+    value_ = time;
 }
 
-void Parameter::expression(Expression* expression) {
-  if (expression_)
-    SCRAM_THROW(LogicError("Parameter expression is already set."));
-  expression_ = expression;
-  Expression::AddArg(expression);
+void Parameter::expression(Expression *expression) {
+    if (expression_)
+        SCRAM_THROW(LogicError("Parameter expression is already set."));
+    expression_ = expression;
+    Expression::AddArg(expression);
 }
 
-}  // namespace scram::mef
+} // namespace scram::mef

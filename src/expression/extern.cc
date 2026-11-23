@@ -27,13 +27,12 @@ namespace fs = boost::filesystem;
 
 namespace scram::mef {
 
-ExternLibrary::ExternLibrary(std::string name, std::string lib_path,
-                             const fs::path& reference_dir, bool system,
+ExternLibrary::ExternLibrary(std::string name, std::string lib_path, const fs::path &reference_dir, bool system,
                              bool decorate)
     : Element(std::move(name)) {
-  fs::path fs_path(lib_path);
-  std::string filename = fs_path.filename().string();
-  // clang-format off
+    fs::path fs_path(lib_path);
+    std::string filename = fs_path.filename().string();
+    // clang-format off
   if (fs_path.empty() ||
       filename == "." ||
       filename == ".." ||
@@ -44,25 +43,24 @@ ExternLibrary::ExternLibrary(std::string name, std::string lib_path,
         << errinfo_value(lib_path)
         << errinfo_element(Element::name(), kTypeString);
   }
-  // clang-format on
+    // clang-format on
 
-  boost::dll::load_mode::type load_type = boost::dll::load_mode::default_mode;
-  if (decorate)
-    load_type |= boost::dll::load_mode::append_decorations;
-  if (system)
-    load_type |= boost::dll::load_mode::search_system_folders;
+    boost::dll::load_mode::type load_type = boost::dll::load_mode::default_mode;
+    if (decorate)
+        load_type |= boost::dll::load_mode::append_decorations;
+    if (system)
+        load_type |= boost::dll::load_mode::search_system_folders;
 
-  fs::path ref_path = lib_path;
-  if (!system || ref_path.has_parent_path())
-    ref_path = fs::absolute(ref_path, reference_dir);
+    fs::path ref_path = lib_path;
+    if (!system || ref_path.has_parent_path())
+        ref_path = fs::absolute(ref_path, reference_dir);
 
-  try {
-    lib_handle_.load(ref_path, load_type);
-  } catch (const boost::system::system_error& err) {
-    SCRAM_THROW(DLError(err.what()))
-        << boost::errinfo_nested_exception(boost::current_exception())
-        << errinfo_element(Element::name(), kTypeString);
-  }
+    try {
+        lib_handle_.load(ref_path, load_type);
+    } catch (const boost::system::system_error &err) {
+        SCRAM_THROW(DLError(err.what())) << boost::errinfo_nested_exception(boost::current_exception())
+                                         << errinfo_element(Element::name(), kTypeString);
+    }
 }
 
-}  // namespace scram::mef
+} // namespace scram::mef

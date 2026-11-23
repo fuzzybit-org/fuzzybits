@@ -24,99 +24,102 @@
 
 namespace {
 
-    namespace ftp = fuzzybits::compile::ftp;
-    namespace json = fuzzybits::compile::ftp::json;
-    namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
-    using fuzzybits::api::diagnostic_list;
+namespace ftp = fuzzybits::compile::ftp;
+namespace json = fuzzybits::compile::ftp::json;
+namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
+using fuzzybits::api::diagnostic_list;
 
-    constexpr auto simple = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+constexpr auto simple =
+    "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
-    [[nodiscard]] auto render(diagnostic_list const &diagnostics) -> std::string {
-        std::ostringstream out;
-        for (auto const &item : diagnostics.items()) {
-            out << item.code << ": " << item.message << '\n';
+[[nodiscard]] auto render(diagnostic_list const &diagnostics) -> std::string {
+    std::ostringstream out;
+    for (auto const &item : diagnostics.items()) {
+        out << item.code << ": " << item.message << '\n';
+    }
+    return out.str();
+}
+
+[[nodiscard]] auto has_code(diagnostic_list const &diagnostics, std::string_view code) -> bool {
+    return std::ranges::any_of(diagnostics.items(), [code](auto const &item) { return item.code == code; });
+}
+
+[[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+[[nodiscard]] auto fixture(std::string_view name) -> std::filesystem::path {
+    return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / name;
+}
+
+[[nodiscard]] auto sources_of(std::vector<std::pair<std::string, std::string>> files)
+    -> std::vector<reader::source_text> {
+    std::vector<reader::source_text> out;
+    for (auto &[path, text] : files) {
+        out.push_back(reader::source_text{.path = std::move(path), .text = std::move(text)});
+    }
+    return out;
+}
+
+[[nodiscard]] auto boolean_options() -> ftp::options {
+    ftp::options options;
+    options.negation = "boolean";
+    return options;
+}
+
+[[nodiscard]] auto compile_text(std::string text, ftp::options const &options) -> ftp::compile_result {
+    const auto sources = sources_of({{"m.ftp", std::move(text)}});
+    return ftp::compile_sources(sources, options);
+}
+
+[[nodiscard]] auto compile_ok(std::string text, ftp::options const &options) -> ftp::compiled {
+    auto result = compile_text(std::move(text), options);
+    INFO(render(result.diagnostics()));
+    REQUIRE(result);
+    return std::move(result).value();
+}
+
+[[nodiscard]] auto view(std::vector<std::byte> const &bytes) -> ::pcfb::ir::Circuit {
+    auto circuit = ::pcfb::io::from_bytes(bytes);
+    INFO((circuit ? std::string{} : circuit.error().message));
+    REQUIRE(circuit);
+    const auto diagnostics = ::pcfb::validate(*circuit);
+    REQUIRE(diagnostics.empty());
+    return *circuit;
+}
+
+[[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, char const *key) -> std::optional<std::string> {
+    auto const *entry = circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key);
+    if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
+        return std::nullopt;
+    }
+    return entry->value_as_StringValue()->value()->str();
+}
+
+[[nodiscard]] auto query_names(::pcfb::ir::Circuit const &circuit) -> std::vector<std::string> {
+    std::vector<std::string> out;
+    for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
+        out.push_back(query->name() == nullptr ? std::string{} : query->name()->str());
+    }
+    return out;
+}
+
+[[nodiscard]] auto sample_names(::pcfb::ir::Circuit const &circuit) -> std::set<std::string> {
+    std::set<std::string> out;
+    for (auto const *op : *circuit->subcircuits()->Get(0)->operators()) {
+        if (op->opcode() == ::pcfb::OpCode::SAMPLE && op->args_as_SampleArgs() != nullptr &&
+            op->args_as_SampleArgs()->name() != nullptr) {
+            out.insert(op->args_as_SampleArgs()->name()->str());
         }
-        return out.str();
     }
+    return out;
+}
 
-    [[nodiscard]] auto has_code(diagnostic_list const &diagnostics, std::string_view code) -> bool {
-        return std::ranges::any_of(diagnostics.items(), [code](auto const &item) { return item.code == code; });
-    }
-
-    [[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        REQUIRE(input);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    }
-
-    [[nodiscard]] auto fixture(std::string_view name) -> std::filesystem::path {
-        return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / name;
-    }
-
-    [[nodiscard]] auto sources_of(std::vector<std::pair<std::string, std::string>> files) -> std::vector<reader::source_text> {
-        std::vector<reader::source_text> out;
-        for (auto &[path, text] : files) {
-            out.push_back(reader::source_text{.path = std::move(path), .text = std::move(text)});
-        }
-        return out;
-    }
-
-    [[nodiscard]] auto boolean_options() -> ftp::options {
-        ftp::options options;
-        options.negation = "boolean";
-        return options;
-    }
-
-    [[nodiscard]] auto compile_text(std::string text, ftp::options const &options) -> ftp::compile_result {
-        const auto sources = sources_of({{"m.ftp", std::move(text)}});
-        return ftp::compile_sources(sources, options);
-    }
-
-    [[nodiscard]] auto compile_ok(std::string text, ftp::options const &options) -> ftp::compiled {
-        auto result = compile_text(std::move(text), options);
-        INFO(render(result.diagnostics()));
-        REQUIRE(result);
-        return std::move(result).value();
-    }
-
-    [[nodiscard]] auto view(std::vector<std::byte> const &bytes) -> ::pcfb::ir::Circuit {
-        auto circuit = ::pcfb::io::from_bytes(bytes);
-        INFO((circuit ? std::string{} : circuit.error().message));
-        REQUIRE(circuit);
-        const auto diagnostics = ::pcfb::validate(*circuit);
-        REQUIRE(diagnostics.empty());
-        return *circuit;
-    }
-
-    [[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, char const *key) -> std::optional<std::string> {
-        auto const *entry = circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key);
-        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
-            return std::nullopt;
-        }
-        return entry->value_as_StringValue()->value()->str();
-    }
-
-    [[nodiscard]] auto query_names(::pcfb::ir::Circuit const &circuit) -> std::vector<std::string> {
-        std::vector<std::string> out;
-        for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
-            out.push_back(query->name() == nullptr ? std::string{} : query->name()->str());
-        }
-        return out;
-    }
-
-    [[nodiscard]] auto sample_names(::pcfb::ir::Circuit const &circuit) -> std::set<std::string> {
-        std::set<std::string> out;
-        for (auto const *op : *circuit->subcircuits()->Get(0)->operators()) {
-            if (op->opcode() == ::pcfb::OpCode::SAMPLE && op->args_as_SampleArgs() != nullptr && op->args_as_SampleArgs()->name() != nullptr) {
-                out.insert(op->args_as_SampleArgs()->name()->str());
-            }
-        }
-        return out;
-    }
-
-    [[nodiscard]] auto exact(ftp::compiled const &compiled, const std::uint32_t query = 0) -> double {
-        return fuzzybits::compile::exact_probability(view(compiled.bytes), query);
-    }
+[[nodiscard]] auto exact(ftp::compiled const &compiled, const std::uint32_t query = 0) -> double {
+    return fuzzybits::compile::exact_probability(view(compiled.bytes), query);
+}
 
 } // namespace
 
@@ -232,10 +235,12 @@ TEST_CASE("--negation boolean writes minor-1 Boolean files", "[compile][ftp][hul
 }
 
 TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compile][ftp][hull]") {
-    const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
+    const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  "
+                      "2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
     ftp::options options;
     options.max_initiators_per_cutset = std::optional<std::uint32_t>{};
-    options.config = R"({"targets": [{"name": "TOP", "negation": "both"}, {"name": "W1", "negation": "hull"}, {"name": "U1", "negation": "boolean"}]})";
+    options.config =
+        R"({"targets": [{"name": "TOP", "negation": "both"}, {"name": "W1", "negation": "hull"}, {"name": "U1", "negation": "boolean"}]})";
     for (const int level : {0, 1}) {
         options.level = level;
         const auto compiled = compile_ok(text, options);
@@ -243,11 +248,14 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
         INFO("level " << level);
         REQUIRE(circuit.schema_version() == minor_2);
         REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP", "TOP", "W1", "U1"});
-        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
-                                                                      ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, ::pcfb::QueryKind::PROBABILITY});
+        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY,
+                                                                       ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                                                       ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                                                       ::pcfb::QueryKind::PROBABILITY});
         const std::vector<std::string> negations{"boolean", "monotone_hull", "monotone_hull", "boolean"};
         for (std::size_t index = 0; index < negations.size(); ++index) {
-            REQUIRE(string_meta(circuit, ("compile.query." + std::to_string(index) + ".negation").c_str()) == negations[index]);
+            REQUIRE(string_meta(circuit, ("compile.query." + std::to_string(index) + ".negation").c_str()) ==
+                    negations[index]);
         }
         // The Boolean file of the same targets and level, for the function the queries share.
         auto boolean = options;
@@ -276,7 +284,9 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
         REQUIRE_FALSE(refused);
         REQUIRE(has_code(refused.diagnostics(), "compile.pra_to_pc.hull-literals-unsupported"));
         REQUIRE(has_code(refused.diagnostics(), "compile.ftp.hull-literals-unsupported"));
-        const auto hint = std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) { return item.code == "compile.ftp.hull-literals-unsupported"; });
+        const auto hint = std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) {
+            return item.code == "compile.ftp.hull-literals-unsupported";
+        });
         REQUIRE(hint->message.find("--literals negation") != std::string::npos);
         REQUIRE(hint->message.find("--negation boolean") != std::string::npos);
     }
@@ -414,14 +424,16 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     options = boolean_options();
     options.overrides = {ftp::override_spec{.name = "NOPE", .value = true}};
     fails(options, "compile.pra_to_pc.unknown-element");
-    for (const char *config : {"{", "", R"({"negation": "boolean", "negation": "hull"})", R"({"negation": "boolean"} trailing)", "[1e999]"}) {
+    for (const char *config : {"{", "", R"({"negation": "boolean", "negation": "hull"})",
+                               R"({"negation": "boolean"} trailing)", "[1e999]"}) {
         INFO(config);
         options = boolean_options();
         options.config = config;
         fails(options, "compile.ftp.invalid-json");
     }
-    for (const char *config : {"[]", R"({"typo": 1})", R"({"negation": "maybe"})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
-                               R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})"}) {
+    for (const char *config :
+         {"[]", R"({"typo": 1})", R"({"negation": "maybe"})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
+          R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})"}) {
         INFO(config);
         options = boolean_options();
         options.config = config;
@@ -449,7 +461,8 @@ TEST_CASE("overrides, watch targets and element targets are lowered", "[compile]
 
 TEST_CASE("target and event names survive C1", "[compile][ftp][names]") {
     // Single-input gates and constant folding remove nodes; names stay on the nodes that compute them.
-    const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
+    const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  "
+                      "2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
     auto c0 = boolean_options();
     c0.level = 0;
     c0.targets = {"TOP", "W1", "U1", "W2"};
@@ -573,7 +586,8 @@ TEST_CASE("FTP gates keep their shape through the lowering", "[compile][ftp][low
         return std::move(lowered).value();
     };
 
-    const auto simple_lowering = lower("TOP + A MID\nMID * B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\nLIMIT 1.0E-05\n");
+    const auto simple_lowering = lower(
+        "TOP + A MID\nMID * B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\nLIMIT 1.0E-05\n");
     auto const &circuit = simple_lowering.circuit;
     REQUIRE(circuit.node_count() == 5);
     REQUIRE(circuit.edge_count() == 4);

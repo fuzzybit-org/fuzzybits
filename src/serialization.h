@@ -38,7 +38,7 @@ namespace scram::mef {
 /// @param[in,out] out  The stream for XML data.
 ///
 /// @throws IOError  The write operation has failed.
-void Serialize(const Model& model, std::FILE* out);
+void Serialize(const Model &model, std::FILE *out);
 
 /// Convenience function for serialization into a file.
 ///
@@ -47,6 +47,6 @@ void Serialize(const Model& model, std::FILE* out);
 ///
 /// @throws IOError  The output file is not accessible,
 ///                  or the write operation has failed.
-void Serialize(const Model& model, const std::string& file);
+void Serialize(const Model &model, const std::string &file);
 
-}  // namespace scram::mef
+} // namespace scram::mef

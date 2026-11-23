@@ -33,46 +33,46 @@ namespace scram::core {
 
 /// Base abstract class for all analysis with settings.
 class Analysis : private boost::noncopyable {
- public:
-  /// @param[in] settings  Analysis settings for all calculations.
-  explicit Analysis(Settings settings);
+  public:
+    /// @param[in] settings  Analysis settings for all calculations.
+    explicit Analysis(Settings settings);
 
-  virtual ~Analysis() = 0;  ///< Abstract class.
+    virtual ~Analysis() = 0; ///< Abstract class.
 
-  /// @returns Analysis settings.
-  const Settings& settings() const { return settings_; }
+    /// @returns Analysis settings.
+    const Settings &settings() const { return settings_; }
 
-  /// @returns Warnings generated upon analysis.
-  const std::string& warnings() const { return warnings_; }
+    /// @returns Warnings generated upon analysis.
+    const std::string &warnings() const { return warnings_; }
 
-  /// @returns Time taken by the analysis.
-  double analysis_time() const { return analysis_time_; }
+    /// @returns Time taken by the analysis.
+    double analysis_time() const { return analysis_time_; }
 
- protected:
-  /// @returns Modifiable analysis settings.
-  Settings& settings() { return settings_; }
+  protected:
+    /// @returns Modifiable analysis settings.
+    Settings &settings() { return settings_; }
 
-  /// Appends a warning message to the analysis warnings.
-  /// Warnings are separated by spaces.
-  ///
-  /// @param[in] msg  Informative message without special characters.
-  void AddWarning(std::string msg) {
-    assert(!msg.empty() && "Warnings cannot be empty.");
-    warnings_ += (warnings_.empty() ? "" : "; ") + msg;
-  }
+    /// Appends a warning message to the analysis warnings.
+    /// Warnings are separated by spaces.
+    ///
+    /// @param[in] msg  Informative message without special characters.
+    void AddWarning(std::string msg) {
+        assert(!msg.empty() && "Warnings cannot be empty.");
+        warnings_ += (warnings_.empty() ? "" : "; ") + msg;
+    }
 
-  /// Adds time to the total analysis time.
-  ///
-  /// @param[in] time  Additional time spent on analysis.
-  void AddAnalysisTime(double time) {
-    assert(time >= 0 && "Cannot subtract time.");
-    analysis_time_ += time;
-  }
+    /// Adds time to the total analysis time.
+    ///
+    /// @param[in] time  Additional time spent on analysis.
+    void AddAnalysisTime(double time) {
+        assert(time >= 0 && "Cannot subtract time.");
+        analysis_time_ += time;
+    }
 
- private:
-  Settings settings_;  ///< All settings for analysis.
-  double analysis_time_;  ///< Time taken by the analysis.
-  std::string warnings_;  ///< Generated warnings in analysis.
+  private:
+    Settings settings_;    ///< All settings for analysis.
+    double analysis_time_; ///< Time taken by the analysis.
+    std::string warnings_; ///< Generated warnings in analysis.
 };
 
-}  // namespace scram::core
+} // namespace scram::core

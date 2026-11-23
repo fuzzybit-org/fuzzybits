@@ -23,19 +23,19 @@ namespace scram::core::test {
 // Benchmark Tests for HIPPS fault tree from XFTA.
 // @todo Test Safety Integrity Level analysis.
 TEST_P(RiskAnalysisTest, HIPPS) {
-  std::vector<std::string> input_files{"input/HIPPS/HIPPS.xml"};
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(ProcessInputFiles(input_files));
-  ASSERT_NO_THROW(analysis->Analyze());
-  if (settings.approximation() == Approximation::kRareEvent) {
-    EXPECT_NEAR(0.00162188, p_total(), 1e-5);
-  } else {
-    EXPECT_NEAR(0.0016209, p_total(), 1e-5);
-  }
-  // Minimal cut set check.
-  EXPECT_EQ(9, products().size());
-  std::vector<int> distr = {6, 3};
-  EXPECT_EQ(distr, ProductDistribution());
+    std::vector<std::string> input_files{"input/HIPPS/HIPPS.xml"};
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles(input_files));
+    ASSERT_NO_THROW(analysis->Analyze());
+    if (settings.approximation() == Approximation::kRareEvent) {
+        EXPECT_NEAR(0.00162188, p_total(), 1e-5);
+    } else {
+        EXPECT_NEAR(0.0016209, p_total(), 1e-5);
+    }
+    // Minimal cut set check.
+    EXPECT_EQ(9, products().size());
+    std::vector<int> distr = {6, 3};
+    EXPECT_EQ(distr, ProductDistribution());
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

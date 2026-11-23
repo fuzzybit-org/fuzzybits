@@ -18,118 +18,114 @@ constexpr std::uint32_t k[64] = {
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 };
 
-inline std::uint32_t rotr(std::uint32_t x, std::uint32_t n) {
-  return (x >> n) | (x << (32 - n));
-}
+inline std::uint32_t rotr(std::uint32_t x, std::uint32_t n) { return (x >> n) | (x << (32 - n)); }
 
-}  // namespace
+} // namespace
 
 std::array<std::uint8_t, 32> sha256(std::span<const std::byte> data) {
-  std::uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-                        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
+    std::uint32_t h[8] = {0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                          0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
-  std::vector<std::uint8_t> msg(data.size());
-  for (std::size_t i = 0; i < data.size(); ++i) {
-    msg[i] = static_cast<std::uint8_t>(data[i]);
-  }
-  const std::uint64_t bit_len = static_cast<std::uint64_t>(msg.size()) * 8;
-  msg.push_back(0x80);
-  while ((msg.size() % 64) != 56) {
-    msg.push_back(0);
-  }
-  for (int i = 7; i >= 0; --i) {
-    msg.push_back(static_cast<std::uint8_t>((bit_len >> (i * 8)) & 0xff));
-  }
+    std::vector<std::uint8_t> msg(data.size());
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        msg[i] = static_cast<std::uint8_t>(data[i]);
+    }
+    const std::uint64_t bit_len = static_cast<std::uint64_t>(msg.size()) * 8;
+    msg.push_back(0x80);
+    while ((msg.size() % 64) != 56) {
+        msg.push_back(0);
+    }
+    for (int i = 7; i >= 0; --i) {
+        msg.push_back(static_cast<std::uint8_t>((bit_len >> (i * 8)) & 0xff));
+    }
 
-  for (std::size_t off = 0; off < msg.size(); off += 64) {
-    std::uint32_t w[64];
-    for (int i = 0; i < 16; ++i) {
-      w[i] = (static_cast<std::uint32_t>(msg[off + i * 4]) << 24) |
-             (static_cast<std::uint32_t>(msg[off + i * 4 + 1]) << 16) |
-             (static_cast<std::uint32_t>(msg[off + i * 4 + 2]) << 8) |
-             (static_cast<std::uint32_t>(msg[off + i * 4 + 3]));
+    for (std::size_t off = 0; off < msg.size(); off += 64) {
+        std::uint32_t w[64];
+        for (int i = 0; i < 16; ++i) {
+            w[i] = (static_cast<std::uint32_t>(msg[off + i * 4]) << 24) |
+                   (static_cast<std::uint32_t>(msg[off + i * 4 + 1]) << 16) |
+                   (static_cast<std::uint32_t>(msg[off + i * 4 + 2]) << 8) |
+                   (static_cast<std::uint32_t>(msg[off + i * 4 + 3]));
+        }
+        for (int i = 16; i < 64; ++i) {
+            const std::uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            const std::uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+        std::uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
+        for (int i = 0; i < 64; ++i) {
+            const std::uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+            const std::uint32_t ch = (e & f) ^ ((~e) & g);
+            const std::uint32_t t1 = hh + S1 + ch + k[i] + w[i];
+            const std::uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+            const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
+            const std::uint32_t t2 = S0 + maj;
+            hh = g;
+            g = f;
+            f = e;
+            e = d + t1;
+            d = c;
+            c = b;
+            b = a;
+            a = t1 + t2;
+        }
+        h[0] += a;
+        h[1] += b;
+        h[2] += c;
+        h[3] += d;
+        h[4] += e;
+        h[5] += f;
+        h[6] += g;
+        h[7] += hh;
     }
-    for (int i = 16; i < 64; ++i) {
-      const std::uint32_t s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >> 3);
-      const std::uint32_t s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >> 10);
-      w[i] = w[i - 16] + s0 + w[i - 7] + s1;
-    }
-    std::uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
-    for (int i = 0; i < 64; ++i) {
-      const std::uint32_t S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
-      const std::uint32_t ch = (e & f) ^ ((~e) & g);
-      const std::uint32_t t1 = hh + S1 + ch + k[i] + w[i];
-      const std::uint32_t S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
-      const std::uint32_t maj = (a & b) ^ (a & c) ^ (b & c);
-      const std::uint32_t t2 = S0 + maj;
-      hh = g;
-      g = f;
-      f = e;
-      e = d + t1;
-      d = c;
-      c = b;
-      b = a;
-      a = t1 + t2;
-    }
-    h[0] += a;
-    h[1] += b;
-    h[2] += c;
-    h[3] += d;
-    h[4] += e;
-    h[5] += f;
-    h[6] += g;
-    h[7] += hh;
-  }
 
-  std::array<std::uint8_t, 32> out{};
-  for (int i = 0; i < 8; ++i) {
-    out[i * 4] = static_cast<std::uint8_t>((h[i] >> 24) & 0xff);
-    out[i * 4 + 1] = static_cast<std::uint8_t>((h[i] >> 16) & 0xff);
-    out[i * 4 + 2] = static_cast<std::uint8_t>((h[i] >> 8) & 0xff);
-    out[i * 4 + 3] = static_cast<std::uint8_t>(h[i] & 0xff);
-  }
-  return out;
+    std::array<std::uint8_t, 32> out{};
+    for (int i = 0; i < 8; ++i) {
+        out[i * 4] = static_cast<std::uint8_t>((h[i] >> 24) & 0xff);
+        out[i * 4 + 1] = static_cast<std::uint8_t>((h[i] >> 16) & 0xff);
+        out[i * 4 + 2] = static_cast<std::uint8_t>((h[i] >> 8) & 0xff);
+        out[i * 4 + 3] = static_cast<std::uint8_t>(h[i] & 0xff);
+    }
+    return out;
 }
 
 namespace {
 
 std::vector<std::byte> read_bytes(const std::string &path) {
-  std::ifstream in(path, std::ios::binary);
-  if (!in) {
-    throw std::runtime_error("sha256: cannot read " + path);
-  }
-  const std::string raw{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-  std::vector<std::byte> buf(raw.size());
-  for (std::size_t i = 0; i < raw.size(); ++i) {
-    buf[i] = static_cast<std::byte>(static_cast<unsigned char>(raw[i]));
-  }
-  return buf;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        throw std::runtime_error("sha256: cannot read " + path);
+    }
+    const std::string raw{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    std::vector<std::byte> buf(raw.size());
+    for (std::size_t i = 0; i < raw.size(); ++i) {
+        buf[i] = static_cast<std::byte>(static_cast<unsigned char>(raw[i]));
+    }
+    return buf;
 }
 
-}  // namespace
+} // namespace
 
-std::array<std::uint8_t, 32> sha256_file(const std::string &path) {
-  return sha256(read_bytes(path));
-}
+std::array<std::uint8_t, 32> sha256_file(const std::string &path) { return sha256(read_bytes(path)); }
 
 std::array<std::uint8_t, 32> sha256_files(const std::vector<std::string> &paths) {
-  std::vector<std::byte> concat;
-  for (const auto &path : paths) {
-    auto chunk = read_bytes(path);
-    concat.insert(concat.end(), chunk.begin(), chunk.end());
-  }
-  return sha256(concat);
+    std::vector<std::byte> concat;
+    for (const auto &path : paths) {
+        auto chunk = read_bytes(path);
+        concat.insert(concat.end(), chunk.begin(), chunk.end());
+    }
+    return sha256(concat);
 }
 
 std::string sha256_hex(std::span<const std::uint8_t, 32> digest) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string s;
-  s.resize(64);
-  for (int i = 0; i < 32; ++i) {
-    s[i * 2] = kHex[digest[i] >> 4];
-    s[i * 2 + 1] = kHex[digest[i] & 0xf];
-  }
-  return s;
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string s;
+    s.resize(64);
+    for (int i = 0; i < 32; ++i) {
+        s[i * 2] = kHex[digest[i] >> 4];
+        s[i * 2 + 1] = kHex[digest[i] & 0xf];
+    }
+    return s;
 }
 
-}  // namespace fuzzybits::compile
+} // namespace fuzzybits::compile

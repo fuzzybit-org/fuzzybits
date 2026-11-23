@@ -10,61 +10,64 @@
 
 namespace {
 
-    using namespace pc_passes_test;
+using namespace pc_passes_test;
 
-    constexpr std::array all_passes{
-        passes::pass_id::fold_zero_probability,
-        passes::pass_id::fold_unit_probability,
-        passes::pass_id::propagate_constants,
-        passes::pass_id::eliminate_single_input,
-        passes::pass_id::coalesce,
-    };
+constexpr std::array all_passes{
+    passes::pass_id::fold_zero_probability,
+    passes::pass_id::fold_unit_probability,
+    passes::pass_id::propagate_constants,
+    passes::pass_id::eliminate_single_input,
+    passes::pass_id::coalesce,
+};
 
-    [[nodiscard]] auto mode_for(const passes::pass_id pass) -> worlds {
-        return passes::pass_semantics(pass) == passes::semantic_class::function_preserving ? worlds::all : worlds::almost_sure;
+[[nodiscard]] auto mode_for(const passes::pass_id pass) -> worlds {
+    return passes::pass_semantics(pass) == passes::semantic_class::function_preserving ? worlds::all
+                                                                                       : worlds::almost_sure;
+}
+
+[[nodiscard]] auto require_pass(const passes::pass_id pass, pc::circuit const &input) -> passes::transform_result {
+    auto result = passes::run_pass(pass, input);
+    require_report(result, input);
+    require_images(input, result.output, result.report.node_map, result.report.target_map, mode_for(pass));
+    return result;
+}
+
+void require_pipeline(passes::pipeline_result const &result, pc::circuit const &input) {
+    INFO(diagnostics_text(result.diagnostics));
+    REQUIRE(result.ok());
+    REQUIRE(result.nodes_before == input.node_count());
+    REQUIRE(result.edges_before == input.edge_count());
+    REQUIRE(result.nodes_after == result.output.node_count());
+    REQUIRE(result.edges_after == result.output.edge_count());
+    REQUIRE(result.edges_after <= result.edges_before);
+    for (auto const &report : result.passes) {
+        REQUIRE(report.edges_after <= report.edges_before);
     }
+    require_images(input, result.output, result.node_map, result.target_map, worlds::almost_sure);
+}
 
-    [[nodiscard]] auto require_pass(const passes::pass_id pass, pc::circuit const &input) -> passes::transform_result {
-        auto result = passes::run_pass(pass, input);
-        require_report(result, input);
-        require_images(input, result.output, result.report.node_map, result.report.target_map, mode_for(pass));
-        return result;
-    }
+[[nodiscard]] auto all_hull(pc::circuit const &model) -> passes::pipeline_options {
+    return passes::pipeline_options{.semantics =
+                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull)};
+}
 
-    void require_pipeline(passes::pipeline_result const &result, pc::circuit const &input) {
-        INFO(diagnostics_text(result.diagnostics));
-        REQUIRE(result.ok());
-        REQUIRE(result.nodes_before == input.node_count());
-        REQUIRE(result.edges_before == input.edge_count());
-        REQUIRE(result.nodes_after == result.output.node_count());
-        REQUIRE(result.edges_after == result.output.edge_count());
-        REQUIRE(result.edges_after <= result.edges_before);
-        for (auto const &report : result.passes) {
-            REQUIRE(report.edges_after <= report.edges_before);
-        }
-        require_images(input, result.output, result.node_map, result.target_map, worlds::almost_sure);
-    }
+[[nodiscard]] auto single_target(pc::builder &&builder, const pc::bool_node_id node) -> pc::circuit {
+    (void)builder.add_target(node);
+    return seal(std::move(builder));
+}
 
-    [[nodiscard]] auto all_hull(pc::circuit const &model) -> passes::pipeline_options {
-        return passes::pipeline_options{.semantics = std::vector(model.targets().size(), passes::target_semantics::monotone_hull)};
-    }
+[[nodiscard]] auto event(pc::builder &builder, const double p = 0.5) -> pc::bool_node_id {
+    return builder.add_basic_event(builder.add_literal_probability(p));
+}
 
-    [[nodiscard]] auto single_target(pc::builder &&builder, const pc::bool_node_id node) -> pc::circuit {
-        (void)builder.add_target(node);
-        return seal(std::move(builder));
-    }
+[[nodiscard]] auto target_node(passes::transform_result const &result, const std::uint32_t target = 0)
+    -> std::uint32_t {
+    return result.output.targets()[target].node.raw();
+}
 
-    [[nodiscard]] auto event(pc::builder &builder, const double p = 0.5) -> pc::bool_node_id {
-        return builder.add_basic_event(builder.add_literal_probability(p));
-    }
-
-    [[nodiscard]] auto target_node(passes::transform_result const &result, const std::uint32_t target = 0) -> std::uint32_t {
-        return result.output.targets()[target].node.raw();
-    }
-
-    [[nodiscard]] auto target_code(passes::transform_result const &result, const std::uint32_t target = 0) -> pc::op_code {
-        return result.output.op_codes()[target_node(result, target)];
-    }
+[[nodiscard]] auto target_code(passes::transform_result const &result, const std::uint32_t target = 0) -> pc::op_code {
+    return result.output.op_codes()[target_node(result, target)];
+}
 
 } // namespace
 
@@ -128,11 +131,13 @@ TEST_CASE("Delete-term pair of p = 1 flags: only fold_unit_probability changes t
     const auto y = event(builder, 1.0);
     const auto c = event(builder, 0.3);
     const auto on = builder.add_house_event(true);
-    const auto failure = builder.add_or({edge{.source = builder.add_and({edge{.source = a}})}, edge{.source = b}, edge{.source = z}});
+    const auto failure =
+        builder.add_or({edge{.source = builder.add_and({edge{.source = a}})}, edge{.source = b}, edge{.source = z}});
     const auto deletion = builder.add_and({edge{.source = x}, edge{.source = y}});
     const auto context = builder.add_and({edge{.source = builder.add_or({edge{.source = c}, edge{.source = on}})},
                                           edge{.source = builder.add_or({edge{.source = a}, edge{.source = b}})}});
-    const auto top = builder.add_and({edge{.source = failure}, edge{.source = deletion, .complement = true}, edge{.source = context}});
+    const auto top = builder.add_and(
+        {edge{.source = failure}, edge{.source = deletion, .complement = true}, edge{.source = context}});
     const auto input = single_target(std::move(builder), top);
 
     REQUIRE(exact_probabilities(input)[0] == 0.0);
@@ -201,18 +206,22 @@ TEST_CASE("Edges never increase on random DAGs with shared subtrees", "[ir][pc][
             const auto fan_in = uniform(1, 6);
             for (std::uint32_t operand = 0; operand < fan_in; ++operand) {
                 const auto available = static_cast<std::uint32_t>(nodes.size());
-                const auto source = available > events && uniform(0, 3) != 0 ? uniform(events, available - 1) : uniform(0, available - 1);
+                const auto source = available > events && uniform(0, 3) != 0 ? uniform(events, available - 1)
+                                                                             : uniform(0, available - 1);
                 operands.push_back(edge{.source = nodes[source], .complement = uniform(0, 9) == 0});
             }
-            nodes.push_back(builder.add_gate(uniform(0, 3) == 0 ? pc::op_code::and_gate : pc::op_code::or_gate, operands));
+            nodes.push_back(
+                builder.add_gate(uniform(0, 3) == 0 ? pc::op_code::and_gate : pc::op_code::or_gate, operands));
         }
         (void)builder.add_target(nodes.back());
-        (void)builder.add_target(nodes[uniform(events, static_cast<std::uint32_t>(nodes.size()) - 1)], pc::observable_role::watch);
+        (void)builder.add_target(nodes[uniform(events, static_cast<std::uint32_t>(nodes.size()) - 1)],
+                                 pc::observable_role::watch);
         const auto input = seal(std::move(builder));
 
         const auto coalesced = require_pass(passes::pass_id::coalesce, input);
         for (std::uint32_t node = 0; node < input.node_count(); ++node) {
-            if (coalesced.report.node_map[node].kind == passes::image_kind::reference && input.operand_counts()[node] > 2) {
+            if (coalesced.report.node_map[node].kind == passes::image_kind::reference &&
+                input.operand_counts()[node] > 2) {
                 ++kept_shared;
             }
         }
@@ -226,8 +235,8 @@ TEST_CASE("Edges never increase on random DAGs with shared subtrees", "[ir][pc][
 TEST_CASE("coalesce inlines only when the edge count does not increase", "[ir][pc][passes][coalesce]") {
     SECTION("shared OR with three parents and four inputs is kept") {
         pc::builder builder;
-        const auto shared = builder.add_or({edge{.source = event(builder)}, edge{.source = event(builder)}, edge{.source = event(builder)},
-                                            edge{.source = event(builder)}});
+        const auto shared = builder.add_or({edge{.source = event(builder)}, edge{.source = event(builder)},
+                                            edge{.source = event(builder)}, edge{.source = event(builder)}});
         std::vector<edge> parents;
         for (std::uint32_t index = 0; index < 3; ++index) {
             parents.push_back(edge{.source = builder.add_or({edge{.source = shared}, edge{.source = event(builder)}})});
@@ -254,7 +263,8 @@ TEST_CASE("coalesce inlines only when the edge count does not increase", "[ir][p
         pc::builder builder;
         const auto child = builder.add_or({edge{.source = event(builder)}, edge{.source = event(builder)}});
         const auto left = builder.add_or({edge{.source = child}, edge{.source = event(builder)}});
-        const auto right = builder.add_gate(pc::op_code::nor_gate, {edge{.source = child}, edge{.source = event(builder)}});
+        const auto right =
+            builder.add_gate(pc::op_code::nor_gate, {edge{.source = child}, edge{.source = event(builder)}});
         const auto top = builder.add_and({edge{.source = left}, edge{.source = right}});
         const auto input = single_target(std::move(builder), top);
         const auto result = require_pass(passes::pass_id::coalesce, input);
@@ -267,9 +277,10 @@ TEST_CASE("coalesce inlines only when the edge count does not increase", "[ir][p
         const auto negated = builder.add_and({edge{.source = event(builder)}, edge{.source = event(builder)}});
         const auto watched = builder.add_and({edge{.source = event(builder)}, edge{.source = event(builder)}});
         const auto other_kind = builder.add_or({edge{.source = event(builder)}, edge{.source = event(builder)}});
-        const auto nand_child = builder.add_gate(pc::op_code::nand_gate, {edge{.source = event(builder)}, edge{.source = event(builder)}});
-        const auto top = builder.add_and(
-            {edge{.source = negated, .complement = true}, edge{.source = watched}, edge{.source = other_kind}, edge{.source = nand_child}});
+        const auto nand_child =
+            builder.add_gate(pc::op_code::nand_gate, {edge{.source = event(builder)}, edge{.source = event(builder)}});
+        const auto top = builder.add_and({edge{.source = negated, .complement = true}, edge{.source = watched},
+                                          edge{.source = other_kind}, edge{.source = nand_child}});
         (void)builder.add_target(top);
         (void)builder.add_target(watched, pc::observable_role::watch);
         const auto input = seal(std::move(builder));
@@ -279,9 +290,12 @@ TEST_CASE("coalesce inlines only when the edge count does not increase", "[ir][p
     SECTION("NAND absorbs AND and XNOR absorbs XOR") {
         pc::builder builder;
         const auto conjunction = builder.add_and({edge{.source = event(builder)}, edge{.source = event(builder)}});
-        const auto parity = builder.add_gate(pc::op_code::xor_gate, {edge{.source = event(builder)}, edge{.source = event(builder)}});
-        const auto nand = builder.add_gate(pc::op_code::nand_gate, {edge{.source = conjunction}, edge{.source = event(builder)}});
-        const auto xnor = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = parity}, edge{.source = event(builder)}});
+        const auto parity =
+            builder.add_gate(pc::op_code::xor_gate, {edge{.source = event(builder)}, edge{.source = event(builder)}});
+        const auto nand =
+            builder.add_gate(pc::op_code::nand_gate, {edge{.source = conjunction}, edge{.source = event(builder)}});
+        const auto xnor =
+            builder.add_gate(pc::op_code::xnor_gate, {edge{.source = parity}, edge{.source = event(builder)}});
         const auto top = builder.add_or({edge{.source = nand}, edge{.source = xnor}});
         const auto input = single_target(std::move(builder), top);
         const auto result = require_pass(passes::pass_id::coalesce, input);
@@ -317,15 +331,16 @@ TEST_CASE("propagate_constants folds every connective", "[ir][pc][passes][consta
     };
 
     SECTION("AND / OR / NAND / NOR with constants, duplicates and x with not x") {
-        for (const auto code : {pc::op_code::and_gate, pc::op_code::or_gate, pc::op_code::nand_gate, pc::op_code::nor_gate}) {
+        for (const auto code :
+             {pc::op_code::and_gate, pc::op_code::or_gate, pc::op_code::nand_gate, pc::op_code::nor_gate}) {
             const bool conjunction = code == pc::op_code::and_gate || code == pc::op_code::nand_gate;
             const bool negate = code == pc::op_code::nand_gate || code == pc::op_code::nor_gate;
             {
                 pc::builder builder;
                 const auto a = event(builder);
                 const auto identity = builder.add_constant(conjunction);
-                const auto top = builder.add_gate(
-                    code, {edge{.source = a}, edge{.source = identity}, edge{.source = a}, edge{.source = event(builder)}});
+                const auto top = builder.add_gate(code, {edge{.source = a}, edge{.source = identity}, edge{.source = a},
+                                                         edge{.source = event(builder)}});
                 (void)check(single_target(std::move(builder), top), expectation{.code = code, .fan_in = 2});
             }
             {
@@ -337,8 +352,8 @@ TEST_CASE("propagate_constants folds every connective", "[ir][pc][passes][consta
             {
                 pc::builder builder;
                 const auto a = event(builder);
-                const auto top =
-                    builder.add_gate(code, {edge{.source = a}, edge{.source = event(builder)}, edge{.source = a, .complement = true}});
+                const auto top = builder.add_gate(
+                    code, {edge{.source = a}, edge{.source = event(builder)}, edge{.source = a, .complement = true}});
                 constant_target(single_target(std::move(builder), top), !conjunction != negate);
             }
             {
@@ -358,42 +373,49 @@ TEST_CASE("propagate_constants folds every connective", "[ir][pc][passes][consta
         {
             pc::builder builder;
             const auto a = event(builder);
-            const auto top =
-                builder.add_gate(pc::op_code::xor_gate, {edge{.source = a}, edge{.source = event(builder)}, edge{.source = a}});
-            (void)check(single_target(std::move(builder), top), expectation{.code = pc::op_code::xor_gate, .fan_in = 1});
+            const auto top = builder.add_gate(pc::op_code::xor_gate,
+                                              {edge{.source = a}, edge{.source = event(builder)}, edge{.source = a}});
+            (void)check(single_target(std::move(builder), top),
+                        expectation{.code = pc::op_code::xor_gate, .fan_in = 1});
         }
         {
             pc::builder builder;
             const auto a = event(builder);
-            const auto top = builder.add_gate(pc::op_code::xor_gate, {edge{.source = a}, edge{.source = a, .complement = true}});
+            const auto top =
+                builder.add_gate(pc::op_code::xor_gate, {edge{.source = a}, edge{.source = a, .complement = true}});
             constant_target(single_target(std::move(builder), top), true);
         }
         {
             pc::builder builder;
             const auto a = event(builder);
-            const auto top = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = a}, edge{.source = a, .complement = true}});
+            const auto top =
+                builder.add_gate(pc::op_code::xnor_gate, {edge{.source = a}, edge{.source = a, .complement = true}});
             constant_target(single_target(std::move(builder), top), false);
         }
         {
             pc::builder builder;
             const auto a = event(builder);
             const auto top =
-                builder.add_gate(pc::op_code::xnor_gate, {edge{.source = a, .complement = true}, edge{.source = builder.add_constant(true)},
-                                                          edge{.source = event(builder), .complement = true}});
-            (void)check(single_target(std::move(builder), top), expectation{.code = pc::op_code::xnor_gate, .fan_in = 2});
+                builder.add_gate(pc::op_code::xnor_gate,
+                                 {edge{.source = a, .complement = true}, edge{.source = builder.add_constant(true)},
+                                  edge{.source = event(builder), .complement = true}});
+            (void)check(single_target(std::move(builder), top),
+                        expectation{.code = pc::op_code::xnor_gate, .fan_in = 2});
         }
         {
             pc::builder builder;
             const auto a = event(builder);
             const auto b = event(builder);
-            const auto top = builder.add_gate(pc::op_code::xor_gate, {edge{.source = a, .complement = true}, edge{.source = b}});
-            const auto result = check(single_target(std::move(builder), top), expectation{.code = pc::op_code::xor_gate, .fan_in = 2});
+            const auto top =
+                builder.add_gate(pc::op_code::xor_gate, {edge{.source = a, .complement = true}, edge{.source = b}});
+            const auto result =
+                check(single_target(std::move(builder), top), expectation{.code = pc::op_code::xor_gate, .fan_in = 2});
             REQUIRE(result.report.rewrites == 0);
         }
     }
     SECTION("cardinality shifts its bounds and degenerates to AND / OR / NAND / NOR") {
-        const auto build = [](const std::uint32_t low, const std::uint32_t high, const std::uint32_t events, const std::uint32_t trues,
-                              const std::uint32_t falses, const bool pair) {
+        const auto build = [](const std::uint32_t low, const std::uint32_t high, const std::uint32_t events,
+                              const std::uint32_t trues, const std::uint32_t falses, const bool pair) {
             pc::builder builder;
             std::vector<edge> operands;
             for (std::uint32_t index = 0; index < events; ++index) {
@@ -415,12 +437,15 @@ TEST_CASE("propagate_constants folds every connective", "[ir][pc][passes][consta
         };
         (void)check(build(2, 4, 3, 1, 0, false), expectation{.code = pc::op_code::or_gate, .fan_in = 3});
         (void)check(build(2, 3, 2, 0, 0, true), expectation{.code = pc::op_code::or_gate, .fan_in = 2});
-        (void)check(build(2, 2, 2, 0, 0, true), expectation{.code = pc::op_code::cardinality, .fan_in = 2, .low = 1, .high = 1});
-        (void)check(build(3, 4, 4, 0, 1, false), expectation{.code = pc::op_code::cardinality, .fan_in = 4, .low = 3, .high = 4});
+        (void)check(build(2, 2, 2, 0, 0, true),
+                    expectation{.code = pc::op_code::cardinality, .fan_in = 2, .low = 1, .high = 1});
+        (void)check(build(3, 4, 4, 0, 1, false),
+                    expectation{.code = pc::op_code::cardinality, .fan_in = 4, .low = 3, .high = 4});
         (void)check(build(3, 3, 3, 0, 2, false), expectation{.code = pc::op_code::and_gate, .fan_in = 3});
         (void)check(build(0, 0, 3, 0, 0, false), expectation{.code = pc::op_code::nor_gate, .fan_in = 3});
         (void)check(build(1, 3, 3, 1, 0, false), expectation{.code = pc::op_code::nand_gate, .fan_in = 3});
-        (void)check(build(0, 1, 3, 0, 0, false), expectation{.code = pc::op_code::cardinality, .fan_in = 3, .low = 0, .high = 1});
+        (void)check(build(0, 1, 3, 0, 0, false),
+                    expectation{.code = pc::op_code::cardinality, .fan_in = 3, .low = 0, .high = 1});
         constant_target(build(3, 3, 2, 0, 1, false), false);
         constant_target(build(1, 2, 1, 0, 0, true), true);
         constant_target(build(0, 1, 2, 2, 0, false), false);
@@ -429,9 +454,11 @@ TEST_CASE("propagate_constants folds every connective", "[ir][pc][passes][consta
     SECTION("cardinality counts duplicate operands with multiplicity") {
         pc::builder builder;
         const auto a = event(builder, 0.3);
-        const auto top = builder.add_cardinality(2, 2, {edge{.source = a}, edge{.source = a}, edge{.source = event(builder, 0.6)}});
+        const auto top =
+            builder.add_cardinality(2, 2, {edge{.source = a}, edge{.source = a}, edge{.source = event(builder, 0.6)}});
         const auto input = single_target(std::move(builder), top);
-        const auto result = check(input, expectation{.code = pc::op_code::cardinality, .fan_in = 3, .low = 2, .high = 2});
+        const auto result =
+            check(input, expectation{.code = pc::op_code::cardinality, .fan_in = 3, .low = 2, .high = 2});
         REQUIRE(std::abs(exact_probabilities(result.output)[0] - 0.3 * 0.4) <= 1.0e-15);
     }
 }
@@ -440,12 +467,13 @@ TEST_CASE("eliminate_single_input folds negations into edges", "[ir][pc][passes]
     pc::builder builder;
     const auto a = event(builder, 0.2);
     const auto b = event(builder, 0.7);
-    const auto negation = builder.add_not(edge{.source = builder.add_not(edge{.source = builder.add_not(edge{.source = a})})});
+    const auto negation =
+        builder.add_not(edge{.source = builder.add_not(edge{.source = builder.add_not(edge{.source = a})})});
     const auto exactly_one = builder.add_cardinality(1, 1, {edge{.source = b}});
     const auto none = builder.add_cardinality(0, 0, {edge{.source = b}});
-    const auto consumer =
-        builder.add_and({edge{.source = builder.add_gate(pc::op_code::nand_gate, {edge{.source = a}})}, edge{.source = exactly_one},
-                         edge{.source = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = none}})}});
+    const auto consumer = builder.add_and(
+        {edge{.source = builder.add_gate(pc::op_code::nand_gate, {edge{.source = a}})}, edge{.source = exactly_one},
+         edge{.source = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = none}})}});
     (void)builder.add_target(negation);
     (void)builder.add_target(consumer, pc::observable_role::watch);
     (void)builder.add_target(builder.add_or({edge{.source = b}}), pc::observable_role::projection_anchor);
@@ -478,7 +506,8 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
     const auto one = event(builder, 1.0);
     const auto named = builder.add_basic_event(builder.add_parameter_probability("P"));
     const auto tiny = event(builder, 1.0e-300);
-    const auto top = builder.add_or({edge{.source = zero}, edge{.source = one}, edge{.source = named}, edge{.source = tiny}});
+    const auto top =
+        builder.add_or({edge{.source = zero}, edge{.source = one}, edge{.source = named}, edge{.source = tiny}});
     const auto input = single_target(std::move(builder), top);
 
     const auto zero_result = passes::fold_zero_probability(input);
@@ -491,8 +520,10 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
     const auto zero_image = zero_result.report.node_map[zero.raw()];
     REQUIRE(zero_result.output.op_codes()[zero_image.edge.source.raw()] == pc::op_code::constant);
     REQUIRE(zero_result.output.constant_values()[zero_image.edge.source.raw()] == 0);
-    REQUIRE(zero_result.output.op_codes()[zero_result.report.node_map[named.raw()].edge.source.raw()] == pc::op_code::basic_event);
-    REQUIRE(zero_result.output.op_codes()[zero_result.report.node_map[tiny.raw()].edge.source.raw()] == pc::op_code::basic_event);
+    REQUIRE(zero_result.output.op_codes()[zero_result.report.node_map[named.raw()].edge.source.raw()] ==
+            pc::op_code::basic_event);
+    REQUIRE(zero_result.output.op_codes()[zero_result.report.node_map[tiny.raw()].edge.source.raw()] ==
+            pc::op_code::basic_event);
 
     const auto unit_result = passes::fold_unit_probability(input);
     require_report(unit_result, input);
@@ -501,7 +532,8 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
     REQUIRE(unit_result.report.rewrites == 1);
     REQUIRE(unit_result.output.constant_values()[unit_result.report.node_map[one.raw()].edge.source.raw()] == 1);
 
-    for (const auto pass : {passes::pass_id::propagate_constants, passes::pass_id::eliminate_single_input, passes::pass_id::coalesce}) {
+    for (const auto pass :
+         {passes::pass_id::propagate_constants, passes::pass_id::eliminate_single_input, passes::pass_id::coalesce}) {
         const auto result = passes::run_pass(pass, input);
         REQUIRE(result.report.semantics == passes::semantic_class::function_preserving);
         REQUIRE(result.report.preserves(passes::target_semantics::boolean));
@@ -530,7 +562,8 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
         for (auto const &report : dropped.passes) {
             REQUIRE(report.node_map.empty());
         }
-        const auto kept = passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.keep_pass_maps = true});
+        const auto kept =
+            passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.keep_pass_maps = true});
         require_pipeline(kept, input);
         auto composed = kept.passes.front().node_map;
         for (std::size_t index = 1; index < kept.passes.size(); ++index) {
@@ -542,12 +575,14 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
             REQUIRE(composed[node].kind == kept.node_map[node].kind);
             REQUIRE(composed[node].edge.source == kept.node_map[node].edge.source);
         }
-        const auto one_round = passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.max_rounds = 1});
+        const auto one_round =
+            passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.max_rounds = 1});
         require_pipeline(one_round, input);
         REQUIRE(one_round.passes.size() == 5);
     }
     SECTION("mixed semantics skip fold_unit_probability in C1 and refuse it explicitly") {
-        passes::pipeline_options options{.semantics = std::vector(input.targets().size(), passes::target_semantics::boolean)};
+        passes::pipeline_options options{.semantics =
+                                             std::vector(input.targets().size(), passes::target_semantics::boolean)};
         options.semantics.back() = passes::target_semantics::monotone_hull;
         const auto compiled = passes::compile(input, passes::compile_level::c1, options);
         require_pipeline(compiled, input);
@@ -555,15 +590,17 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
         for (auto const &report : compiled.passes) {
             REQUIRE(report.transform_id != "ir.pc.fold_unit_probability");
         }
-        const passes::pass_id schedule[] = {passes::pass_id::propagate_constants, passes::pass_id::fold_unit_probability};
+        const passes::pass_id schedule[] = {passes::pass_id::propagate_constants,
+                                            passes::pass_id::fold_unit_probability};
         const auto refused = passes::run_pipeline(input, schedule, options);
         REQUIRE_FALSE(refused.ok());
         REQUIRE(has_code(refused.diagnostics, "pc.pipeline.incompatible-pass"));
     }
     SECTION("semantics table must cover every target") {
-        const auto result = passes::compile(
-            input, passes::compile_level::c1,
-            passes::pipeline_options{.semantics = std::vector(input.targets().size() + 1, passes::target_semantics::boolean)});
+        const auto result =
+            passes::compile(input, passes::compile_level::c1,
+                            passes::pipeline_options{.semantics = std::vector(input.targets().size() + 1,
+                                                                              passes::target_semantics::boolean)});
         REQUIRE_FALSE(result.ok());
         REQUIRE(has_code(result.diagnostics, "pc.pipeline.target-semantics-mismatch"));
     }
@@ -586,56 +623,58 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
 
 namespace {
 
-    using atom_sets = std::vector<std::vector<pc::bool_node_id>>;
+using atom_sets = std::vector<std::vector<pc::bool_node_id>>;
 
-    [[nodiscard]] auto random_atoms(pc::circuit const &model, std::mt19937_64 &rng) -> atom_sets {
-        std::vector<pc::bool_node_id> events;
-        for (std::uint32_t node = 0; node < model.node_count(); ++node) {
-            if (model.op_codes()[node] == pc::op_code::basic_event) {
-                events.push_back(pc::bool_node_id(node));
+[[nodiscard]] auto random_atoms(pc::circuit const &model, std::mt19937_64 &rng) -> atom_sets {
+    std::vector<pc::bool_node_id> events;
+    for (std::uint32_t node = 0; node < model.node_count(); ++node) {
+        if (model.op_codes()[node] == pc::op_code::basic_event) {
+            events.push_back(pc::bool_node_id(node));
+        }
+    }
+    atom_sets atoms(model.targets().size());
+    for (auto &set : atoms) {
+        for (const auto event : events) {
+            if (std::bernoulli_distribution(0.5)(rng) && set.size() < 6) {
+                set.push_back(event);
             }
         }
-        atom_sets atoms(model.targets().size());
-        for (auto &set : atoms) {
-            for (const auto event : events) {
-                if (std::bernoulli_distribution(0.5)(rng) && set.size() < 6) {
-                    set.push_back(event);
-                }
-            }
-        }
-        return atoms;
     }
+    return atoms;
+}
 
-    [[nodiscard]] auto hull_with_atoms(pc::circuit const &model, atom_sets const &atoms) -> passes::pipeline_options {
-        return passes::pipeline_options{.semantics = std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
-                                        .atom_events = atoms};
-    }
+[[nodiscard]] auto hull_with_atoms(pc::circuit const &model, atom_sets const &atoms) -> passes::pipeline_options {
+    return passes::pipeline_options{.semantics =
+                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+                                    .atom_events = atoms};
+}
 
-    [[nodiscard]] auto single_atom(pc::bool_node_id event) -> atom_sets {
-        return atom_sets{{event}};
-    }
+[[nodiscard]] auto single_atom(pc::bool_node_id event) -> atom_sets { return atom_sets{{event}}; }
 
-    // The pass keeps the atom-split hull of `input` and leaves at least one
-    // rewrite out.
-    void require_split_kept(const passes::pass_id pass, pc::circuit const &input, atom_sets const &atoms, const double expected) {
-        INFO("pass " << passes::pass_name(pass));
-        REQUIRE(std::abs(split_hull_probabilities(input, atoms)[0] - expected) <= 1.0e-15);
-        const auto result = passes::run_pass(pass, input, atom_options(input, atoms));
-        require_report(result, input);
-        REQUIRE(result.report.skipped > 0);
-        REQUIRE(has_code(result.report.diagnostics, "pc.pass.atom-split-skipped"));
-        const auto carried = carried_atoms(result.output, result.report.node_map, atoms);
-        REQUIRE(std::abs(split_hull_probabilities(result.output, carried)[0] - expected) <= 1.0e-15);
-        const auto compiled = passes::compile(input, passes::compile_level::c1, hull_with_atoms(input, atoms));
-        INFO(diagnostics_text(compiled.diagnostics));
-        REQUIRE(compiled.ok());
-        REQUIRE(std::abs(split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms))[0] -
-                         expected) <= 1.0e-15);
-    }
+// The pass keeps the atom-split hull of `input` and leaves at least one
+// rewrite out.
+void require_split_kept(const passes::pass_id pass, pc::circuit const &input, atom_sets const &atoms,
+                        const double expected) {
+    INFO("pass " << passes::pass_name(pass));
+    REQUIRE(std::abs(split_hull_probabilities(input, atoms)[0] - expected) <= 1.0e-15);
+    const auto result = passes::run_pass(pass, input, atom_options(input, atoms));
+    require_report(result, input);
+    REQUIRE(result.report.skipped > 0);
+    REQUIRE(has_code(result.report.diagnostics, "pc.pass.atom-split-skipped"));
+    const auto carried = carried_atoms(result.output, result.report.node_map, atoms);
+    REQUIRE(std::abs(split_hull_probabilities(result.output, carried)[0] - expected) <= 1.0e-15);
+    const auto compiled = passes::compile(input, passes::compile_level::c1, hull_with_atoms(input, atoms));
+    INFO(diagnostics_text(compiled.diagnostics));
+    REQUIRE(compiled.ok());
+    REQUIRE(std::abs(
+                split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms))[0] -
+                expected) <= 1.0e-15);
+}
 
 } // namespace
 
-TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and atom sets", "[ir][pc][passes][atoms]") {
+TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and atom sets",
+          "[ir][pc][passes][atoms]") {
     std::mt19937_64 rng(190);
     std::uint64_t skipped = 0;
     std::uint64_t rewrites = 0;
@@ -656,7 +695,8 @@ TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and
             require_report(result, input);
             require_images(input, result.output, result.report.node_map, result.report.target_map, mode_for(pass));
             require_close(boolean, exact_probabilities(result.output));
-            require_close(split, split_hull_probabilities(result.output, carried_atoms(result.output, result.report.node_map, atoms)));
+            require_close(split, split_hull_probabilities(result.output,
+                                                          carried_atoms(result.output, result.report.node_map, atoms)));
             skipped += result.report.skipped;
             rewrites += result.report.rewrites;
         }
@@ -664,13 +704,15 @@ TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and
         const auto compiled = passes::compile(input, passes::compile_level::c1, hull_with_atoms(input, atoms));
         require_pipeline(compiled, input);
         require_close(boolean, exact_probabilities(compiled.output));
-        require_close(split, split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms)));
+        require_close(
+            split, split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms)));
 
         auto mixed = hull_with_atoms(input, atoms);
         mixed.semantics.front() = passes::target_semantics::boolean;
         const auto partly = passes::compile(input, passes::compile_level::c1, mixed);
         require_pipeline(partly, input);
-        const auto partly_split = split_hull_probabilities(partly.output, carried_atoms(partly.output, partly.node_map, atoms));
+        const auto partly_split =
+            split_hull_probabilities(partly.output, carried_atoms(partly.output, partly.node_map, atoms));
         for (std::size_t target = 1; target < split.size(); ++target) {
             REQUIRE(std::abs(split[target] - partly_split[target]) <= 1.0e-12);
         }
@@ -691,7 +733,8 @@ TEST_CASE("Atom-split regressions: each forbidden rewrite would change the hull"
             const auto d = event(builder, 0.5);
             const auto deleted = builder.add_or({edge{.source = b}, edge{.source = e}});
             const auto left = builder.add_and({edge{.source = a}, edge{.source = deleted, .complement = true}});
-            const auto not_b = atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
+            const auto not_b =
+                atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
             const auto right = builder.add_and({edge{.source = d}, not_b});
             const auto top = builder.add_or({edge{.source = left}, edge{.source = right}});
             return std::pair{single_target(std::move(builder), top), b};
@@ -709,7 +752,8 @@ TEST_CASE("Atom-split regressions: each forbidden rewrite would change the hull"
             pc::builder builder;
             const auto a = event(builder, 0.3);
             const auto b = event(builder, 0.6);
-            const auto not_b = atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
+            const auto not_b =
+                atom_edge ? edge{.source = b, .complement = true} : edge{.source = builder.add_not(edge{.source = b})};
             const auto inner = builder.add_and({edge{.source = a}, not_b});
             const auto top = builder.add_and({edge{.source = a}, edge{.source = inner, .complement = true}});
             return std::pair{single_target(std::move(builder), top), b};
@@ -737,8 +781,9 @@ TEST_CASE("Atom-split regressions: each forbidden rewrite would change the hull"
         pc::builder builder;
         const auto a = event(builder, 0.3);
         const auto b = event(builder, 0.6);
-        const auto parity = builder.add_gate(
-            pc::op_code::xor_gate, {edge{.source = b}, edge{.source = b, .complement = true}, edge{.source = builder.add_constant(true)}});
+        const auto parity =
+            builder.add_gate(pc::op_code::xor_gate, {edge{.source = b}, edge{.source = b, .complement = true},
+                                                     edge{.source = builder.add_constant(true)}});
         const auto top = builder.add_and({edge{.source = a}, edge{.source = parity, .complement = true}});
         const auto input = single_target(std::move(builder), top);
         const auto expected = split_hull_probabilities(input, single_atom(b))[0];
@@ -766,7 +811,8 @@ TEST_CASE("Atom-split regressions: each forbidden rewrite would change the hull"
         const auto folded = passes::fold_zero_probability(input, options);
         REQUIRE(has_code(folded.report.diagnostics, "pc.pass.invalid-atom-split"));
         REQUIRE_FALSE(folded.ok());
-        const auto mismatch = passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.atom_events = atom_sets(2)});
+        const auto mismatch =
+            passes::compile(input, passes::compile_level::c1, passes::pipeline_options{.atom_events = atom_sets(2)});
         REQUIRE(has_code(mismatch.diagnostics, "pc.pipeline.atom-events-mismatch"));
     }
 }

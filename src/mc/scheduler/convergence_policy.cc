@@ -14,21 +14,20 @@
 namespace scram::mc::stats {
 namespace detail {
 
-using math_policy = boost::math::policies::policy<
-    boost::math::policies::domain_error<boost::math::policies::errno_on_error>,
-    boost::math::policies::pole_error<boost::math::policies::errno_on_error>,
-    boost::math::policies::overflow_error<boost::math::policies::errno_on_error>,
-    boost::math::policies::underflow_error<boost::math::policies::ignore_error>,
-    boost::math::policies::denorm_error<boost::math::policies::ignore_error>,
-    boost::math::policies::evaluation_error<boost::math::policies::errno_on_error>>;
+using math_policy =
+    boost::math::policies::policy<boost::math::policies::domain_error<boost::math::policies::errno_on_error>,
+                                  boost::math::policies::pole_error<boost::math::policies::errno_on_error>,
+                                  boost::math::policies::overflow_error<boost::math::policies::errno_on_error>,
+                                  boost::math::policies::underflow_error<boost::math::policies::ignore_error>,
+                                  boost::math::policies::denorm_error<boost::math::policies::ignore_error>,
+                                  boost::math::policies::evaluation_error<boost::math::policies::errno_on_error>>;
 
 using beta_dist = boost::math::beta_distribution<double, math_policy>;
 using normal_dist = boost::math::normal_distribution<double, math_policy>;
 
 namespace {
 
-void mark_not_converged(mc::stats::tally &t, const double rel_margin_error)
-{
+void mark_not_converged(mc::stats::tally &t, const double rel_margin_error) {
     const double p_hat = std::max(t.mean, DELTA_EPSILON);
     t.linear.epsilon = std::numeric_limits<double>::infinity();
     t.log10.epsilon = std::numeric_limits<double>::infinity();
@@ -38,13 +37,8 @@ void mark_not_converged(mc::stats::tally &t, const double rel_margin_error)
     t.log10.target_trials = t.total_bits;
 }
 
-void store_bayes_interval(mc::stats::tally &t,
-                          const double lower,
-                          const double upper,
-                          const double p_hat,
-                          const double rel_margin_error,
-                          const double z)
-{
+void store_bayes_interval(mc::stats::tally &t, const double lower, const double upper, const double p_hat,
+                          const double rel_margin_error, const double z) {
     const double lo = std::clamp(lower, 0.0, 1.0);
     const double hi = std::clamp(upper, 0.0, 1.0);
     const double eps_linear = 0.5 * (hi - lo);
@@ -60,14 +54,11 @@ void store_bayes_interval(mc::stats::tally &t,
     const double var_term = p * (1.0 - p);
     const double rhs_lin = (z * z * var_term) / (target_eps_linear * target_eps_linear);
     const double rhs_log =
-        (z * z * (1.0 - p)) /
-        (p * rel_margin_error * rel_margin_error * std::pow(std::log(10.0), 2));
+        (z * z * (1.0 - p)) / (p * rel_margin_error * rel_margin_error * std::pow(std::log(10.0), 2));
 
     constexpr double correction = 0.5 + 0.5 + 1.0;
-    const auto N_req_linear =
-        static_cast<std::size_t>(std::ceil(std::max(0.0, rhs_lin - correction)));
-    const auto N_req_log10 =
-        static_cast<std::size_t>(std::ceil(std::max(0.0, rhs_log - correction)));
+    const auto N_req_linear = static_cast<std::size_t>(std::ceil(std::max(0.0, rhs_lin - correction)));
+    const auto N_req_log10 = static_cast<std::size_t>(std::ceil(std::max(0.0, rhs_log - correction)));
 
     t.linear.target_trials = std::max<std::size_t>(N_req_linear, t.total_bits);
     t.log10.target_trials = std::max<std::size_t>(N_req_log10, t.total_bits);
@@ -81,8 +72,7 @@ void store_bayes_interval(mc::stats::tally &t,
 // for β ≳ 2e6 in the far tails under errno_on_error.
 constexpr double kBoostStableBetaMax = 2.0e6;
 
-double beta_half_quantile_approx(const double p, const double beta)
-{
+double beta_half_quantile_approx(const double p, const double beta) {
     const double u = std::clamp(p, 0.0, 1.0);
     if (u <= 0.0) {
         return 0.0;
@@ -101,8 +91,7 @@ double beta_half_quantile_approx(const double p, const double beta)
     return g / (g + beta);
 }
 
-double beta_half_quantile(const double p, const double beta)
-{
+double beta_half_quantile(const double p, const double beta) {
     const double u = std::clamp(p, 0.0, 1.0);
     if (u <= 0.0) {
         return 0.0;
@@ -130,12 +119,8 @@ double beta_half_quantile(const double p, const double beta)
 
 namespace {
 
-bool closed_form_boundary_interval(const std::size_t successes,
-                                   const std::size_t n,
-                                   const double tail,
-                                   double &lower,
-                                   double &upper)
-{
+bool closed_form_boundary_interval(const std::size_t successes, const std::size_t n, const double tail, double &lower,
+                                   double &upper) {
     if (n == 0) {
         lower = beta_half_quantile(tail, 0.5);
         upper = beta_half_quantile(1.0 - tail, 0.5);
@@ -156,15 +141,13 @@ bool closed_form_boundary_interval(const std::size_t successes,
 
 } // namespace
 
-void update_wald(mc::stats::tally &t, const double rel_margin_error, const double z)
-{
+void update_wald(mc::stats::tally &t, const double rel_margin_error, const double z) {
     mc::stats::tally::compute_moments(t);
 
     const double eps_linear = half_width(t, z);
     const double p_hat = std::max(t.mean, DELTA_EPSILON);
     const double target_eps = rel_margin_error * p_hat;
-    const std::size_t N_req_linear =
-        required_trials_from_normal_quantile_two_sided(p_hat, target_eps, z);
+    const std::size_t N_req_linear = required_trials_from_normal_quantile_two_sided(p_hat, target_eps, z);
 
     t.linear.epsilon = eps_linear;
     t.linear.target_epsilon = target_eps;
@@ -172,16 +155,14 @@ void update_wald(mc::stats::tally &t, const double rel_margin_error, const doubl
 
     const double eps_log10 = half_width_log10(t, z);
     const double target_eps_log10 = rel_margin_error;
-    const std::size_t N_req_log10 =
-        required_trials_log10_from_normal_quantile_two_sided(p_hat, target_eps_log10, z);
+    const std::size_t N_req_log10 = required_trials_log10_from_normal_quantile_two_sided(p_hat, target_eps_log10, z);
 
     t.log10.epsilon = eps_log10;
     t.log10.target_epsilon = target_eps_log10;
     t.log10.target_trials = N_req_log10;
 }
 
-void update_bayes(mc::stats::tally &t, const double rel_margin_error, const double z)
-{
+void update_bayes(mc::stats::tally &t, const double rel_margin_error, const double z) {
     mc::stats::tally::compute_moments(t);
 
     constexpr double alpha0 = 0.5;

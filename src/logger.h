@@ -63,8 +63,7 @@ namespace scram {
 #define DUR(var) (TIME_STAMP() - var) * 1e-9
 
 /// Creates an automatic unique logging timer for a scope.
-#define TIMER(level, ...) \
-  Timer<level> BOOST_PP_CAT(timer_, __LINE__)(__VA_ARGS__)
+#define TIMER(level, ...) Timer<level> BOOST_PP_CAT(timer_, __LINE__)(__VA_ARGS__)
 
 // clang-format off
 /// Logging with a level.
@@ -80,23 +79,23 @@ namespace scram {
 // clang-format on
 
 /// Levels for log statements.
-enum LogLevel {  // The numbers are used for array indices.
-  ERROR = 0,  ///< Non-critical errors only.
-  WARNING,  ///< Warnings for users, such as assumptions and corrections.
-  INFO,  ///< Information for users, such as running time and complexity.
-  // Debugging logs are structured depending on the code under execution.
-  // The deeper the code is located, the higher the level should be.
-  // For example, if class A uses some utility class B,
-  // class B should have higher debugging levels.
-  // This is only a recommendation.
-  DEBUG1,  ///< Minimal debugging information.
-  DEBUG2,  ///< Debugging information for the code inside of DEBUG1.
-  DEBUG3,  ///< Debugging information for the code inside of DEBUG2.
-  DEBUG4,  ///< Debugging information for the code inside of DEBUG3.
-  DEBUG5  ///< Debugging information for the code inside of DEBUG4.
+enum LogLevel { // The numbers are used for array indices.
+    ERROR = 0,  ///< Non-critical errors only.
+    WARNING,    ///< Warnings for users, such as assumptions and corrections.
+    INFO,       ///< Information for users, such as running time and complexity.
+    // Debugging logs are structured depending on the code under execution.
+    // The deeper the code is located, the higher the level should be.
+    // For example, if class A uses some utility class B,
+    // class B should have higher debugging levels.
+    // This is only a recommendation.
+    DEBUG1, ///< Minimal debugging information.
+    DEBUG2, ///< Debugging information for the code inside of DEBUG1.
+    DEBUG3, ///< Debugging information for the code inside of DEBUG2.
+    DEBUG4, ///< Debugging information for the code inside of DEBUG3.
+    DEBUG5  ///< Debugging information for the code inside of DEBUG4.
 };
 
-const int kMaxVerbosity = 7;  ///< The index of the last level.
+const int kMaxVerbosity = 7; ///< The index of the last level.
 
 /// This is a general purpose logger;
 /// however, its main usage is asserted to be for debugging.
@@ -112,54 +111,50 @@ const int kMaxVerbosity = 7;  ///< The index of the last level.
 /// @warning Do not place leading spaces, newline, or tabs in messages
 ///          because it will mess up the level-dependent printing.
 class Logger : private boost::noncopyable {
- public:
-  /// Flashes all the logs into the standard error upon destruction.
-  ~Logger() ;
+  public:
+    /// Flashes all the logs into the standard error upon destruction.
+    ~Logger();
 
-  /// @returns Reference to the cut-off level for reporting.
-  static LogLevel report_level() { return report_level_; }
+    /// @returns Reference to the cut-off level for reporting.
+    static LogLevel report_level() { return report_level_; }
 
-  /// Sets the reporting level cut-off.
-  ///
-  /// @param[in] level  The maximum level of logging.
-  static void report_level(LogLevel level) { report_level_ = level; }
+    /// Sets the reporting level cut-off.
+    ///
+    /// @param[in] level  The maximum level of logging.
+    static void report_level(LogLevel level) { report_level_ = level; }
 
-  /// Returns a string stream by reference
-  /// that is flushed to stderr by the Logger class destructor.
-  ///
-  /// @param[in] level  The log level for the information.
-  ///
-  /// @returns Formatted output stringstream with the log level information.
-  std::ostringstream& Get(LogLevel level);
+    /// Returns a string stream by reference
+    /// that is flushed to stderr by the Logger class destructor.
+    ///
+    /// @param[in] level  The log level for the information.
+    ///
+    /// @returns Formatted output stringstream with the log level information.
+    std::ostringstream &Get(LogLevel level);
 
- private:
-  /// Translates the logging level into a string.
-  /// The index is the value of the enum.
-  static const char* const kLevelToString_[];
+  private:
+    /// Translates the logging level into a string.
+    /// The index is the value of the enum.
+    static const char *const kLevelToString_[];
 
-  static LogLevel report_level_;  ///< Cut-off log level for reporting.
+    static LogLevel report_level_; ///< Cut-off log level for reporting.
 
-  std::ostringstream os_;  ///< Main stringstream to gather the logs.
+    std::ostringstream os_; ///< Main stringstream to gather the logs.
 };
 
 /// Automatic (scoped) timer to log process duration.
-template <LogLevel Level>
-class Timer {
- public:
-  /// @param[in] process_name  The process being logged.
-  explicit Timer(const char* process_name)
-      : process_name_(process_name), process_time_(TIME_STAMP()) {
-    LOG(Level) << process_name_ << "...";
-  }
+template <LogLevel Level> class Timer {
+  public:
+    /// @param[in] process_name  The process being logged.
+    explicit Timer(const char *process_name) : process_name_(process_name), process_time_(TIME_STAMP()) {
+        LOG(Level) << process_name_ << "...";
+    }
 
-  /// Puts the accumulated time into the logs.
-  ~Timer() {
-    LOG(Level) << "Finished " << process_name_ << " in " << DUR(process_time_);
-  }
+    /// Puts the accumulated time into the logs.
+    ~Timer() { LOG(Level) << "Finished " << process_name_ << " in " << DUR(process_time_); }
 
- private:
-  const char* process_name_;  ///< The process name to be logged.
-  std::uint64_t process_time_;  ///< The process start time.
+  private:
+    const char *process_name_;   ///< The process name to be logged.
+    std::uint64_t process_time_; ///< The process start time.
 };
 
-}  // namespace scram
+} // namespace scram

@@ -18,15 +18,15 @@
 
 /// @file
 
-#include <libxml/parser.h>  // xmlInitParser, xmlCleanupParser
-#include <libxml/xmlversion.h>  // LIBXML_TEST_VERSION, LIBXML_DOTTED_VERSION
+#include <libxml/parser.h>     // xmlInitParser, xmlCleanupParser
+#include <libxml/xmlversion.h> // LIBXML_TEST_VERSION, LIBXML_DOTTED_VERSION
 
 #include <boost/core/typeinfo.hpp>
 #include <boost/exception/all.hpp>
 #include <boost/program_options.hpp>
 #include <cstdarg>
 #include <cstdio>  // vsnprintf
-#include <cstring>  // strerror
+#include <cstring> // strerror
 #include <iostream>
 #include <memory>
 #include <string>
@@ -67,15 +67,13 @@ int main(const int argc, char *argv[]) {
             return 1;
 
         if (vm.count("verbosity")) {
-            scram::Logger::report_level(
-                    static_cast<scram::LogLevel>(vm["verbosity"].as<int>()));
+            scram::Logger::report_level(static_cast<scram::LogLevel>(vm["verbosity"].as<int>()));
         }
 
         if (ret == 0)
             ScramCLI::RunScram(vm);
     } catch (const scram::LogicError &err) {
-        LOG(scram::ERROR) << "Logic Error:\n"
-                          << boost::diagnostic_information(err);
+        LOG(scram::ERROR) << "Logic Error:\n" << boost::diagnostic_information(err);
         return 1;
     } catch (const scram::IOError &err) {
         LOG(scram::DEBUG1) << boost::diagnostic_information(err);
@@ -86,11 +84,10 @@ int main(const int argc, char *argv[]) {
             std::cerr << "Error code: " << *errnum << "\n";
             std::cerr << "Error string: " << std::strerror(*errnum) << "\n";
         }
-        std::cerr << "\n"
-                  << err.what() << std::endl;
+        std::cerr << "\n" << err.what() << std::endl;
         return 1;
     } catch (const scram::Error &err) {
-        using namespace scram;// NOLINT
+        using namespace scram; // NOLINT
         LOG(DEBUG1) << boost::diagnostic_information(err);
         std::cerr << boost::core::demangled_name(typeid(err)) << "\n\n";
         ScramCLI::PrintErrorInfo<errinfo_value>("Value", err);
@@ -107,16 +104,13 @@ int main(const int argc, char *argv[]) {
         ScramCLI::PrintErrorInfo<mef::errinfo_cycle>("Cycle", err);
         ScramCLI::PrintErrorInfo<xml::errinfo_element>("XML element", err);
         ScramCLI::PrintErrorInfo<xml::errinfo_attribute>("XML attribute", err);
-        std::cerr << "\n"
-                  << err.what() << std::endl;
+        std::cerr << "\n" << err.what() << std::endl;
         return 1;
     } catch (const boost::exception &boost_err) {
-        LOG(scram::ERROR) << "Unexpected Boost Exception:\n"
-                          << boost::diagnostic_information(boost_err);
+        LOG(scram::ERROR) << "Unexpected Boost Exception:\n" << boost::diagnostic_information(boost_err);
         return 1;
     } catch (const std::exception &err) {
-        LOG(scram::ERROR) << "Unexpected Exception: "
-                          << boost::core::demangled_name(typeid(err)) << ":\n"
+        LOG(scram::ERROR) << "Unexpected Exception: " << boost::core::demangled_name(typeid(err)) << ":\n"
                           << err.what();
         return 1;
     }

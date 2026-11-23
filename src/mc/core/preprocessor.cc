@@ -37,11 +37,11 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
             }
 
             if (settings_->expand_atleast_gates()) {
-                pdag::Transform(graph_,[this](Pdag *) { NormalizeGates(ATLEAST); });
+                pdag::Transform(graph_, [this](Pdag *) { NormalizeGates(ATLEAST); });
             }
 
             if (settings_->expand_xor_gates()) {
-                pdag::Transform(graph_,[this](Pdag *) { NormalizeGates(XOR); });
+                pdag::Transform(graph_, [this](Pdag *) { NormalizeGates(XOR); });
             }
 
             // do nothing
@@ -57,7 +57,7 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
          *  - Replace NOT gates with complemented edges
          *------------------------------------------------------------*/
         {
-            pdag::Transform(graph_,[this](Pdag *) { NormalizeGates(NONE); });
+            pdag::Transform(graph_, [this](Pdag *) { NormalizeGates(NONE); });
             if (compilation_target <= 1) {
                 return;
             }
@@ -73,11 +73,22 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
          *  - Coalesce Gates (including shared/common gates)
          *------------------------------------------------------------*/
         {
-            pdag::Transform(graph_, [this](Pdag*) { while (ProcessMultipleDefinitions()) continue; },
-            [this](Pdag*) { DetectModules(); },
-            [this](Pdag*) { while (CoalesceGates(/*common=*/false)) continue; },
-            [this](Pdag*) { MergeCommonArgs(); },
-            [this](Pdag*) { while (CoalesceGates(/*common=*/true)) continue; });
+            pdag::Transform(
+                graph_,
+                [this](Pdag *) {
+                    while (ProcessMultipleDefinitions())
+                        continue;
+                },
+                [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) {
+                    while (CoalesceGates(/*common=*/false))
+                        continue;
+                },
+                [this](Pdag *) { MergeCommonArgs(); },
+                [this](Pdag *) {
+                    while (CoalesceGates(/*common=*/true))
+                        continue;
+                });
             if (compilation_target <= 2) {
                 return;
             }
@@ -101,20 +112,39 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
          *------------------------------------------------------------*/
         {
             // coalesce gates, run phase 2 again, coalesce gates
-            pdag::Transform(graph_, [this](Pdag*) { while (ProcessMultipleDefinitions()) continue; },
-                    [this](Pdag*) { DetectModules(); },
-                    [this](Pdag*) { while (CoalesceGates(/*common=*/false)) continue; },
-                      [this](Pdag*) { MergeCommonArgs(); },
-                      [this](Pdag*) { DetectDistributivity(); },
-                      [this](Pdag*) { DetectModules(); },
-                      [this](Pdag*) { BooleanOptimization(); },
-                      [this](Pdag*) { DecomposeCommonNodes(); },
-                      [this](Pdag*) { DetectModules(); },
-                      [this](Pdag*) { while (CoalesceGates(/*common=*/false)) continue; },
-                      [this](Pdag*) { DetectModules(); },
-                      [this](Pdag*) { while (CoalesceGates(/*common=*/true)) continue; },
-                      [this](Pdag*) { if (settings_->recognize_atleast_groups()) while (RecognizeAtleastGroups()) continue; },
-                      [this](Pdag*) { if (settings_->recognize_xor_groups()) while (RecognizeXorGroups()) continue; });
+            pdag::Transform(
+                graph_,
+                [this](Pdag *) {
+                    while (ProcessMultipleDefinitions())
+                        continue;
+                },
+                [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) {
+                    while (CoalesceGates(/*common=*/false))
+                        continue;
+                },
+                [this](Pdag *) { MergeCommonArgs(); }, [this](Pdag *) { DetectDistributivity(); },
+                [this](Pdag *) { DetectModules(); }, [this](Pdag *) { BooleanOptimization(); },
+                [this](Pdag *) { DecomposeCommonNodes(); }, [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) {
+                    while (CoalesceGates(/*common=*/false))
+                        continue;
+                },
+                [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) {
+                    while (CoalesceGates(/*common=*/true))
+                        continue;
+                },
+                [this](Pdag *) {
+                    if (settings_->recognize_atleast_groups())
+                        while (RecognizeAtleastGroups())
+                            continue;
+                },
+                [this](Pdag *) {
+                    if (settings_->recognize_xor_groups())
+                        while (RecognizeXorGroups())
+                            continue;
+                });
             if (compilation_target <= 3) {
                 return;
             }
@@ -186,7 +216,7 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
                 });
         }
     };
-    
+
     // Time the result() execution with high precision
     auto start_time = std::chrono::high_resolution_clock::now();
     result();
@@ -197,7 +227,7 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
     // Calculate duration in microseconds
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time);
     long long preprocessing_time_us = duration.count();
-    
+
     // benchmark specific log
     {
         std::vector<std::pair<std::string, std::string>> kv;
@@ -225,10 +255,10 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
         {
             log::compressratio::csv_pairs(kv);
         }
-        
+
         // Add preprocessing time
         kv.emplace_back("preprocessing_time_us", log::csv_string(preprocessing_time_us));
-        
+
         log::BenchmarkLogger compilation_logger{"compiler.csv"};
         compilation_logger.log_pairs(kv);
     }

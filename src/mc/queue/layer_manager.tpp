@@ -24,10 +24,10 @@
 #include "logger.h"
 #include "preprocessor.h"
 
-#include "mc/queue/layer_manager.h"
 #include "mc/event/node.h"
-#include "mc/stats/ci_utils.h"
 #include "mc/queue/kernel_builder.h"
+#include "mc/queue/layer_manager.h"
+#include "mc/stats/ci_utils.h"
 
 namespace scram::mc::queue {
 
@@ -62,8 +62,7 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::gather_all_nodes(
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
 void layer_manager<bitpack_t_, prob_t_, size_t_>::layered_toposort(
-    core::Pdag *pdag,
-    std::vector<std::shared_ptr<core::Node>> &nodes,
+    core::Pdag *pdag, std::vector<std::shared_ptr<core::Node>> &nodes,
     std::unordered_map<index_t_, std::shared_ptr<core::Node>> &nodes_by_index,
     std::vector<std::vector<std::shared_ptr<core::Node>>> &nodes_by_layer) {
     // Ensure the graph has been topologically sorted, by layer/level
@@ -149,8 +148,7 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::gather_layer_nodes(
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
 void layer_manager<bitpack_t_, prob_t_, size_t_>::build_kernels_for_layer(
-    const std::vector<std::shared_ptr<core::Node>> &layer_nodes,
-    const std::size_t layer_index) {
+    const std::vector<std::shared_ptr<core::Node>> &layer_nodes, const std::size_t layer_index) {
     // Step (1): Partition layer_nodes into Variables and gates_by_type
     std::vector<std::shared_ptr<core::Variable>> variables;
     std::unordered_map<core::Connective, std::vector<std::shared_ptr<core::Gate>>> gates_by_type;
@@ -158,16 +156,8 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::build_kernels_for_layer(
 
     // Step (2): Build a single kernel for all variables in this layer (if any)
     auto be_kernel = build_kernel_for_variables<index_t_, prob_t_, bitpack_t_, size_t_>(
-        variables,
-        queue_,
-        sample_shape_,
-        queueables_,
-        queueables_by_index_,
-        allocated_basic_events_by_index_,
-        device_basic_event_blocks_,
-        execution_partitions_,
-        execution_dependency_edges_,
-        partition_ids_by_queueable_,
+        variables, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
+        device_basic_event_blocks_, execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_,
         layer_index);
     // We could store or log “be_kernel” if we want direct reference, or just rely
     // on the global queueables_ list.
@@ -175,8 +165,8 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::build_kernels_for_layer(
     // Step (3): Build one kernel per gate->type() in this layer
     auto gate_kernels = build_kernels_for_gates<index_t_, prob_t_, bitpack_t_, size_t_>(
         gates_by_type, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-        allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_,
-        execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_, layer_index);
+        allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
+        execution_dependency_edges_, partition_ids_by_queueable_, layer_index);
 
     // Optionally do something with (be_kernel) and the (gate_kernels) vector.
     // The queueables_ container is updated in each subfunction, so
@@ -193,7 +183,8 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::map_nodes_by_layer(
 }
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
-event::tally<bitpack_t_> layer_manager<bitpack_t_, prob_t_, size_t_>::fetch_tally_for_event_with_index(const index_t_ evt_idx) {
+event::tally<bitpack_t_>
+layer_manager<bitpack_t_, prob_t_, size_t_>::fetch_tally_for_event_with_index(const index_t_ evt_idx) {
     event::tally<bitpack_t_> to_tally;
     if (!allocated_tally_events_by_index_.contains(evt_idx)) {
         LOG(ERROR) << "Unable to fetch tally for unknown event with index " << evt_idx;
@@ -223,66 +214,66 @@ namespace {
 
 inline std::string kernel_dag_connective_name(const core::Connective type) {
     switch (type) {
-        case core::kAnd:
-            return "and";
-        case core::kOr:
-            return "or";
-        case core::kAtleast:
-            return "atleast";
-        case core::kXor:
-            return "xor";
-        case core::kNot:
-            return "not";
-        case core::kNand:
-            return "nand";
-        case core::kNor:
-            return "nor";
-        case core::kNull:
-            return "null";
+    case core::kAnd:
+        return "and";
+    case core::kOr:
+        return "or";
+    case core::kAtleast:
+        return "atleast";
+    case core::kXor:
+        return "xor";
+    case core::kNot:
+        return "not";
+    case core::kNand:
+        return "nand";
+    case core::kNor:
+        return "nor";
+    case core::kNull:
+        return "null";
     }
     return "unknown";
 }
 
 inline std::string device_type_name(const sycl::info::device_type type) {
     switch (type) {
-        case sycl::info::device_type::cpu:
-            return "cpu";
-        case sycl::info::device_type::gpu:
-            return "gpu";
-        case sycl::info::device_type::accelerator:
-            return "accelerator";
-        case sycl::info::device_type::custom:
-            return "custom";
-        case sycl::info::device_type::automatic:
-            return "automatic";
-        case sycl::info::device_type::host:
-            return "host";
-        case sycl::info::device_type::all:
-            return "all";
+    case sycl::info::device_type::cpu:
+        return "cpu";
+    case sycl::info::device_type::gpu:
+        return "gpu";
+    case sycl::info::device_type::accelerator:
+        return "accelerator";
+    case sycl::info::device_type::custom:
+        return "custom";
+    case sycl::info::device_type::automatic:
+        return "automatic";
+    case sycl::info::device_type::host:
+        return "host";
+    case sycl::info::device_type::all:
+        return "all";
     }
     return "unknown";
 }
 
 inline std::string global_mem_cache_type_name(const sycl::info::global_mem_cache_type type) {
     switch (type) {
-        case sycl::info::global_mem_cache_type::none:
-            return "none";
-        case sycl::info::global_mem_cache_type::read_only:
-            return "read_only";
-        case sycl::info::global_mem_cache_type::read_write:
-            return "read_write";
+    case sycl::info::global_mem_cache_type::none:
+        return "none";
+    case sycl::info::global_mem_cache_type::read_only:
+        return "read_only";
+    case sycl::info::global_mem_cache_type::read_write:
+        return "read_write";
     }
     return "unknown";
 }
 
 inline std::string local_mem_type_name(const sycl::info::local_mem_type type) {
     switch (type) {
-        case sycl::info::local_mem_type::none:
-            return "none";
-        case sycl::info::local_mem_type::local:
-            return "local";
-        case sycl::info::local_mem_type::global:
-            return "global";
+    case sycl::info::local_mem_type::none:
+        return "none";
+    case sycl::info::local_mem_type::local:
+        return "local";
+    case sycl::info::local_mem_type::global:
+        return "global";
     }
     return "unknown";
 }
@@ -311,7 +302,9 @@ device_description describe_device(const working_set<size_t__, bitpack_t__> &ws)
         .max_work_item_dimensions = static_cast<std::uint32_t>(ws.max_work_item_dimensions),
         .max_work_item_sizes_1d = {.x = ws.max_work_item_sizes_1d[0], .y = 1, .z = 1},
         .max_work_item_sizes_2d = {.x = ws.max_work_item_sizes_2d[0], .y = ws.max_work_item_sizes_2d[1], .z = 1},
-        .max_work_item_sizes_3d = {.x = ws.max_work_item_sizes_3d[0], .y = ws.max_work_item_sizes_3d[1], .z = ws.max_work_item_sizes_3d[2]},
+        .max_work_item_sizes_3d = {.x = ws.max_work_item_sizes_3d[0],
+                                   .y = ws.max_work_item_sizes_3d[1],
+                                   .z = ws.max_work_item_sizes_3d[2]},
         .work_item_independent_forward_progress = ws.work_item_independent_forward_progress,
         .max_work_group_size = ws.max_work_group_size,
         .max_num_sub_groups = static_cast<std::uint32_t>(ws.max_num_sub_groups),
@@ -339,14 +332,7 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::describe_kernel_dag() const {
     description.total_iterations = sample_shaper_.TOTAL_ITERATIONS;
 
     constexpr std::array<core::Connective, core::kNumConnectives> connective_order = {
-        core::kAnd,
-        core::kOr,
-        core::kAtleast,
-        core::kXor,
-        core::kNot,
-        core::kNand,
-        core::kNor,
-        core::kNull,
+        core::kAnd, core::kOr, core::kAtleast, core::kXor, core::kNot, core::kNand, core::kNor, core::kNull,
     };
 
     for (std::size_t layer_index = 0; layer_index < pdag_nodes_by_layer_.size(); ++layer_index) {
@@ -496,9 +482,7 @@ event::tally<bitpack_t_> layer_manager<bitpack_t_, prob_t_, size_t_>::single_pas
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
 stats::TallyNodeMap &layer_manager<bitpack_t_, prob_t_, size_t_>::pass_wait_collect(
-        stats::TallyNodeMap &stats,
-        const std::size_t total_passes,
-        const std::size_t passes_between_waits) {
+    stats::TallyNodeMap &stats, const std::size_t total_passes, const std::size_t passes_between_waits) {
     /*
      * The purpose of this routine is to
      *  1. enqueue `total_passes` Monte-Carlo passes, potentially amounting to
@@ -539,7 +523,6 @@ stats::TallyNodeMap &layer_manager<bitpack_t_, prob_t_, size_t_>::pass_wait_coll
     // tallies and fold them into the caller-supplied statistics map.
     return collect_tallies(stats);
 }
-
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
 stats::TallyNodeMap &layer_manager<bitpack_t_, prob_t_, size_t_>::collect_tallies(stats::TallyNodeMap &stats) {
@@ -590,7 +573,8 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::~layer_manager() {
  */
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
-const scram::mef::Event *scram::mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_>::get_mef_event(index_t_ event_id) const {
+const scram::mef::Event *
+scram::mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_>::get_mef_event(index_t_ event_id) const {
     // Quick lookup of the core::Node pointer.
     auto it = pdag_nodes_by_index_.find(event_id);
     if (it == pdag_nodes_by_index_.end() || !(it->second)) {
@@ -604,23 +588,28 @@ const scram::mef::Event *scram::mc::queue::layer_manager<bitpack_t_, prob_t_, si
         // Variables are indexed starting from core::Pdag::kVariableStartIndex.
         const int adjusted_index = var->index() - core::Pdag::kVariableStartIndex;
         if (adjusted_index < 0) {
-            throw std::runtime_error("layer_manager::get_mef_event – invalid variable index computation for event_id " + std::to_string(event_id));
+            throw std::runtime_error("layer_manager::get_mef_event – invalid variable index computation for event_id " +
+                                     std::to_string(event_id));
         }
 
         // Access the index map that lives in the owning PDAG instance.
         const auto &basic_event_map = var->graph().basic_events();
         if (adjusted_index < 0 || static_cast<std::size_t>(adjusted_index) >= basic_event_map.size()) {
-            throw std::runtime_error("layer_manager::get_mef_event – BasicEvent not found for variable index " + std::to_string(event_id));
+            throw std::runtime_error("layer_manager::get_mef_event – BasicEvent not found for variable index " +
+                                     std::to_string(event_id));
         }
         return basic_event_map.at(adjusted_index);
     }
 
     // Unsupported node type – provide a clear diagnostic.
-    throw std::runtime_error("layer_manager::get_mef_event – resolution for non-variable nodes (gates / constants) is not implemented");
+    throw std::runtime_error(
+        "layer_manager::get_mef_event – resolution for non-variable nodes (gates / constants) is not implemented");
 }
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
-layer_manager<bitpack_t_, prob_t_, size_t_>::layer_manager(core::Pdag *pdag, const size_t_ num_trials, const stats::TallyNodeMap &to_tally, const std::size_t requested_trials_per_pass) {
+layer_manager<bitpack_t_, prob_t_, size_t_>::layer_manager(core::Pdag *pdag, const size_t_ num_trials,
+                                                           const stats::TallyNodeMap &to_tally,
+                                                           const std::size_t requested_trials_per_pass) {
     // create and sort layers
     layered_toposort(pdag, pdag_nodes_, pdag_nodes_by_index_, pdag_nodes_by_layer_);
     sample_shaper_ = sample_shaper<bitpack_t_>(queue_, num_trials, node_count(), requested_trials_per_pass);
@@ -638,19 +627,10 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::layer_manager(core::Pdag *pdag, con
     }
 
     // now, add the tally nodes to the final layer, which is one large tally block.
-    build_tallies_for_layer<index_t_, prob_t_, bitpack_t_, size_t_>(nodes_to_tally,
-        queue_,
-        sample_shape_,
-        queueables_,
-        queueables_by_index_,
-        allocated_basic_events_by_index_,
-        allocated_gates_by_index_,
-        allocated_tally_events_by_index_,
-        device_tally_blocks_,
-        execution_partitions_,
-        execution_dependency_edges_,
-        partition_ids_by_queueable_,
-        pdag_nodes_by_layer_.size());
+    build_tallies_for_layer<index_t_, prob_t_, bitpack_t_, size_t_>(
+        nodes_to_tally, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
+        allocated_gates_by_index_, allocated_tally_events_by_index_, device_tally_blocks_, execution_partitions_,
+        execution_dependency_edges_, partition_ids_by_queueable_, pdag_nodes_by_layer_.size());
 
     // Log sample_shaper configuration
     LOG(DEBUG2) << sample_shaper_;

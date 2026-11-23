@@ -26,17 +26,16 @@
 #include "mc/scheduler/iteration_shape.h"
 #include "mc/scheduler/progressbar.h"
 
+#include "mc/logger/csv.h"
 #include "mc/stats/ci_utils.h"
 #include "mc/stats/diagnostics.h"
 #include "mc/stats/info_gain.h"
-#include "mc/logger/csv.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <limits>
 #include <optional>
-
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
@@ -59,7 +58,7 @@ class convergence_controller {
 
         steps_ = {
             .current = iteration_shape<bitpack_t_>(mgr.shaper().SAMPLE_SHAPE, 0),
-            .target  = iteration_shape<bitpack_t_>(mgr.shaper().SAMPLE_SHAPE, settings.num_trials()),
+            .target = iteration_shape<bitpack_t_>(mgr.shaper().SAMPLE_SHAPE, settings.num_trials()),
         };
 
         projected_steps_epsilon_ = iteration_shape<bitpack_t_>(mgr.shaper().SAMPLE_SHAPE, settings.num_trials());
@@ -71,18 +70,25 @@ class convergence_controller {
         // we don't have a target ε yet since it's a value that gets computed and updated after we run some initial
         // trials. So, we make the target postpone convergence checks until the burn-in phase finishes.
         interval_ = {
-            .current = {
-                .half_width_epsilon = std::numeric_limits<std::double_t>::infinity(), // not been computed so far, max
-                .half_width_epsilon_log10 = std::numeric_limits<std::double_t>::infinity(), // not been computed so far, max
-                .two_sided_confidence_level = std::numeric_limits<std::double_t>::quiet_NaN(), // not needed, not tracked for now.
-                .normal_quantile_two_sided = std::numeric_limits<std::double_t>::quiet_NaN(),
-            },
-            .target = {
-                .half_width_epsilon = settings_.ci_rel_margin_error() * std::max(0.0, stats::DELTA_EPSILON),
-                .half_width_epsilon_log10 = settings_.ci_rel_margin_error(), // for now, assume this is a user-provided constant
-                .two_sided_confidence_level = settings_.ci_confidence(), // from settings
-                .normal_quantile_two_sided = stats::normal_quantile_two_sided(settings_.ci_confidence()), // compute once
-            },
+            .current =
+                {
+                    .half_width_epsilon =
+                        std::numeric_limits<std::double_t>::infinity(), // not been computed so far, max
+                    .half_width_epsilon_log10 =
+                        std::numeric_limits<std::double_t>::infinity(), // not been computed so far, max
+                    .two_sided_confidence_level =
+                        std::numeric_limits<std::double_t>::quiet_NaN(), // not needed, not tracked for now.
+                    .normal_quantile_two_sided = std::numeric_limits<std::double_t>::quiet_NaN(),
+                },
+            .target =
+                {
+                    .half_width_epsilon = settings_.ci_rel_margin_error() * std::max(0.0, stats::DELTA_EPSILON),
+                    .half_width_epsilon_log10 =
+                        settings_.ci_rel_margin_error(), // for now, assume this is a user-provided constant
+                    .two_sided_confidence_level = settings_.ci_confidence(), // from settings
+                    .normal_quantile_two_sided =
+                        stats::normal_quantile_two_sided(settings_.ci_confidence()), // compute once
+                },
         };
         // ---------------------------------------------------------------------
         //  Build unique progress-log filename: <input>_<YYYYMMDD_HHMMSS>_convergence.csv
@@ -122,16 +128,18 @@ class convergence_controller {
         // interval_.target.half_width_epsilon_log10 = target_epsilon_log10;
         // ------------------ update projected trials ----------------------------------
         const auto N1 = stats::required_trials_from_normal_quantile_two_sided(p_hat, target_epsilon, target_z);
-        const auto N2 = stats::required_trials_log10_from_normal_quantile_two_sided(p_hat, target_epsilon_log10, target_z);
+        const auto N2 =
+            stats::required_trials_log10_from_normal_quantile_two_sided(p_hat, target_epsilon_log10, target_z);
         const auto N = std::max(N1, N2);
         steps_.target.trials(N);
         projected_steps_epsilon_.trials(N1);
         projected_steps_epsilon_log10_.trials(N2);
         // ------------------ update information gain -----------------------------
         const std::size_t successes_delta = tally.num_one_bits - prev_one_bits_;
-        const std::size_t failures_delta  = (tally.total_bits - tally.num_one_bits) - (prev_total_bits_ - prev_one_bits_);
+        const std::size_t failures_delta =
+            (tally.total_bits - tally.num_one_bits) - (prev_total_bits_ - prev_one_bits_);
         last_info_bits_ = info_gain_tracker_.add_batch(successes_delta, failures_delta);
-        prev_one_bits_   = tally.num_one_bits;
+        prev_one_bits_ = tally.num_one_bits;
         prev_total_bits_ = tally.total_bits;
     }
 
@@ -155,16 +163,16 @@ class convergence_controller {
         // ---------------------------------------------------------------------
         const std::double_t target_z = interval_.target.normal_quantile_two_sided;
 
-        std::double_t   max_eps          = 0.0;               // ε (linear)  – worst case
-        std::double_t   max_eps_log10    = 0.0;               // ε (log10)   – worst case
+        std::double_t max_eps = 0.0;       // ε (linear)  – worst case
+        std::double_t max_eps_log10 = 0.0; // ε (log10)   – worst case
 
-        std::size_t     max_N1           = 0;                 // projected N from linear ε
-        std::size_t     max_N2           = 0;                 // projected N from log10  ε
+        std::size_t max_N1 = 0; // projected N from linear ε
+        std::size_t max_N2 = 0; // projected N from log10  ε
 
-        std::size_t     sum_one_bits     = 0;                 // aggregated counters for info-gain
-        std::size_t     sum_total_bits   = 0;
+        std::size_t sum_one_bits = 0; // aggregated counters for info-gain
+        std::size_t sum_total_bits = 0;
 
-        //const auto log_target_eps10 = interval_.target.half_width_epsilon_log10;
+        // const auto log_target_eps10 = interval_.target.half_width_epsilon_log10;
 
         // Keep a pointer to the tally that currently sets the worst ε so that we
         // can expose it via current_tally_.  Always keep at least the first
@@ -182,14 +190,14 @@ class convergence_controller {
             // -----------------------------------------------------------------
             mc::stats::update_convergence<policy_t_>(t, settings_.ci_rel_margin_error(), target_z);
 
-            //LOG(DEBUG4) << "[" << idx << "]: " << t;
-            // -----------------------------------------------------------------
-            //  Track worst-case (largest ε) across all monitored tallies
-            // -----------------------------------------------------------------
-            const double eps      = t.linear.epsilon;
-            const double eps_log  = t.log10.epsilon;
-            const std::size_t N1  = t.linear.target_trials;
-            const std::size_t N2  = t.log10.target_trials;
+            // LOG(DEBUG4) << "[" << idx << "]: " << t;
+            //  -----------------------------------------------------------------
+            //   Track worst-case (largest ε) across all monitored tallies
+            //  -----------------------------------------------------------------
+            const double eps = t.linear.epsilon;
+            const double eps_log = t.log10.epsilon;
+            const std::size_t N1 = t.linear.target_trials;
+            const std::size_t N2 = t.log10.target_trials;
 
             if (!worst_tally_ptr || eps > max_eps) {
                 max_eps = eps;
@@ -203,7 +211,7 @@ class convergence_controller {
             max_N2 = std::max(max_N2, N2);
 
             // Aggregated counters for information gain ---------------------------
-            sum_one_bits   += t.num_one_bits;
+            sum_one_bits += t.num_one_bits;
             sum_total_bits += t.total_bits;
         }
 
@@ -218,14 +226,14 @@ class convergence_controller {
         // ---------------------------------------------------------------------
         //  Update controller state with worst-case metrics
         // ---------------------------------------------------------------------
-        interval_.current.half_width_epsilon       = max_eps;
+        interval_.current.half_width_epsilon = max_eps;
         interval_.current.half_width_epsilon_log10 = max_eps_log10;
 
         //  Target ε is defined as a relative margin of error w.r.t the current
         //  worst-case point estimate.
         if (worst_tally_ptr) {
-            const double target_epsilon = settings_.ci_rel_margin_error() *
-                                          std::max(worst_tally_ptr->mean, stats::DELTA_EPSILON);
+            const double target_epsilon =
+                settings_.ci_rel_margin_error() * std::max(worst_tally_ptr->mean, stats::DELTA_EPSILON);
             interval_.target.half_width_epsilon = target_epsilon;
         }
 
@@ -238,10 +246,10 @@ class convergence_controller {
         //  Information-gain tracking (aggregate across all monitored nodes)
         // ---------------------------------------------------------------------
         const std::size_t successes_delta = sum_one_bits - prev_one_bits_;
-        const std::size_t failures_delta  = (sum_total_bits - sum_one_bits) - (prev_total_bits_ - prev_one_bits_);
+        const std::size_t failures_delta = (sum_total_bits - sum_one_bits) - (prev_total_bits_ - prev_one_bits_);
 
         last_info_bits_ = info_gain_tracker_.add_batch(successes_delta, failures_delta);
-        prev_one_bits_   = sum_one_bits;
+        prev_one_bits_ = sum_one_bits;
         prev_total_bits_ = sum_total_bits;
 
         // ---------------------------------------------------------------------
@@ -249,10 +257,10 @@ class convergence_controller {
         // ---------------------------------------------------------------------
         if (worst_tally_ptr) {
             current_tally_.num_one_bits = worst_tally_ptr->num_one_bits;
-            current_tally_.total_bits   = worst_tally_ptr->total_bits;
-            current_tally_.mean         = worst_tally_ptr->mean;
-            current_tally_.std_err      = worst_tally_ptr->std_err;
-            current_tally_.ci           = worst_tally_ptr->ci;
+            current_tally_.total_bits = worst_tally_ptr->total_bits;
+            current_tally_.mean = worst_tally_ptr->mean;
+            current_tally_.std_err = worst_tally_ptr->std_err;
+            current_tally_.ci = worst_tally_ptr->ci;
         }
     }
 
@@ -289,7 +297,6 @@ class convergence_controller {
             progress_.mark_log_converged(*this);
         }
 
-
         // since we did step, update the iteration count
         return true;
     }
@@ -324,7 +331,6 @@ class convergence_controller {
             progress_.mark_log_converged(*this);
         }
 
-
         // since we did step, update the iteration count
         return true;
     }
@@ -341,8 +347,8 @@ class convergence_controller {
         }
 
         // iteration_ now shows that enough tasks have been queued on device such that by the time they finish,
-        // burn-in trials would be complete. So, don't queue up any additional work, just return saying you're done taking
-        // burn-in steps.
+        // burn-in trials would be complete. So, don't queue up any additional work, just return saying you're done
+        // taking burn-in steps.
         if (burn_in_complete()) {
             progress_.mark_burn_in_complete(*this);
             return false;
@@ -362,8 +368,8 @@ class convergence_controller {
         }
 
         // iteration_ now shows that enough tasks have been queued on device such that by the time they finish,
-        // burn-in trials would be complete. So, don't queue up any additional work, just return saying you're done taking
-        // burn-in steps.
+        // burn-in trials would be complete. So, don't queue up any additional work, just return saying you're done
+        // taking burn-in steps.
         if (burn_in_complete()) {
             progress_.mark_burn_in_complete(*this);
             return false;
@@ -383,7 +389,7 @@ class convergence_controller {
      */
     [[nodiscard]] event::tally<bitpack_t_> run_to_convergence(stats::TallyNodeMap &tally_node_map) {
         // queue up burn-in trials, but dont check for convergence.
-        while(burn_in_step(tally_node_map)) {
+        while (burn_in_step(tally_node_map)) {
             progress_.perform_burn_in_update(*this);
         }
         while (step(tally_node_map)) {
@@ -399,7 +405,7 @@ class convergence_controller {
      */
     [[nodiscard]] event::tally<bitpack_t_> run_to_convergence(const index_t_ event_id) {
         // queue up burn-in trials, but dont check for convergence.
-        while(burn_in_step(event_id)) {
+        while (burn_in_step(event_id)) {
             progress_.perform_burn_in_update(*this);
         }
         while (step(event_id)) {
@@ -409,9 +415,9 @@ class convergence_controller {
         return current_tally();
     }
 
-private:
+  private:
     queue::layer_manager<bitpack_t_, prob_t_, size_t_> &manager_;
-    //const index_t_ evt_idx_;
+    // const index_t_ evt_idx_;
     const core::Settings &settings_;
     // Information gain tracking
     stats::info_gain info_gain_tracker_{};
@@ -431,20 +437,25 @@ private:
     std::size_t passes_completed_ = 0;
     progress<policy_t_, bitpack_t_, prob_t_, size_t_> progress_;
 
-public:
+  public:
     [[nodiscard]] bool diagnostics_enabled() const { return settings_.oracle_p() >= 0.0; }
     [[nodiscard]] std::double_t ground_truth() const { return settings_.oracle_p(); }
 
     [[nodiscard]] const iteration_shape<bitpack_t_> &current_steps() const { return steps_.current; }
     [[nodiscard]] const iteration_shape<bitpack_t_> &projected_steps() const { return steps_.target; }
 
-    [[nodiscard]] const iteration_shape<bitpack_t_> &projected_steps_epsilon() const { return projected_steps_epsilon_; }
-    [[nodiscard]] const iteration_shape<bitpack_t_> &projected_steps_epsilon_log10() const { return projected_steps_epsilon_log10_; }
+    [[nodiscard]] const iteration_shape<bitpack_t_> &projected_steps_epsilon() const {
+        return projected_steps_epsilon_;
+    }
+    [[nodiscard]] const iteration_shape<bitpack_t_> &projected_steps_epsilon_log10() const {
+        return projected_steps_epsilon_log10_;
+    }
 
     [[nodiscard]] iteration_shape<bitpack_t_> remaining_steps() const {
         auto rem = current_steps();
-        const std::size_t rem_trials = (projected_steps().trials() > current_steps().trials()) ?
-                                       (projected_steps().trials() - current_steps().trials()) : 0;
+        const std::size_t rem_trials = (projected_steps().trials() > current_steps().trials())
+                                           ? (projected_steps().trials() - current_steps().trials())
+                                           : 0;
         rem.trials(rem_trials);
         return rem;
     }
@@ -477,7 +488,8 @@ public:
     [[nodiscard]] std::optional<stats::SamplingDiagnostics> sampling_diagnostics() const {
         std::optional<stats::SamplingDiagnostics> sampling_diagnostics;
         if (diagnostics_enabled()) {
-            sampling_diagnostics = stats::compute_sampling_diagnostics(current_tally(), settings_.oracle_p(), target_state());
+            sampling_diagnostics =
+                stats::compute_sampling_diagnostics(current_tally(), settings_.oracle_p(), target_state());
         }
         return sampling_diagnostics;
     }
@@ -491,7 +503,8 @@ public:
     [[nodiscard]] static bool check_log_epsilon_bounded(const tracked_pair<stats::ci> &interval) {
         const auto &current = interval.current.half_width_epsilon_log10;
         const auto &target = interval.target.half_width_epsilon_log10;
-        //LOG(DEBUG3) << "current: " << current << ", target: " << target << ", delta: " << (target - current) << ", abs_delta: " << std::abs(target - current);
+        // LOG(DEBUG3) << "current: " << current << ", target: " << target << ", delta: " << (target - current) << ",
+        // abs_delta: " << std::abs(target - current);
         return current > 0 && current <= target;
     }
 
@@ -503,8 +516,7 @@ public:
         // Pass counter is independent of the tally (which can stay at 0 bits
         // when p̂ = 0 and no representative node is selected).  Also honour the
         // trial-derived iteration count when the host tally *does* advance.
-        return passes_completed_ >= max_iterations ||
-               current_steps().iterations() >= max_iterations;
+        return passes_completed_ >= max_iterations || current_steps().iterations() >= max_iterations;
     }
 
     /// Passes to queue before the next tally read: Settings::passes_per_step(),
@@ -530,21 +542,15 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool burn_in_complete() const {
-        return current_steps().trials() >= settings_.ci_burnin_trials();
-    }
+    [[nodiscard]] bool burn_in_complete() const { return current_steps().trials() >= settings_.ci_burnin_trials(); }
 
-    [[nodiscard]] std::size_t burn_in_trials() const {
-        return settings_.ci_burnin_trials();
-    }
+    [[nodiscard]] std::size_t burn_in_trials() const { return settings_.ci_burnin_trials(); }
 
     [[nodiscard]] iteration_shape<bitpack_t_> burn_in_trials_shape() const {
         return iteration_shape<bitpack_t_>(manager_.shaper().SAMPLE_SHAPE, settings_.ci_burnin_trials());
     }
 
-    [[nodiscard]] bool fixed_iterations() const {
-        return manager_.shaper().TOTAL_ITERATIONS;
-    }
+    [[nodiscard]] bool fixed_iterations() const { return manager_.shaper().TOTAL_ITERATIONS; }
 
     [[nodiscard]] iteration_shape<bitpack_t_> fixed_iterations_shape() const {
         auto shape = iteration_shape<bitpack_t_>(manager_.shaper().SAMPLE_SHAPE, 0);
@@ -552,8 +558,6 @@ public:
         return shape;
     }
 
-    [[nodiscard]] std::size_t node_count() const {
-        return manager_.node_count();
-    }
+    [[nodiscard]] std::size_t node_count() const { return manager_.node_count(); }
 };
 } // namespace scram::mc::scheduler

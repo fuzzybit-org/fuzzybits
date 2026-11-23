@@ -18,136 +18,135 @@
 
 namespace {
 
-    namespace ftp = fuzzybits::compile::ftp;
-    namespace json = fuzzybits::compile::ftp::json;
-    namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
+namespace ftp = fuzzybits::compile::ftp;
+namespace json = fuzzybits::compile::ftp::json;
+namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
 
-    [[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        REQUIRE(input);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+[[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    REQUIRE(input);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
+
+[[nodiscard]] auto parse_text(std::string_view text) -> json::value {
+    auto parsed = json::parse(text);
+    REQUIRE(parsed);
+    return std::move(parsed).value();
+}
+
+[[nodiscard]] auto fixture_directories() -> std::vector<std::filesystem::path> {
+    std::vector<std::filesystem::path> out;
+    const auto root = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
+    for (auto const &entry : std::filesystem::directory_iterator(root)) {
+        if (entry.is_directory() && std::filesystem::is_regular_file(entry.path() / "expected.json")) {
+            out.push_back(entry.path());
+        }
     }
+    std::ranges::sort(out);
+    return out;
+}
 
-    [[nodiscard]] auto parse_text(std::string_view text) -> json::value {
-        auto parsed = json::parse(text);
-        REQUIRE(parsed);
-        return std::move(parsed).value();
-    }
+[[nodiscard]] auto as_number(json::value const &value) -> double {
+    return value.is(json::value::kind_type::integer) ? static_cast<double>(value.integer) : value.number;
+}
 
-    [[nodiscard]] auto fixture_directories() -> std::vector<std::filesystem::path> {
-        std::vector<std::filesystem::path> out;
-        const auto root = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
-        for (auto const &entry : std::filesystem::directory_iterator(root)) {
-            if (entry.is_directory() && std::filesystem::is_regular_file(entry.path() / "expected.json")) {
-                out.push_back(entry.path());
+[[nodiscard]] auto is_numeric(json::value const &value) -> bool {
+    return value.is(json::value::kind_type::integer) || value.is(json::value::kind_type::number);
+}
+
+[[nodiscard]] auto base_name(std::string const &path) -> std::string {
+    return std::filesystem::path(path).filename().string();
+}
+
+// `actual` holds, for each duplicated name, the occurrences the fixture lists, and the record the
+// policy chose with its file, line and value.
+void require_duplicates(json::value const &actual, json::value const &expected, std::string const &policy) {
+    REQUIRE(actual.is_object());
+    REQUIRE(actual.keys == expected.keys);
+    for (std::size_t index = 0; index < expected.keys.size(); ++index) {
+        INFO("duplicate import " << expected.keys[index]);
+        auto const &records = expected.items[index].items;
+        REQUIRE_FALSE(records.empty());
+        auto const &chosen_expected = policy == "first" ? records.front() : records.back();
+        std::size_t chosen_count = 0;
+        for (auto const &occurrence : actual.items[index].items) {
+            const auto file = base_name(occurrence.find("file")->string);
+            const auto line = occurrence.find("line")->integer;
+            const bool listed = std::ranges::any_of(records, [&](json::value const &record) {
+                return record.find("file")->string == file && record.find("line")->integer == line;
+            });
+            REQUIRE(listed);
+            if (occurrence.find("chosen")->boolean) {
+                ++chosen_count;
+                REQUIRE(file == chosen_expected.find("file")->string);
+                REQUIRE(line == chosen_expected.find("line")->integer);
+                REQUIRE(as_number(*occurrence.find("value")) == as_number(*chosen_expected.find("value")));
             }
         }
-        std::ranges::sort(out);
-        return out;
+        REQUIRE(chosen_count == 1);
+        REQUIRE(actual.items[index].items.size() == records.size());
     }
+}
 
-    [[nodiscard]] auto as_number(json::value const &value) -> double {
-        return value.is(json::value::kind_type::integer) ? static_cast<double>(value.integer) : value.number;
-    }
-
-    [[nodiscard]] auto is_numeric(json::value const &value) -> bool {
-        return value.is(json::value::kind_type::integer) || value.is(json::value::kind_type::number);
-    }
-
-    [[nodiscard]] auto base_name(std::string const &path) -> std::string {
-        return std::filesystem::path(path).filename().string();
-    }
-
-    // `actual` holds, for each duplicated name, the occurrences the fixture lists, and the record the
-    // policy chose with its file, line and value.
-    void require_duplicates(json::value const &actual, json::value const &expected, std::string const &policy) {
+// Every key of `expected` is present in `actual` with the same value.
+void require_same(json::value const &actual, json::value const &expected, std::string const &path,
+                  std::string const &policy) {
+    INFO("at " << path);
+    if (is_numeric(expected)) {
+        REQUIRE(is_numeric(actual));
+        REQUIRE(std::abs(as_number(actual) - as_number(expected)) <= 1e-12 * std::abs(as_number(expected)));
+    } else if (expected.is_string()) {
+        REQUIRE(actual.is_string());
+        REQUIRE(actual.string == expected.string);
+    } else if (expected.is(json::value::kind_type::null)) {
+        REQUIRE(actual.is(json::value::kind_type::null));
+    } else if (expected.is_array()) {
+        REQUIRE(actual.is_array());
+        REQUIRE(actual.items.size() == expected.items.size());
+        for (std::size_t index = 0; index < expected.items.size(); ++index) {
+            require_same(actual.items[index], expected.items[index], path + "[" + std::to_string(index) + "]", policy);
+        }
+    } else if (expected.is_object()) {
         REQUIRE(actual.is_object());
-        REQUIRE(actual.keys == expected.keys);
         for (std::size_t index = 0; index < expected.keys.size(); ++index) {
-            INFO("duplicate import " << expected.keys[index]);
-            auto const &records = expected.items[index].items;
-            REQUIRE_FALSE(records.empty());
-            auto const &chosen_expected = policy == "first" ? records.front() : records.back();
-            std::size_t chosen_count = 0;
-            for (auto const &occurrence : actual.items[index].items) {
-                const auto file = base_name(occurrence.find("file")->string);
-                const auto line = occurrence.find("line")->integer;
-                const bool listed = std::ranges::any_of(records, [&](json::value const &record) {
-                    return record.find("file")->string == file && record.find("line")->integer == line;
-                });
-                REQUIRE(listed);
-                if (occurrence.find("chosen")->boolean) {
-                    ++chosen_count;
-                    REQUIRE(file == chosen_expected.find("file")->string);
-                    REQUIRE(line == chosen_expected.find("line")->integer);
-                    REQUIRE(as_number(*occurrence.find("value")) == as_number(*chosen_expected.find("value")));
-                }
+            auto const &key = expected.keys[index];
+            auto const *found = actual.find(key);
+            INFO("key " << key);
+            REQUIRE(found != nullptr);
+            if (path == "structure" && key == "duplicate_imports") {
+                require_duplicates(*found, expected.items[index], policy);
+            } else {
+                require_same(*found, expected.items[index], path.empty() ? key : path + "." + key, policy);
             }
-            REQUIRE(chosen_count == 1);
-            REQUIRE(actual.items[index].items.size() == records.size());
         }
     }
+}
 
-    // Every key of `expected` is present in `actual` with the same value.
-    void require_same(json::value const &actual, json::value const &expected, std::string const &path,
-                      std::string const &policy) {
-        INFO("at " << path);
-        if (is_numeric(expected)) {
-            REQUIRE(is_numeric(actual));
-            REQUIRE(std::abs(as_number(actual) - as_number(expected)) <= 1e-12 * std::abs(as_number(expected)));
-        } else if (expected.is_string()) {
-            REQUIRE(actual.is_string());
-            REQUIRE(actual.string == expected.string);
-        } else if (expected.is(json::value::kind_type::null)) {
-            REQUIRE(actual.is(json::value::kind_type::null));
-        } else if (expected.is_array()) {
-            REQUIRE(actual.is_array());
-            REQUIRE(actual.items.size() == expected.items.size());
-            for (std::size_t index = 0; index < expected.items.size(); ++index) {
-                require_same(actual.items[index], expected.items[index], path + "[" + std::to_string(index) + "]",
-                             policy);
-            }
-        } else if (expected.is_object()) {
-            REQUIRE(actual.is_object());
-            for (std::size_t index = 0; index < expected.keys.size(); ++index) {
-                auto const &key = expected.keys[index];
-                auto const *found = actual.find(key);
-                INFO("key " << key);
-                REQUIRE(found != nullptr);
-                if (path == "structure" && key == "duplicate_imports") {
-                    require_duplicates(*found, expected.items[index], policy);
-                } else {
-                    require_same(*found, expected.items[index], path.empty() ? key : path + "." + key, policy);
-                }
-            }
+[[nodiscard]] auto diagnostic_ids(json::value const &list) -> std::multiset<std::string> {
+    std::multiset<std::string> out;
+    for (auto const &item : list.items) {
+        const auto severity = item.find("severity")->string;
+        if (severity != "note") {
+            out.insert(severity + " " + item.find("id")->string);
         }
     }
+    return out;
+}
 
-    [[nodiscard]] auto diagnostic_ids(json::value const &list) -> std::multiset<std::string> {
-        std::multiset<std::string> out;
-        for (auto const &item : list.items) {
-            const auto severity = item.find("severity")->string;
-            if (severity != "note") {
-                out.insert(severity + " " + item.find("id")->string);
-            }
-        }
-        return out;
+[[nodiscard]] auto expected_ids(json::value const &outcome, const bool documents_structure_without_targets)
+    -> std::multiset<std::string> {
+    std::multiset<std::string> out;
+    bool missing_process = false;
+    for (auto const &item : outcome.find("diagnostics")->items) {
+        const auto id = "io.ftp." + item.find("code")->string;
+        missing_process = missing_process || id == "io.ftp.missing-process";
+        out.insert(item.find("severity")->string + " " + id);
     }
-
-    [[nodiscard]] auto expected_ids(json::value const &outcome, const bool documents_structure_without_targets)
-        -> std::multiset<std::string> {
-        std::multiset<std::string> out;
-        bool missing_process = false;
-        for (auto const &item : outcome.find("diagnostics")->items) {
-            const auto id = "io.ftp." + item.find("code")->string;
-            missing_process = missing_process || id == "io.ftp.missing-process";
-            out.insert(item.find("severity")->string + " " + id);
-        }
-        if (documents_structure_without_targets && !missing_process) {
-            out.insert("warning io.ftp.missing-process");
-        }
-        return out;
+    if (documents_structure_without_targets && !missing_process) {
+        out.insert("warning io.ftp.missing-process");
     }
+    return out;
+}
 
 } // namespace
 
@@ -326,9 +325,8 @@ TEST_CASE("inspect: a diagnostic's position is the reader's, however the path is
     const auto result = ftp::inspect_sources(sources, options);
 
     REQUIRE_FALSE(result.ok());
-    const auto duplicate_gate = std::ranges::find_if(result.diagnostics, [](auto const &item) {
-        return item.id == "io.ftp.duplicate-gate";
-    });
+    const auto duplicate_gate =
+        std::ranges::find_if(result.diagnostics, [](auto const &item) { return item.id == "io.ftp.duplicate-gate"; });
     REQUIRE(duplicate_gate != result.diagnostics.end());
     REQUIRE(duplicate_gate->message.find("dir/./a b.ftp:1") != std::string::npos);
     REQUIRE(duplicate_gate->file == "dir/./a b.ftp");

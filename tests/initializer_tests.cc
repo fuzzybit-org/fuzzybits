@@ -27,84 +27,72 @@ namespace scram::mef::test {
 
 // Test if the XML is well formed.
 TEST_CASE("InitializerTest.XMLFormatting", "[mef::initializer]") {
-  CHECK_THROWS_AS(
-      Initializer({"tests/input/xml_formatting_error.xml"}, core::Settings()),
-      xml::ParseError);
+    CHECK_THROWS_AS(Initializer({"tests/input/xml_formatting_error.xml"}, core::Settings()), xml::ParseError);
 }
 
 // XML custom namespace errors.
 TEST_CASE("InitializerTest.XMLNameSpace", "[mef::initializer]") {
-  CHECK_THROWS_AS(
-      Initializer({"tests/input/undefined_xmlns.xml"}, core::Settings()),
-      xml::ParseError);
-  CHECK_THROWS_AS(
-      Initializer({"tests/input/custom_xmlns.xml"}, core::Settings()),
-      xml::ValidityError);
+    CHECK_THROWS_AS(Initializer({"tests/input/undefined_xmlns.xml"}, core::Settings()), xml::ParseError);
+    CHECK_THROWS_AS(Initializer({"tests/input/custom_xmlns.xml"}, core::Settings()), xml::ValidityError);
 }
 
 // Test the response for non-existent file.
 TEST_CASE("InitializerTest.NonExistentFile", "[mef::initializer]") {
-  // Access issues. IOErrors
-  CHECK_THROWS_AS(
-      Initializer({"tests/input/nonexistent_file.xml"}, core::Settings()),
-      IOError);
+    // Access issues. IOErrors
+    CHECK_THROWS_AS(Initializer({"tests/input/nonexistent_file.xml"}, core::Settings()), IOError);
 }
 
 // Test if passing the same file twice causing an error.
 TEST_CASE("InitializerTest.PassTheSameFileTwice", "[mef::initializer]") {
-  std::string input_correct = "tests/input/fta/correct_tree_input.xml";
-  std::string the_same_path =  // Path obfuscation.
-      "tests/../tests/input/fta/correct_tree_input.xml";
-  CHECK_THROWS_AS(Initializer({input_correct, the_same_path}, core::Settings()),
-                  IOError);
+    std::string input_correct = "tests/input/fta/correct_tree_input.xml";
+    std::string the_same_path = // Path obfuscation.
+        "tests/../tests/input/fta/correct_tree_input.xml";
+    CHECK_THROWS_AS(Initializer({input_correct, the_same_path}, core::Settings()), IOError);
 }
 
 // Test if the schema catches errors.
 // This is trusted to XML libraries and the correctness of the RELAX NG schema,
 // so the test is very basic calls.
 TEST_CASE("InitializerTest.FailSchemaValidation", "[mef::initializer]") {
-  std::string dir = "tests/input/";
-  // clang-format off
+    std::string dir = "tests/input/";
+    // clang-format off
   auto input = GENERATE(as<const char*>(),
                         "schema_fail.xml",
                         "fta/nested_formula.xml",
                         "fta/nested_not_not.xml",
                         "fta/nested_not_constant.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()),
-                  xml::ValidityError);
+    // clang-format on
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), xml::ValidityError);
 }
 
 // Unsupported operations.
 TEST_CASE("InitializerTest.UnsupportedFeature", "[mef::initializer]") {
-  std::string dir = "tests/input/";
-  // clang-format off
+    std::string dir = "tests/input/";
+    // clang-format off
   auto input = GENERATE(as<const char*>(),
                         "unsupported_feature.xml",
                         "unsupported_gate.xml",
                         "unsupported_expression.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()),
-                  xml::ValidityError);
+    // clang-format on
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), xml::ValidityError);
 }
 
 TEST_CASE("InitializerTest.EmptyAttributeElementText", "[mef::initializer]") {
-  std::string dir = "tests/input/";
-  // clang-format off
+    std::string dir = "tests/input/";
+    // clang-format off
   auto input = GENERATE(as<const char*>(),
                         "empty_element.xml",
                         "empty_attribute.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()),
-                  xml::ValidityError);
+    // clang-format on
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), xml::ValidityError);
 }
 
 TEST_CASE("InitializerTest.CorrectEtaInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/eta/";
-  // clang-format off
+    std::string dir = "tests/input/eta/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       "simplest_correct.xml",
@@ -120,14 +108,14 @@ TEST_CASE("InitializerTest.CorrectEtaInputs", "[mef::initializer]") {
       "link_in_rule.xml",
       "test_initiating_event.xml",
       "test_functional_event.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
+    // clang-format on
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
 }
 
 TEST_CASE("InitializerTest.IncorrectEtaInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/eta/";
-  // clang-format off
+    std::string dir = "tests/input/eta/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       "doubly_defined_initiating_event.xml",
@@ -167,21 +155,21 @@ TEST_CASE("InitializerTest.IncorrectEtaInputs", "[mef::initializer]") {
       "mixing_collect_instructions.xml",
       "mixing_collect_instructions_link.xml",
       "mixing_collect_instructions_fork.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), ValidityError);
+    // clang-format on
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), ValidityError);
 }
 
 TEST_CASE("InitializerTest.CorrectLabelsAndAttributes", "[mef::initializer]") {
-  const char* input = "tests/input/fta/labels_and_attributes.xml";
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({input}, core::Settings()));
+    const char *input = "tests/input/fta/labels_and_attributes.xml";
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({input}, core::Settings()));
 }
 
 // Test correct inputs without probability information.
 TEST_CASE("InitializerTest.CorrectFtaInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/fta/";
-  // clang-format off
+    std::string dir = "tests/input/fta/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       "correct_tree_input.xml",
@@ -206,32 +194,29 @@ TEST_CASE("InitializerTest.CorrectFtaInputs", "[mef::initializer]") {
       "case_sensitivity.xml",
       "weibull_lnorm_deviate_2p.xml",
       "weibull_lnorm_deviate_3p.xml");
-  // clang-format on
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
+    // clang-format on
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
 }
 
 TEST_CASE("InitializerTest.CorrectInclude", "[mef::initializer]") {
-  std::string dir = "tests/input/";
-  auto input =
-      GENERATE(as<const char*>(), "xinclude.xml", "xinclude_transitive.xml");
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
+    std::string dir = "tests/input/";
+    auto input = GENERATE(as<const char *>(), "xinclude.xml", "xinclude_transitive.xml");
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({dir + input}, core::Settings()));
 }
 
 TEST_CASE("InitializerTest.IncorrectInclude", "[mef::initializer]") {
-  std::string dir = "tests/input/";
-  auto input =
-      GENERATE(as<const char*>(), "xinclude_no_file.xml", "xinclude_cycle.xml");
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()),
-                  xml::XIncludeError);
+    std::string dir = "tests/input/";
+    auto input = GENERATE(as<const char *>(), "xinclude_no_file.xml", "xinclude_cycle.xml");
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), xml::XIncludeError);
 }
 
 // Test correct inputs with probability information.
 TEST_CASE("InitializerTest.CorrectProbabilityInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/fta/";
-  // clang-format off
+    std::string dir = "tests/input/fta/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       "missing_bool_constant.xml",  // House event is implicitly false.
@@ -239,17 +224,17 @@ TEST_CASE("InitializerTest.CorrectProbabilityInputs", "[mef::initializer]") {
       "trailing_spaces.xml",
       "correct_expressions.xml",
       "flavored_types.xml");
-  // clang-format on
-  core::Settings settings;
-  settings.probability_analysis(true);
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({dir + input}, settings));
+    // clang-format on
+    core::Settings settings;
+    settings.probability_analysis(true);
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({dir + input}, settings));
 }
 
 // Test incorrect fault tree inputs
 TEST_CASE("InitializerTest.IncorrectFtaInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/fta/";
-  // clang-format off
+    std::string dir = "tests/input/fta/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       "invalid_probability.xml",
@@ -298,41 +283,39 @@ TEST_CASE("InitializerTest.IncorrectFtaInputs", "[mef::initializer]") {
       "ccf_wrong_distribution.xml",
       "repeated_ccf_members.xml",
       "duplicate_via_not.xml");
-  // clang-format on
+    // clang-format on
 
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), ValidityError);
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings()), ValidityError);
 }
 
 TEST_CASE("InitializerTest.IncorrectXMLOverflow", "[mef::initializer]") {
-  std::string input = "tests/input/fta/int_overflow.xml";
-  CHECK_THROWS_AS(Initializer({input}, core::Settings()), xml::ValidityError);
+    std::string input = "tests/input/fta/int_overflow.xml";
+    CHECK_THROWS_AS(Initializer({input}, core::Settings()), xml::ValidityError);
 }
 
 // Test failures triggered only in with probability analysis.
 TEST_CASE("InitializerTest.IncorrectProbabilityInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/fta/";
-  auto input = GENERATE(as<const char*>(), "missing_expression.xml");
+    std::string dir = "tests/input/fta/";
+    auto input = GENERATE(as<const char *>(), "missing_expression.xml");
 
-  core::Settings settings;
-  settings.probability_analysis(true);
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, settings), ValidityError);
+    core::Settings settings;
+    settings.probability_analysis(true);
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, settings), ValidityError);
 }
 
 // Test the case when a top event is not orphan.
 // The top event of one fault tree
 // can be a child of a gate of another fault tree.
 TEST_CASE("InitializerTest.NonOrphanTopEvent", "[mef::initializer]") {
-  std::string dir = "tests/input/fta/";
-  CHECK_NOTHROW(Initializer(
-      {dir + "correct_tree_input.xml", dir + "second_fault_tree.xml"},
-      core::Settings()));
+    std::string dir = "tests/input/fta/";
+    CHECK_NOTHROW(Initializer({dir + "correct_tree_input.xml", dir + "second_fault_tree.xml"}, core::Settings()));
 }
 
 TEST_CASE("InitializerTest.CorrectModelInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/model/";
-  // clang-format off
+    std::string dir = "tests/input/model/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       // extern_{library,function,expression}.xml dlopen a dylib at the
@@ -346,18 +329,18 @@ TEST_CASE("InitializerTest.CorrectModelInputs", "[mef::initializer]") {
       "substitution_declarative_target_is_another_source.xml",
       "substitution_target_is_hypothesis.xml",
       "substitution_declarative_ccf.xml");
-  // clang-format on
+    // clang-format on
 
-  core::Settings settings;
-  settings.approximation(core::Approximation::kRareEvent);
+    core::Settings settings;
+    settings.approximation(core::Approximation::kRareEvent);
 
-  CAPTURE(input);
-  CHECK_NOTHROW(Initializer({dir + input}, settings, true));
+    CAPTURE(input);
+    CHECK_NOTHROW(Initializer({dir + input}, settings, true));
 }
 
 TEST_CASE("InitializerTest.IncorrectModelInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/model/";
-  // clang-format off
+    std::string dir = "tests/input/model/";
+    // clang-format off
   auto input = GENERATE(
       as<const char*>(),
       // duplicate_extern_{libraries,functions}.xml,
@@ -395,60 +378,53 @@ TEST_CASE("InitializerTest.IncorrectModelInputs", "[mef::initializer]") {
       "substitution_nondeclarative_ccf_hypothesis.xml",
       "substitution_nondeclarative_ccf_source.xml",
       "substitution_nondeclarative_ccf_target.xml");
-  // clang-format on
+    // clang-format on
 
-  core::Settings settings;
-  settings.approximation(core::Approximation::kRareEvent);
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, settings, true), ValidityError);
+    core::Settings settings;
+    settings.approximation(core::Approximation::kRareEvent);
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, settings, true), ValidityError);
 }
 
 TEST_CASE("InitializerTest.IncorrectModelEmptyInputs", "[mef::initializer]") {
-  std::string dir = "tests/input/model/";
-  auto input = GENERATE(as<const char*>(), "empty_extern_function.xml",
-                        "empty_alignment.xml");
+    std::string dir = "tests/input/model/";
+    auto input = GENERATE(as<const char *>(), "empty_extern_function.xml", "empty_alignment.xml");
 
-  CAPTURE(input);
-  CHECK_THROWS_AS(Initializer({dir + input}, core::Settings(), true),
-                  xml::ValidityError);
+    CAPTURE(input);
+    CHECK_THROWS_AS(Initializer({dir + input}, core::Settings(), true), xml::ValidityError);
 }
 
 TEST_CASE("InitializerTest.ExternDLError", "[mef::initializer]") {
-  CHECK_THROWS_AS(Initializer({"tests/input/model/extern_library_ioerror.xml"},
-                              core::Settings(), true),
-                  DLError);
-  CHECK_THROWS_AS(
-      Initializer({"tests/input/model/undefined_symbol_extern_function.xml"},
-                  core::Settings(), true),
-      DLError);
+    CHECK_THROWS_AS(Initializer({"tests/input/model/extern_library_ioerror.xml"}, core::Settings(), true), DLError);
+    CHECK_THROWS_AS(Initializer({"tests/input/model/undefined_symbol_extern_function.xml"}, core::Settings(), true),
+                    DLError);
 }
 
 // Tests that external libraries are disabled by default.
 TEST_CASE("InitializerTest.DefaultExternDisable", "[mef::initializer]") {
-  SKIP("extern dylib load path does not match the Ninja output directory");
-  std::string input = "tests/input/model/extern_library.xml";
-  CHECK_NOTHROW(Initializer({input}, core::Settings(), true));
-  CHECK_THROWS_AS(Initializer({input}, core::Settings()), IllegalOperation);
+    SKIP("extern dylib load path does not match the Ninja output directory");
+    std::string input = "tests/input/model/extern_library.xml";
+    CHECK_NOTHROW(Initializer({input}, core::Settings(), true));
+    CHECK_THROWS_AS(Initializer({input}, core::Settings()), IllegalOperation);
 }
 
 // Non-declarative substitutions with approximations only.
-TEST_CASE("InitializerTest.NonDeclarativeSubstitutionsWithAppproximations",
-          "[mef::initializer]") {
-  std::string input = "tests/input/model/substitution_types.xml";
-  // Default Settings is now kDirect/kMonteCarlo; non-declarative
-  // substitutions are illegal only under exact (kNone) quantification.
-  core::Settings exact;
-  exact.algorithm("bdd");
-  CHECK_THROWS_AS(Initializer({input}, exact), ValidityError);
+TEST_CASE("InitializerTest.NonDeclarativeSubstitutionsWithAppproximations", "[mef::initializer]") {
+    std::string input = "tests/input/model/substitution_types.xml";
+    // Default Settings is now kDirect/kMonteCarlo; non-declarative
+    // substitutions are illegal only under exact (kNone) quantification.
+    core::Settings exact;
+    exact.algorithm("bdd");
+    CHECK_THROWS_AS(Initializer({input}, exact), ValidityError);
 
-  core::Settings settings;
-  settings.approximation(core::Approximation::kRareEvent);
-  CHECK_NOTHROW(Initializer({input}, settings));
-  settings.approximation(core::Approximation::kMcub);
-  CHECK_NOTHROW(Initializer({input}, settings));
+    core::Settings settings;
+    settings.approximation(core::Approximation::kRareEvent);
+    CHECK_NOTHROW(Initializer({input}, settings));
+    settings.approximation(core::Approximation::kMcub);
+    CHECK_NOTHROW(Initializer({input}, settings));
 
-  exact.prime_implicants(true);
-  CHECK_THROWS_AS(Initializer({input}, exact), ValidityError);
+    exact.prime_implicants(true);
+    CHECK_THROWS_AS(Initializer({input}, exact), ValidityError);
 }
 
-}  // namespace scram::mef::test
+} // namespace scram::mef::test

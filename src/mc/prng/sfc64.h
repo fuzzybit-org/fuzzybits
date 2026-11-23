@@ -21,37 +21,35 @@ namespace scram::mc::prng::sfc64 {
  */
 
 namespace detail {
-    /* 64-bit mixing function inspired by SFC64’s final avalanche step. */
-    [[gnu::always_inline]] static inline std::uint32_t mix32(std::uint64_t x) {
-        constexpr std::uint64_t K0 = 0x8CB92BA72F3D8DD7ULL;
-        constexpr std::uint64_t K1 = 0x9DDE127EB2C99B2BULL;
+/* 64-bit mixing function inspired by SFC64’s final avalanche step. */
+[[gnu::always_inline]] static inline std::uint32_t mix32(std::uint64_t x) {
+    constexpr std::uint64_t K0 = 0x8CB92BA72F3D8DD7ULL;
+    constexpr std::uint64_t K1 = 0x9DDE127EB2C99B2BULL;
 
-        x ^= x >> 25;
-        x *= K0;
-        x ^= x >> 47;
-        x *= K1;
-        x ^= x >> 28;
-        return static_cast<std::uint32_t>(x);
-    }
+    x ^= x >> 25;
+    x *= K0;
+    x ^= x >> 47;
+    x *= K1;
+    x ^= x >> 28;
+    return static_cast<std::uint32_t>(x);
+}
 } // namespace detail
 
 // ------------------------------------------------------------------
 //  generate – produce four decorrelated 32-bit words
 // ------------------------------------------------------------------
 [[gnu::always_inline]]
-static void generate(const prng::state128 *seeds,
-                     prng::state128       *results,
-                     const std::uint8_t    generation) {
+static void generate(const prng::state128 *seeds, prng::state128 *results, const std::uint8_t generation) {
     const std::uint64_t g = static_cast<std::uint64_t>(generation);
 
-    #pragma unroll
+#pragma unroll
     for (int i = 0; i < 4; ++i) {
         const std::uint64_t hi = static_cast<std::uint64_t>(seeds->x[i]);
         const std::uint64_t lo = static_cast<std::uint64_t>(seeds->x[(i + 1) & 3]);
 
         /* 64-bit counter derived from the 128-bit seed + generation. */
         std::uint64_t counter = (hi << 32) | lo;
-        counter += (g << 17);               // cheap decorrelation
+        counter += (g << 17); // cheap decorrelation
 
         results->x[i] = detail::mix32(counter);
     }
@@ -63,9 +61,7 @@ static void generate(const prng::state128 *seeds,
 
 template <typename bitpack_t_>
 [[gnu::always_inline]]
-static bitpack_t_ sample(const prng::state128 *seeds,
-                         const std::uint64_t   threshold,
-                         const std::uint32_t   generation) {
+static bitpack_t_ sample(const prng::state128 *seeds, const std::uint64_t threshold, const std::uint32_t generation) {
     prng::state128 rnd{};
     generate(seeds, &rnd, static_cast<std::uint8_t>(generation));
 
@@ -86,17 +82,16 @@ static bitpack_t_ sample(const prng::state128 *seeds,
 
 template <typename bitpack_t_>
 [[gnu::always_inline]]
-static bitpack_t_ pack_bernoulli_draws(const prng::state128 &seed_base,
-                                       const std::uint64_t  p_threshold) {
+static bitpack_t_ pack_bernoulli_draws(const prng::state128 &seed_base, const std::uint64_t p_threshold) {
     constexpr std::uint8_t BITS_PER_GEN = 4;
     constexpr std::uint8_t NUM_GEN = sizeof(bitpack_t_) * 8 / BITS_PER_GEN;
 
     bitpack_t_ packed = bitpack_t_(0);
-    #pragma unroll
+#pragma unroll
     for (std::uint32_t i = 0; i < NUM_GEN; ++i) {
         packed |= sample<bitpack_t_>(&seed_base, p_threshold, i);
     }
     return packed;
 }
 
-} // namespace scram::mc::prng::sfc64 
+} // namespace scram::mc::prng::sfc64

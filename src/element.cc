@@ -26,63 +26,58 @@ namespace scram::mef {
 Element::Element(std::string name) { Element::name(std::move(name)); }
 
 void Element::name(std::string name) {
-  if (name.empty())
-    SCRAM_THROW(LogicError("The element name cannot be empty"));
-  if (name.find('.') != std::string::npos)
-    SCRAM_THROW(ValidityError("The element name is malformed."));
-  name_ = std::move(name);
+    if (name.empty())
+        SCRAM_THROW(LogicError("The element name cannot be empty"));
+    if (name.find('.') != std::string::npos)
+        SCRAM_THROW(ValidityError("The element name is malformed."));
+    name_ = std::move(name);
 }
 
 void Element::AddAttribute(Attribute attr) {
-  if (attributes_.insert(std::move(attr)).second == false) {
-    SCRAM_THROW(ValidityError("Duplicate attribute"))
-        << errinfo_element(name_, "element") << errinfo_attribute(attr.name());
-  }
+    if (attributes_.insert(std::move(attr)).second == false) {
+        SCRAM_THROW(ValidityError("Duplicate attribute"))
+            << errinfo_element(name_, "element") << errinfo_attribute(attr.name());
+    }
 }
 
-void Element::SetAttribute(Attribute attr)  {
-  auto [it, success] = attributes_.insert(std::move(attr));
-  if (!success)
-    *it = std::move(attr);
+void Element::SetAttribute(Attribute attr) {
+    auto [it, success] = attributes_.insert(std::move(attr));
+    if (!success)
+        *it = std::move(attr);
 }
 
-const Attribute* Element::GetAttribute(std::string_view name) const  {
-  auto it = attributes_.find(name);
-  if (it != attributes_.end())
-    return &*it;
+const Attribute *Element::GetAttribute(std::string_view name) const {
+    auto it = attributes_.find(name);
+    if (it != attributes_.end())
+        return &*it;
 
-  return container() ? container()->GetAttribute(name) : nullptr;
+    return container() ? container()->GetAttribute(name) : nullptr;
 }
 
-std::optional<Attribute>
-Element::RemoveAttribute(std::string_view name)  {
-  std::optional<Attribute> attr;
-  auto it = attributes_.find(name);
-  if (it != attributes_.end()) {
-    attr = std::move(*it);
-    attributes_.erase(it);
-  }
-  return attr;
+std::optional<Attribute> Element::RemoveAttribute(std::string_view name) {
+    std::optional<Attribute> attr;
+    auto it = attributes_.find(name);
+    if (it != attributes_.end()) {
+        attr = std::move(*it);
+        attributes_.erase(it);
+    }
+    return attr;
 }
 
-Role::Role(RoleSpecifier role, std::string base_path)
-    : kBasePath_(std::move(base_path)), kRole_(role) {
-  if (!kBasePath_.empty() &&
-      (kBasePath_.front() == '.' || kBasePath_.back() == '.')) {
-    SCRAM_THROW(ValidityError("Element reference base path is malformed."));
-  }
-  if (kRole_ == RoleSpecifier::kPrivate && kBasePath_.empty())
-    SCRAM_THROW(ValidityError("Elements cannot be private at model scope."));
+Role::Role(RoleSpecifier role, std::string base_path) : kBasePath_(std::move(base_path)), kRole_(role) {
+    if (!kBasePath_.empty() && (kBasePath_.front() == '.' || kBasePath_.back() == '.')) {
+        SCRAM_THROW(ValidityError("Element reference base path is malformed."));
+    }
+    if (kRole_ == RoleSpecifier::kPrivate && kBasePath_.empty())
+        SCRAM_THROW(ValidityError("Elements cannot be private at model scope."));
 }
 
 Id::Id(std::string name, std::string base_path, RoleSpecifier role)
-    : Element(std::move(name)),
-      Role(role, std::move(base_path)),
-      full_path_(GetFullPath(this)) {}
+    : Element(std::move(name)), Role(role, std::move(base_path)), full_path_(GetFullPath(this)) {}
 
 void Id::id(std::string name) {
-  Element::name(std::move(name));
-  full_path_ = GetFullPath(this);
+    Element::name(std::move(name));
+    full_path_ = GetFullPath(this);
 }
 
-}  // namespace scram::mef
+} // namespace scram::mef

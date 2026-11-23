@@ -23,20 +23,19 @@ namespace scram::core::test {
 // Benchmark Tests for an example fault tree
 // given in NE574 Risk Analysis class at UW-Madison.
 TEST_P(RiskAnalysisTest, ne574) {
-  std::string tree_input = "input/ne574/ne574.xml";
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  if (settings.approximation() == Approximation::kRareEvent) {
-    EXPECT_DOUBLE_EQ(1, p_total());
-  } else {
-    EXPECT_NEAR(0.662208, p_total(), 1e-6);
-  }
-  std::set<std::set<std::string>> mcs = {
-      {"C"},           {"D", "F"},      {"D", "G"},     {"D", "B"},
-      {"H", "I", "F"}, {"H", "I", "G"}, {"H", "I", "B"}};
-  EXPECT_EQ(7, products().size());
-  EXPECT_EQ(mcs, products());
+    std::string tree_input = "input/ne574/ne574.xml";
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    if (settings.approximation() == Approximation::kRareEvent) {
+        EXPECT_DOUBLE_EQ(1, p_total());
+    } else {
+        EXPECT_NEAR(0.662208, p_total(), 1e-6);
+    }
+    std::set<std::set<std::string>> mcs = {{"C"},           {"D", "F"},      {"D", "G"},     {"D", "B"},
+                                           {"H", "I", "F"}, {"H", "I", "G"}, {"H", "I", "B"}};
+    EXPECT_EQ(7, products().size());
+    EXPECT_EQ(mcs, products());
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

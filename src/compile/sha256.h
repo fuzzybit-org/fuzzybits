@@ -18,4 +18,4 @@ namespace fuzzybits::compile {
 
 [[nodiscard]] std::string sha256_hex(std::span<const std::uint8_t, 32> digest);
 
-}  // namespace fuzzybits::compile
+} // namespace fuzzybits::compile

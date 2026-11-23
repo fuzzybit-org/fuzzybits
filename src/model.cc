@@ -28,27 +28,24 @@
 namespace scram::mef {
 
 Model::Model(std::string name)
-    : Element(name.empty() ? kDefaultName : std::move(name)),
-      mission_time_(std::make_unique<MissionTime>()) {}
+    : Element(name.empty() ? kDefaultName : std::move(name)), mission_time_(std::make_unique<MissionTime>()) {}
 
-void Model::CheckDuplicateEvent(const Event& event) {
-  const std::string& id = event.id();
-  if (gates().count(id) || basic_events().count(id) || house_events().count(id))
-    SCRAM_THROW(DuplicateElementError())
-        << errinfo_element(id, "event")
-        << errinfo_container(Element::name(), kTypeString);
+void Model::CheckDuplicateEvent(const Event &event) {
+    const std::string &id = event.id();
+    if (gates().count(id) || basic_events().count(id) || house_events().count(id))
+        SCRAM_THROW(DuplicateElementError())
+            << errinfo_element(id, "event") << errinfo_container(Element::name(), kTypeString);
 }
 
 Formula::ArgEvent Model::GetEvent(std::string_view id) {
-  if (auto it = ext::find(table<BasicEvent>(), id))
-    return &*it;
-  if (auto it = ext::find(table<Gate>(), id))
-    return &*it;
-  if (auto it = ext::find(table<HouseEvent>(), id))
-    return &*it;
-  SCRAM_THROW(UndefinedElement())
-      << errinfo_element(std::string(id), "event")
-      << errinfo_container(Element::name(), kTypeString);
+    if (auto it = ext::find(table<BasicEvent>(), id))
+        return &*it;
+    if (auto it = ext::find(table<Gate>(), id))
+        return &*it;
+    if (auto it = ext::find(table<HouseEvent>(), id))
+        return &*it;
+    SCRAM_THROW(UndefinedElement()) << errinfo_element(std::string(id), "event")
+                                    << errinfo_container(Element::name(), kTypeString);
 }
 
-}  // namespace scram::mef
+} // namespace scram::mef

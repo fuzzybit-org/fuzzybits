@@ -24,4 +24,4 @@ template <typename DW = std::uint64_t, typename W = std::uint32_t>
     *hi = product >> (sizeof(W) * 8);
     return static_cast<W>(product);
 }
-}
+} // namespace scram::mc::prng

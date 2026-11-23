@@ -13,36 +13,37 @@
 
 namespace {
 
-    namespace pra = fuzzybits::ir::pra;
-    using pra::test::codes;
-    using pra::test::message;
-    using pra::test::render;
-    using pra::test::topologically_ordered;
+namespace pra = fuzzybits::ir::pra;
+using pra::test::codes;
+using pra::test::message;
+using pra::test::render;
+using pra::test::topologically_ordered;
 
-    [[nodiscard]] auto gate_name(const std::uint32_t layer, const std::uint32_t index) -> std::string {
-        return "G" + std::to_string(layer) + "_" + std::to_string(index);
-    }
+[[nodiscard]] auto gate_name(const std::uint32_t layer, const std::uint32_t index) -> std::string {
+    return "G" + std::to_string(layer) + "_" + std::to_string(index);
+}
 
-    // A chain G0 -> G1 -> ... -> G{length-1}, each also reading one basic
-    // event, defined in that order so every gate operand is a forward
-    // reference. With `closed`, the last gate reads G0 and the chain is one
-    // long cycle.
-    [[nodiscard]] auto seal_chain(const std::uint32_t length, const bool closed) -> pra::finalize_result {
-        pra::builder builder;
-        builder.reserve_gates(length, 2 * length);
-        for (std::uint32_t index = 0; index < length; ++index) {
-            const auto next = index + 1 < length ? "G" + std::to_string(index + 1) : std::string(closed ? "G0" : "");
-            const auto name = "G" + std::to_string(index);
-            if (next.empty()) {
-                (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate, {pra::test::named("B")});
-            } else {
-                (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate, {pra::test::named(next), pra::test::named("B")});
-            }
+// A chain G0 -> G1 -> ... -> G{length-1}, each also reading one basic
+// event, defined in that order so every gate operand is a forward
+// reference. With `closed`, the last gate reads G0 and the chain is one
+// long cycle.
+[[nodiscard]] auto seal_chain(const std::uint32_t length, const bool closed) -> pra::finalize_result {
+    pra::builder builder;
+    builder.reserve_gates(length, 2 * length);
+    for (std::uint32_t index = 0; index < length; ++index) {
+        const auto next = index + 1 < length ? "G" + std::to_string(index + 1) : std::string(closed ? "G0" : "");
+        const auto name = "G" + std::to_string(index);
+        if (next.empty()) {
+            (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate, {pra::test::named("B")});
+        } else {
+            (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate,
+                                   {pra::test::named(next), pra::test::named("B")});
         }
-        (void)builder.add_basic_event({.stable_name = "B"}, pra::expression_spec::literal(0.5));
-        (void)builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, pra::reference::named("G0"));
-        return std::move(builder).seal();
     }
+    (void)builder.add_basic_event({.stable_name = "B"}, pra::expression_spec::literal(0.5));
+    (void)builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, pra::reference::named("G0"));
+    return std::move(builder).seal();
+}
 
 } // namespace
 
@@ -50,9 +51,9 @@ TEST_CASE("PRA builder seals a 1e5-gate DAG of depth >= 200 without recursion", 
     constexpr std::uint32_t layers = 250;
     constexpr std::uint32_t width = 400;
     constexpr std::uint32_t events = 2000;
-    constexpr std::array kinds{pra::gate_kind::or_gate,  pra::gate_kind::and_gate, pra::gate_kind::cardinality, pra::gate_kind::xor_gate,
-                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate,
-                               pra::gate_kind::not_gate};
+    constexpr std::array kinds{pra::gate_kind::or_gate,   pra::gate_kind::and_gate,  pra::gate_kind::cardinality,
+                               pra::gate_kind::xor_gate,  pra::gate_kind::nand_gate, pra::gate_kind::nor_gate,
+                               pra::gate_kind::xnor_gate, pra::gate_kind::not_gate};
 
     const auto start = std::chrono::steady_clock::now();
     pra::builder builder;
@@ -93,7 +94,8 @@ TEST_CASE("PRA builder seals a 1e5-gate DAG of depth >= 200 without recursion", 
         }
     }
     for (std::uint32_t event = 0; event < events; ++event) {
-        (void)builder.add_basic_event({.stable_name = "B" + std::to_string(event)}, pra::expression_spec::literal(1e-3));
+        (void)builder.add_basic_event({.stable_name = "B" + std::to_string(event)},
+                                      pra::expression_spec::literal(1e-3));
     }
     builder.add_fault_tree_top(tree, top);
     const auto target = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);

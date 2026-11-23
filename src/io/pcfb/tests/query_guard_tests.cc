@@ -14,21 +14,23 @@
 
 namespace {
 
-    namespace guard = fuzzybits::io::pcfb_guard;
-    namespace files = query_guard_files;
+namespace guard = fuzzybits::io::pcfb_guard;
+namespace files = query_guard_files;
 
-    struct loaded final {
-        std::vector<std::byte> bytes;
-        pcfb::ir::Circuit circuit;
-    };
+struct loaded final {
+    std::vector<std::byte> bytes;
+    pcfb::ir::Circuit circuit;
+};
 
-    [[nodiscard]] auto load(std::vector<std::byte> bytes) -> loaded {
-        auto circuit = pcfb::io::from_bytes(bytes);
-        REQUIRE(circuit);
-        return loaded{std::move(bytes), std::move(*circuit)};
-    }
+[[nodiscard]] auto load(std::vector<std::byte> bytes) -> loaded {
+    auto circuit = pcfb::io::from_bytes(bytes);
+    REQUIRE(circuit);
+    return loaded{std::move(bytes), std::move(*circuit)};
+}
 
-    [[nodiscard]] auto contains(std::string const &text, std::string const &part) -> bool { return text.find(part) != std::string::npos; }
+[[nodiscard]] auto contains(std::string const &text, std::string const &part) -> bool {
+    return text.find(part) != std::string::npos;
+}
 
 } // namespace
 
@@ -97,7 +99,8 @@ TEST_CASE("exact evaluation answers Boolean queries of any minor and refuses the
 }
 
 TEST_CASE("the committed hull fixture is a valid 1.2 file with one hull query", "[io][pcfb][guard]") {
-    const auto path = std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "python" / "data" / "monotone_hull_query.pcfb";
+    const auto path =
+        std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "python" / "data" / "monotone_hull_query.pcfb";
     auto circuit = pcfb::io::read(path);
     REQUIRE(circuit);
     CHECK(pcfb::validate(*circuit).empty());

@@ -5,9 +5,9 @@
 #include "api/diagnostics.h"
 #include "api/options.h"
 #include "compile/exact_eval.h"
+#include "compile/ftp/tests/support.h"
 #include "io/descriptor.h"
 #include "io/formats.h"
-#include "compile/ftp/tests/support.h"
 #include "io/pcfb/descriptor.h"
 #include "io/pcfb/detail/model.h"
 #include "ir/pc/builder.h"
@@ -39,110 +39,112 @@
 
 namespace {
 
-    using namespace pcfb_writer_test;
-    namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
+using namespace pcfb_writer_test;
+namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 
-    using edge = pc::edge_ref;
+using edge = pc::edge_ref;
 
-    [[nodiscard]] auto view(writer::write_output const &written) -> ::pcfb::ir::Circuit {
-        auto circuit = ::pcfb::io::from_bytes(written.bytes);
-        INFO((circuit ? std::string{} : circuit.error().message));
-        REQUIRE(circuit);
-        return *circuit;
+[[nodiscard]] auto view(writer::write_output const &written) -> ::pcfb::ir::Circuit {
+    auto circuit = ::pcfb::io::from_bytes(written.bytes);
+    INFO((circuit ? std::string{} : circuit.error().message));
+    REQUIRE(circuit);
+    return *circuit;
+}
+
+[[nodiscard]] auto subcircuit(::pcfb::ir::Circuit const &circuit) -> ::pcfb::SubCircuit const * {
+    REQUIRE(circuit.subcircuits() != nullptr);
+    REQUIRE(circuit.subcircuits()->size() == 1);
+    return circuit.subcircuits()->Get(0);
+}
+
+[[nodiscard]] auto opAt(::pcfb::SubCircuit const *sub, const std::uint32_t tensor) -> ::pcfb::Op const * {
+    REQUIRE(tensor < sub->operators()->size());
+    auto const *op = sub->operators()->Get(tensor);
+    REQUIRE(op->output() == tensor);
+    return op;
+}
+
+[[nodiscard]] auto indices(flatbuffers::Vector<std::uint32_t> const *values) -> std::vector<std::uint32_t> {
+    return values == nullptr ? std::vector<std::uint32_t>{}
+                             : std::vector<std::uint32_t>(values->begin(), values->end());
+}
+
+[[nodiscard]] auto kOf(::pcfb::Op const *op) -> std::uint32_t {
+    REQUIRE(op->args_type() == ::pcfb::OpArgs::KofNArgs);
+    return op->args_as_KofNArgs()->k();
+}
+
+[[nodiscard]] auto stringMeta(::pcfb::ir::Circuit const &circuit, char const *key) -> std::optional<std::string> {
+    auto const *entry = circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key);
+    if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
+        return std::nullopt;
     }
+    return entry->value_as_StringValue()->value()->str();
+}
 
-    [[nodiscard]] auto subcircuit(::pcfb::ir::Circuit const &circuit) -> ::pcfb::SubCircuit const * {
-        REQUIRE(circuit.subcircuits() != nullptr);
-        REQUIRE(circuit.subcircuits()->size() == 1);
-        return circuit.subcircuits()->Get(0);
+void requireValid(::pcfb::ir::Circuit const &circuit) {
+    std::ostringstream text;
+    const auto diagnostics = ::pcfb::validate(circuit);
+    for (auto const &diagnostic : diagnostics) {
+        text << diagnostic.location << ": " << diagnostic.message << '\n';
     }
+    INFO(text.str());
+    REQUIRE(diagnostics.empty());
+}
 
-    [[nodiscard]] auto opAt(::pcfb::SubCircuit const *sub, const std::uint32_t tensor) -> ::pcfb::Op const * {
-        REQUIRE(tensor < sub->operators()->size());
-        auto const *op = sub->operators()->Get(tensor);
-        REQUIRE(op->output() == tensor);
-        return op;
-    }
+// Structural invariants of every written file, independent of the circuit.
+void requireWriterInvariants(pc::circuit const &model, writer::write_output const &written,
+                             ::pcfb::ir::Circuit const &circuit) {
+    requireValid(circuit);
+    auto const *sub = subcircuit(circuit);
+    REQUIRE(written.tensor_by_node.size() == model.node_count());
+    REQUIRE(written.event_id_by_node.size() == model.node_count());
 
-    [[nodiscard]] auto indices(flatbuffers::Vector<std::uint32_t> const *values) -> std::vector<std::uint32_t> {
-        return values == nullptr ? std::vector<std::uint32_t>{} : std::vector<std::uint32_t>(values->begin(), values->end());
-    }
-
-    [[nodiscard]] auto kOf(::pcfb::Op const *op) -> std::uint32_t {
-        REQUIRE(op->args_type() == ::pcfb::OpArgs::KofNArgs);
-        return op->args_as_KofNArgs()->k();
-    }
-
-    [[nodiscard]] auto stringMeta(::pcfb::ir::Circuit const &circuit, char const *key) -> std::optional<std::string> {
-        auto const *entry = circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key);
-        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
-            return std::nullopt;
-        }
-        return entry->value_as_StringValue()->value()->str();
-    }
-
-    void requireValid(::pcfb::ir::Circuit const &circuit) {
-        std::ostringstream text;
-        const auto diagnostics = ::pcfb::validate(circuit);
-        for (auto const &diagnostic : diagnostics) {
-            text << diagnostic.location << ": " << diagnostic.message << '\n';
-        }
-        INFO(text.str());
-        REQUIRE(diagnostics.empty());
-    }
-
-    // Structural invariants of every written file, independent of the circuit.
-    void requireWriterInvariants(pc::circuit const &model, writer::write_output const &written, ::pcfb::ir::Circuit const &circuit) {
-        requireValid(circuit);
-        auto const *sub = subcircuit(circuit);
-        REQUIRE(written.tensor_by_node.size() == model.node_count());
-        REQUIRE(written.event_id_by_node.size() == model.node_count());
-
-        for (auto const *op : *sub->operators()) {
-            const auto inputs = indices(op->inputs());
-            const auto inverted = indices(op->inverted_inputs());
-            for (const auto tensor : inverted) {
-                REQUIRE(std::ranges::find(inputs, tensor) == inputs.end());
-            }
-        }
-
-        std::uint32_t expectedEventId = 0;
-        for (std::uint32_t node = 0; node < model.node_count(); ++node) {
-            auto const *op = opAt(sub, written.tensor_by_node[node]);
-            if (model.op_codes()[node] != pc::op_code::basic_event) {
-                REQUIRE(written.event_id_by_node[node] == 0);
-                REQUIRE(op->opcode() != ::pcfb::OpCode::SAMPLE);
-                continue;
-            }
-            REQUIRE(written.event_id_by_node[node] == ++expectedEventId);
-            REQUIRE(op->opcode() == ::pcfb::OpCode::SAMPLE);
-            REQUIRE(op->args_as_SampleArgs()->event_id() == expectedEventId);
-            REQUIRE(op->args_as_SampleArgs()->source() == ::pcfb::SampleSource::BASIC_EVENT);
-            REQUIRE(op->args_as_SampleArgs()->probability() ==
-                    model.probability_sources()[model.probability_source_refs()[node].raw()].literal);
-        }
-        std::size_t samples = 0;
-        for (auto const *op : *sub->operators()) {
-            samples += op->opcode() == ::pcfb::OpCode::SAMPLE ? 1 : 0;
-        }
-        REQUIRE(samples == expectedEventId);
-
-        REQUIRE(sub->queries()->size() == model.targets().size());
-        for (std::size_t index = 0; index < model.targets().size(); ++index) {
-            auto const *query = sub->queries()->Get(static_cast<flatbuffers::uoffset_t>(index));
-            REQUIRE(query->target() == written.tensor_by_node[model.targets()[index].node.raw()]);
-            REQUIRE(query->kind() == ::pcfb::QueryKind::PROBABILITY);
+    for (auto const *op : *sub->operators()) {
+        const auto inputs = indices(op->inputs());
+        const auto inverted = indices(op->inverted_inputs());
+        for (const auto tensor : inverted) {
+            REQUIRE(std::ranges::find(inputs, tensor) == inputs.end());
         }
     }
 
-    void requireExact(pc::circuit const &model, ::pcfb::ir::Circuit const &circuit) {
-        const auto expected = referenceProbabilities(model);
-        for (std::uint32_t query = 0; query < expected.size(); ++query) {
-            const auto exact = fuzzybits::compile::exact_probability(circuit, query);
-            INFO("query " << query << " exact_probability " << exact << " reference " << expected[query]);
-            REQUIRE(std::abs(exact - expected[query]) <= 1.0e-12);
+    std::uint32_t expectedEventId = 0;
+    for (std::uint32_t node = 0; node < model.node_count(); ++node) {
+        auto const *op = opAt(sub, written.tensor_by_node[node]);
+        if (model.op_codes()[node] != pc::op_code::basic_event) {
+            REQUIRE(written.event_id_by_node[node] == 0);
+            REQUIRE(op->opcode() != ::pcfb::OpCode::SAMPLE);
+            continue;
         }
+        REQUIRE(written.event_id_by_node[node] == ++expectedEventId);
+        REQUIRE(op->opcode() == ::pcfb::OpCode::SAMPLE);
+        REQUIRE(op->args_as_SampleArgs()->event_id() == expectedEventId);
+        REQUIRE(op->args_as_SampleArgs()->source() == ::pcfb::SampleSource::BASIC_EVENT);
+        REQUIRE(op->args_as_SampleArgs()->probability() ==
+                model.probability_sources()[model.probability_source_refs()[node].raw()].literal);
     }
+    std::size_t samples = 0;
+    for (auto const *op : *sub->operators()) {
+        samples += op->opcode() == ::pcfb::OpCode::SAMPLE ? 1 : 0;
+    }
+    REQUIRE(samples == expectedEventId);
+
+    REQUIRE(sub->queries()->size() == model.targets().size());
+    for (std::size_t index = 0; index < model.targets().size(); ++index) {
+        auto const *query = sub->queries()->Get(static_cast<flatbuffers::uoffset_t>(index));
+        REQUIRE(query->target() == written.tensor_by_node[model.targets()[index].node.raw()]);
+        REQUIRE(query->kind() == ::pcfb::QueryKind::PROBABILITY);
+    }
+}
+
+void requireExact(pc::circuit const &model, ::pcfb::ir::Circuit const &circuit) {
+    const auto expected = referenceProbabilities(model);
+    for (std::uint32_t query = 0; query < expected.size(); ++query) {
+        const auto exact = fuzzybits::compile::exact_probability(circuit, query);
+        INFO("query " << query << " exact_probability " << exact << " reference " << expected[query]);
+        REQUIRE(std::abs(exact - expected[query]) <= 1.0e-12);
+    }
+}
 
 } // namespace
 
@@ -156,8 +158,8 @@ TEST_CASE("pcfb writer descriptor advertises the pcfb format and its options", "
     for (auto const &entry : descriptor.options.entries) {
         keys.insert(entry.key.str());
     }
-    REQUIRE(keys == std::set<std::string>{"io.pcfb.compile_options", "io.pcfb.model_name", "io.pcfb.query_kind", "io.pcfb.source_format",
-                                          "io.pcfb.source_sha256"});
+    REQUIRE(keys == std::set<std::string>{"io.pcfb.compile_options", "io.pcfb.model_name", "io.pcfb.query_kind",
+                                          "io.pcfb.source_format", "io.pcfb.source_sha256"});
 }
 
 TEST_CASE("pcfb writer maps every PC opcode", "[io][pcfb]") {
@@ -171,13 +173,17 @@ TEST_CASE("pcfb writer maps every PC opcode", "[io][pcfb]") {
     const auto houseFalse = builder.add_house_event(false);
     const auto andGate = builder.add_and({edge{.source = a}, edge{.source = c, .complement = true}});
     const auto orGate = builder.add_or({edge{.source = a, .complement = true}, edge{.source = b}});
-    const auto xorGate = builder.add_gate(pc::op_code::xor_gate, {edge{.source = a}, edge{.source = b}, edge{.source = c, .complement = true}});
+    const auto xorGate = builder.add_gate(
+        pc::op_code::xor_gate, {edge{.source = a}, edge{.source = b}, edge{.source = c, .complement = true}});
     const auto notGate = builder.add_not(edge{.source = a});
     const auto notComplement = builder.add_not(edge{.source = b, .complement = true});
     const auto nandGate = builder.add_gate(pc::op_code::nand_gate, {edge{.source = a}, edge{.source = b}});
-    const auto norGate = builder.add_gate(pc::op_code::nor_gate, {edge{.source = a, .complement = true}, edge{.source = c}});
-    const auto xnorGate = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = a}, edge{.source = b, .complement = true}});
-    const auto atLeast = builder.add_cardinality(2, 3, {edge{.source = a}, edge{.source = b, .complement = true}, edge{.source = c}});
+    const auto norGate =
+        builder.add_gate(pc::op_code::nor_gate, {edge{.source = a, .complement = true}, edge{.source = c}});
+    const auto xnorGate =
+        builder.add_gate(pc::op_code::xnor_gate, {edge{.source = a}, edge{.source = b, .complement = true}});
+    const auto atLeast =
+        builder.add_cardinality(2, 3, {edge{.source = a}, edge{.source = b, .complement = true}, edge{.source = c}});
     const auto top = builder.add_or({
         edge{.source = constantTrue, .complement = true},
         edge{.source = constantFalse},
@@ -226,8 +232,8 @@ TEST_CASE("pcfb writer maps every PC opcode", "[io][pcfb]") {
     REQUIRE(opAt(sub, houseTrue.raw())->opcode() == ::pcfb::OpCode::BITWISE_ONES);
     REQUIRE(opAt(sub, houseFalse.raw())->opcode() == ::pcfb::OpCode::BITWISE_ZEROS);
 
-    const auto requireGate = [&](const pc::bool_node_id node, const ::pcfb::OpCode opcode, std::vector<std::uint32_t> const &inputs,
-                                 std::vector<std::uint32_t> const &inverted) {
+    const auto requireGate = [&](const pc::bool_node_id node, const ::pcfb::OpCode opcode,
+                                 std::vector<std::uint32_t> const &inputs, std::vector<std::uint32_t> const &inverted) {
         auto const *op = opAt(sub, node.raw());
         REQUIRE(op->opcode() == opcode);
         REQUIRE(indices(op->inputs()) == inputs);
@@ -316,9 +322,11 @@ TEST_CASE("pcfb writer reads mixed-polarity operands through one NOT per source"
     const auto y = builder.add_basic_event(builder.add_literal_probability(0.6));
     const auto andGate = builder.add_and({edge{.source = x}, edge{.source = x, .complement = true}, edge{.source = y}});
     const auto orGate = builder.add_or({edge{.source = x, .complement = true}, edge{.source = x}});
-    const auto xorGate = builder.add_gate(pc::op_code::xor_gate,
-                                          {edge{.source = x}, edge{.source = x, .complement = true}, edge{.source = y, .complement = true}});
-    const auto range = builder.add_cardinality(1, 2, {edge{.source = x}, edge{.source = x, .complement = true}, edge{.source = y}});
+    const auto xorGate =
+        builder.add_gate(pc::op_code::xor_gate, {edge{.source = x}, edge{.source = x, .complement = true},
+                                                 edge{.source = y, .complement = true}});
+    const auto range =
+        builder.add_cardinality(1, 2, {edge{.source = x}, edge{.source = x, .complement = true}, edge{.source = y}});
     const auto duplicate = builder.add_cardinality(2, 3, {edge{.source = y}, edge{.source = y}, edge{.source = x}});
     for (const auto node : {andGate, orGate, xorGate, range, duplicate}) {
         (void)builder.add_target(node);
@@ -338,7 +346,8 @@ TEST_CASE("pcfb writer reads mixed-polarity operands through one NOT per source"
     }
     REQUIRE(nots.size() == 1);
     auto const *andOp = opAt(sub, output.tensor_by_node[andGate.raw()]);
-    REQUIRE(indices(andOp->inputs()) == std::vector<std::uint32_t>{output.tensor_by_node[x.raw()], nots[0], output.tensor_by_node[y.raw()]});
+    REQUIRE(indices(andOp->inputs()) ==
+            std::vector<std::uint32_t>{output.tensor_by_node[x.raw()], nots[0], output.tensor_by_node[y.raw()]});
     REQUIRE(indices(andOp->inverted_inputs()).empty());
     auto const *duplicateOp = opAt(sub, output.tensor_by_node[duplicate.raw()]);
     REQUIRE(indices(duplicateOp->inputs()).size() == 3);
@@ -349,7 +358,8 @@ TEST_CASE("pcfb writer assigns event ids by basic-event node id, not emission or
     pc::builder builder;
     const auto top = builder.add_and({edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(3)}});
     const auto first = builder.add_basic_event(builder.add_literal_probability(0.2));
-    const auto other = builder.add_or({edge{.source = pc::bool_node_id(4)}, edge{.source = pc::bool_node_id(3), .complement = true}});
+    const auto other =
+        builder.add_or({edge{.source = pc::bool_node_id(4)}, edge{.source = pc::bool_node_id(3), .complement = true}});
     const auto second = builder.add_basic_event(builder.add_literal_probability(0.3));
     const auto third = builder.add_basic_event(builder.add_literal_probability(0.4));
     (void)builder.add_target(top);
@@ -358,7 +368,8 @@ TEST_CASE("pcfb writer assigns event ids by basic-event node id, not emission or
 
     auto const order = writer::detail::emission_order(writer::detail::graph_view::of(model));
     REQUIRE(order);
-    REQUIRE(order.value() == std::vector<std::uint32_t>{first.raw(), second.raw(), top.raw(), third.raw(), other.raw()});
+    REQUIRE(order.value() ==
+            std::vector<std::uint32_t>{first.raw(), second.raw(), top.raw(), third.raw(), other.raw()});
 
     const auto output = requireWrite(model);
     const auto circuit = view(output);
@@ -459,7 +470,8 @@ TEST_CASE("pcfb writer rejects parameter and unsupported probabilities", "[io][p
     const auto parameter = builder.add_basic_event(builder.add_parameter_probability("lambda"));
     const auto unsupported = builder.add_basic_event(builder.add_unsupported_probability("lognormal deviate"));
     const auto literal = builder.add_basic_event(builder.add_literal_probability(0.5));
-    (void)builder.add_target(builder.add_or({edge{.source = parameter}, edge{.source = unsupported}, edge{.source = literal}}));
+    (void)builder.add_target(
+        builder.add_or({edge{.source = parameter}, edge{.source = unsupported}, edge{.source = literal}}));
     const auto model = sealed(std::move(builder));
 
     writer::write_options options;
@@ -495,7 +507,8 @@ TEST_CASE("pcfb writer rejects circuits without targets and names for unknown id
     badTarget.target_names[pc::target_id(3)] = "GHOST";
     REQUIRE(hasCode(writer::write(model.to_handle(), badTarget).diagnostics(), "io.pcfb.invalid-name"));
 
-    REQUIRE(hasCode(writer::write(fuzzybits::ir::handle{}, writer::write_options{}).diagnostics(), "io.pcfb.unsupported-ir"));
+    REQUIRE(hasCode(writer::write(fuzzybits::ir::handle{}, writer::write_options{}).diagnostics(),
+                    "io.pcfb.unsupported-ir"));
 }
 
 TEST_CASE("pcfb stream writer reads scalar options from the request", "[io][pcfb]") {
@@ -536,7 +549,8 @@ TEST_CASE("pcfb stream writer reads scalar options from the request", "[io][pcfb
     badKind.options.set(writer::query_kind_option(), std::string("monotone_hull"));
     REQUIRE(hasCode(writer::write(model.to_handle(), ignored, badKind).diagnostics(), "io.pcfb.invalid-option"));
 
-    const auto mismatch = writer::write(model.to_handle(), ignored, fuzzybits::io::write_request{.format = fuzzybits::io::formats::ftp()});
+    const auto mismatch = writer::write(model.to_handle(), ignored,
+                                        fuzzybits::io::write_request{.format = fuzzybits::io::formats::ftp()});
     REQUIRE(hasCode(mismatch.diagnostics(), "io.pcfb.format-mismatch"));
     REQUIRE(ignored.str().empty());
 
@@ -558,17 +572,19 @@ TEST_CASE("pcfb emission order diagnoses cycles and invalid endpoints", "[io][pc
         });
     };
 
-    const auto cycle = order({edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(2)}, edge{.source = pc::bool_node_id(0)}});
+    const auto cycle = order({edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(2)},
+                              edge{.source = pc::bool_node_id(0)}});
     REQUIRE_FALSE(cycle);
     REQUIRE(hasCode(cycle.diagnostics(), "io.pcfb.cycle"));
     REQUIRE(diagnosticsText(cycle.diagnostics()).find("0 -> 1 -> 2 -> 0") != std::string::npos);
 
-    const auto selfLoop = order({edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(1)}});
+    const auto selfLoop = order({edge{.source = pc::bool_node_id(1)}, edge{.source = pc::bool_node_id(1)},
+                                 edge{.source = pc::bool_node_id(1)}});
     REQUIRE(hasCode(selfLoop.diagnostics(), "io.pcfb.cycle"));
     REQUIRE(diagnosticsText(selfLoop.diagnostics()).find("1 -> 1") != std::string::npos);
 
-    const auto invalid =
-        order({edge{.source = pc::bool_node_id(7)}, edge{.source = pc::bool_node_id::invalid()}, edge{.source = pc::bool_node_id(0)}});
+    const auto invalid = order({edge{.source = pc::bool_node_id(7)}, edge{.source = pc::bool_node_id::invalid()},
+                                edge{.source = pc::bool_node_id(0)}});
     REQUIRE(hasCode(invalid.diagnostics(), "io.pcfb.invalid-edge"));
     REQUIRE(invalid.diagnostics().size() == 2);
 
@@ -679,7 +695,8 @@ TEST_CASE("FTP fixtures write valid pcfb with exact probabilities", "[io][pcfb][
         INFO(file.filename().string());
         std::ifstream input(file, std::ios::binary);
         REQUIRE(input);
-        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
+        auto read =
+            ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
         INFO(diagnosticsText(read.diagnostics()));
         REQUIRE(read);
         auto const *model = &read.value().circuit;

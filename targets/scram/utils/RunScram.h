@@ -59,7 +59,8 @@ inline void RunScram(const po::variables_map &vm) {
     // Process input files
     // into valid analysis containers and constructs.
     // Throws if anything is invalid.
-    std::unique_ptr<scram::mef::Model> model = scram::mef::Initializer(input_files, settings, vm.contains("allow-extern")).model();
+    std::unique_ptr<scram::mef::Model> model =
+        scram::mef::Initializer(input_files, settings, vm.contains("allow-extern")).model();
     settings.model(model.get());
 
     if (vm.contains("serialize"))

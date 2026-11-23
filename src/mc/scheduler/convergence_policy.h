@@ -8,8 +8,8 @@ namespace scram::mc::stats {
 // -----------------------------------------------------------------------------
 //  Tag types that identify the statistical strategy at *compile-time*.
 // -----------------------------------------------------------------------------
-struct wald_policy  { };   // classical Wald (normal approximation) interval
-struct bayes_policy { };   // Beta–posterior credible interval (Jeffreys prior)
+struct wald_policy {};  // classical Wald (normal approximation) interval
+struct bayes_policy {}; // Beta–posterior credible interval (Jeffreys prior)
 
 // -----------------------------------------------------------------------------
 //  Internal helpers – implementation lives in the host-only .cc so that
@@ -44,26 +44,21 @@ template <class Policy> struct ConvergencePolicy; // undefined
 
 // Wald specialization ---------------------------------------------------------------------------
 template <> struct ConvergencePolicy<wald_policy> {
-    static void update(mc::stats::tally &t, const double rel_margin_error, const double z)
-    {
+    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) {
         detail::update_wald(t, rel_margin_error, z);
     }
 };
 
 // Bayesian specialization -----------------------------------------------------------------------
 template <> struct ConvergencePolicy<bayes_policy> {
-    static void update(mc::stats::tally &t, const double rel_margin_error, const double z)
-    {
+    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) {
         detail::update_bayes(t, rel_margin_error, z);
     }
 };
 
 // Convenience wrapper – deduces Policy from template argument -----------------------------------
 template <class Policy>
-inline void update_convergence(mc::stats::tally &t,
-                               const double rel_margin_error,
-                               const double z)
-{
+inline void update_convergence(mc::stats::tally &t, const double rel_margin_error, const double z) {
     ConvergencePolicy<Policy>::update(t, rel_margin_error, z);
 }
 

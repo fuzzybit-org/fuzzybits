@@ -1,39 +1,35 @@
 #pragma once
 
-
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
 #include <indicators/cursor_control.hpp>
 #include <indicators/dynamic_progress.hpp>
 #include <indicators/progress_bar.hpp>
 #include <iomanip>
-#include <sstream>
-#include <vector>
-#include <optional>
-#include <chrono>
-#include <thread>
-#include <condition_variable>
-#include <atomic>
 #include <mutex>
-#include <functional>
+#include <optional>
+#include <sstream>
+#include <thread>
+#include <vector>
 
-#include "mc/stats/diagnostics.h"
 #include "mc/logger/log_benchmark.h"
 #include "mc/logger/log_progress.h"
+#include "mc/stats/diagnostics.h"
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
 namespace scram::mc::scheduler {
 
-template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_>
-class convergence_controller;
+template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_> class convergence_controller;
 
-template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_>
-struct progress {
+template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_> struct progress {
     using progress_pairs_t = std::vector<std::pair<std::string, std::string>>;
-    using progress_callback_t = std::function<void(const progress_pairs_t&)>;
+    using progress_callback_t = std::function<void(const progress_pairs_t &)>;
 
     void initialize(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> *controller,
-                    const bool watch_mode,
-                    const std::optional<std::string> &log_to_file = std::nullopt,
+                    const bool watch_mode, const std::optional<std::string> &log_to_file = std::nullopt,
                     progress_callback_t progress_callback = {}) {
         // Initialize timing for throughput tracking
         last_tick_time_ = std::chrono::high_resolution_clock::now();
@@ -44,7 +40,7 @@ struct progress {
 
         // if passed a progressbar log file, initialize the logger
         if (log_to_file) {
-            const std::string& filepath = *log_to_file;
+            const std::string &filepath = *log_to_file;
             progress_logger_.emplace(filepath);
             LOG(DEBUG2) << "Progress log in :: " << filepath;
         }
@@ -95,7 +91,7 @@ struct progress {
         {
             std::lock_guard<std::mutex> lk(cv_mutex_);
             pending_controller_ = controller;
-            burn_in_pending_    = false;
+            burn_in_pending_ = false;
             tick_pending_.store(true, std::memory_order_release);
         }
         cv_.notify_one();
@@ -112,14 +108,12 @@ struct progress {
         if (bars_) {
             indicators::show_console_cursor(true);
         }
-        for (auto &bar: owned_bars_) {
+        for (auto &bar : owned_bars_) {
             bar->mark_as_completed();
         }
     }
 
-    ~progress() {
-        finalize();
-    }
+    ~progress() { finalize(); }
 
     void tick_text(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> *controller) const {
         tick_estimate_bar(*controller);
@@ -152,7 +146,8 @@ struct progress {
     }
 
     // Mark the iterations bar as complete when the planned iterations finish.
-    void mark_fixed_iterations_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void mark_fixed_iterations_complete(
+        const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!bars_) {
             return;
         }
@@ -162,7 +157,8 @@ struct progress {
         }
     }
 
-    void mark_burn_in_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void
+    mark_burn_in_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!bars_) {
             return;
         }
@@ -182,13 +178,14 @@ struct progress {
         {
             std::lock_guard<std::mutex> lk(cv_mutex_);
             pending_controller_ = &controller;
-            burn_in_pending_    = true;
+            burn_in_pending_ = true;
             tick_pending_.store(true, std::memory_order_release);
         }
         cv_.notify_one();
     }
 
-    void perform_normal_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void
+    perform_normal_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (bars_) {
             tick_fixed_bar(controller);
             tick_convergence_bar(controller);
@@ -208,7 +205,8 @@ struct progress {
         }
     }
 
-    void perform_burn_in_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void
+    perform_burn_in_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (bars_) {
             tick_fixed_bar(controller);
             tick_text(&controller);
@@ -227,7 +225,8 @@ struct progress {
                    << controller.current_state().half_width_epsilon;
             const std::string c = cur_ss.str();
 
-            bar.set_option(indicators::option::PrefixText{"[burn-in]     ::      (ε)= "+c+" |      (ε₀)= "+t+" :: "});
+            bar.set_option(
+                indicators::option::PrefixText{"[burn-in]     ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
 
             const auto cur_ite = controller.current_steps().iterations();
             const auto tot_ite = controller.burn_in_trials_shape().iterations();
@@ -263,7 +262,7 @@ struct progress {
     std::optional<std::size_t> diagnostics_{};
     std::optional<std::size_t> estimate_{};
     std::optional<std::size_t> throughput_{};
-    std::optional<std::size_t> info_gain_{};  // new info-gain line
+    std::optional<std::size_t> info_gain_{}; // new info-gain line
     std::optional<std::size_t> all_inclusive_progress_{};
 
     static constexpr std::uint8_t bar_width_ = 30;
@@ -304,7 +303,7 @@ struct progress {
     // Pointer to the controller associated with the pending request.  We only
     // ever have one controller per progress instance, so keeping a raw pointer
     // is safe as long as the controller out-lives *this* progress object.
-    mutable const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_>* pending_controller_{nullptr};
+    mutable const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> *pending_controller_{nullptr};
 
     // Synchronisation primitives for the worker thread.
     mutable std::mutex cv_mutex_;
@@ -322,9 +321,7 @@ struct progress {
 
         while (!stop_worker_) {
             // Wait until there is work or until we are asked to stop
-            cv_.wait(lock, [this]() {
-                return tick_pending_.load(std::memory_order_acquire) || stop_worker_.load();
-            });
+            cv_.wait(lock, [this]() { return tick_pending_.load(std::memory_order_acquire) || stop_worker_.load(); });
 
             if (stop_worker_) {
                 break;
@@ -360,7 +357,7 @@ struct progress {
 
             // Capture state for the update
             const auto controller = pending_controller_;
-            const bool is_burn_in  = burn_in_pending_;
+            const bool is_burn_in = burn_in_pending_;
 
             // Reset request state before releasing the lock so that new
             // requests can be queued while we are performing the expensive
@@ -381,9 +378,9 @@ struct progress {
         }
     }
 
-    static progress_pairs_t progress_pairs(
-        const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller,
-        const std::string &phase) {
+    static progress_pairs_t
+    progress_pairs(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller,
+                   const std::string &phase) {
         auto pairs = scram::log::progress::csv_pairs(controller);
         pairs.emplace_back("phase", phase);
         return pairs;
@@ -426,7 +423,7 @@ struct progress {
             auto &bar = add_iterations_bar(fixed_iterations_);
             const auto tot_ite = controller.fixed_iterations_shape().iterations();
             bar.set_option(indicators::option::PrefixText{"[fixed]       :: "});
-            bar.set_option(indicators::option::BarWidth{bar_width_*2+2});
+            bar.set_option(indicators::option::BarWidth{bar_width_ * 2 + 2});
             bar.set_option(indicators::option::MinProgress{0});
             bar.set_option(indicators::option::MaxProgress{tot_ite});
             bar.set_option(indicators::option::ShowPercentage{true});
@@ -467,13 +464,13 @@ struct progress {
     void setup_accuracy_metrics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) {
         std::ostringstream true_p_ss;
         true_p_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.ground_truth();
-        const std::string str_prefix = "[accuracy]    :: true(p)= "+true_p_ss.str()+" |";
+        const std::string str_prefix = "[accuracy]    :: true(p)= " + true_p_ss.str() + " |";
         auto &bar = add_text(accuracy_metrics_, str_prefix);
         bar.set_option(indicators::option::ForegroundColor{indicators::Color::white});
     }
 
     void setup_diagnostics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) {
-        auto &bar = add_text(diagnostics_,"[diagnostics] ::");
+        auto &bar = add_text(diagnostics_, "[diagnostics] ::");
         bar.set_option(indicators::option::ForegroundColor{indicators::Color::green});
     }
 
@@ -484,13 +481,16 @@ struct progress {
             const auto projected_ite = controller.projected_steps_epsilon().iterations();
             const std::string ite = std::to_string(cur_ite) + "/" + std::to_string(projected_ite);
             std::ostringstream tar_ss;
-            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.target_state().half_width_epsilon;
+            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+                   << controller.target_state().half_width_epsilon;
             const std::string t = tar_ss.str();
             std::ostringstream cur_ss;
-            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.current_state().half_width_epsilon;
+            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+                   << controller.current_state().half_width_epsilon;
             const std::string c = cur_ss.str();
-            bar.set_option(indicators::option::PrefixText{"[convergence] ::      (ε)= "+c+" |      (ε₀)= "+t+" :: "});
-            bar.set_option(indicators::option::PostfixText{"["+ite+"]"});
+            bar.set_option(
+                indicators::option::PrefixText{"[convergence] ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
+            bar.set_option(indicators::option::PostfixText{"[" + ite + "]"});
             bar.set_option(indicators::option::MinProgress{0});
             bar.set_option(indicators::option::MaxProgress{projected_ite}); // moving target
             bar.set_option(indicators::option::ShowPercentage{true});
@@ -500,20 +500,24 @@ struct progress {
         }
     }
 
-    void tick_log_convergence_bar(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void
+    tick_log_convergence_bar(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (log_convergence_ && !bars_->operator[](*log_convergence_).is_completed()) {
             auto &bar = bars_->operator[](*log_convergence_);
             const auto cur_ite = controller.current_steps().iterations();
             const auto projected_ite = controller.projected_steps_epsilon_log10().iterations();
             const std::string ite = std::to_string(cur_ite) + "/" + std::to_string(projected_ite);
             std::ostringstream tar_ss;
-            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.target_state().half_width_epsilon_log10;
+            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+                   << controller.target_state().half_width_epsilon_log10;
             const std::string t = tar_ss.str();
             std::ostringstream cur_ss;
-            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.current_state().half_width_epsilon_log10;
+            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+                   << controller.current_state().half_width_epsilon_log10;
             const std::string c = cur_ss.str();
-            bar.set_option(indicators::option::PrefixText{"[log10-conv]  :: log10(ε)= "+c+" | log10(ε₀)= "+t+" :: "});
-            bar.set_option(indicators::option::PostfixText{"["+ite+"]"});
+            bar.set_option(
+                indicators::option::PrefixText{"[log10-conv]  :: log10(ε)= " + c + " | log10(ε₀)= " + t + " :: "});
+            bar.set_option(indicators::option::PostfixText{"[" + ite + "]"});
             bar.set_option(indicators::option::MinProgress{0});
             bar.set_option(indicators::option::MaxProgress{projected_ite}); // moving target
             bar.set_option(indicators::option::ShowPercentage{true});
@@ -529,7 +533,7 @@ struct progress {
             const auto cur_ite = controller.current_steps().iterations();
             const auto tot_ite = controller.fixed_iterations_shape().iterations();
             const std::string ite = std::to_string(cur_ite) + "/" + std::to_string(tot_ite);
-            bar.set_option(indicators::option::PostfixText{"["+ite+"]"});
+            bar.set_option(indicators::option::PostfixText{"[" + ite + "]"});
             bar.set_progress(cur_ite);
         }
     }
@@ -550,20 +554,22 @@ struct progress {
         }
         auto &bar = bars_->operator[](*diagnostics_);
         std::ostringstream ss;
-        ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << *controller.sampling_diagnostics();
+        ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+           << *controller.sampling_diagnostics();
         bar.set_option(indicators::option::PostfixText{ss.str()});
     }
 
-    void tick_accuracy_metrics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void
+    tick_accuracy_metrics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!accuracy_metrics_) {
             return;
         }
         auto &bar = bars_->operator[](*accuracy_metrics_);
         std::ostringstream metrics_ss;
-        metrics_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << *controller.accuracy_metrics();
+        metrics_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
+                   << *controller.accuracy_metrics();
         bar.set_option(indicators::option::PostfixText{metrics_ss.str()});
     }
-
 
     void tick_throughput_bar(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!throughput_) {
@@ -583,7 +589,8 @@ struct progress {
             return;
         }
 
-        const auto elapsed_time = std::chrono::duration_cast<std::chrono::duration<double>>(current_time - last_tick_time_).count();
+        const auto elapsed_time =
+            std::chrono::duration_cast<std::chrono::duration<double>>(current_time - last_tick_time_).count();
         const auto iterations_delta = current_iteration - last_iteration_;
 
         if (elapsed_time <= 0.0 || iterations_delta == 0) {
@@ -604,90 +611,112 @@ struct progress {
             iter_rate_str = ss.str();
         }
 
-       //  Calculate bits per iteration with appropriate units
-        // const std::double_t bits_per_iteration_whole_graph = static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
-        const std::double_t bits_per_iteration_per_node = static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
+        //  Calculate bits per iteration with appropriate units
+        // const std::double_t bits_per_iteration_whole_graph =
+        // static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
+        const std::double_t bits_per_iteration_per_node =
+            static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
         const std::double_t nodes_per_graph = static_cast<double_t>(controller.node_count());
         // const std::double_t bits_per_iteration = bits_per_iteration_whole_graph;
-         std::string bits_iter_node_str;
+        std::string bits_iter_node_str;
         if (bits_per_iteration_per_node >= 1024 * 1024 * 1024) {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0 * 1024.0) << " Gbit/node/it";
+            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0 * 1024.0)
+               << " Gbit/node/it";
             bits_iter_node_str = ss.str();
         } else if (bits_per_iteration_per_node >= 1024 * 1024) {
-             std::ostringstream ss;
-             ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0) << " Mbit/node/it";
-             bits_iter_node_str = ss.str();
-         } else if (bits_per_iteration_per_node >= 1024) {
-             std::ostringstream ss;
-             ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / 1024.0 << " kbit/node/it";
-             bits_iter_node_str = ss.str();
-         } else {
-             std::ostringstream ss;
-             ss << bits_per_iteration_per_node << " bit/node/it";
-             bits_iter_node_str = ss.str();
-         }
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0)
+               << " Mbit/node/it";
+            bits_iter_node_str = ss.str();
+        } else if (bits_per_iteration_per_node >= 1024) {
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / 1024.0 << " kbit/node/it";
+            bits_iter_node_str = ss.str();
+        } else {
+            std::ostringstream ss;
+            ss << bits_per_iteration_per_node << " bit/node/it";
+            bits_iter_node_str = ss.str();
+        }
 
-         // Calculate bits per second with appropriate units
-         const double bits_per_node_sec = static_cast<double>(bits_per_iteration_per_node * iterations_delta) / elapsed_time;
-         std::string bits_sec_node_str;
+        // Calculate bits per second with appropriate units
+        const double bits_per_node_sec =
+            static_cast<double>(bits_per_iteration_per_node * iterations_delta) / elapsed_time;
+        std::string bits_sec_node_str;
         if (bits_per_node_sec >= 1024.0 * 1024.0 * 1024.0) {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0 * 1024.0) << " Gbit/node/s";
+            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0 * 1024.0)
+               << " Gbit/node/s";
             bits_sec_node_str = ss.str();
         } else if (bits_per_node_sec >= 1024.0 * 1024.0) {
-             std::ostringstream ss;
-             ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0) << " Mbit/node/s";
-             bits_sec_node_str = ss.str();
-         } else if (bits_per_node_sec >= 1024.0) {
-             std::ostringstream ss;
-             ss << std::fixed << std::setprecision(2) << bits_per_node_sec / 1024.0 << " kbit/node/s";
-             bits_sec_node_str = ss.str();
-         } else {
-             std::ostringstream ss;
-             ss << std::fixed << std::setprecision(2) << bits_per_node_sec << " bit/node/s";
-             bits_sec_node_str = ss.str();
-         }
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0) << " Mbit/node/s";
+            bits_sec_node_str = ss.str();
+        } else if (bits_per_node_sec >= 1024.0) {
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / 1024.0 << " kbit/node/s";
+            bits_sec_node_str = ss.str();
+        } else {
+            std::ostringstream ss;
+            ss << std::fixed << std::setprecision(2) << bits_per_node_sec << " bit/node/s";
+            bits_sec_node_str = ss.str();
+        }
 
-         // Global Metrics
-         const auto nodes = static_cast<std::double_t>(controller.node_count());
-         std::string bits_iter_str;
-         std::string bits_sec_str;
-         if (nodes >= 1) {
-             const double bits_iter = bits_per_iteration_per_node * nodes;
-             const double bits_sec  = bits_per_node_sec * nodes;
+        // Global Metrics
+        const auto nodes = static_cast<std::double_t>(controller.node_count());
+        std::string bits_iter_str;
+        std::string bits_sec_str;
+        if (nodes >= 1) {
+            const double bits_iter = bits_per_iteration_per_node * nodes;
+            const double bits_sec = bits_per_node_sec * nodes;
 
-             if (bits_iter >= 1024.0 * 1024.0 * 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_iter / (1024.0*1024.0*1024.0) << " Gbit/it"; bits_iter_str = ss.str();
-             } else if (bits_iter >= 1024.0 * 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_iter / (1024.0*1024.0) << " Mbit/it"; bits_iter_str = ss.str();
-             } else if (bits_iter >= 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_iter / 1024.0 << " kbit/it"; bits_iter_str = ss.str();
-             } else {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_iter << " bit/it"; bits_iter_str = ss.str();
-             }
+            if (bits_iter >= 1024.0 * 1024.0 * 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_iter / (1024.0 * 1024.0 * 1024.0) << " Gbit/it";
+                bits_iter_str = ss.str();
+            } else if (bits_iter >= 1024.0 * 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_iter / (1024.0 * 1024.0) << " Mbit/it";
+                bits_iter_str = ss.str();
+            } else if (bits_iter >= 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_iter / 1024.0 << " kbit/it";
+                bits_iter_str = ss.str();
+            } else {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_iter << " bit/it";
+                bits_iter_str = ss.str();
+            }
 
-             if (bits_sec >= 1024.0 * 1024.0 * 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_sec / (1024.0*1024.0*1024.0) << " Gbit/s"; bits_sec_str = ss.str();
-             } else if (bits_sec >= 1024.0 * 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_sec / (1024.0*1024.0) << " Mbit/s"; bits_sec_str = ss.str();
-             } else if (bits_sec >= 1024.0) {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_sec / 1024.0 << " kbit/s"; bits_sec_str = ss.str();
-             } else {
-                 std::ostringstream ss; ss << std::fixed << std::setprecision(2) << bits_sec << " bit/s"; bits_sec_str = ss.str();
-             }
-         }
+            if (bits_sec >= 1024.0 * 1024.0 * 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_sec / (1024.0 * 1024.0 * 1024.0) << " Gbit/s";
+                bits_sec_str = ss.str();
+            } else if (bits_sec >= 1024.0 * 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_sec / (1024.0 * 1024.0) << " Mbit/s";
+                bits_sec_str = ss.str();
+            } else if (bits_sec >= 1024.0) {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_sec / 1024.0 << " kbit/s";
+                bits_sec_str = ss.str();
+            } else {
+                std::ostringstream ss;
+                ss << std::fixed << std::setprecision(2) << bits_sec << " bit/s";
+                bits_sec_str = ss.str();
+            }
+        }
 
-         // Combine all metrics into a single line
-        const std::string global_stats = bits_iter_str + " | " +bits_sec_str;
-        const std::string node_stats = bits_iter_node_str + " | " +bits_sec_node_str;
+        // Combine all metrics into a single line
+        const std::string global_stats = bits_iter_str + " | " + bits_sec_str;
+        const std::string node_stats = bits_iter_node_str + " | " + bits_sec_node_str;
         const std::string throughput_text = iter_rate_str + " | " + global_stats + " | " + node_stats;
 
-         bar.set_option(indicators::option::PostfixText{throughput_text});
+        bar.set_option(indicators::option::PostfixText{throughput_text});
 
-         // Update state for next tick
-         last_tick_time_ = current_time;
-         last_iteration_ = current_iteration;
+        // Update state for next tick
+        last_tick_time_ = current_time;
+        last_iteration_ = current_iteration;
     }
 
     void tick_info_gain(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
@@ -723,7 +752,7 @@ struct progress {
         }
 
         const std::size_t current_iteration = controller.current_steps().iterations();
-        const std::size_t iterations_delta  = current_iteration - prev_info_iteration_;
+        const std::size_t iterations_delta = current_iteration - prev_info_iteration_;
 
         // bits per iteration
         double bits_per_iter = std::numeric_limits<double>::quiet_NaN();
@@ -747,43 +776,31 @@ struct progress {
             return oss.str();
         };
 
-        const std::string rate_str  = format_bits(bits_per_sec) + "/s";
-        const std::string iter_str  = format_bits(bits_per_iter) + "/iter";
+        const std::string rate_str = format_bits(bits_per_sec) + "/s";
+        const std::string iter_str = format_bits(bits_per_iter) + "/iter";
         const std::string total_str = "Σ " + format_bits(total_bits);
 
         bar.set_option(indicators::option::PostfixText{rate_str + " | " + iter_str + " | " + total_str});
 
         prev_info_total_bits_ = total_bits;
-        prev_info_iteration_  = current_iteration;
+        prev_info_iteration_ = current_iteration;
     }
 
-
     static std::unique_ptr<indicators::ProgressBar> make_iterations_progress_bar(const std::size_t max_iterations = 0) {
-        //const std::string str_ite = "0/" + max_iterations;
-        //const std::string str_prefix = "["+str_ite+"] :: ";
+        // const std::string str_ite = "0/" + max_iterations;
+        // const std::string str_prefix = "["+str_ite+"] :: ";
         return std::make_unique<indicators::ProgressBar>(
-            indicators::option::BarWidth{bar_width_},
-            indicators::option::Start{"["},
-            indicators::option::Fill{"■"},
-            indicators::option::Lead{"■"},
-            indicators::option::Remainder{"-"},
-            indicators::option::End{"]"});
+            indicators::option::BarWidth{bar_width_}, indicators::option::Start{"["}, indicators::option::Fill{"■"},
+            indicators::option::Lead{"■"}, indicators::option::Remainder{"-"}, indicators::option::End{"]"});
     }
 
     static std::unique_ptr<indicators::ProgressBar> make_text(const std::optional<std::string> &pretext) {
         return std::make_unique<indicators::ProgressBar>(
-            indicators::option::BarWidth{0},
-            indicators::option::PrefixText{pretext ? *pretext : ""},
-            indicators::option::Start{""},
-            indicators::option::Fill{""},
-            indicators::option::Lead{""},
-            indicators::option::Remainder{""},
-            indicators::option::End{""},
-            indicators::option::ForegroundColor{indicators::Color::white},
-            indicators::option::ShowPercentage{false},
-            indicators::option::ShowElapsedTime{false},
-            indicators::option::ShowRemainingTime{false});
+            indicators::option::BarWidth{0}, indicators::option::PrefixText{pretext ? *pretext : ""},
+            indicators::option::Start{""}, indicators::option::Fill{""}, indicators::option::Lead{""},
+            indicators::option::Remainder{""}, indicators::option::End{""},
+            indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::ShowPercentage{false},
+            indicators::option::ShowElapsedTime{false}, indicators::option::ShowRemainingTime{false});
     }
-
 };
 } // namespace scram::mc::scheduler

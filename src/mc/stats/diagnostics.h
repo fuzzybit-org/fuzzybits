@@ -2,9 +2,9 @@
 
 #include <cmath>
 #include <cstddef>
+#include <iomanip>
 #include <limits>
 #include <ostream>
-#include <iomanip>
 
 #include "mc/event/node.h"
 #include "mc/stats/ci_utils.h"
@@ -92,13 +92,12 @@ inline double two_sided_p_value(const double z) {
 //---------------------------------------------------------------------
 
 template <typename tally_t_>
-[[nodiscard]] AccuracyMetrics compute_accuracy_metrics(const tally_t_ &tally,
-                                                       const double    p_true) {
+[[nodiscard]] AccuracyMetrics compute_accuracy_metrics(const tally_t_ &tally, const double p_true) {
     AccuracyMetrics m;
-    m.bias      = tally.mean - p_true;
+    m.bias = tally.mean - p_true;
     m.abs_error = std::fabs(m.bias);
     m.rel_error = (p_true != 0.0) ? m.abs_error / p_true : std::numeric_limits<double>::quiet_NaN();
-    m.mse       = m.bias * m.bias; // single-run squared error
+    m.mse = m.bias * m.bias; // single-run squared error
     m.log10_abs_error = (m.abs_error > 0.0) ? std::log10(m.abs_error) : std::numeric_limits<double>::quiet_NaN();
 
     // Absolute logarithmic error: |log10(p_hat) - log10(p_true)|
@@ -113,10 +112,8 @@ template <typename tally_t_>
 //---------------------------------------------------------------------
 
 template <typename tally_t_>
-[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally,
-                                                               const double    p_true,
-                                                               const double    confidence,
-                                                               const double    eps_target) {
+[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true,
+                                                               const double confidence, const double eps_target) {
     SamplingDiagnostics d;
 
     if (tally.std_err > 0.0) {
@@ -140,9 +137,8 @@ template <typename tally_t_>
 }
 
 template <typename tally_t_>
-[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally,
-                                                               const double    p_true,
-                                                               const ci        &targets) {
+[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true,
+                                                               const ci &targets) {
     return compute_sampling_diagnostics(tally, p_true, targets.two_sided_confidence_level, targets.half_width_epsilon);
 }
 
@@ -151,34 +147,37 @@ template <typename tally_t_>
 // -------------------------------------------------------------------------
 inline std::ostream &operator<<(std::ostream &os, const AccuracyMetrics &m) {
     // Print each metric as label=value with a fixed-width field so columns line up.
-    auto print_pair = [&os](const char *label, const double value) {
-        os << label << std::setw(11) << value;
-    };
+    auto print_pair = [&os](const char *label, const double value) { os << label << std::setw(11) << value; };
 
-    print_pair("Δ=",           m.abs_error);       os << " | ";
-    print_pair("δ=",           m.rel_error);       os << " | ";
-    print_pair("b=",           m.bias);            os << " | ";
-    print_pair("MSE=",         m.mse);             os << " | ";
-    print_pair("log10(Δ)=",    m.log10_abs_error); os << " | ";
-    print_pair("|log10|=",     m.abs_log10_error);
+    print_pair("Δ=", m.abs_error);
+    os << " | ";
+    print_pair("δ=", m.rel_error);
+    os << " | ";
+    print_pair("b=", m.bias);
+    os << " | ";
+    print_pair("MSE=", m.mse);
+    os << " | ";
+    print_pair("log10(Δ)=", m.log10_abs_error);
+    os << " | ";
+    print_pair("|log10|=", m.abs_log10_error);
     return os;
 }
 
 inline std::ostream &operator<<(std::ostream &os, const SamplingDiagnostics &d) {
-    auto print_pair = [&os](const char *label, const double value) {
-        os << label << std::setw(11) << value;
-    };
-    auto print_bool = [&os](const char *label, const bool flag) {
-        os << label << (flag ? 'T' : 'F');
-    };
+    auto print_pair = [&os](const char *label, const double value) { os << label << std::setw(11) << value; };
+    auto print_bool = [&os](const char *label, const bool flag) { os << label << (flag ? 'T' : 'F'); };
 
-    print_pair("z=",      d.z_score);        os << " | ";
-    print_pair("p_val=",  d.p_value);        os << " | ";
-    print_bool("CI95=",   d.ci95_covered);   os << " | ";
-    print_bool("CI99=",   d.ci99_covered);   os << " | ";
+    print_pair("z=", d.z_score);
+    os << " | ";
+    print_pair("p_val=", d.p_value);
+    os << " | ";
+    print_bool("CI95=", d.ci95_covered);
+    os << " | ";
+    print_bool("CI99=", d.ci99_covered);
+    os << " | ";
     os << "n_req=" << d.n_required << " | ";
-    print_pair("n_rat=",  d.n_ratio);
+    print_pair("n_rat=", d.n_ratio);
     return os;
 }
 
-} // namespace scram::mc::stats 
+} // namespace scram::mc::stats
