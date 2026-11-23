@@ -3,6 +3,10 @@
 //   fuzzybits_ir_pc_hull_bench [--nodes N] [--lanes N] [--candidates N] [--seed N]
 //                              [--exclusive P] [--ftp FILE ... --target NAME] [--split-complements]
 //                              [--verify]
+//   fuzzybits_ir_pc_hull_bench --ftp FILE ... --hull [--target NAME ...] [--max-initiators K|none]
+//                              [--literals atom_split|omega_l|negation] [--level 0|1]
+//                              [--decompose-initiators [--verify-decomposition]]
+//                              [--check-threads 1|all|both] [--lanes N] [--seed N]
 //
 // Lanes are sampled from the event probabilities. "Candidates" are lanes where
 // the RFC's bounds disagree (L = 0, U = 1, docs/rfc/monotone-hull-queries.md
@@ -11,8 +15,18 @@
 // --exclusive P gives the synthetic model's delete-term events probabilities
 // around P (larger residuals). --verify re-decides the candidates by complete
 // search alone and by BDDs alone and fails on any difference.
+//
+// --hull lowers the targets as `fzb compile` does for hull queries (negation
+// hull, the initiator rule from the model attribute unless --max-initiators
+// says otherwise), applies the ir::pc passes of --level, and measures the rule
+// as lowered: bounds L and U per lane, the check on the candidates. Results are
+// labelled by target index. With k = 1, --decompose-initiators decides the
+// same lanes by h = ↑g∅ ∨ ⋁ᵢ (xᵢ ∧ ↑gᵢ), where g∅ and gᵢ are g with the
+// initiating events replaced by constants and no rule; --verify-decomposition
+// compares both decisions on every lane and fails on any difference.
 
 #include "api/options.h"
+#include "compile/ftp/compile.h"
 #include "compile/ftp/tests/support.h"
 #include "io/ftp/descriptor.h"
 #include "ir/pc/builder.h"
@@ -20,7 +34,9 @@
 #include "ir/pc/hull/detail/bits.h"
 #include "ir/pc/hull/hull.h"
 #include "ir/pc/op_code.h"
+#include "ir/pc/passes/passes.h"
 #include "ir/pc/probability.h"
+#include "ir/pra/projection.h"
 
 #include <algorithm>
 #include <array>
@@ -33,7 +49,10 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <memory>
+#include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -47,6 +66,9 @@ namespace {
 
     namespace pc = fuzzybits::ir::pc;
     namespace hull = fuzzybits::ir::pc::hull;
+    namespace passes = fuzzybits::ir::pc::passes;
+    namespace pra = fuzzybits::ir::pra;
+    namespace compile_ftp = fuzzybits::compile::ftp;
     using hull::detail::all_ones;
 
     struct model final {
@@ -218,18 +240,22 @@ namespace {
         return {sealed.output, target};
     }
 
-    auto read_ftp(std::vector<std::string> const &files, std::string const &target) -> model {
-        namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
-        std::vector<ftp::source_text> sources;
+    auto read_sources(std::vector<std::string> const &files) -> std::vector<ftp_lowering_test::reader::source_text> {
+        std::vector<ftp_lowering_test::reader::source_text> sources;
         for (auto const &file : files) {
             std::ifstream input(file, std::ios::binary);
             if (!input) {
                 std::fprintf(stderr, "cannot open an input file\n");
                 std::exit(1);
             }
-            sources.push_back(ftp::source_text{
+            sources.push_back(ftp_lowering_test::reader::source_text{
                 .path = file, .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
         }
+        return sources;
+    }
+
+    auto read_ftp(std::vector<std::string> const &files, std::string const &target) -> model {
+        const auto sources = read_sources(files);
         auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::boolean_options({target}));
         if (!read) {
             std::fprintf(stderr, "FTP read failed (%zu diagnostics)\n", read.diagnostics().size());
@@ -256,8 +282,15 @@ namespace {
     }
 
     // Per-node syntactic polarity w.r.t. the target (1 positive, 2 negative).
-    auto polarities(pc::circuit const &circuit, pc::bool_node_id target) -> std::vector<std::uint8_t> {
+    // `split` (by node, may be empty) marks atom-split events: a complemented
+    // edge into one reads the atom, whose polarity is its parent's and goes to
+    // `atoms` instead.
+    auto polarities(pc::circuit const &circuit, pc::bool_node_id target, std::vector<std::uint8_t> const &split = {},
+                    std::vector<std::uint8_t> *atoms = nullptr) -> std::vector<std::uint8_t> {
         std::vector<std::uint8_t> polarity(circuit.node_count(), 0);
+        if (atoms != nullptr) {
+            atoms->assign(circuit.node_count(), 0);
+        }
         polarity[target.raw()] = 1;
         const auto swap = [](std::uint8_t p) { return static_cast<std::uint8_t>(((p & 1) << 1) | ((p & 2) >> 1)); };
         for (auto node = circuit.node_count(); node-- > 0;) {
@@ -281,7 +314,11 @@ namespace {
                 }
             }
             for (auto const &operand : operands) {
-                polarity[operand.source.raw()] |= operand.complement ? swap(p) : p;
+                if (operand.complement && !split.empty() && split[operand.source.raw()] != 0) {
+                    (*atoms)[operand.source.raw()] |= p;
+                } else {
+                    polarity[operand.source.raw()] |= operand.complement ? swap(p) : p;
+                }
             }
         }
         return polarity;
@@ -289,23 +326,53 @@ namespace {
 
     // Lower bound L (negative-unate events zeroed) and upper bound U
     // (negation-normal relaxation, negative literals TRUE) for 64 lanes.
+    // `modes` (by event, may be empty: all down) are the checker's; a split
+    // event's complement atom is at most not x in U and is zeroed in L when it
+    // is negative-unate.
     class bounds final {
     public:
-        bounds(pc::circuit const &circuit, pc::bool_node_id target)
-            : circuit_(circuit), target_(target), polarity_(polarities(circuit, target)),
-              plain_(circuit.node_count()), positive_(circuit.node_count()), negative_(circuit.node_count()) {}
+        bounds(pc::circuit const &circuit, pc::bool_node_id target, std::span<hull::event_mode const> modes = {})
+            : circuit_(circuit), target_(target), modes_(modes.begin(), modes.end()), plain_(circuit.node_count()),
+              positive_(circuit.node_count()), negative_(circuit.node_count()) {
+            std::vector<std::uint8_t> split;
+            if (std::ranges::find(modes_, hull::event_mode::split) != modes_.end()) {
+                split.assign(circuit.node_count(), 0);
+                for (std::uint32_t node = 0, event = 0; node < circuit.node_count(); ++node) {
+                    if (circuit.op_codes()[node] == pc::op_code::basic_event) {
+                        split[node] = modes_[event++] == hull::event_mode::split ? 1 : 0;
+                    }
+                }
+                atom_plain_.resize(circuit.node_count());
+                atom_positive_.resize(circuit.node_count());
+            }
+            polarity_ = polarities(circuit, target, split, &atom_polarity_);
+            split_ = std::move(split);
+        }
 
         // `events[e]`: lane word of event e.
-        auto evaluate(std::vector<std::uint64_t> const &events) -> std::pair<std::uint64_t, std::uint64_t> {
+        auto evaluate(std::span<std::uint64_t const> events) -> std::pair<std::uint64_t, std::uint64_t> {
             std::uint32_t event = 0;
             for (std::uint32_t node = 0; node < circuit_.node_count(); ++node) {
                 const auto code = circuit_.op_codes()[node];
                 const auto operands = circuit_.operands(pc::bool_node_id(node));
                 if (code == pc::op_code::basic_event) {
-                    const auto word = events[event++];
+                    const auto word = events[event];
+                    const auto mode = modes_.empty() ? hull::event_mode::down : modes_[event];
+                    ++event;
                     plain_[node] = polarity_[node] == 2 ? 0 : word;
                     positive_[node] = word;
                     negative_[node] = all_ones;
+                    if (mode == hull::event_mode::fixed) {
+                        plain_[node] = word;
+                        negative_[node] = ~word;
+                    } else if (mode == hull::event_mode::up) {
+                        plain_[node] = polarity_[node] == 1 ? all_ones : word;
+                        positive_[node] = all_ones;
+                        negative_[node] = ~word;
+                    } else if (mode == hull::event_mode::split) {
+                        atom_plain_[node] = atom_polarity_[node] == 2 ? 0 : ~word;
+                        atom_positive_[node] = ~word;
+                    }
                     continue;
                 }
                 if (code == pc::op_code::constant || code == pc::op_code::house_event) {
@@ -318,6 +385,9 @@ namespace {
                 std::uint64_t negative = 0;
                 const auto input = [&](pc::edge_ref const &edge) {
                     const auto source = edge.source.raw();
+                    if (edge.complement && !split_.empty() && split_[source] != 0) {
+                        return std::tuple{atom_plain_[source], atom_positive_[source], all_ones};
+                    }
                     return edge.complement ? std::tuple{~plain_[source], negative_[source], positive_[source]}
                                            : std::tuple{plain_[source], positive_[source], negative_[source]};
                 };
@@ -396,10 +466,15 @@ namespace {
     private:
         pc::circuit const &circuit_;
         pc::bool_node_id target_;
+        std::vector<hull::event_mode> modes_;
         std::vector<std::uint8_t> polarity_;
+        std::vector<std::uint8_t> atom_polarity_;
+        std::vector<std::uint8_t> split_;
         std::vector<std::uint64_t> plain_;
         std::vector<std::uint64_t> positive_;
         std::vector<std::uint64_t> negative_;
+        std::vector<std::uint64_t> atom_plain_;
+        std::vector<std::uint64_t> atom_positive_;
     };
 
     struct run final {
@@ -435,6 +510,690 @@ namespace {
                     exact != 0 ? double(s.residual_variables_total) / double(exact) : 0.0, s.residual_variables_max);
     }
 
+    using clock = std::chrono::steady_clock;
+
+    auto seconds_since(clock::time_point start) -> double {
+        return std::chrono::duration<double>(clock::now() - start).count();
+    }
+
+    constexpr std::uint32_t outside = ~std::uint32_t{0};
+    constexpr std::size_t block_groups = 256;
+
+    auto literal_probability(pc::circuit const &circuit, std::uint32_t node) -> double {
+        auto const &source = circuit.probability_sources()[circuit.probability_source_refs()[node].raw()];
+        if (source.kind != pc::probability_source_kind::literal) {
+            std::fprintf(stderr, "an event has no literal probability\n");
+            std::exit(1);
+        }
+        return source.literal;
+    }
+
+    // The cone of `target`, rebuilt in topological order through the builder.
+    // `fixed` (by node, may be empty): 0 replaces the node by FALSE, 1 by TRUE,
+    // -1 keeps it; nothing else is folded.
+    struct restricted final {
+        pc::circuit circuit;
+        pc::bool_node_id target;
+        // New node to source node, and source node to new node (`outside` when not in the cone).
+        std::vector<std::uint32_t> origin;
+        std::vector<std::uint32_t> image;
+    };
+
+    auto restrict_cone(pc::circuit const &source, pc::bool_node_id target, std::span<std::int8_t const> fixed = {})
+        -> restricted {
+        restricted out;
+        out.image.assign(source.node_count(), outside);
+        std::vector<std::uint8_t> seen(source.node_count(), 0);
+        std::vector<std::pair<std::uint32_t, std::uint32_t>> stack{{target.raw(), 0}};
+        seen[target.raw()] = 1;
+        pc::builder builder;
+        std::vector<pc::edge_ref> operands;
+        while (!stack.empty()) {
+            const auto node = stack.back().first;
+            const auto kept = fixed.empty() || fixed[node] < 0;
+            const auto children = kept ? source.operands(pc::bool_node_id(node)) : std::span<pc::edge_ref const>{};
+            if (stack.back().second < children.size()) {
+                const auto child = children[stack.back().second++].source.raw();
+                if (seen[child] == 0) {
+                    seen[child] = 1;
+                    stack.emplace_back(child, 0);
+                }
+                continue;
+            }
+            stack.pop_back();
+            const auto code = source.op_codes()[node];
+            pc::bool_node_id made;
+            if (!kept) {
+                made = builder.add_constant(fixed[node] != 0);
+            } else if (code == pc::op_code::basic_event) {
+                made = builder.add_basic_event(builder.add_literal_probability(literal_probability(source, node)));
+            } else if (code == pc::op_code::constant) {
+                made = builder.add_constant(source.constant_values()[node] != 0);
+            } else if (code == pc::op_code::house_event) {
+                made = builder.add_house_event(source.constant_values()[node] != 0);
+            } else {
+                operands.clear();
+                for (auto const &operand : children) {
+                    operands.push_back(pc::edge_ref{.source = pc::bool_node_id(out.image[operand.source.raw()]),
+                                                    .complement = operand.complement});
+                }
+                made = code == pc::op_code::cardinality
+                           ? builder.add_cardinality(source.cardinality_low()[node], source.cardinality_high()[node],
+                                                     operands)
+                           : builder.add_gate(code, operands);
+            }
+            out.image[node] = made.raw();
+            out.origin.push_back(node);
+        }
+        out.target = pc::bool_node_id(out.image[target.raw()]);
+        (void)builder.add_target(out.target);
+        auto sealed = std::move(builder).seal();
+        if (!sealed.ok()) {
+            std::fprintf(stderr, "restricted circuit failed to seal\n");
+            std::exit(1);
+        }
+        out.circuit = std::move(sealed.output);
+        return out;
+    }
+
+    // Source node of each event node that a pass pipeline kept as itself
+    // (`outside` for every other output node).
+    auto event_origin(pc::circuit const &input, std::span<passes::node_image const> map, pc::circuit const &output)
+        -> std::vector<std::uint32_t> {
+        std::vector<std::uint32_t> origin(output.node_count(), outside);
+        for (std::uint32_t node = 0; node < input.node_count(); ++node) {
+            if (input.op_codes()[node] != pc::op_code::basic_event || map[node].kind != passes::image_kind::reference ||
+                map[node].edge.complement) {
+                continue;
+            }
+            const auto image = map[node].edge.source.raw();
+            if (output.op_codes()[image] == pc::op_code::basic_event && origin[image] == outside) {
+                origin[image] = node;
+            }
+        }
+        return origin;
+    }
+
+    // A circuit as the checker sees it. `source` is the lowering node of each
+    // event, which is how events of different circuits of one target are matched.
+    struct subject final {
+        pc::circuit circuit;
+        pc::bool_node_id target;
+        std::vector<std::uint32_t> source;
+        std::vector<hull::event_mode> modes;
+    };
+
+    auto make_subject(pc::circuit circuit, pc::bool_node_id target, std::span<std::uint32_t const> source_of_node,
+                      std::vector<std::uint8_t> const &literal, hull::event_mode literal_mode) -> subject {
+        subject out{.circuit = std::move(circuit), .target = target, .source = {}, .modes = {}};
+        for (std::uint32_t node = 0; node < out.circuit.node_count(); ++node) {
+            if (out.circuit.op_codes()[node] != pc::op_code::basic_event) {
+                continue;
+            }
+            if (source_of_node[node] == outside) {
+                std::fprintf(stderr, "an event has no source in the lowering\n");
+                std::exit(1);
+            }
+            out.source.push_back(source_of_node[node]);
+            out.modes.push_back(literal[source_of_node[node]] != 0 ? literal_mode : hull::event_mode::down);
+        }
+        return out;
+    }
+
+    class sampler final {
+    public:
+        sampler(std::vector<double> probability, std::uint64_t seed)
+            : probability_(std::move(probability)), random_(seed), log_miss_(probability_.size()) {
+            for (std::size_t event = 0; event < probability_.size(); ++event) {
+                log_miss_[event] =
+                    probability_[event] > 0.0 && probability_[event] < 1.0 ? std::log1p(-probability_[event]) : 0.0;
+            }
+        }
+
+        // One word of 64 lanes per event.
+        void draw(std::span<std::uint64_t> words) {
+            for (std::size_t event = 0; event < probability_.size(); ++event) {
+                std::uint64_t word = 0;
+                if (probability_[event] >= 1.0) {
+                    word = all_ones;
+                } else if (probability_[event] > 0.0) {
+                    for (auto lane = skip(event); lane < 64; lane += 1 + skip(event)) {
+                        word |= std::uint64_t{1} << lane;
+                    }
+                }
+                words[event] = word;
+            }
+        }
+
+    private:
+        // Bernoulli lanes by geometric skipping: about 1 + 64 p draws per event and block.
+        auto skip(std::size_t event) -> std::uint32_t {
+            const auto gap = std::floor(std::log(1.0 - unit_(random_)) / log_miss_[event]);
+            return gap >= 64.0 ? 64U : static_cast<std::uint32_t>(gap);
+        }
+
+        std::vector<double> probability_;
+        std::mt19937_64 random_;
+        std::vector<double> log_miss_;
+        std::uniform_real_distribution<double> unit_{0.0, 1.0};
+    };
+
+    // Appends, for each lane in `mask` in ascending order, its row (bit e is
+    // event e) to `out`. `words` holds one word per event, padded to `stride` * 64.
+    void append_rows(std::span<std::uint64_t const> words, std::size_t stride, std::uint64_t mask,
+                     std::vector<std::uint64_t> &out) {
+        if (mask == 0) {
+            return;
+        }
+        const auto first = out.size();
+        out.resize(first + static_cast<std::size_t>(std::popcount(mask)) * stride);
+        std::array<std::uint64_t, 64> rows{};
+        for (std::size_t group = 0; group < stride; ++group) {
+            std::copy_n(words.begin() + static_cast<std::ptrdiff_t>(group * 64), 64, rows.begin());
+            hull::detail::transpose64(rows);
+            auto row = first + group;
+            for (auto bits = mask; bits != 0; bits &= bits - 1) {
+                out[row] = rows[static_cast<std::size_t>(std::countr_zero(bits))];
+                row += stride;
+            }
+        }
+    }
+
+    // The lanes of `mask` whose answer bit is set; `next` is the answer index of its first lane.
+    auto scatter(std::uint64_t mask, std::span<std::uint64_t const> answers, std::size_t &next) -> std::uint64_t {
+        std::uint64_t out = 0;
+        for (auto bits = mask; bits != 0; bits &= bits - 1, ++next) {
+            if (((answers[next >> 6] >> (next & 63)) & 1U) != 0) {
+                out |= std::uint64_t{1} << std::countr_zero(bits);
+            }
+        }
+        return out;
+    }
+
+    struct checkers final {
+        std::optional<hull::checker> serial;
+        std::optional<hull::checker> parallel;
+    };
+
+    // Cost of deciding the lanes one way: bound evaluation and bookkeeping once, the
+    // checks timed for each requested thread count on the same candidates.
+    struct way final {
+        double bounds_seconds = 0.0;
+        double serial_seconds = 0.0;
+        double parallel_seconds = 0.0;
+        hull::check_stats stats;
+    };
+
+    void decide(checkers const &check, std::vector<std::uint64_t> const &rows, std::size_t count, std::size_t stride,
+                std::vector<std::uint64_t> &answers, way &cost) {
+        answers.assign((count + 63) / 64, 0);
+        if (count == 0) {
+            return;
+        }
+        std::optional<run> first;
+        std::vector<std::uint64_t> other;
+        if (check.serial) {
+            first = time_check(*check.serial, rows, count, stride, &answers);
+            cost.serial_seconds += first->seconds;
+        }
+        if (check.parallel) {
+            const auto second = time_check(*check.parallel, rows, count, stride, first ? &other : &answers);
+            cost.parallel_seconds += second.seconds;
+            if (!first) {
+                first = second;
+            } else if (other != answers) {
+                std::fprintf(stderr, "single-threaded and parallel answers differ\n");
+                std::exit(1);
+            }
+        }
+        cost.stats.merge(first->stats);
+    }
+
+    struct hull_options final {
+        std::vector<std::string> targets;
+        std::optional<std::optional<std::uint32_t>> max_initiators;
+        std::string literals = "atom_split";
+        int level = 1;
+        bool decompose = false;
+        bool verify = false;
+        bool serial = true;
+        bool parallel = true;
+        std::size_t lanes = 0;
+        std::uint64_t seed = 0;
+    };
+
+    // One circuit of the decomposition: g with the initiating events replaced by
+    // constants; `initiator` is the rule circuit's event whose lane bit gates
+    // the part, `outside` for g∅.
+    struct part final {
+        part(subject view_, std::vector<std::uint32_t> from_rule_, std::uint32_t initiator_)
+            : view(std::move(view_)), from_rule(std::move(from_rule_)), initiator(initiator_),
+              bound(view.circuit, view.target, view.modes), stride((view.source.size() + 63) / 64),
+              events(stride * 64, 0) {}
+
+        subject view;
+        std::vector<std::uint32_t> from_rule;
+        std::uint32_t initiator;
+        bounds bound;
+        std::size_t stride;
+        std::vector<std::uint64_t> events;
+        checkers check;
+        std::vector<std::uint64_t> rows;
+        std::vector<std::uint64_t> candidate_lanes = std::vector<std::uint64_t>(block_groups);
+        std::size_t active = 0;
+        std::size_t candidates = 0;
+    };
+
+    void print_run(char const *label, double seconds, hull::check_stats const &stats, int threads) {
+        if (stats.lanes == 0) {
+            std::printf("%-28s no lanes checked\n", label);
+            return;
+        }
+        report(label, run{.seconds = seconds, .stats = stats}, threads);
+    }
+
+    auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_result const &compiled,
+                     std::size_t index, hull_options const &options, int threads) -> int {
+        auto const &binding = lowering.projection.target_bindings()[index];
+        std::printf("target %zu:\n", index);
+        const auto literal_mode = binding.literals == pra::literal_mode::atom_split ? hull::event_mode::split
+                                  : binding.literals == pra::literal_mode::omega_l  ? hull::event_mode::fixed
+                                                                                    : hull::event_mode::down;
+        std::vector<std::uint8_t> literal(lowering.circuit.node_count(), 0);
+        std::vector<std::uint32_t> literal_nodes;
+        if (binding.negation.monotone_hull && binding.literals != pra::literal_mode::negation) {
+            for (const auto event : lowering.projection.literal_events(binding)) {
+                if (const auto node = lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
+                    literal[node.raw()] = 1;
+                    literal_nodes.push_back(node.raw());
+                }
+            }
+        }
+        std::vector<std::uint32_t> initiator_nodes;
+        for (const auto event : lowering.projection.initiators(binding)) {
+            if (const auto node = lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
+                initiator_nodes.push_back(node.raw());
+            }
+        }
+
+        const auto output_target = compiled.target_map[index];
+        if (!output_target.valid()) {
+            std::fprintf(stderr, "the passes dropped the target\n");
+            return 1;
+        }
+        auto cone = restrict_cone(compiled.output, compiled.output.targets()[output_target.raw()].node);
+        const auto origin = event_origin(lowering.circuit, compiled.node_map, compiled.output);
+        std::vector<std::uint32_t> source_of_node(cone.circuit.node_count(), outside);
+        for (std::uint32_t node = 0; node < cone.circuit.node_count(); ++node) {
+            source_of_node[node] = origin[cone.origin[node]];
+        }
+        const auto rule = make_subject(std::move(cone.circuit), cone.target, source_of_node, literal, literal_mode);
+        const auto events = rule.source.size();
+        const auto stride = (events + 63) / 64;
+        std::printf(
+            "circuit: %u nodes, %u edges, %zu events (%td split, %td fixed); %zu initiating events in the cone\n",
+            rule.circuit.node_count(), rule.circuit.edge_count(), events,
+            std::ranges::count(rule.modes, hull::event_mode::split),
+            std::ranges::count(rule.modes, hull::event_mode::fixed), initiator_nodes.size());
+
+        checkers rule_check;
+        hull::check_options serial_options{};
+        serial_options.parallel = false;
+        double prepare_seconds = 0.0;
+        for (const auto parallel : {false, true}) {
+            if (!(parallel ? options.parallel : options.serial)) {
+                continue;
+            }
+            const auto start = clock::now();
+            auto made = hull::checker::make(rule.circuit, rule.target, rule.modes,
+                                            parallel ? hull::check_options{} : serial_options);
+            if (!made) {
+                std::fprintf(stderr, "checker preparation failed\n");
+                return 1;
+            }
+            (parallel ? rule_check.parallel : rule_check.serial) = std::move(made).value();
+            prepare_seconds += seconds_since(start);
+        }
+        auto const &any = rule_check.serial ? *rule_check.serial : *rule_check.parallel;
+        std::printf("checker: cone %u positions, %zu events; prepare %.3f s\n", any.cone_size(),
+                    any.cone_events().size(), prepare_seconds);
+
+        std::vector<std::unique_ptr<part>> parts;
+        std::size_t zero_initiators = 0;
+        std::size_t refused = 0;
+        if (options.decompose) {
+            std::vector<std::uint32_t> event_of(lowering.circuit.node_count(), outside);
+            for (std::uint32_t event = 0; event < events; ++event) {
+                event_of[rule.source[event]] = event;
+            }
+            std::vector<std::uint32_t> active_nodes;
+            for (const auto node : initiator_nodes) {
+                if (literal_probability(lowering.circuit, node) == 0.0) {
+                    ++zero_initiators;
+                } else if (event_of[node] == outside) {
+                    std::fprintf(stderr, "an initiating event is missing from the rule circuit\n");
+                    return 1;
+                } else if (rule.modes[event_of[node]] != hull::event_mode::down) {
+                    ++refused;
+                } else {
+                    active_nodes.push_back(node);
+                }
+            }
+            if (refused != 0) {
+                std::printf("decomposition refused: %zu of %zu initiating events are not in mode down\n", refused,
+                            initiator_nodes.size());
+                active_nodes.clear();
+            } else {
+                const auto whole = restrict_cone(lowering.circuit, binding.root);
+                std::vector<std::uint8_t> is_initiator(lowering.circuit.node_count(), 0);
+                for (const auto node : initiator_nodes) {
+                    is_initiator[node] = 1;
+                }
+                std::vector<std::uint8_t> dependent(whole.circuit.node_count(), 0);
+                std::size_t dependent_nodes = 0;
+                for (std::uint32_t node = 0; node < whole.circuit.node_count(); ++node) {
+                    bool depends = is_initiator[whole.origin[node]] != 0;
+                    for (auto const &operand : whole.circuit.operands(pc::bool_node_id(node))) {
+                        depends = depends || dependent[operand.source.raw()] != 0;
+                    }
+                    dependent[node] = depends ? 1 : 0;
+                    dependent_nodes += depends ? 1 : 0;
+                }
+                std::printf("g without the rule, as lowered: %u nodes, %u edges, %zu depend on an initiating event\n",
+                            whole.circuit.node_count(), whole.circuit.edge_count(), dependent_nodes);
+                const auto start = clock::now();
+                double passes_seconds = 0.0;
+                for (std::size_t which = 0; which <= active_nodes.size(); ++which) {
+                    std::vector<std::int8_t> fixed(lowering.circuit.node_count(), -1);
+                    for (const auto node : initiator_nodes) {
+                        fixed[node] = 0;
+                    }
+                    if (which > 0) {
+                        fixed[active_nodes[which - 1]] = 1;
+                    }
+                    auto restricted_part = restrict_cone(lowering.circuit, binding.root, fixed);
+                    passes::pipeline_options pipeline;
+                    pipeline.semantics.push_back(passes::target_semantics::monotone_hull);
+                    pipeline.atom_events.resize(1);
+                    if (binding.literals == pra::literal_mode::atom_split) {
+                        for (const auto node : literal_nodes) {
+                            if (restricted_part.image[node] != outside) {
+                                pipeline.atom_events[0].push_back(pc::bool_node_id(restricted_part.image[node]));
+                            }
+                        }
+                    }
+                    const auto passes_start = clock::now();
+                    auto lowered_part = passes::compile(
+                        restricted_part.circuit,
+                        options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1, pipeline);
+                    passes_seconds += seconds_since(passes_start);
+                    if (!lowered_part.ok() || !lowered_part.target_map[0].valid()) {
+                        std::fprintf(stderr, "the passes failed on a part of the decomposition\n");
+                        return 1;
+                    }
+                    const auto part_origin =
+                        event_origin(restricted_part.circuit, lowered_part.node_map, lowered_part.output);
+                    std::vector<std::uint32_t> part_source(lowered_part.output.node_count(), outside);
+                    for (std::uint32_t node = 0; node < part_source.size(); ++node) {
+                        part_source[node] =
+                            part_origin[node] == outside ? outside : restricted_part.origin[part_origin[node]];
+                    }
+                    auto view = make_subject(lowered_part.output,
+                                             lowered_part.output.targets()[lowered_part.target_map[0].raw()].node,
+                                             part_source, literal, literal_mode);
+                    std::vector<std::uint32_t> from_rule;
+                    for (const auto node : view.source) {
+                        if (event_of[node] == outside) {
+                            std::fprintf(stderr, "an event of a part is missing from the rule circuit\n");
+                            return 1;
+                        }
+                        from_rule.push_back(event_of[node]);
+                    }
+                    auto &added = parts.emplace_back(
+                        std::make_unique<part>(std::move(view), std::move(from_rule),
+                                               which == 0 ? outside : event_of[active_nodes[which - 1]]));
+                    for (const auto parallel : {false, true}) {
+                        if (!(parallel ? options.parallel : options.serial)) {
+                            continue;
+                        }
+                        auto made = hull::checker::make(added->view.circuit, added->view.target, added->view.modes,
+                                                        parallel ? hull::check_options{} : serial_options);
+                        if (!made) {
+                            std::fprintf(stderr, "checker preparation failed\n");
+                            return 1;
+                        }
+                        (parallel ? added->check.parallel : added->check.serial) = std::move(made).value();
+                    }
+                }
+                std::size_t nodes = 0;
+                std::size_t edges = 0;
+                for (auto const &item : parts) {
+                    nodes += item->view.circuit.node_count();
+                    edges += item->view.circuit.edge_count();
+                }
+                std::printf(
+                    "decomposition: %zu parts (%zu initiating events, %zu with probability 0 left out), %zu nodes, "
+                    "%zu edges "
+                    "in all; passes %.3f s, parts and checkers prepared in %.3f s\n",
+                    parts.size(), initiator_nodes.size(), zero_initiators, nodes, edges, passes_seconds,
+                    seconds_since(start));
+            }
+        }
+        std::fflush(stdout);
+
+        const auto probability = probabilities(rule.circuit);
+        sampler draw(probability, options.seed);
+        bounds rule_bounds(rule.circuit, rule.target, rule.modes);
+        const auto groups = options.lanes / 64;
+        std::vector<std::uint64_t> words(block_groups * stride * 64, 0);
+        std::vector<std::uint64_t> rule_rows;
+        std::vector<std::uint64_t> answers;
+        std::vector<std::uint64_t> rule_true(block_groups);
+        std::vector<std::uint64_t> rule_candidates(block_groups);
+        std::vector<std::uint64_t> decomposed(block_groups);
+        std::size_t lower_ones = 0;
+        std::size_t upper_ones = 0;
+        std::size_t rule_candidate_count = 0;
+        std::size_t rule_hits = 0;
+        std::size_t decomposition_hits = 0;
+        std::size_t compared = 0;
+        std::size_t differences = 0;
+        double sampling_seconds = 0.0;
+        way rule_way;
+        way decomposition_way;
+        for (std::size_t first = 0; first < groups; first += block_groups) {
+            const auto count = std::min(block_groups, groups - first);
+            auto start = clock::now();
+            for (std::size_t group = 0; group < count; ++group) {
+                draw.draw(std::span<std::uint64_t>(words).subspan(group * stride * 64, events));
+            }
+            sampling_seconds += seconds_since(start);
+
+            start = clock::now();
+            rule_rows.clear();
+            std::size_t candidates = 0;
+            for (std::size_t group = 0; group < count; ++group) {
+                const std::span<std::uint64_t const> lane_words(words.data() + group * stride * 64, stride * 64);
+                const auto [lower, upper] = rule_bounds.evaluate(lane_words.first(events));
+                lower_ones += static_cast<std::size_t>(std::popcount(lower));
+                upper_ones += static_cast<std::size_t>(std::popcount(upper));
+                rule_true[group] = lower;
+                rule_candidates[group] = ~lower & upper;
+                candidates += static_cast<std::size_t>(std::popcount(rule_candidates[group]));
+                append_rows(lane_words, stride, rule_candidates[group], rule_rows);
+            }
+            rule_way.bounds_seconds += seconds_since(start);
+            decide(rule_check, rule_rows, candidates, stride, answers, rule_way);
+            rule_candidate_count += candidates;
+            start = clock::now();
+            std::size_t next = 0;
+            for (std::size_t group = 0; group < count; ++group) {
+                rule_true[group] |= scatter(rule_candidates[group], answers, next);
+                rule_hits += static_cast<std::size_t>(std::popcount(rule_true[group]));
+            }
+            rule_way.bounds_seconds += seconds_since(start);
+
+            if (parts.empty()) {
+                continue;
+            }
+            std::fill_n(decomposed.begin(), count, 0);
+            for (auto &item : parts) {
+                start = clock::now();
+                item->rows.clear();
+                std::size_t part_candidates = 0;
+                for (std::size_t group = 0; group < count; ++group) {
+                    const auto lane_words = words.data() + group * stride * 64;
+                    const auto active = item->initiator == outside ? all_ones : lane_words[item->initiator];
+                    item->active += static_cast<std::size_t>(std::popcount(active));
+                    item->candidate_lanes[group] = 0;
+                    if ((active & ~decomposed[group]) == 0) {
+                        continue;
+                    }
+                    for (std::size_t event = 0; event < item->from_rule.size(); ++event) {
+                        item->events[event] = lane_words[item->from_rule[event]];
+                    }
+                    const auto [lower, upper] = item->bound.evaluate(
+                        std::span<std::uint64_t const>(item->events).first(item->from_rule.size()));
+                    decomposed[group] |= active & lower;
+                    item->candidate_lanes[group] = active & ~decomposed[group] & upper;
+                    part_candidates += static_cast<std::size_t>(std::popcount(item->candidate_lanes[group]));
+                    append_rows(item->events, item->stride, item->candidate_lanes[group], item->rows);
+                }
+                item->candidates += part_candidates;
+                decomposition_way.bounds_seconds += seconds_since(start);
+                decide(item->check, item->rows, part_candidates, item->stride, answers, decomposition_way);
+                start = clock::now();
+                next = 0;
+                for (std::size_t group = 0; group < count; ++group) {
+                    decomposed[group] |= scatter(item->candidate_lanes[group], answers, next);
+                }
+                decomposition_way.bounds_seconds += seconds_since(start);
+            }
+            for (std::size_t group = 0; group < count; ++group) {
+                compared += 64;
+                differences += static_cast<std::size_t>(std::popcount(rule_true[group] ^ decomposed[group]));
+                decomposition_hits += static_cast<std::size_t>(std::popcount(decomposed[group]));
+            }
+        }
+
+        const auto lanes = static_cast<double>(options.lanes);
+        std::printf("sampling: %.3f s for %zu lanes\n", sampling_seconds, options.lanes);
+        std::printf("rule: N %zu; L = 1 %.6f; U = 1 %.6f; candidates %.6f (%zu); hits %.6f; bounds %.3f s\n",
+                    options.lanes, double(lower_ones) / lanes, double(upper_ones) / lanes,
+                    double(rule_candidate_count) / lanes, rule_candidate_count, double(rule_hits) / lanes,
+                    rule_way.bounds_seconds);
+        if (options.serial) {
+            print_run("rule checks, 1 thread", rule_way.serial_seconds, rule_way.stats, 1);
+            std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, 1 thread",
+                        rule_way.bounds_seconds + rule_way.serial_seconds,
+                        lanes / (rule_way.bounds_seconds + rule_way.serial_seconds));
+        }
+        if (options.parallel) {
+            print_run("rule checks, all threads", rule_way.parallel_seconds, rule_way.stats, threads);
+            std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, all thr.",
+                        rule_way.bounds_seconds + rule_way.parallel_seconds,
+                        lanes / (rule_way.bounds_seconds + rule_way.parallel_seconds));
+        }
+        if (parts.empty()) {
+            return options.verify && refused != 0 ? 1 : 0;
+        }
+        double candidate_sum = 0.0;
+        double candidate_max = 0.0;
+        double active_sum = 0.0;
+        std::size_t checks = 0;
+        for (auto const &item : parts) {
+            const auto fraction = double(item->candidates) / lanes;
+            candidate_sum += fraction;
+            candidate_max = std::max(candidate_max, fraction);
+            active_sum += double(item->active) / lanes;
+            checks += item->candidates;
+        }
+        std::printf(
+            "decomposition: N %zu; %zu parts; candidates per part: mean %.6f max %.6f of N; active mean %.6f of N; "
+            "checks per lane %.6f (rule %.6f); hits %.6f; bounds %.3f s\n",
+            options.lanes, parts.size(), candidate_sum / double(parts.size()), candidate_max,
+            active_sum / double(parts.size()), double(checks) / lanes, double(rule_candidate_count) / lanes,
+            double(decomposition_hits) / lanes, decomposition_way.bounds_seconds);
+        if (options.serial) {
+            print_run("part checks, 1 thread", decomposition_way.serial_seconds, decomposition_way.stats, 1);
+            std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, 1 thread",
+                        decomposition_way.bounds_seconds + decomposition_way.serial_seconds,
+                        lanes / (decomposition_way.bounds_seconds + decomposition_way.serial_seconds));
+        }
+        if (options.parallel) {
+            print_run("part checks, all threads", decomposition_way.parallel_seconds, decomposition_way.stats, threads);
+            std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, all threads",
+                        decomposition_way.bounds_seconds + decomposition_way.parallel_seconds,
+                        lanes / (decomposition_way.bounds_seconds + decomposition_way.parallel_seconds));
+        }
+        if (options.verify) {
+            std::printf("verify: lanes compared %zu, differences %zu\n", compared, differences);
+            return differences != 0 || compared == 0 ? 1 : 0;
+        }
+        return 0;
+    }
+
+    auto run_hull(std::vector<std::string> const &files, hull_options const &options) -> int {
+        const auto sources = read_sources(files);
+        compile_ftp::options settings;
+        settings.negation = "hull";
+        settings.literals = options.literals;
+        settings.max_initiators_per_cutset = options.max_initiators;
+        settings.targets = options.targets;
+        auto start = clock::now();
+        auto lowered = ftp_lowering_test::lower(sources, settings);
+        const auto lower_seconds = seconds_since(start);
+        if (!lowered) {
+            std::fprintf(stderr, "FTP lowering failed (%zu diagnostics)\n", lowered.diagnostics().size());
+            return 1;
+        }
+        auto const &lowering = lowered.value();
+        const auto rule = lowering.report.max_initiators_per_cutset;
+        if (options.decompose && rule != std::optional<std::uint32_t>{1}) {
+            std::fprintf(stderr, "--decompose-initiators needs an initiator rule with k = 1\n");
+            return 2;
+        }
+        auto const bindings = lowering.projection.target_bindings();
+        passes::pipeline_options pipeline;
+        for (auto const &binding : bindings) {
+            pipeline.semantics.push_back(binding.negation.monotone_hull ? passes::target_semantics::monotone_hull
+                                                                        : passes::target_semantics::boolean);
+            auto &atoms = pipeline.atom_events.emplace_back();
+            if (binding.negation.monotone_hull && binding.literals == pra::literal_mode::atom_split) {
+                for (const auto event : lowering.projection.literal_events(binding)) {
+                    if (const auto node = lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
+                        atoms.push_back(node);
+                    }
+                }
+            }
+        }
+        const auto rule_text = rule ? "k = " + std::to_string(*rule) : std::string("none");
+        std::printf(
+            "lowered: %u nodes, %u edges, %zu targets; initiator rule %s (%zu nodes, %zu edges); lower %.3f s\n",
+            lowering.circuit.node_count(), lowering.circuit.edge_count(), bindings.size(), rule_text.c_str(),
+            lowering.report.generated_nodes, lowering.report.generated_edges, lower_seconds);
+        start = clock::now();
+        auto compiled = passes::compile(
+            lowering.circuit, options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1, pipeline);
+        const auto passes_seconds = seconds_since(start);
+        if (!compiled.ok()) {
+            std::fprintf(stderr, "the passes failed\n");
+            return 1;
+        }
+        std::printf("level %d: %u nodes, %u edges; passes %.3f s\n", options.level, compiled.nodes_after,
+                    compiled.edges_after, passes_seconds);
+        int threads = 1;
+#if defined(_OPENMP)
+        threads = omp_get_max_threads();
+#endif
+        int status = 0;
+        for (std::size_t index = 0; index < bindings.size(); ++index) {
+            status = std::max(status, hull_target(lowering, compiled, index, options, threads));
+        }
+        std::printf("threads: %d\n", threads);
+        return status;
+    }
+
 } // namespace
 
 auto main(int argc, char **argv) -> int {
@@ -446,7 +1205,9 @@ auto main(int argc, char **argv) -> int {
     bool split_complements = false;
     bool verify = false;
     std::vector<std::string> files;
-    std::string target_name;
+    std::vector<std::string> target_names;
+    hull_options hull_settings;
+    bool hull_mode = false;
     for (int index = 1; index < argc; ++index) {
         const std::string argument = argv[index];
         const auto next = [&]() -> std::string {
@@ -469,11 +1230,34 @@ auto main(int argc, char **argv) -> int {
         } else if (argument == "--ftp") {
             files.push_back(next());
         } else if (argument == "--target") {
-            target_name = next();
+            target_names.push_back(next());
         } else if (argument == "--split-complements") {
             split_complements = true;
         } else if (argument == "--verify") {
             verify = true;
+        } else if (argument == "--hull") {
+            hull_mode = true;
+        } else if (argument == "--max-initiators") {
+            const auto value = next();
+            hull_settings.max_initiators =
+                value == "none" ? std::optional<std::uint32_t>{}
+                                : std::optional<std::uint32_t>{static_cast<std::uint32_t>(std::stoul(value))};
+        } else if (argument == "--literals") {
+            hull_settings.literals = next();
+        } else if (argument == "--level") {
+            hull_settings.level = std::stoi(next());
+        } else if (argument == "--decompose-initiators") {
+            hull_settings.decompose = true;
+        } else if (argument == "--verify-decomposition") {
+            hull_settings.verify = true;
+        } else if (argument == "--check-threads") {
+            const auto value = next();
+            hull_settings.serial = value == "1" || value == "both";
+            hull_settings.parallel = value == "all" || value == "both";
+            if (!hull_settings.serial && !hull_settings.parallel) {
+                std::fprintf(stderr, "--check-threads takes 1, all or both\n");
+                return 2;
+            }
         } else {
             std::fprintf(stderr, "unknown argument\n");
             return 2;
@@ -481,8 +1265,28 @@ auto main(int argc, char **argv) -> int {
     }
     lanes = std::max<std::size_t>(64, (lanes + 63) / 64 * 64);
 
+    if (hull_mode) {
+        if (files.empty() || (hull_settings.level != 0 && hull_settings.level != 1) ||
+            (hull_settings.literals != "atom_split" && hull_settings.literals != "omega_l" &&
+             hull_settings.literals != "negation") ||
+            (hull_settings.verify && !hull_settings.decompose)) {
+            std::fprintf(stderr, "--hull needs --ftp, --level 0|1, --literals atom_split|omega_l|negation, and "
+                                 "--verify-decomposition needs --decompose-initiators\n");
+            return 2;
+        }
+        hull_settings.targets = target_names;
+        hull_settings.lanes = lanes;
+        hull_settings.seed = seed;
+        return run_hull(files, hull_settings);
+    }
+    if (hull_settings.decompose || hull_settings.verify) {
+        std::fprintf(stderr, "--decompose-initiators and --verify-decomposition need --hull\n");
+        return 2;
+    }
+
     std::mt19937_64 random(seed);
-    const auto subject = files.empty() ? synthetic(nodes, exclusive_probability, random) : read_ftp(files, target_name);
+    const auto subject = files.empty() ? synthetic(nodes, exclusive_probability, random)
+                                       : read_ftp(files, target_names.empty() ? std::string{} : target_names.front());
     const auto probability = probabilities(subject.circuit);
     const auto events = static_cast<std::uint32_t>(probability.size());
 
