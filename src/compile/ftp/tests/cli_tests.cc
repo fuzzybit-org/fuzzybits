@@ -430,7 +430,7 @@ TEST_CASE("fzb compile rejects bad FTP options and mixed inputs", "[compile][ftp
 
 namespace {
 
-        // `std::system` reports the wait status on POSIX.
+    // `std::system` reports the wait status on POSIX.
     [[nodiscard]] auto exit_code(run_result const &ran) -> int {
 #ifdef _WIN32
         return ran.status;
@@ -573,6 +573,20 @@ TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][
     ran = run_fzb("compile " + quoted(model.string()) + " --watch @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
     REQUIRE(exit_code(ran) == 1);
 
+    // A file without names must not fall back to every PROCESS target; neither may a directory.
+    const auto empty = scratch / "empty.txt";
+    std::ofstream(empty) << "\n  \r\n";
+    for (auto const &flag : {"--target", "--watch"}) {
+        ran = run_fzb("compile " + quoted(model.string()) + " " + flag + " @" + quoted(empty.string()) + flags, scratch);
+        INFO(ran.err);
+        REQUIRE(exit_code(ran) == 1);
+        REQUIRE(ran.err.find("fzb compile: " + empty.string() + " lists no names") != std::string::npos);
+    }
+    ran = run_fzb("compile " + quoted(model.string()) + " --target @" + quoted(scratch.string()) + flags, scratch);
+    INFO(ran.err);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find(scratch.string() + " is not a regular file") != std::string::npos);
+
     // The FTP driver rejects a repeated target; so does an expanded one.
     ran = run_fzb("compile " + quoted(model.string()) + " --target G1 --target @" + quoted(targets.string()) + flags, scratch);
     INFO(ran.err);
@@ -610,6 +624,15 @@ TEST_CASE("fzb compile MEF input takes one target and watches from @FILE", "[com
     ran = run_fzb("compile " + ccf_model() + " --target @" + quoted((scratch / "missing.txt").string()) + flags, scratch);
     REQUIRE(exit_code(ran) == 1);
     REQUIRE(ran.err.find("cannot read " + (scratch / "missing.txt").string()) != std::string::npos);
+
+    const auto empty = scratch / "empty.txt";
+    std::ofstream(empty) << "\n";
+    ran = run_fzb("compile " + ccf_model() + " --watch @" + quoted(empty.string()) + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find(empty.string() + " lists no names") != std::string::npos);
+    ran = run_fzb("compile " + ccf_model() + " --target @" + quoted(scratch.string()) + flags, scratch);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("is not a regular file") != std::string::npos);
 
     ran = run_fzb("compile " + ccf_model() + " --target TopEvent --watch TopEvent" + flags, scratch);
     REQUIRE(exit_code(ran) == 1);

@@ -515,11 +515,17 @@ bool expand_name_args(const std::vector<std::string> &values, std::vector<std::s
       continue;
     }
     const std::filesystem::path path(value.substr(1));
+    std::error_code status;
+    if (std::filesystem::exists(path, status) && !std::filesystem::is_regular_file(path, status)) {
+      error = path.string() + " is not a regular file";
+      return false;
+    }
     std::ifstream in(path, std::ios::binary);
     if (!in) {
       error = "cannot read " + path.string();
       return false;
     }
+    const auto before = names.size();
     std::string line;
     while (std::getline(in, line)) {
       const auto first = line.find_first_not_of(" \t\r\n\v\f");
@@ -531,6 +537,10 @@ bool expand_name_args(const std::vector<std::string> &values, std::vector<std::s
     }
     if (in.bad()) {
       error = "cannot read " + path.string();
+      return false;
+    }
+    if (names.size() == before) {
+      error = path.string() + " lists no names";
       return false;
     }
   }

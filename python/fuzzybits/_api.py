@@ -333,8 +333,8 @@ def _compile_watch(value: Any) -> list[str]:
     """``watch`` of :func:`compile`: a name, a PDAG index or a sequence of them; names are not split on commas."""
     if value is None or value is False or value is True:
         return []
-    if isinstance(value, (int, float)):
-        return [str(int(value))]
+    if isinstance(value, int):
+        return [str(value)]
     return _as_names(value, "watch")
 
 

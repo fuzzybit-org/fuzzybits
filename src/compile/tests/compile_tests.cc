@@ -148,6 +148,8 @@ TEST_CASE("compile.options and compile.ccf record whether CCF groups were expand
     }
     return std::make_pair(out, sample_probabilities(*circuit).size());
   };
+  fuzzybits::compile::Options defaults;
+  REQUIRE(defaults.ccf);
   const auto [on, on_samples] = metadata(true);
   const auto [off, off_samples] = metadata(false);
   REQUIRE(on.at("compile.options").find("--no-ccf") == std::string::npos);

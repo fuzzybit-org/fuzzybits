@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import signal
 import sys
 from collections.abc import Mapping, Sequence
@@ -113,12 +114,17 @@ def _expand_name_args(values: Sequence[str]) -> list[str]:
             names.append(value)
             continue
         path = value[1:]
+        if os.path.exists(path) and not os.path.isfile(path):
+            raise ValueError(f"{path} is not a regular file")
         try:
             with open(path, encoding="utf-8", newline="") as handle:
                 lines = handle.read().split("\n")
         except (OSError, UnicodeDecodeError):
             raise ValueError(f"cannot read {path}") from None
-        names.extend(line.strip() for line in lines if line.strip())
+        found = [line.strip() for line in lines if line.strip()]
+        if not found:
+            raise ValueError(f"{path} lists no names")
+        names.extend(found)
     return names
 
 

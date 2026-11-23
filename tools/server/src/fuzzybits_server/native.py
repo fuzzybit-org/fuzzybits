@@ -173,7 +173,8 @@ def pcfb_cache_digest(input_files: list[str], options: dict[str, Any] | None) ->
         hasher.update(b"\0")
         hasher.update(payload)
         hasher.update(b"\0")
-    canon = json.dumps(compile_option_subset(options), sort_keys=True, default=str)
+    # `ccf` is always explicit so blobs cached before expansion became the default are not reused.
+    canon = json.dumps({"ccf": True, **compile_option_subset(options)}, sort_keys=True, default=str)
     hasher.update(canon.encode())
     return hasher.hexdigest()
 

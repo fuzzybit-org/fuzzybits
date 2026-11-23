@@ -159,6 +159,33 @@ def test_cli_missing_name_file(tmp_path: Path, ftp_model: Path):
             assert not out.exists()
 
 
+def test_cli_name_file_without_names_or_not_a_file(tmp_path: Path, ftp_model: Path):
+    empty = tmp_path / "empty.txt"
+    empty.write_text("\n  \r\n", encoding="utf-8")
+    for model in (ftp_model, CCF_MODEL):
+        for flag in ("--target", "--watch"):
+            ran, out = _compile_cli(tmp_path, str(model), flag, f"@{empty}", *FTP_FLAGS[-1:])
+            assert ran.returncode == 1
+            assert f"fzb compile: {empty} lists no names" in ran.stderr
+            assert not out.exists()
+        ran, out = _compile_cli(tmp_path, str(model), "--target", f"@{tmp_path}", "--no-progress")
+        assert ran.returncode == 1
+        assert f"fzb compile: {tmp_path} is not a regular file" in ran.stderr
+        assert not out.exists()
+
+
+def test_api_watch_takes_integer_indices_not_floats(ftp_model: Path):
+    with pytest.raises(TypeError):
+        fuzzybits.compile(str(ftp_model), watch=1.5, negation="boolean", max_initiators_per_cutset=None)
+
+
+def test_native_compile_expands_ccf_without_the_key():
+    native = fuzzybits.native()
+    default = fuzzybits.inspect(bytes(native.compile_pcfb([str(CCF_MODEL)], {})))
+    plain = fuzzybits.inspect(bytes(native.compile_pcfb([str(CCF_MODEL)], {"ccf": False})))
+    assert default["samples"] > plain["samples"]
+
+
 def test_cli_mef_takes_one_target_and_watches_from_a_file(tmp_path: Path):
     one = tmp_path / "one.txt"
     one.write_text("TopEvent\n", encoding="utf-8")
