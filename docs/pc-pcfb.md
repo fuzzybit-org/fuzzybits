@@ -39,13 +39,13 @@ symbol maps are only available through `write_options`.
 | complemented `edge_ref` | `inverted_inputs` |
 | one source in both polarities within a gate | the complemented occurrences read one shared `NOT` tensor per source, so `inputs` and `inverted_inputs` are disjoint in every op (spec §3.1) |
 | duplicate operands | kept; XOR and k-of-n count multiplicity, as in `ir::pc` |
-| `cardinality(low, high)` over `n` operands, `[0, n]` | `BITWISE_ONES` |
-| … `high = n` | `ATLEAST low` |
+| `cardinality(low, high)` over no operands | `BITWISE_ONES` |
+| … `high = n` (so `[0, n]` is `ATLEAST 0`, valid for `0 ≤ k ≤ n`) | `ATLEAST low` |
 | … `low = 0` | `ATMOST high` |
 | … `low = high` | `EXACTLY low` |
 | … otherwise | `AND(ATLEAST low, ATMOST high)`, two unnamed tensors before the `AND` |
 | target | `Query` on the node's tensor, in target order; one per kind of `write_options::target_kinds`, else one of kind `write_options::query` (default `PROBABILITY`); see Query kinds |
-| `observable_role` | not representable; non-primary roles give the note `io.pcfb.target-role` |
+| `observable_role` | primary: nothing; `watch` / `projection_anchor`: `compile.query.<i>.role` on each query of the target (see Metadata) |
 | nodes no target reaches | written |
 
 Cases are tested in that order, so `[n, n]` is `ATLEAST n` and `[0, 0]` is
@@ -75,6 +75,7 @@ position `i` of the file the writer sets
 | `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
 | `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
 | `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+| `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
 `compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering
@@ -160,8 +161,8 @@ read->schema_version;
 
 `reader_endpoint_id()` is `io.fuzzybits.pcfb.reader`; `read(io::read_request const&)`
 returns the `ir::pc` handle (`ir.probabilistic_boolean_dag`). The reader runs
-`pcfb::validate` first (its findings are `io.pcfb.invalid_file`, an unknown query kind is
-`io.pcfb.unknown_query_kind`), then requires one subcircuit without external inputs and at least
+`pcfb::validate` first (its findings are `io.pcfb.invalid-file`, an unknown query kind is
+`io.pcfb.unknown-query-kind`), then requires one subcircuit without external inputs and at least
 one query. Any minor of schema major 1 is accepted; `MONOTONE_HULL_PROBABILITY` needs minor 2, as
 in `pcfb::validate`.
 
@@ -175,7 +176,7 @@ in `pcfb::validate`.
 | `ATLEAST` / `ATMOST` / `EXACTLY` (`k`) | cardinality `[k, n]` / `[0, k]` / `[k, k]` |
 | `AND(ATLEAST(k), ATMOST(m))` over the same operands | one cardinality `[k, m]`; the two unnamed tensors have no node |
 | unnamed `NOT` that only feeds operators listing its source positively | complemented edge (the writer's tensor for a source used in both polarities) |
-| `NO_OP` | one-operand AND (`io.pcfb.no_op_as_and`) |
+| `NO_OP` | one-operand AND (`io.pcfb.no-op-as-and`) |
 | `Query` | target on the tensor's node; consecutive queries with one tensor and one name and distinct kinds are one target with several kinds |
 
 Per-query `compile.query.<i>.*` metadata fills `options.quantification`; `general.*` and
@@ -184,49 +185,52 @@ without `SampleArgs.name` has none, so a rewrite generates `e<event_id>` again).
 
 ### Numbering and what a round trip preserves
 
-The writer emits operators by depth-first post-order, taking roots in ascending node id and
-operands in operand order, and numbers basic events by ascending node id. The reader chooses node
-ids so that this traversal reproduces the file's operator order: operators are grouped into the
-trees the traversal would have visited, roots take ascending ids, and events take ascending ids
-in event-id order as early as their trees allow. `write(read(bytes))` is therefore byte-identical
-for files the writer produced, with one exception: `cardinality(0, n)` is a `ONES` tensor, but the
-writer emits the operands' subtrees before it. The read circuit has no edges from the constant to
-those operands, so their order may be forced differently by the ascending event ids. The rewrite
-then lists the same operators in another order (`io.pcfb.emission_order_changed`, a note), and is
-a fixed point from there on. Operand order among the positive and negative operands of one
-operator is not recorded in the file; the reader interleaves the two lists by the order in which
-the traversal first reaches their trees.
+Node numbering and operand order in `ir::pc` are layout: every gate is symmetric in its operands,
+so neither carries meaning. The reader therefore uses one canonical numbering and does not try to
+recover the numbering a writer had:
 
-Not recorded by the writer and therefore not recovered: target roles (every read target is
-primary; the writer only emits the note `io.pcfb.target-role`), house events (they were written as
-constants), the operands of a full-range cardinality, and `ir::pc` node ids as such.
+- basic events come first, by ascending file event id (`io.pcfb.event-ids-renumbered` if the ids
+  are not exactly `1..B`);
+- every other node follows in file operator order. A pcfb operator reads only tensors defined
+  before it, so this order is topological; the reader rejects a file in which an operator reads a
+  tensor written later (`io.pcfb.invalid-file`).
+
+A node's operands are its `inputs` in file order followed by its `inverted_inputs` in file order.
+A NOT tensor folded into a complemented edge takes the position of that tensor in `inputs`.
+
+Rewriting a read file therefore gives an equivalent file, not an identical one: the same
+structure, probabilities, names, kinds, roles and event ids, with operators in the writer's own
+emission order. Reading that file and rewriting it again reproduces it.
+
+Per-query `compile.query.<i>.role` restores the target role (absent: primary). Not recorded by the
+writer and therefore not recovered: house events (they were written as constants) and `ir::pc`
+node ids as such.
 
 ### Diagnostics
 
 | Id | Severity | Meaning |
 |---|---|---|
 | `io.pcfb.unreadable` | error | not a verifiable FlatBuffer, or the file cannot be read |
-| `io.pcfb.invalid_file` | error | `pcfb::validate` finding other than an unknown query kind |
-| `io.pcfb.unknown_query_kind` | error | query kind not defined by the pinned `pcfb`, or newer than the file's minor |
-| `io.pcfb.external_inputs` | error | the subcircuit has externally supplied inputs |
-| `io.pcfb.unsupported_opcode` | error | an operator `ir::pc` has no op code for, or one reserved by `core-1.1` |
-| `io.pcfb.too_large` | error | more tensors than a 32-bit node id addresses |
-| `io.pcfb.format_mismatch` | error | the read request names a format other than pcfb |
-| `io.pcfb.invalid_circuit` | error | the rebuilt circuit failed `ir::pc` sealing |
-| `io.pcfb.sample_source_dropped` | warning | a `SAMPLE` source of `COLLAPSED_MODULE` or `HOUSE_EVENT` reads as a basic event |
-| `io.pcfb.confidence_ignored` | warning | `Query.confidence` cannot be held |
-| `io.pcfb.event_ids_renumbered` | warning | event ids are not exactly `1..B`; the read circuit numbers them by ascending file id |
-| `io.pcfb.invalid_metadata` | warning | an interpreted metadata entry has the wrong type or range; it is ignored |
-| `io.pcfb.quantification_conflict` | warning | queries on one target carry different `compile.query.<i>.*` values |
-| `io.pcfb.no_op_as_and` | note | `NO_OP` read as a one-operand AND |
-| `io.pcfb.emission_order_changed` | note | a write lists some operators in another order than the file |
+| `io.pcfb.invalid-file` | error | `pcfb::validate` finding other than an unknown query kind, or an operator that reads a tensor a later operator writes |
+| `io.pcfb.unknown-query-kind` | error | query kind not defined by the pinned `pcfb`, or newer than the file's minor |
+| `io.pcfb.external-inputs` | error | the subcircuit has externally supplied inputs |
+| `io.pcfb.unsupported-opcode` | error | an operator `ir::pc` has no op code for, or one reserved by `core-1.1` |
+| `io.pcfb.too-large` | error | more tensors than a 32-bit node id addresses |
+| `io.pcfb.format-mismatch` | error | the read request names a format other than pcfb |
+| `io.pcfb.invalid-circuit` | error | the rebuilt circuit failed `ir::pc` sealing |
+| `io.pcfb.sample-source-dropped` | warning | a `SAMPLE` source of `COLLAPSED_MODULE` or `HOUSE_EVENT` reads as a basic event |
+| `io.pcfb.confidence-ignored` | warning | `Query.confidence` cannot be held |
+| `io.pcfb.event-ids-renumbered` | warning | event ids are not exactly `1..B`; the read circuit numbers them by ascending file id |
+| `io.pcfb.invalid-metadata` | warning | an interpreted metadata entry has the wrong type or range, or an unknown role; it is ignored (the target reads as primary) |
+| `io.pcfb.quantification-conflict` | warning | queries on one target carry different `compile.query.<i>.*` values |
+| `io.pcfb.no-op-as-and` | note | `NO_OP` read as a one-operand AND |
 
 The constants are declared in `descriptor.h` (`writer::diag`).
 
 ### Tests
 
 `read_tests.cc` round-trips FTP conformance fixtures and several hundred seeded random circuits,
-checks structure through `node_by_tensor`, runs every tracked `.pcfb` file through read → write →
-read, and covers truncated and corrupted input, foreign constructs and unknown query kinds.
+checks structure through `node_by_tensor` and that a rewrite reads back to the same structure,
+runs every tracked `.pcfb` file through read → write → read, and covers truncated and corrupted input, foreign constructs and unknown query kinds.
 `read_scale_tests.cc` (`[scale]`, separate executable) reads a 10^5-node circuit and requires it
 to take less than a second in Release.
