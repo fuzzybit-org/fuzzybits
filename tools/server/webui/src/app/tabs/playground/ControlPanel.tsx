@@ -11,11 +11,14 @@ import { classNames } from "../../lib/format";
 import { SectionTitle } from "../../components";
 import { CompilerControlGroup } from "./controls/CompilerControlGroup";
 import { InputControlFields } from "./controls/InputControlGroup";
+import { RunSettingsControlGroup } from "./controls/RunSettingsControlGroup";
 import { SamplerControlGroup } from "./controls/SamplerControlGroup";
 import { SamplerTransportControlGroup } from "./controls/SamplerTransportControlGroup";
 import { useInputSettings } from "./controls/useInputSettings";
+import { useRunSettings } from "./controls/useRunSettings";
 import { useSamplerSettings } from "./controls/useSamplerSettings";
 import { useSamplingControls, type SamplingControls } from "./controls/useSamplingControls";
+import { trialBudget } from "./controls/stoppingSpec";
 import { useSamplingRunMetrics, type SamplingRunMetricsStore } from "./samplingRunMetrics";
 
 export type ControlPanelProps = {
@@ -39,9 +42,9 @@ export type ControlPanelProps = {
 };
 
 /**
- * Grid spans for the pipeline-stage control groups (Input · Compiler · Sampler · Run).
+ * Grid spans for the pipeline-stage control groups (Input · Compiler · Sampler · Stopping · Run).
  *
- * Horizontal dock (<1900px, 12 cols): title+input 2 · compiler 2 · sampler 5 · run 3 = 12, meta below.
+ * Horizontal dock (<1900px, 12 cols): title+input 2 · compiler 2 · sampler 2 · stopping 3 · run 3 = 12.
  * Vertical gutter (≥1900px, 5 cols): every group spans the full width and
  *   stacks into a single ledger column.
  */
@@ -49,8 +52,9 @@ const CONTROL_GROUP_SPANS = {
   container: { hSpan: { row: 1, col: 12 }, vSpan: { row: 6, col: 5 } },
   input: { hSpan: { row: 1, col: 2 }, vSpan: { row: 1, col: 5 } },
   compiler: { hSpan: { row: 1, col: 3 }, vSpan: { row: 1, col: 5 } },
-  sampler: { hSpan: { row: 1, col: 4 }, vSpan: { row: 1, col: 5 } },
-  transport: { hSpan: { row: 1, col: 3 }, vSpan: { row: 1, col: 5 } },
+  sampler: { hSpan: { row: 1, col: 2 }, vSpan: { row: 1, col: 5 } },
+  stopping: { hSpan: { row: 1, col: 3 }, vSpan: { row: 1, col: 5 } },
+  transport: { hSpan: { row: 1, col: 2 }, vSpan: { row: 1, col: 5 } },
 } as const;
 
 /**
@@ -80,6 +84,7 @@ export function ControlPanel({
 }: ControlPanelProps) {
   const inputSettings = useInputSettings({ selectedId, oraclePDefault: oracleP });
   const samplerSettings = useSamplerSettings();
+  const runSettings = useRunSettings();
   const [sampleShape, setSampleShape] = useState<SampleShape | null>(null);
   const [sampleShapeLoading, setSampleShapeLoading] = useState(false);
   const [sampleShapeError, setSampleShapeError] = useState<string | null>(null);
@@ -93,17 +98,21 @@ export function ControlPanel({
       recognize_xor_groups: compileOptions.recognizeXorGroups,
       ccf: compileOptions.ccf,
       keep_null_gates: compileOptions.keepNullGates,
-      num_trials: samplerSettings.trialsCount,
-      early_stop: samplerSettings.stopOnConvergence,
+      stopping: runSettings.stopping,
       requested_trials_per_pass: samplerSettings.requestedTrialsPerPass,
-      confidence: samplerSettings.confidence,
-      delta: samplerSettings.delta,
-      policy: "gbas",
       ...(inputSettings.oracleEnabled ? { oracle: inputSettings.oracleP } : {}),
     }),
   });
   const inputsLocked = samplingControls.samplingSessionActive || samplingControls.controlsLocked;
   const samplingRunMetrics = useSamplingRunMetrics(samplingRunMetricsStore);
+  const budget = trialBudget({
+    mode: runSettings.mode,
+    precisionPercent: runSettings.precisionPercent,
+    confidencePercent: runSettings.confidencePercent,
+    timeLimitSeconds: runSettings.timeLimitSeconds,
+    maxTrials: runSettings.maxTrials,
+    fixedTrials: runSettings.fixedTrials,
+  });
 
   useEffect(() => {
     if (!selectedId) {
@@ -119,7 +128,7 @@ export function ControlPanel({
     setSampleShapeLoading(true);
 
     fetchSampleShapeForModel(selectedId, compileOptions, {
-      numTrials: samplerSettings.trialsCount,
+      numTrials: budget,
       requestedTrialsPerPass: samplerSettings.requestedTrialsPerPass,
     })
       .then((payload) => {
@@ -139,7 +148,7 @@ export function ControlPanel({
     return () => {
       cancelled = true;
     };
-  }, [compileOptions, samplerSettings.requestedTrialsPerPass, samplerSettings.trialsCount, selectedId]);
+  }, [budget, compileOptions, samplerSettings.requestedTrialsPerPass, selectedId]);
 
   useEffect(() => {
     onSamplingControlsChange?.(samplingControls);
@@ -162,8 +171,8 @@ export function ControlPanel({
   ]);
   useEffect(() => () => onSamplingControlsChange?.(null), [onSamplingControlsChange]);
   useEffect(() => {
-    onSamplerConfidenceChange?.(samplerSettings.confidence);
-  }, [onSamplerConfidenceChange, samplerSettings.confidence]);
+    onSamplerConfidenceChange?.(runSettings.confidencePercent / 100);
+  }, [onSamplerConfidenceChange, runSettings.confidencePercent]);
 
   return (
     <StickyPanel className="playground-controls" aria-label="Compile and sample">
@@ -196,10 +205,13 @@ export function ControlPanel({
           disabled={inputsLocked}
           {...CONTROL_GROUP_SPANS.sampler}
         />
+        <RunSettingsControlGroup
+          settings={runSettings}
+          disabled={inputsLocked}
+          {...CONTROL_GROUP_SPANS.stopping}
+        />
         <SamplerTransportControlGroup
           controls={samplingControls}
-          stopOnConvergence={samplerSettings.stopOnConvergence}
-          onStopOnConvergenceChange={samplerSettings.setStopOnConvergence}
           controlsDisabled={inputsLocked}
           sampleShape={sampleShape}
           sampleShapeLoading={sampleShapeLoading}

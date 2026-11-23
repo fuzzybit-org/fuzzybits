@@ -21,14 +21,23 @@ export function TrialsNField({
   scaleExponent,
   onMantissaChange,
   onScaleExponentChange,
+  label,
   stopOnConvergence = false,
+  allowEmpty = true,
+  hint,
   disabled = false,
 }: {
   mantissa: number;
   scaleExponent: TrialsScaleExponent;
   onMantissaChange: (mantissa: number) => void;
   onScaleExponentChange: (scaleExponent: TrialsScaleExponent) => void;
+  /** Field label; defaults to `Trials`, or `Max Trials` when stopping on convergence. */
+  label?: string;
   stopOnConvergence?: boolean;
+  /** Whether an empty/`auto` field is allowed (and means "no limit"). */
+  allowEmpty?: boolean;
+  /** Hint text; defaults to the trials-field hint. */
+  hint?: string;
   disabled?: boolean;
 }) {
   const fieldId = useId();
@@ -41,12 +50,17 @@ export function TrialsNField({
 
   const displayValue = focused ? draft : formatTrialsMantissa(mantissa);
   const describedBy = [error ? errorId : null, hintId, scaleId].filter(Boolean).join(" ") || undefined;
-  const fieldLabel = stopOnConvergence ? "Max Trials" : "Trials";
+  const fieldLabel = label ?? (stopOnConvergence ? "Max Trials" : "Trials");
+  const hintText = hint ?? TRIALS_N_FIELD_HINT;
 
   const validate = (raw: unknown, exponent: TrialsScaleExponent) => {
     const parsed = parseZodField(createTrialsMantissaSchema(exponent), raw);
     if (!parsed.ok) {
       setError(parsed.message);
+      return null;
+    }
+    if (!allowEmpty && parsed.value === 0) {
+      setError("Enter a trial count");
       return null;
     }
     setError(null);
@@ -55,6 +69,10 @@ export function TrialsNField({
 
   const commit = (raw: unknown, exponent = scaleExponent) => {
     if (raw === "" || raw === null || raw === undefined || raw === "auto") {
+      if (!allowEmpty) {
+        setError("Enter a trial count");
+        return false;
+      }
       setError(null);
       onMantissaChange(0);
       setDraft("");
@@ -87,7 +105,7 @@ export function TrialsNField({
         <label className="sticky-panel-group__number-field-label" htmlFor={fieldId}>
           {fieldLabel}
         </label>
-        <FieldHintTrigger label={`${fieldLabel} help`} content={TRIALS_N_FIELD_HINT} />
+        <FieldHintTrigger label={`${fieldLabel} help`} content={hintText} />
       </div>
       <SteppedNumberInputRow
         decrementLabel="Decrease trials mantissa"
@@ -140,8 +158,7 @@ export function TrialsNField({
       />
       <p id={hintId} className="sticky-panel-group__number-field-detail" aria-live="polite">
         {formatTrialsDescription(mantissa, scaleExponent, stopOnConvergence)}
-      </p>
-      {error ? (
+      </p>      {error ? (
         <p id={errorId} className="sticky-panel-group__number-field-error" role="alert">
           {error}
         </p>

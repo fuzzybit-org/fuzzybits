@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, HTTPException, Query, Request, WebSocket, W
 from pydantic import BaseModel, Field
 
 from fuzzybits_server.config import CalculationConfig, parse_watch_value
+from fuzzybits_server.convergence.stopping import LEGACY_STOPPING_KEYS
 from fuzzybits_server.event_hub import EventHub
 from fuzzybits_server.fault_tree_payload import (
     build_dag_bundle_payload,
@@ -26,6 +27,7 @@ from fuzzybits_server.native import (
     resolve_uploaded_pcfb,
     store_uploaded_pcfb,
 )
+from fuzzybits_server.request_spec import RequestSpecError, resolve_request
 from fuzzybits_server.supervisor import CalculationSupervisor
 
 
@@ -38,6 +40,11 @@ class SamplingControlBody(BaseModel):
     recognize_xor_groups: bool | None = None
     ccf: bool | None = None
     keep_null_gates: bool | None = None
+    # --- #224 stopping specification (supported) -------------------------
+    # Validated by fuzzybits_server.convergence.stopping.StoppingSpec, so the
+    # messages and defaults are the controller library's.
+    stopping: dict[str, Any] | str | None = None
+    # --- legacy stopping vocabulary (deprecated, translated) --------------
     # Total trial budget (0 → auto: unbounded / backend default).
     num_trials: float | None = Field(default=None, ge=0)
     # Optimistic per-node trials-per-pass target (0 → auto: fill device memory).
@@ -47,10 +54,31 @@ class SamplingControlBody(BaseModel):
     oracle: float | None = Field(default=None, ge=-1, le=1)
     early_stop: bool | None = None
     # Host-side convergence policy that gates early-stop ("wald" | "gbas").
-    policy: str | None = Field(default=None, pattern="^(wald|gbas)$")
+    policy: str | None = None
+    # The same intent as `policy`, as the env vocabulary spells it; accepted so a
+    # migrating client is translated and warned rather than silently ignored.
+    stopping_policy: str | None = None
+    policies: list[str] | None = None
     burn_in: float | None = Field(default=None, ge=0)
     pcfb_id: str | None = None
     watch: list[str] | str | None = None
+
+    def legacy_stopping_keys(self) -> list[str]:
+        """The legacy stopping options this request actually set."""
+        return [
+            key
+            for key in (
+                "num_trials",
+                "early_stop",
+                "delta",
+                "confidence",
+                "burn_in",
+                "policy",
+                "stopping_policy",
+                "policies",
+            )
+            if getattr(self, key) is not None
+        ]
 
 
 def _pcfb_path_from_id(pcfb_id: str | None) -> str | None:
@@ -123,32 +151,70 @@ def _calculation_config(body: SamplingControlBody | None = None) -> CalculationC
         ccf=body.ccf,
         keep_null_gates=body.keep_null_gates,
     )
+    try:
+        requested = resolve_request(body.model_dump(exclude_unset=False))
+    except RequestSpecError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
     overrides: dict[str, Any] = {}
-    if body.num_trials is not None:
-        overrides["num_trials"] = body.num_trials
+    if requested is None:
+        # No stopping intent in the request: keep the configured legacy loop.
+        if body.num_trials is not None:
+            overrides["num_trials"] = body.num_trials
+        if body.confidence is not None:
+            overrides["confidence"] = body.confidence
+        if body.delta is not None:
+            overrides["delta"] = body.delta
+        if body.early_stop is not None:
+            overrides["early_stop"] = body.early_stop
+        if body.policy is not None:
+            overrides["policy"] = body.policy
+        if body.burn_in is not None:
+            overrides["burn_in"] = body.burn_in
+    else:
+        # The specification is the only source of the stopping rule, so legacy
+        # keys inherited from the environment must not travel alongside it.
+        for key in LEGACY_STOPPING_KEYS:
+            options.pop(key, None)
     if body.requested_trials_per_pass is not None:
         overrides["requested_trials_per_pass"] = body.requested_trials_per_pass
-    if body.confidence is not None:
-        overrides["confidence"] = body.confidence
-    if body.delta is not None:
-        overrides["delta"] = body.delta
     if body.oracle is not None:
         overrides["oracle"] = body.oracle
-    if body.early_stop is not None:
-        overrides["early_stop"] = body.early_stop
-    if body.policy is not None:
-        overrides["policy"] = body.policy
-    if body.burn_in is not None:
-        overrides["burn_in"] = body.burn_in
     if body.watch is not None:
         _, names = parse_watch_value(body.watch)
         if names:
             overrides["watch"] = names
     if overrides:
         options.update(overrides)
-    if input_files == config.input_files and options == config.options and pcfb_path == config.pcfb_path:
+    stopping = requested.stopping if requested is not None else config.stopping
+    if (
+        input_files == config.input_files
+        and options == config.options
+        and pcfb_path == config.pcfb_path
+        and stopping is config.stopping
+    ):
         return config
-    return CalculationConfig(input_files=input_files, options=options, pcfb_path=pcfb_path)
+    return CalculationConfig(
+        input_files=input_files,
+        options=options,
+        pcfb_path=pcfb_path,
+        stopping=stopping,
+    )
+
+
+def _with_stopping(response: dict[str, Any], config: CalculationConfig) -> dict[str, Any]:
+    """Add the run's stopping specification and deprecation warnings to a control response."""
+    stopping = config.stopping
+    if stopping is None:
+        return response
+    payload = stopping.as_dict()
+    payload["deprecations"] = list(stopping.deprecations)
+    response["stopping"] = payload
+    response["stopping_summary"] = stopping.summary_line()
+    warnings = list(stopping.deprecations)
+    if warnings:
+        response["warnings"] = warnings
+    return response
 
 
 def create_router(supervisor: CalculationSupervisor, event_hub: EventHub) -> APIRouter:
@@ -345,11 +411,13 @@ def create_router(supervisor: CalculationSupervisor, event_hub: EventHub) -> API
 
     @router.post("/reset")
     def reset_calculation(body: SamplingControlBody | None = Body(default=None)) -> dict[str, Any]:
-        return supervisor.restart(_calculation_config(body))
+        config = _calculation_config(body)
+        return _with_stopping(supervisor.restart(config), config)
 
     @router.post("/start")
     def start_sampling(body: SamplingControlBody | None = Body(default=None)) -> dict[str, Any]:
-        return supervisor.start_sampling(_calculation_config(body))
+        config = _calculation_config(body)
+        return _with_stopping(supervisor.start_sampling(config), config)
 
     @router.post("/stop")
     def stop_sampling() -> dict[str, Any]:

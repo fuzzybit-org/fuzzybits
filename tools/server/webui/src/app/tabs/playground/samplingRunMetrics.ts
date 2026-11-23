@@ -1,13 +1,21 @@
 import { useSyncExternalStore } from "react";
 
+/** Per-query convergence the run settings display, from the frames the API sends. */
 export type SamplingRunMetrics = {
   trialsPerSecond: number | null;
   completedPasses: number | null;
-  /** Live GBAS projected pass budget; populated while streaming when early-stop is on. */
-  gbasProjectedPasses: number | null;
+  /** Projected pass count for the goal, from the frames' trial projection. */
+  projectedPasses: number | null;
   elapsedSeconds: number | null;
   timeToConvergenceSeconds: number | null;
-  epsilonConverged: boolean;
+  /** `rel_half_width` of the reported interval: how close the estimate is now. */
+  relHalfWidth: number | null;
+  /** The goal's relative half-width, when the run has one. */
+  targetRelHalfWidth: number | null;
+  /** Why the run stopped: `goal`, `max-trials`, `max-time`, `trials`, … */
+  stopReason: string | null;
+  /** Whether the goal (not a limit) ended the run. */
+  converged: boolean;
 };
 
 export type SamplingRunMetricsPatch = Partial<SamplingRunMetrics>;
@@ -22,20 +30,26 @@ export type SamplingRunMetricsStore = {
 export const EMPTY_SAMPLING_RUN_METRICS: SamplingRunMetrics = {
   trialsPerSecond: null,
   completedPasses: null,
-  gbasProjectedPasses: null,
+  projectedPasses: null,
   elapsedSeconds: null,
   timeToConvergenceSeconds: null,
-  epsilonConverged: false,
+  relHalfWidth: null,
+  targetRelHalfWidth: null,
+  stopReason: null,
+  converged: false,
 };
 
 function metricsEqual(left: SamplingRunMetrics, right: SamplingRunMetrics): boolean {
   return (
     left.trialsPerSecond === right.trialsPerSecond &&
     left.completedPasses === right.completedPasses &&
-    left.gbasProjectedPasses === right.gbasProjectedPasses &&
+    left.projectedPasses === right.projectedPasses &&
     left.elapsedSeconds === right.elapsedSeconds &&
     left.timeToConvergenceSeconds === right.timeToConvergenceSeconds &&
-    left.epsilonConverged === right.epsilonConverged
+    left.relHalfWidth === right.relHalfWidth &&
+    left.targetRelHalfWidth === right.targetRelHalfWidth &&
+    left.stopReason === right.stopReason &&
+    left.converged === right.converged
   );
 }
 

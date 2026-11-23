@@ -46,6 +46,11 @@ from .policies import (
     make_policy,
 )
 from .runner import (
+    STOP_GOAL,
+    STOP_INTERRUPTED,
+    STOP_MAX_TIME,
+    STOP_MAX_TRIALS,
+    STOP_TRIALS,
     ConvergenceConfig,
     ConvergenceRunner,
     ProgressCallback,
@@ -53,6 +58,24 @@ from .runner import (
     run_calculation,
 )
 from .sampling import BernoulliSampler, NativeSampler, PcfbSampler, SampleShape, Sampler, make_sampler
+from .stopping import (
+    CONTROLLER_REQUIRED,
+    DEFAULT_CONFIDENCE,
+    DEFAULT_GOAL_MAX_TIME_S,
+    DEFAULT_REL_ERROR,
+    LEGACY_STOPPING_KEYS,
+    LegacyTranslation,
+    LegacyTranslationError,
+    ResolvedStopping,
+    StoppingSpec,
+    StoppingSpecError,
+    UnsupportedSpecError,
+    check_executable,
+    format_duration,
+    parse_duration,
+    sampler_budget,
+    translate_legacy,
+)
 from .tally import (
     HistoryPoint,
     NodeCounters,
@@ -60,6 +83,17 @@ from .tally import (
     PassObservation,
     RunContext,
     RunState,
+)
+from .wilson import (
+    GoalState,
+    WilsonGoalPolicy,
+    evaluate_goal,
+    goal_bound,
+    projected_trials_for_goal,
+    relative_half_width,
+    reported_interval,
+    wilson_interval,
+    zero_hit_upper_bound,
 )
 
 __all__ = [
@@ -95,4 +129,37 @@ __all__ = [
     "WaldLinearPolicy",
     "GBASPolicy",
     "make_policy",
+    # stopping specification (#224)
+    "StoppingSpec",
+    "ResolvedStopping",
+    "StoppingSpecError",
+    "UnsupportedSpecError",
+    "LegacyTranslation",
+    "LegacyTranslationError",
+    "CONTROLLER_REQUIRED",
+    "DEFAULT_CONFIDENCE",
+    "DEFAULT_GOAL_MAX_TIME_S",
+    "DEFAULT_REL_ERROR",
+    "LEGACY_STOPPING_KEYS",
+    "check_executable",
+    "format_duration",
+    "parse_duration",
+    "sampler_budget",
+    "translate_legacy",
+    # intervals and the goal rule
+    "GoalState",
+    "WilsonGoalPolicy",
+    "evaluate_goal",
+    "goal_bound",
+    "projected_trials_for_goal",
+    "relative_half_width",
+    "reported_interval",
+    "wilson_interval",
+    "zero_hit_upper_bound",
+    # stop reasons
+    "STOP_GOAL",
+    "STOP_INTERRUPTED",
+    "STOP_MAX_TIME",
+    "STOP_MAX_TRIALS",
+    "STOP_TRIALS",
 ]

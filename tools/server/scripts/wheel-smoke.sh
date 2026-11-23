@@ -191,10 +191,8 @@ def main():
     body = json.dumps(
         {
             "model_id": "chinese",
-            "num_trials": n,
+            "stopping": {"trials": int(n)},
             "requested_trials_per_pass": tpp,
-            "early_stop": False,
-            "policy": "wald",
         }
     ).encode()
     print(f"-- start chinese  N={n:g}  tpp={tpp:g}", flush=True)

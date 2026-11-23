@@ -1,16 +1,22 @@
+import { FieldHintTrigger } from "../../../components/ui/HintTooltip";
 import { StickyPanelGroup, type StickyPanelSpan } from "../../../components/ui/StickyPanel";
 import type { SampleShape } from "../../../api/faultTreeApi";
 import { formatInteger, formatNumber, formatStreamDurationSeconds } from "../../../lib/format";
 import { Metric } from "../../../components";
 import type { SamplingRunMetrics } from "../samplingRunMetrics";
 import { SamplerTransportControls } from "./SamplerTransportControls";
-import { StopOnConvergenceField } from "./StopOnConvergenceField";
+import { stopReasonIsSuccess, stopReasonLabel } from "./stoppingSpec";
 import type { SamplingControls } from "./useSamplingControls";
+
+const STOP_REASON_HINT = [
+  "Why the last run stopped.",
+  "Goal met: every goal query reached the precision target.",
+  "Trial or time limit: the run used its budget before meeting the goal.",
+  "Fixed design complete: all the requested trials were sampled.",
+].join(" ");
 
 export function SamplerTransportControlGroup({
   controls,
-  stopOnConvergence,
-  onStopOnConvergenceChange,
   controlsDisabled = false,
   sampleShape,
   sampleShapeLoading = false,
@@ -20,8 +26,6 @@ export function SamplerTransportControlGroup({
   vSpan,
 }: {
   controls: SamplingControls;
-  stopOnConvergence: boolean;
-  onStopOnConvergenceChange: (enabled: boolean) => void;
   controlsDisabled?: boolean;
   sampleShape: SampleShape | null;
   sampleShapeLoading?: boolean;
@@ -34,11 +38,18 @@ export function SamplerTransportControlGroup({
     <StickyPanelGroup legend="Run" className="sticky-panel-group--run" hSpan={hSpan} vSpan={vSpan}>
       <div className="sampler-transport-controls">
         <div className="sampler-transport-controls__primary-row">
-          <StopOnConvergenceField
-            checked={stopOnConvergence}
-            onChange={onStopOnConvergenceChange}
-            disabled={controlsDisabled}
-          />
+          <div className="sticky-panel-group__toggle-row sampler-transport-controls__stop-reason">
+            <span
+              className={
+                stopReasonIsSuccess(samplingRunMetrics.stopReason)
+                  ? "sampler-stop-reason sampler-stop-reason--reached"
+                  : "sampler-stop-reason"
+              }
+            >
+              {stopReasonLabel(samplingRunMetrics.stopReason)}
+            </span>
+            <FieldHintTrigger label="Stop reason help" content={STOP_REASON_HINT} />
+          </div>
           <SamplerTransportControls
             resetPending={controls.resetPending}
             samplingControlPending={controls.samplingControlPending}
@@ -56,7 +67,6 @@ export function SamplerTransportControlGroup({
         sampleShape={sampleShape}
         loading={sampleShapeLoading}
         error={sampleShapeError}
-        stopOnConvergence={stopOnConvergence}
         samplingRunMetrics={samplingRunMetrics}
       />
       {controls.error ? <p className="sampler-transport-controls__error">{controls.error}</p> : null}
@@ -68,21 +78,17 @@ function SampleShapeMetrics({
   sampleShape,
   loading,
   error,
-  stopOnConvergence,
   samplingRunMetrics,
 }: {
   sampleShape: SampleShape | null;
   loading: boolean;
   error: string | null;
-  stopOnConvergence: boolean;
   samplingRunMetrics: SamplingRunMetrics;
 }) {
   const detail = error ?? (loading ? "Resolving native sample shape…" : undefined);
   const trialsPerPass = metricValue(sampleShape?.trials_per_pass, loading);
-  const totalPassBudget = stopOnConvergence
-    ? (samplingRunMetrics.gbasProjectedPasses ?? sampleShape?.total_iterations)
-    : sampleShape?.total_iterations;
-  const totalIterations = metricValue(totalPassBudget, loading && !stopOnConvergence);
+  const totalPassBudget = samplingRunMetrics.projectedPasses ?? sampleShape?.total_iterations;
+  const totalIterations = metricValue(totalPassBudget, loading && !samplingRunMetrics.projectedPasses);
   const trialsPerSecond = formatSampleRate(samplingRunMetrics.trialsPerSecond);
   const trialsPerSecondDetail = passesPerSecondDetail(
     samplingRunMetrics.trialsPerSecond,
@@ -93,10 +99,11 @@ function SampleShapeMetrics({
   const elapsedTime = formatStreamDurationSeconds(samplingRunMetrics.elapsedSeconds);
   const convergenceTime = formatConvergenceTime(
     samplingRunMetrics,
-    stopOnConvergence,
     totalPassBudget,
     sampleShape?.trials_per_pass,
   );
+  const relativeHalfWidth = formatPercentMetric(samplingRunMetrics.relHalfWidth);
+  const targetHalfWidth = formatPercentMetric(samplingRunMetrics.targetRelHalfWidth);
 
   return (
     <>
@@ -109,6 +116,7 @@ function SampleShapeMetrics({
         <Metric label="TOTAL PASSES" value={totalIterations} />
         <Metric label="TRIALS PER SECOND" value={trialsPerSecond} detail={trialsPerSecondDetail} />
         <Metric label="COMPLETED" value={completedPasses} detail={completedPassDetail} />
+        <Metric label="± RELATIVE" value={relativeHalfWidth} detail={targetHalfWidth ? `goal ${targetHalfWidth}` : undefined} />
       </div>
     </>
   );
@@ -118,6 +126,11 @@ function metricValue(value: number | null | undefined, loading: boolean): string
   if (loading) return "…";
   if (value === null || value === undefined || !Number.isFinite(value)) return "—";
   return formatInteger(value);
+}
+
+function formatPercentMetric(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${formatNumber(value * 100, 3)}%`;
 }
 
 function formatSampleRate(value: number | null | undefined): string {
@@ -156,16 +169,12 @@ function passesPerSecondDetail(
 
 function formatConvergenceTime(
   metrics: SamplingRunMetrics,
-  stopOnConvergence: boolean,
   totalPassBudget: number | undefined,
   trialsPerPass: number | undefined,
 ): { value: string; detail?: string } {
   const actual = metrics.timeToConvergenceSeconds;
   if (actual !== null && actual !== undefined && Number.isFinite(actual)) {
     return { value: formatStreamDurationSeconds(actual) };
-  }
-  if (!stopOnConvergence) {
-    return { value: "—" };
   }
   const remaining = estimateRemainingConvergenceSeconds(
     metrics.completedPasses,

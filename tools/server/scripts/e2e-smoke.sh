@@ -210,6 +210,10 @@ def extract_estimate(status: dict) -> tuple[float, float, int]:
 
 def assert_ref(label: str, status: dict, ref: float) -> str:
     mean, std_err, trials = extract_estimate(status)
+    result = status.get("last_result") or {}
+    stop_reason = result.get("stop_reason")
+    if stop_reason is not None and stop_reason != "trials":
+        raise ApiError(f"{label}: fixed design stopped with {stop_reason!r}, expected 'trials'")
     if std_err <= 0.0:
         raise ApiError(f"{label}: std_err={std_err} (need a positive σ̂)")
     delta = abs(mean - ref)
@@ -252,10 +256,8 @@ def main() -> int:
         raise ApiError(f"chinese not in catalog: {catalog!r}")
 
     start_body = {
-        "num_trials": n,
+        "stopping": {"trials": int(n)},
         "requested_trials_per_pass": tpp,
-        "early_stop": False,
-        "policy": "wald",
     }
 
     for model_id, ref in REFS.items():

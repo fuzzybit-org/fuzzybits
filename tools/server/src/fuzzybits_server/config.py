@@ -310,6 +310,9 @@ class CalculationConfig:
     input_files: list[str]
     options: dict[str, Any]
     pcfb_path: str | None = None
+    # The #224 stopping specification this run executes, when the request named
+    # one. ``None`` keeps the legacy loop exactly as it was before #225.
+    stopping: Any | None = None
 
     @classmethod
     def from_env(cls) -> CalculationConfig:
@@ -324,4 +327,5 @@ class CalculationConfig:
             input_files=self.input_files,
             options=options,
             pcfb_path=self.pcfb_path,
+            stopping=self.stopping,
         )
