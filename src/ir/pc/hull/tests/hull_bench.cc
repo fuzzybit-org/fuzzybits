@@ -884,6 +884,23 @@ namespace {
                             initiator_nodes.size());
                 active_nodes.clear();
             } else {
+                const auto whole = restrict_cone(lowering.circuit, binding.root);
+                std::vector<std::uint8_t> is_initiator(lowering.circuit.node_count(), 0);
+                for (const auto node : initiator_nodes) {
+                    is_initiator[node] = 1;
+                }
+                std::vector<std::uint8_t> dependent(whole.circuit.node_count(), 0);
+                std::size_t dependent_nodes = 0;
+                for (std::uint32_t node = 0; node < whole.circuit.node_count(); ++node) {
+                    bool depends = is_initiator[whole.origin[node]] != 0;
+                    for (auto const &operand : whole.circuit.operands(pc::bool_node_id(node))) {
+                        depends = depends || dependent[operand.source.raw()] != 0;
+                    }
+                    dependent[node] = depends ? 1 : 0;
+                    dependent_nodes += depends ? 1 : 0;
+                }
+                std::printf("g without the rule, as lowered: %u nodes, %u edges, %zu depend on an initiating event\n",
+                            whole.circuit.node_count(), whole.circuit.edge_count(), dependent_nodes);
                 const auto start = clock::now();
                 double passes_seconds = 0.0;
                 for (std::size_t which = 0; which <= active_nodes.size(); ++which) {
@@ -1026,13 +1043,17 @@ namespace {
                 std::size_t part_candidates = 0;
                 for (std::size_t group = 0; group < count; ++group) {
                     const auto lane_words = words.data() + group * stride * 64;
+                    const auto active = item->initiator == outside ? all_ones : lane_words[item->initiator];
+                    item->active += static_cast<std::size_t>(std::popcount(active));
+                    item->candidate_lanes[group] = 0;
+                    if ((active & ~decomposed[group]) == 0) {
+                        continue;
+                    }
                     for (std::size_t event = 0; event < item->from_rule.size(); ++event) {
                         item->events[event] = lane_words[item->from_rule[event]];
                     }
                     const auto [lower, upper] = item->bound.evaluate(
                         std::span<std::uint64_t const>(item->events).first(item->from_rule.size()));
-                    const auto active = item->initiator == outside ? all_ones : lane_words[item->initiator];
-                    item->active += static_cast<std::size_t>(std::popcount(active));
                     decomposed[group] |= active & lower;
                     item->candidate_lanes[group] = active & ~decomposed[group] & upper;
                     part_candidates += static_cast<std::size_t>(std::popcount(item->candidate_lanes[group]));
