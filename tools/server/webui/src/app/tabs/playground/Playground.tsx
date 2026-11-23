@@ -13,7 +13,8 @@ import { EmptyState, SectionTitle } from "../../components";
 import { ControlPanel } from "./ControlPanel";
 import { ExecutionPlanPanel } from "./tabs/execution_plan";
 import { SamplingTrajectoryPanel } from "./SamplingTrajectoryPanel";
-import { ciPercentToConfidence, DEFAULT_CONFIDENCE_CI_PERCENT } from "./controls/samplerCI";
+import { ciPercentToConfidence } from "./controls/samplerCI";
+import { DEFAULT_CONFIDENCE_PERCENT } from "./controls/stoppingSpec";
 import type { SamplingControls } from "./controls/useSamplingControls";
 import { formatCounts, formatFaultTreeCounts } from "./format";
 import { createSamplingRunMetricsStore } from "./samplingRunMetrics";
@@ -48,7 +49,7 @@ export function Playground() {
   const [kernelDagLoading, setKernelDagLoading] = useState(false);
   const [compileOptions, setCompileOptions] = useState<CompileDagOptions>(DEFAULT_COMPILE_OPTIONS);
   const [samplingControls, setSamplingControls] = useState<SamplingControls | null>(null);
-  const [samplerConfidence, setSamplerConfidence] = useState(() => ciPercentToConfidence(DEFAULT_CONFIDENCE_CI_PERCENT));
+  const [samplerConfidence, setSamplerConfidence] = useState(() => ciPercentToConfidence(DEFAULT_CONFIDENCE_PERCENT));
   const samplingRunMetricsStore = useMemo(() => createSamplingRunMetricsStore(), []);
 
   useEffect(() => {

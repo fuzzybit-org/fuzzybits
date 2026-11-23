@@ -31,8 +31,8 @@ export type ConvergenceStatsPayload = {
 
   // --- host-side (Python) engine extensions -------------------------------
   // The convergence/statistics loop now runs on the host (see
-  // server `fuzzybits_server.convergence`).  In addition to the canonical Wald
-  // fields above, every attached policy/metric is streamed under its own
+  // server `fuzzybits_server.convergence`).  In addition to the canonical
+  // Wald fields above, every attached policy/metric is streamed under its own
   // namespace.  All optional and additive; existing consumers are unaffected.
   pass_index?: number;
   trials_per_pass?: number;
@@ -40,6 +40,18 @@ export type ConvergenceStatsPayload = {
   stop_reason?: string;
   stopping_policy?: string;
   primary_policy?: string;
+  /** Interval the run reports and the goal is evaluated on: "wilson" | "wald". */
+  interval?: string;
+  /** Half-width of the reported interval relative to the estimate (undefined at 0). */
+  rel_half_width?: number;
+  /** The goal's relative half-width: `max(rel_error, abs_error / p_hat)` territory. */
+  target_rel_half_width?: number;
+  /** Absolute half-width of the reported interval. */
+  abs_half_width?: number;
+  /** Trial budget the run is heading for, when it has one. */
+  target_trials?: number;
+  eta_seconds?: number;
+  elapsed_s?: number;
 
   // Wald policy (namespaced duplicate of the canonical Wald fields).
   wald_epsilon?: number;
@@ -143,6 +155,21 @@ export function gbasProjectedPasses(
     ? update.trials_per_pass
     : trialsPerIteration(update);
   return iterationsFromTrials(update.gbas_projected_trials, trialsPerPass);
+}
+
+/**
+ * Projected pass count from the frame's own trial projection.
+ *
+ * Independent of which policy produced it, so it works for the Wilson goal
+ * (the default since #225) and for any policy that reports `projected_trials`.
+ */
+export function projectedPasses(
+  update: Pick<ConvergenceStatsPayload, "projected_trials" | "trials_per_pass" | "trials" | "iterations">,
+): number | undefined {
+  const trialsPerPass = finitePositive(update.trials_per_pass)
+    ? update.trials_per_pass
+    : trialsPerIteration(update);
+  return iterationsFromTrials(update.projected_trials, trialsPerPass);
 }
 
 export function normalQuantileTwoSided(confidence: number): number {

@@ -53,6 +53,7 @@ def calculation_main(config: CalculationConfig, events: mp.Queue) -> None:
                 config.options,
                 on_progress,
                 pcfb_path=config.pcfb_path,
+                stopping=config.stopping,
             )
     except BaseException as exc:
         error = format_native_exception(exc)

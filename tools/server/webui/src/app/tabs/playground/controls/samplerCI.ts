@@ -2,8 +2,8 @@ import { z } from "zod";
 import { formatNumber, formatNumberFixed } from "../../../lib/format";
 
 /** User-facing two-sided confidence level (%). Source of truth for the control. */
-export const DEFAULT_CONFIDENCE_CI_PERCENT = 99.999;
-export const MIN_CONFIDENCE_CI_PERCENT = 90;
+export const DEFAULT_CONFIDENCE_CI_PERCENT = 95;
+export const MIN_CONFIDENCE_CI_PERCENT = 50;
 export const MAX_CONFIDENCE_CI_PERCENT = 99.999;
 
 /** Preset ladder used by increment/decrement controls (not manual entry). */
@@ -13,7 +13,7 @@ const PRESET_EPSILON = 1e-6;
 
 
 export const CONFIDENCE_CI_FIELD_HINT =
-  `Confidence level of the two-sided (Wald) interval used to decide when to stop. −/+ steps through ${CONFIDENCE_CI_PRESETS.join(", ")}%; you can also type any value from ${MIN_CONFIDENCE_CI_PERCENT} to ${MAX_CONFIDENCE_CI_PERCENT}.`;
+  `Confidence level of the two-sided interval used to decide when to stop and reported with the estimate. −/+ steps through ${CONFIDENCE_CI_PRESETS.join(", ")}%; you can also type any value from ${MIN_CONFIDENCE_CI_PERCENT} to ${MAX_CONFIDENCE_CI_PERCENT}.`;
 
 /** Clamp manual input to the allowed range (no preset snapping). */
 export function clampConfidenceCiPercent(value: number): number {
@@ -67,5 +67,5 @@ export function formatCiInput(ciPercent: number): string {
 
 export function formatCiDescription(ciPercent: number): string {
   const ci = clampConfidenceCiPercent(ciPercent);
-  return `wald α = ${formatNumberFixed(ciPercentToAlpha(ci), 3)}`;
+  return `${formatNumber(ci, 4)}% two-sided · α = ${formatNumberFixed(ciPercentToAlpha(ci), 3)}`;
 }

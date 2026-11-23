@@ -24,19 +24,43 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Sequence
 
 from .metrics import Metric, default_metrics
 from .policies import ConvergencePolicy, PolicyVerdict, make_policy
 from .sampling import Sampler, make_sampler
 from .special import normal_quantile_two_sided
+from .stopping import LEGACY_STOPPING_KEYS, ResolvedStopping, sampler_budget
 from .tally import RunContext, RunState
+from .wilson import WilsonGoalPolicy
 
 ProgressCallback = Callable[[dict[str, Any]], None]
 
+#: Stopping-specification option keys that are not legacy names but are still
+#: consumed by the specification rather than by :meth:`ConvergenceConfig.from_options`.
+_STOPPING_EXTRA_KEYS: frozenset[str] = frozenset(
+    {"goal_rel_error", "goal_abs_error", "fixed_trials", "max_time_s", "stop_reason_style"}
+)
+
 # Default primary policy: fills the canonical (un-namespaced) frontend fields.
+# A goal run's Wilson policy outranks GBAS: its interval is the one the goal is
+# evaluated on, so it is also the one the client must show.
 PRIMARY_POLICY = "gbas"
+PRIMARY_ORDER = ("wilson", "gbas")
+
+#: Stop reasons in the controller's vocabulary (#224). The legacy host loop
+#: reports its own names ("converged", "max_trials", "max_passes") so that a
+#: request that does not opt into the stopping specification keeps the wire
+#: behaviour it had before #225; see ``tools/server/README.md``.
+STOP_GOAL = "goal"
+STOP_MAX_TRIALS = "max-trials"
+STOP_MAX_TIME = "max-time"
+STOP_TRIALS = "trials"
+STOP_INTERRUPTED = "interrupted"
+
+INTERVAL_WILSON = "wilson"
+INTERVAL_WALD = "wald"
 
 
 def _as_float(value: Any) -> float | None:
@@ -93,6 +117,52 @@ class ConvergenceConfig:
     # Device passes per sampler step; the host reads tallies and checks
     # convergence once per step.
     passes_per_step: int = 1
+    # --- #224 stopping specification -------------------------------------
+    # Goal evaluated on the Wilson interval with the `max(eps*p_hat, a)` rule.
+    goal_rel_error: float | None = None
+    goal_abs_error: float | None = None
+    # Exactly this many committed trials, no early stop (`-N`).
+    fixed_trials: int | None = None
+    # Wall-clock limit in seconds.
+    max_time_s: float | None = None
+    # Report the controller's stop reasons and treat goal/limits/fixed design
+    # as the stopping rule. False keeps the pre-#225 loop verbatim.
+    stop_reason_style: str = "legacy"
+
+    @property
+    def controller_mode(self) -> bool:
+        """Whether this config executes a #224 stopping specification."""
+        return self.stop_reason_style == "controller"
+
+    @classmethod
+    def from_stopping(cls, spec: ResolvedStopping, options: dict[str, Any] | None = None) -> "ConvergenceConfig":
+        """Build the config that executes a resolved #224 stopping specification.
+
+        ``options`` may still carry the non-stopping knobs (oracle, watch,
+        passes_per_step, ...); every stopping key in it is ignored, so the
+        specification is the only source of the stopping rule.
+        """
+        base = cls.from_options(
+            {
+                key: value
+                for key, value in (options or {}).items()
+                if key not in LEGACY_STOPPING_KEYS and key not in _STOPPING_EXTRA_KEYS
+            }
+        )
+        policies: tuple[str, ...] = ("wald", "wilson")
+        return replace(
+            base,
+            confidence=spec.confidence,
+            goal_rel_error=spec.rel_error,
+            goal_abs_error=spec.abs_error,
+            fixed_trials=spec.fixed_trials,
+            max_trials=spec.max_trials or 0,
+            max_time_s=spec.max_time_s,
+            early_stop=spec.mode == "goal",
+            stopping_policy="wilson",
+            policies=policies,
+            stop_reason_style="controller",
+        )
 
     @classmethod
     def from_options(cls, options: dict[str, Any] | None) -> "ConvergenceConfig":
@@ -179,6 +249,13 @@ class RunResult:
         return result
 
 
+def _make_policy(name: str, config: "ConvergenceConfig") -> ConvergencePolicy:
+    """Instantiate the configured policy, binding a goal's tolerance to it."""
+    if name == WilsonGoalPolicy.name:
+        return WilsonGoalPolicy(rel_error=config.goal_rel_error, abs_error=config.goal_abs_error)
+    return make_policy(name)
+
+
 class ConvergenceRunner:
     """Drives the host-side convergence loop for a single sampler."""
 
@@ -195,7 +272,9 @@ class ConvergenceRunner:
         self.config = config
         self.on_progress = on_progress
         self.policies: list[ConvergencePolicy] = (
-            list(policies) if policies is not None else [make_policy(name) for name in config.policies]
+            list(policies)
+            if policies is not None
+            else [_make_policy(name, config) for name in config.policies]
         )
         self.metrics: list[Metric] = (
             list(metrics) if metrics is not None else default_metrics()
@@ -213,7 +292,9 @@ class ConvergenceRunner:
         )
 
         by_name = {policy.name: policy for policy in self.policies}
-        self._primary_name = PRIMARY_POLICY if PRIMARY_POLICY in by_name else self.policies[0].name
+        self._primary_name = next(
+            (name for name in PRIMARY_ORDER if name in by_name), self.policies[0].name
+        )
         self._stopping_name = (
             config.stopping_policy if config.stopping_policy in by_name else self._primary_name
         )
@@ -226,6 +307,11 @@ class ConvergenceRunner:
         max_passes = cfg.max_passes
         if not max_passes and cfg.max_trials:
             max_passes = math.ceil(cfg.max_trials / tpp)
+        if not max_passes and cfg.fixed_trials:
+            # The engine rounds the budget up to whole bitpacks and caps the pass
+            # size, so its own iteration count is the exact pass budget for a
+            # fixed design; recomputing it here would round twice.
+            max_passes = self.sampler.shape.total_iterations or math.ceil(cfg.fixed_trials / tpp)
 
         start = time.monotonic()
         last_emit = -math.inf
@@ -246,18 +332,22 @@ class ConvergenceRunner:
             verdicts = {policy.name: policy.evaluate(target, self.ctx) for policy in self.policies}
 
             stopping_converged = verdicts[self._stopping_name].converged and phase == "sampling"
+            elapsed = time.monotonic() - start
             stop_reason = self._stop_reason(
                 phase=phase,
                 stopping_converged=stopping_converged,
                 total_bits=target.total_bits,
                 pass_count=self.state.pass_count,
                 max_passes=max_passes,
+                elapsed_s=elapsed,
             )
             converged = stopping_converged
             stopping = stop_reason is not None
 
             progress = self._build_progress(phase, verdicts)
             progress["converged"] = stopping_converged
+            progress["elapsed_s"] = elapsed
+            progress["eta_seconds"] = self._eta_seconds(target.total_bits, verdicts, elapsed)
             if stopping:
                 progress["stop_reason"] = stop_reason
             final_progress = progress
@@ -290,7 +380,14 @@ class ConvergenceRunner:
         total_bits: int,
         pass_count: int,
         max_passes: int,
+        elapsed_s: float = 0.0,
     ) -> str | None:
+        if self.config.controller_mode:
+            return self._controller_stop_reason(
+                stopping_converged=stopping_converged,
+                total_bits=total_bits,
+                elapsed_s=elapsed_s,
+            )
         if self.config.max_trials and total_bits >= self.config.max_trials:
             return "max_trials"
         if max_passes and pass_count >= max_passes:
@@ -298,6 +395,46 @@ class ConvergenceRunner:
         if phase == "sampling" and self.config.early_stop and stopping_converged:
             return "converged"
         return None
+
+    def _controller_stop_reason(
+        self,
+        *,
+        stopping_converged: bool,
+        total_bits: int,
+        elapsed_s: float,
+    ) -> str | None:
+        """Stop reasons in the controller's vocabulary (#224).
+
+        A fixed design runs to its trial count; a goal stops at the end of the
+        first committed pass at which every goal query meets it; either stops
+        earlier on a limit. The goal is checked before the limits so a run that
+        reaches its trial limit exactly when it converges reports ``goal``.
+        """
+        cfg = self.config
+        if cfg.fixed_trials and total_bits >= cfg.fixed_trials:
+            return STOP_TRIALS
+        if stopping_converged:
+            return STOP_GOAL
+        if cfg.max_trials and total_bits >= cfg.max_trials:
+            return STOP_MAX_TRIALS
+        if cfg.max_time_s is not None and elapsed_s >= cfg.max_time_s:
+            return STOP_MAX_TIME
+        return None
+
+    def _eta_seconds(
+        self,
+        total_bits: int,
+        verdicts: dict[str, PolicyVerdict],
+        elapsed_s: float,
+    ) -> float | None:
+        """Seconds to the projected trial count at the observed rate, or ``None``."""
+        projected = verdicts[self._stopping_name].projected_trials
+        if not projected or not math.isfinite(projected) or projected <= total_bits:
+            return None
+        if elapsed_s <= 0.0 or total_bits <= 0:
+            return None
+        rate = total_bits / elapsed_s
+        return (projected - total_bits) / rate if rate > 0.0 else None
 
     def _build_progress(
         self, phase: str, verdicts: dict[str, PolicyVerdict]
@@ -337,10 +474,12 @@ class ConvergenceRunner:
                         progress[key] = value
         projected = primary.projected_trials
         progress["projected_trials"] = projected
-        progress["projected_iterations"] = math.ceil(projected / tpp) if projected else 0
         remaining = max(0, projected - total_bits)
         progress["remaining_trials"] = remaining
-        progress["remaining_iterations"] = math.ceil(remaining / tpp) if remaining else 0
+        # An infinite projection (a relative goal at zero hits has no finite trial
+        # count that meets it) is reported as absent, like every non-finite value.
+        progress["projected_iterations"] = math.ceil(projected / tpp) if math.isfinite(projected) and projected else 0
+        progress["remaining_iterations"] = math.ceil(remaining / tpp) if math.isfinite(remaining) and remaining else 0
 
         # Every policy is emitted under its namespace so multiple convergence
         # criteria stream simultaneously (wald_*, gbas_*, ...).  Core verdict
@@ -355,6 +494,17 @@ class ConvergenceRunner:
 
         progress["primary_policy"] = self._primary_name
         progress["stopping_policy"] = self._stopping_name
+        if self.config.controller_mode:
+            # Additive fields #224 defines for the controller's snapshots. Absent
+            # from a legacy run, so old clients see the frames they always saw.
+            progress["interval"] = INTERVAL_WILSON if self._primary_name == "wilson" else INTERVAL_WALD
+            progress["stop_reason_style"] = "controller"
+            if progress.get("target_rel_half_width") is None and self.config.goal_rel_error is not None:
+                progress["target_rel_half_width"] = self.config.goal_rel_error
+            if self.config.fixed_trials:
+                progress["target_trials"] = self.config.fixed_trials
+            elif self.config.max_trials:
+                progress["target_trials"] = self.config.max_trials
 
         if self.config.stream_nodes and len(self.state.nodes) > 1:
             progress["nodes"] = {
@@ -372,6 +522,7 @@ def run_calculation(
     *,
     pcfb: bytes | None = None,
     pcfb_path: str | None = None,
+    stopping: ResolvedStopping | None = None,
 ) -> dict[str, Any]:
     """Compile, sample, and converge entirely on the host; return a result dict.
 
@@ -379,11 +530,23 @@ def run_calculation(
     ``FUZZYBITS_SERVER_ENGINE=legacy`` for the in-memory ``run_compile`` path.
     The native engine is used *only* to produce raw per-pass popcounts; all
     convergence and statistics are computed here.
+
+    ``stopping`` executes a #224 stopping specification. Without it the legacy
+    option vocabulary in ``options`` drives the loop, unchanged.
     """
-    config = ConvergenceConfig.from_options(options)
+    config = (
+        ConvergenceConfig.from_stopping(stopping, options) if stopping is not None
+        else ConvergenceConfig.from_options(options)
+    )
+    sampler_options = dict(options or {})
+    if stopping is not None:
+        # The engine is sized from the specification, not from the legacy keys.
+        for key in LEGACY_STOPPING_KEYS:
+            sampler_options.pop(key, None)
+        sampler_options.update(sampler_budget(stopping))
     sampler = make_sampler(
         input_files,
-        options,
+        sampler_options,
         event_ids=list(config.event_ids) or None,
         pcfb=pcfb,
         pcfb_path=pcfb_path,
@@ -393,7 +556,14 @@ def run_calculation(
         result = runner.run()
     finally:
         sampler.close()
-    return result.summary
+    summary = result.summary
+    if stopping is not None:
+        block = stopping.as_dict()
+        block["deprecations"] = list(stopping.deprecations)
+        summary["stopping"] = block
+        summary["stopping_summary"] = stopping.summary_line()
+        summary["interval"] = INTERVAL_WILSON
+    return summary
 
 
 __all__ = [
@@ -401,5 +571,10 @@ __all__ = [
     "ConvergenceRunner",
     "RunResult",
     "ProgressCallback",
+    "STOP_GOAL",
+    "STOP_INTERRUPTED",
+    "STOP_MAX_TIME",
+    "STOP_MAX_TRIALS",
+    "STOP_TRIALS",
     "run_calculation",
 ]

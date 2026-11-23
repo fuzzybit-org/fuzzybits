@@ -12,7 +12,6 @@ import { formatDefaultLinear, formatExp, formatSI } from "../../components/plot/
 import type { AxisScale, TrajectoryStroke } from "../../components/plot/mathbox/trajectoryPlot";
 import {
   confidenceFromAlpha,
-  gbasProjectedPasses,
   normalQuantileTwoSided,
   type ConvergenceStatsPayload,
 } from "../../lib/liveConvergenceStats";
@@ -122,14 +121,17 @@ export function SamplingTrajectoryPanel({
     pendingUpdatesRef.current = [];
     const next = appendProbabilityUpdates(pointsRef.current, pending, MAX_REPLAY_PATH_POINTS);
     const latestUpdate = pending[pending.length - 1];
-    const projectedPasses = gbasProjectedPasses(latestUpdate);
     runMetricsStoreRef.current.setMetrics({
       trialsPerSecond: latestSampleRateRef.current,
       completedPasses: isFiniteNumber(latestUpdate.iterations) ? latestUpdate.iterations : null,
-      gbasProjectedPasses: projectedPasses ?? null,
-      elapsedSeconds: latestTimingRef.current?.elapsedSeconds ?? null,
+      projectedPasses: projectedPasses(latestUpdate) ?? null,      elapsedSeconds: latestTimingRef.current?.elapsedSeconds ?? null,
       timeToConvergenceSeconds: latestTimingRef.current?.timeToConvergenceSeconds ?? null,
-      epsilonConverged: latestTimingRef.current?.epsilonConverged ?? false,
+      relHalfWidth: isFiniteNumber(latestUpdate.rel_half_width) ? latestUpdate.rel_half_width : null,
+      targetRelHalfWidth: isFiniteNumber(latestUpdate.target_rel_half_width)
+        ? latestUpdate.target_rel_half_width
+        : null,
+      stopReason: typeof latestUpdate.stop_reason === "string" ? latestUpdate.stop_reason : null,
+      converged: latestUpdate.converged === true,
     });
     if (next !== pointsRef.current) {
       pointsRef.current = next;
@@ -267,33 +269,33 @@ export function SamplingTrajectoryPanel({
     };
   }, []);
 
+  const hasGbasStream = replayPathPoints.some(
+    (point) => point.gbasConverged !== undefined || point.gbasMean !== undefined || point.gbasTargetDelta !== undefined,
+  );
+
   return (
     <div className="panel span-3 playground-sampling-outputs">
       <div className="playground-sampling-outputs__section">
         <SectionTitle
           eyebrow="Output: p̂ vs trials"
           title="Top-event estimate"
-          text="Running mean p̂ of the compiled top event vs cumulative trials, with interval bands. Oracle bands when µ is set."
+          text="Running mean p̂ of the compiled top event vs cumulative trials, with the reported interval bands (Wilson). Oracle bands when µ is set."
         />
         {streamError ? <p className="live-demo-error playground-sampling-error">{streamError}</p> : null}
         <LiveProbabilityPathPlot points={replayPathPoints} xMode="absolute" clientAlpha={clientAlpha} />
       </div>
-      <div className="playground-sampling-outputs__section">
-        <SectionTitle
-          eyebrow="Output: GBAS interval"
-          title="GBAS estimate"
-          text="GBAS interval on the top-event estimate (Gamma(k, k−1); independent of p̂). Marked when success-count k is reached."
-        />
-        <LiveGbasPathPlot points={replayPathPoints} clientAlpha={clientAlpha} />
-      </div>
-      {/* <div className="playground-sampling-outputs__section">
-        <SectionTitle
-          eyebrow="Output: Convergence Criterion"
-          title="Epsilon vs. target epsilon"
-          text="Streamed half-width ε from the active stopping policy alongside its δ·p̂ target. Convergence is ε ≤ target ε."
-        />
-        <EpsilonPlot points={replayPathPoints} yScale={{ type: "log", base: 2 }} xScale={{ type: "log", base: 2 }} />
-      </div> */}
+      {/* The GBAS stream is optional: it is only present when the run was started
+          with the legacy `policy: "gbas"`. A goal run reports Wilson instead. */}
+      {hasGbasStream ? (
+        <div className="playground-sampling-outputs__section">
+          <SectionTitle
+            eyebrow="Output: GBAS interval"
+            title="GBAS estimate"
+            text="GBAS interval on the top-event estimate (Gamma(k, k−1); independent of p̂). Marked when success-count k is reached."
+          />
+          <LiveGbasPathPlot points={replayPathPoints} clientAlpha={clientAlpha} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -833,6 +835,22 @@ function probabilityPoint(update: LiveProgressUpdate | null | undefined): LivePr
     gbasConverged: update.gbas_converged,
     gbasTargetDelta: update.gbas_target_delta,
   };
+}
+
+/**
+ * Projected pass count from the frame's own trial projection.
+ *
+ * Independent of which policy produced it, so it works for the Wilson goal
+ * (the default since #225) and for any policy that reports `projected_trials`.
+ */
+function projectedPasses(update: LiveProgressUpdate): number | undefined {
+  const trialsPerPass = isPositiveNumber(update.trials_per_pass)
+    ? update.trials_per_pass
+    : isPositiveNumber(update.trials) && isPositiveNumber(update.iterations)
+      ? update.trials / update.iterations
+      : undefined;
+  if (!isPositiveNumber(update.projected_trials) || !isPositiveNumber(trialsPerPass)) return undefined;
+  return Math.ceil(update.projected_trials / trialsPerPass);
 }
 
 function trialsXAxis(points: LiveProbabilityPoint[], xMode: "window" | "absolute"): number[] {

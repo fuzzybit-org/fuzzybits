@@ -1,3 +1,13 @@
+import type { StoppingPayload } from "./stoppingSpec";
+
+/**
+ * Run-settings body for `POST /api/v1/start` and `/api/v1/reset`.
+ *
+ * The stopping rule goes in `stopping` (the #224 specification). The legacy flat
+ * options (`num_trials`, `early_stop`, `delta`, `burn_in`, `policy`) are still
+ * accepted by the server for one release, but this client does not send them:
+ * there is one vocabulary, and it is the specification.
+ */
 export type SamplerRunOptions = {
   model_id?: string;
   compilation_level?: number;
@@ -7,15 +17,10 @@ export type SamplerRunOptions = {
   recognize_xor_groups?: boolean;
   ccf?: boolean;
   keep_null_gates?: boolean;
-  /** Total trial budget (0 = auto: unbounded / backend default). */
-  num_trials: number;
-  early_stop: boolean;
+  /** Precision goal, limits, or a fixed trial count (#224). */
+  stopping: StoppingPayload;
   /** Optimistic per-node trials-per-pass target (`settings.requested_trials_per_pass`; 0 = auto). */
   requested_trials_per_pass: number;
-  confidence?: number;
-  delta?: number;
-  /** Host-side convergence/stopping policy ("wald" | "gbas"). */
-  policy?: "wald" | "gbas";
   /** Known true probability µ (mcSCRAM `oracle`); omitted when diagnostics are off. */
   oracle?: number;
 };

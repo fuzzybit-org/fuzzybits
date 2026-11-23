@@ -8,10 +8,11 @@
  * ledger, not stacked panels.
  * ============================================================ */
 
-/* ---- stage pigments (Input → Compiler → Sampler → Run) ---- */
+/* ---- stage pigments (Input → Compiler → Sampler → Stopping → Run) ---- */
 .sticky-panel-group--input    { --pg-stage: var(--pigment-paynes); }
 .sticky-panel-group--compiler { --pg-stage: var(--pigment-indigo-deep); }
 .sticky-panel-group--sampler  { --pg-stage: var(--pigment-sage); }
+.sticky-panel-group--run-settings { --pg-stage: var(--pigment-indigo); }
 .sticky-panel-group--run      { --pg-stage: var(--pigment-ochre); }
 
 .sticky-panel-group {
@@ -420,6 +421,26 @@
   flex: 1 1 12rem;
   justify-content: flex-end;
   min-width: 0;
+}
+
+/* ---- stop reason chip (Run group) ---- */
+.sampler-stop-reason {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-mute);
+  font-family: var(--sans);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.sampler-stop-reason--reached {
+  color: var(--pigment-sage);
 }
 
 .sampler-transport-controls__start {
