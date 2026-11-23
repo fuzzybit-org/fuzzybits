@@ -81,34 +81,14 @@ namespace {
         friend auto operator<=>(edge_key const &, edge_key const &) = default;
     };
 
-    struct operand_view final {
-        // The operands as the file lists them: `inputs` holds the plain operands and the complemented
-        // ones whose source is also listed plain (read there through a NOT tensor), `inverted_inputs` the
-        // rest. The interleaving of the two lists is not stored.
-        std::vector<edge_key> inputs;
-        std::vector<edge_key> inverted;
-        // An operand is a NOT gate: the file cannot tell it from the NOT tensor the writer inserts for a
-        // source used in both polarities, so such operands are resolved to the complemented source and
-        // compared as a multiset.
-        bool through_not = false;
-    };
-
-    template <typename mapper> [[nodiscard]] auto operandsOf(pc::circuit const &circuit, const pc::bool_node_id node, mapper &&map) -> operand_view {
-        operand_view view;
+    // The operands of a node as a multiset of (mapped source, complement).
+    template <typename mapper> [[nodiscard]] auto operandsOf(pc::circuit const &circuit, const pc::bool_node_id node, mapper &&map) -> std::vector<edge_key> {
         std::vector<edge_key> edges;
-        for (auto edge : circuit.operands(node)) {
-            while (circuit.op_codes()[edge.source.raw()] == pc::op_code::not_gate && circuit.operand_counts()[edge.source.raw()] == 1) {
-                auto const inner = circuit.operands(edge.source)[0];
-                edge = pc::edge_ref{.source = inner.source, .complement = inner.complement == edge.complement};
-                view.through_not = true;
-            }
+        for (auto const &edge : circuit.operands(node)) {
             edges.push_back({map(edge.source), edge.complement});
         }
-        for (auto const &edge : edges) {
-            const bool plainToo = std::ranges::any_of(edges, [&](auto const &other) { return other.source == edge.source && !other.complement; });
-            (edge.complement && !plainToo ? view.inverted : view.inputs).push_back(edge);
-        }
-        return view;
+        std::ranges::sort(edges);
+        return edges;
     }
 
     [[nodiscard]] auto eventIds(pc::circuit const &circuit) -> std::vector<std::uint32_t> {
@@ -127,11 +107,9 @@ namespace {
         return found == options.target_kinds.end() ? std::vector<kind>{options.query} : found->second;
     }
 
-    // The read circuit has the structure of the written one, seen through the maps. Differences that
-    // follow from what pcfb records: house events and a cardinality without operands (a ONES tensor)
-    // read as constants;
-    // an unnamed NOT gate whose consumers also list its operand is a complemented edge in the read
-    // circuit (see operand_view); the interleaving of complemented and plain operands is not stored.
+    // The read circuit has the structure of the written one, seen through the maps, node for node. What
+    // pcfb records differently: house events and a cardinality without operands (a ONES tensor) read as
+    // constants, and the order of the operands is the file's.
     void requireSameStructure(RandomModel const &model, writer::write_output const &written, writer::read_output const &read) {
         auto const &original = model.circuit;
         auto const &options = model.options;
@@ -149,23 +127,13 @@ namespace {
             return result.raw();
         };
 
-        std::size_t skipped = 0;
         for (std::uint32_t v = 0; v < original.node_count(); ++v) {
             INFO("node " << v);
             const auto node = pc::bool_node_id(v);
             const auto code = original.op_codes()[v];
             const auto fanIn = original.operand_counts()[v];
             const auto name = options.node_names.find(node);
-            const bool targeted = std::ranges::any_of(original.targets(), [&](auto const &target) { return target.node == node; });
-            if (!mapped(node).valid()) {
-                REQUIRE(code == pc::op_code::not_gate);
-                REQUIRE(fanIn == 1);
-                REQUIRE_FALSE(original.operands(node)[0].complement);
-                REQUIRE(name == options.node_names.end());
-                REQUIRE_FALSE(targeted);
-                ++skipped;
-                continue;
-            }
+            REQUIRE(mapped(node).valid());
             const auto r = mapped(node).raw();
             const bool fullRange = code == pc::op_code::cardinality && fanIn == 0;
             auto expected = code == pc::op_code::house_event || fullRange ? pc::op_code::constant : code;
@@ -201,33 +169,12 @@ namespace {
                     REQUIRE(circuit.cardinality_low()[r] == original.cardinality_low()[v]);
                     REQUIRE(circuit.cardinality_high()[r] == original.cardinality_high()[v]);
                 }
-                auto before = operandsOf(original, node, mappedId);
-                auto after = operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); });
-                std::vector<edge_key> left = before.inputs;
-                left.insert(left.end(), before.inverted.begin(), before.inverted.end());
-                std::vector<edge_key> right = after.inputs;
-                right.insert(right.end(), after.inverted.begin(), after.inverted.end());
-                std::ranges::sort(left);
-                std::ranges::sort(right);
-                REQUIRE(left == right);
+                REQUIRE(operandsOf(original, node, mappedId) ==
+                        operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); }));
                 break;
             }
         }
-        // An unnamed NOT gate of the original that stands in front of its consumers like the writer's shared
-        // NOT tensor of the same source is read as a complemented edge, and then the writer's own tensor
-        // for that source is the one read as a NOT gate; such nodes have a tensor no original node has.
-        std::set<std::uint32_t> originalTensors(written.tensor_by_node.begin(), written.tensor_by_node.end());
-        std::size_t extra = 0;
-        for (std::uint32_t r = 0; r < circuit.node_count(); ++r) {
-            if (originalTensors.contains(read.tensor_by_node.at(r))) {
-                continue;
-            }
-            REQUIRE(circuit.op_codes()[r] == pc::op_code::not_gate);
-            REQUIRE(circuit.operand_counts()[r] == 1);
-            ++extra;
-        }
-        REQUIRE(extra <= skipped);
-        REQUIRE(circuit.node_count() + skipped == original.node_count() + extra);
+        REQUIRE(circuit.node_count() == original.node_count());
 
         REQUIRE(circuit.targets().size() == original.targets().size());
         for (std::size_t index = 0; index < original.targets().size(); ++index) {
@@ -801,7 +748,7 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
             auto bytes = written.bytes;
             const auto flips = 1 + round % 4;
             for (int flip = 0; flip < flips; ++flip) {
-                bytes[std::uniform_int_distribution<std::size_t>(0, bytes.size() - 1)(rng)] ^= static_cast<std::byte>(1 + rng() % 255);
+                bytes[static_cast<std::size_t>(pcfb_test_random::uniform(rng, 0, bytes.size() - 1))] ^= static_cast<std::byte>(1 + rng() % 255);
             }
             const auto result = writer::read(bytes);
             if (!result) {
@@ -1023,4 +970,167 @@ TEST_CASE("pcfb reader: cardinality(0, n) is written as ATLEAST 0 and read back 
     CHECK(read.circuit.cardinality_high()[node.raw()] == 2);
     CHECK(read.circuit.operands(node).size() == 2);
     requireStable(read);
+}
+
+namespace {
+
+    // A NOT gate of the circuit in front of operators that list its source in both polarities, which the
+    // writer reads through its own NOT tensors: three sources, the gate first, then operators on x (two
+    // of them share the writer's tensor) and one on z.
+    struct mixed_polarity_model final {
+        pc::circuit circuit;
+        pc::bool_node_id x;
+        pc::bool_node_id gate;
+    };
+
+    [[nodiscard]] auto mixedPolarityModel() -> mixed_polarity_model {
+        pc::builder builder;
+        const auto x = builder.add_basic_event(builder.add_literal_probability(0.1));
+        const auto y = builder.add_basic_event(builder.add_literal_probability(0.2));
+        const auto z = builder.add_basic_event(builder.add_literal_probability(0.3));
+        const auto gate = builder.add_not(pc::edge_ref{.source = x});
+        const auto beside = builder.add_and({pc::edge_ref{.source = x}, pc::edge_ref{.source = gate}});
+        const auto first = builder.add_and({pc::edge_ref{.source = x}, pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = y}});
+        const auto second = builder.add_or({pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = x}, pc::edge_ref{.source = y}});
+        const auto third = builder.add_and({pc::edge_ref{.source = z}, pc::edge_ref{.source = z, .complement = true}});
+        for (const auto node : {beside, first, second, third}) {
+            (void)builder.add_target(node);
+        }
+        return {sealed(std::move(builder)), x, gate};
+    }
+
+    [[nodiscard]] auto complementTensorsOf(writer::read_output const &read) -> std::optional<std::vector<std::byte>> {
+        for (auto const &[key, value] : read.metadata) {
+            if (key == "compile.complement_tensors") {
+                return std::get<std::vector<std::byte>>(value);
+            }
+        }
+        return std::nullopt;
+    }
+
+    [[nodiscard]] auto withComplementTensors(bytes_type const &bytes, std::vector<std::uint8_t> const &packed) -> bytes_type {
+        auto model = unpack(bytes);
+        for (auto &entry : model->metadata) {
+            if (entry->key == "compile.complement_tensors") {
+                ::pcfb::BytesValueT value;
+                value.value = packed;
+                entry->value.Set(value);
+            }
+        }
+        return pack(*model);
+    }
+
+    [[nodiscard]] auto withoutComplementTensors(bytes_type const &bytes) -> bytes_type {
+        auto model = unpack(bytes);
+        std::erase_if(model->metadata, [](auto const &entry) { return entry->key == "compile.complement_tensors"; });
+        return pack(*model);
+    }
+
+    [[nodiscard]] auto nodeCountOf(std::span<std::byte const> bytes) -> std::pair<std::size_t, std::set<std::string>> {
+        const auto read = writer::read(bytes);
+        REQUIRE(read);
+        return {read.value().circuit.node_count(), codesOf(read.diagnostics())};
+    }
+
+} // namespace
+
+TEST_CASE("pcfb reader: a NOT gate beside the writer's NOT tensors stays a node and the tensors fold", "[io][pcfb][read]") {
+    const auto model = mixedPolarityModel();
+    REQUIRE(model.circuit.node_count() == 8);
+    const auto written = requireWrite(model.circuit);
+    const auto read = readOk(written.bytes);
+    // Every node of the circuit maps, and the writer's tensors are complemented edges, not nodes.
+    requireSameStructure(RandomModel{model.circuit, {}}, written, read);
+    CHECK(read.circuit.node_count() == model.circuit.node_count());
+    const auto gate = read.node_by_tensor.at(written.tensor_by_node.at(model.gate.raw()));
+    REQUIRE(gate.valid());
+    CHECK(read.circuit.op_codes()[gate.raw()] == pc::op_code::not_gate);
+    CHECK(read.circuit.operands(gate)[0].source == read.node_by_tensor.at(written.tensor_by_node.at(model.x.raw())));
+    // One tensor for x shared by two operators, one for z.
+    const auto listed = complementTensorsOf(read);
+    REQUIRE(listed.has_value());
+    CHECK(listed->size() == 8);
+    requireStable(read);
+}
+
+TEST_CASE("pcfb reader: without compile.complement_tensors every NOT operator is a node", "[io][pcfb][read]") {
+    const auto model = mixedPolarityModel();
+    const auto written = requireWrite(model.circuit);
+    const auto bytes = withoutComplementTensors(written.bytes);
+    const auto [nodes, codes] = nodeCountOf(bytes);
+    // The two tensors become NOT gates; the file is otherwise read as before.
+    CHECK(nodes == model.circuit.node_count() + 2);
+    CHECK(codes.empty());
+}
+
+TEST_CASE("pcfb reader: a writer file without mixed polarity has no compile.complement_tensors entry", "[io][pcfb][read]") {
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+    const auto gate = builder.add_not(pc::edge_ref{.source = a});
+    (void)builder.add_target(builder.add_and({pc::edge_ref{.source = gate}, pc::edge_ref{.source = b, .complement = true}}));
+    const auto written = requireWrite(sealed(std::move(builder)));
+    const auto read = readOk(written.bytes);
+    CHECK_FALSE(complementTensorsOf(read).has_value());
+    requireStable(read);
+}
+
+TEST_CASE("pcfb reader: compile.complement_tensors is checked", "[io][pcfb][read][negative]") {
+    const auto model = mixedPolarityModel();
+    const auto written = requireWrite(model.circuit);
+    const auto expected = model.circuit.node_count();
+    const auto invalid = std::set<std::string>{std::string(writer::diag::invalid_metadata)};
+    const auto listed = *complementTensorsOf(readOk(written.bytes));
+    REQUIRE(listed.size() == 8);
+    std::vector<std::uint8_t> tensors;
+    for (const auto byte : listed) {
+        tensors.push_back(std::to_integer<std::uint8_t>(byte));
+    }
+    // The tensor of the event y, which is not the source of a NOT tensor.
+    const auto ofEvent = written.tensor_by_node.at(1);
+
+    SECTION("a length that is not a multiple of four") {
+        auto packed = tensors;
+        packed.pop_back();
+        const auto [nodes, codes] = nodeCountOf(withComplementTensors(written.bytes, packed));
+        CHECK(codes == invalid);
+        CHECK(nodes == expected + 2);
+    }
+
+    SECTION("ids that are not strictly ascending") {
+        auto packed = tensors;
+        std::rotate(packed.begin(), packed.begin() + 4, packed.end());
+        const auto [nodes, codes] = nodeCountOf(withComplementTensors(written.bytes, packed));
+        CHECK(codes == invalid);
+        CHECK(nodes == expected + 2);
+    }
+
+    SECTION("an id out of range") {
+        auto packed = tensors;
+        packed[7] = 0x7F;
+        const auto [nodes, codes] = nodeCountOf(withComplementTensors(written.bytes, packed));
+        CHECK(codes == invalid);
+        CHECK(nodes == expected + 2);
+    }
+
+    SECTION("a tensor that is not a NOT operator") {
+        std::vector<std::uint32_t> ids{ofEvent};
+        for (std::size_t at = 0; at < tensors.size(); at += 4) {
+            ids.push_back(static_cast<std::uint32_t>(tensors[at]) | static_cast<std::uint32_t>(tensors[at + 1]) << 8U);
+        }
+        std::ranges::sort(ids);
+        std::vector<std::uint8_t> packed;
+        for (const auto id : ids) {
+            for (unsigned shift = 0; shift < 32; shift += 8) {
+                packed.push_back(static_cast<std::uint8_t>(id >> shift));
+            }
+        }
+        const auto result = writer::read(withComplementTensors(written.bytes, packed));
+        INFO(diagnosticsText(result.diagnostics()));
+        REQUIRE(result);
+        // Only the event is refused; the writer's two tensors still fold.
+        CHECK(codesOf(result.diagnostics()) == invalid);
+        CHECK(result.diagnostics().size() == 1);
+        CHECK(result.value().circuit.node_count() == expected);
+    }
 }
