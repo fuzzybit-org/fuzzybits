@@ -65,3 +65,13 @@ class CalculationState:
             self.finished_at = time.time()
             self.pid = None
             self.last_error = None
+            # A run stopped from the API never reaches a stop condition, so its last
+            # frame carries no reason. Mark it, so the client shows "Interrupted"
+            # rather than "Running" for a run that is over. A frame that already
+            # carries a reason belongs to a run that finished on its own and is kept.
+            if (
+                self.last_update is not None
+                and "stop_reason_style" in self.last_update
+                and "stop_reason" not in self.last_update
+            ):
+                self.last_update = {**self.last_update, "stop_reason": "interrupted"}

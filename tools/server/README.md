@@ -88,6 +88,7 @@ The characterization tests for the stopping work (#225) are:
 | `tests/test_stopping.py` | the #224 specification: defaults, every validation message, every legacy mapping |
 | `tests/test_wilson.py` | the Wilson interval (against scipy's closed form), the zero-hit bound (against Clopper–Pearson), the goal rule and the projection |
 | `tests/test_stop_reasons.py` | the stop reasons and the controller frames, legacy and new |
+| `tests/test_interrupted_run.py` | an interrupted run reports `interrupted` without changing the frames it sent |
 | `tests/test_fixed_n_equivalence.py` | `@pytest.mark.native`: a fixed-N server run against `fzb run -N`, and today's pass-geometry difference |
 
 `test_fixed_n_equivalence.py` needs the extension on `sys.path` and finds `fzb`
