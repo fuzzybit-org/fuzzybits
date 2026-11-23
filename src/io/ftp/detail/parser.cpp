@@ -219,12 +219,20 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 return location_text(project_, location);
             }
 
-            void error(std::string code, std::string message) {
-                project_.diagnostics.push(api::make_error(std::move(code), std::move(message)));
+            void error(std::string code, std::string message, const std::optional<Location> at = std::nullopt) {
+                push(api::make_error(std::move(code), std::move(message)), at);
             }
 
-            void warning(std::string code, std::string message) {
-                project_.diagnostics.push(api::make_warning(std::move(code), std::move(message)));
+            void warning(std::string code, std::string message, const std::optional<Location> at = std::nullopt) {
+                push(api::make_warning(std::move(code), std::move(message)), at);
+            }
+
+            void push(api::diagnostic item, const std::optional<Location> at) {
+                if (at) {
+                    item.file = project_.paths[at->file];
+                    item.line = at->line;
+                }
+                project_.diagnostics.push(std::move(item));
             }
 
             void parseLine(const std::string_view line, const Location location) {
@@ -265,19 +273,19 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         return;
                     }
                     if (indented || tokens_.size() < 2 || !isOperator(tokens_[1])) {
-                        error("io.ftp.invalid-line", where(location) + ": expected 'value name [flags]' in the IMPORT section");
+                        error("io.ftp.invalid-line", where(location) + ": expected 'value name [flags]' in the IMPORT section", location);
                         return;
                     }
                     section_ = Section::none;
                 }
                 if (isStrayRecord(tokens_)) {
                     error("io.ftp.import-without-header", where(location) + ": import record for " + quoted(tokens_[1]) +
-                                                               " outside an IMPORT section is not read");
+                                                               " outside an IMPORT section is not read", location);
                     return;
                 }
                 if (indented) {
                     if (openGate_ == kNoGate) {
-                        error("io.ftp.invalid-line", where(location) + ": continuation line without an open gate");
+                        error("io.ftp.invalid-line", where(location) + ": continuation line without an open gate", location);
                         return;
                     }
                     auto &gate = openGate_ == kDiscardedGate ? discarded_ : project_.definitions[openGate_];
@@ -290,7 +298,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
             [[nodiscard]] auto keyword(const std::string_view head, const Location location) -> Section {
                 if (head == kFtpEndTreeToken || head == kFtpImportToken) {
                     if (tokens_.size() > 1) {
-                        error("io.ftp.invalid-line", where(location) + ": unexpected tokens after " + std::string(head));
+                        error("io.ftp.invalid-line", where(location) + ": unexpected tokens after " + std::string(head), location);
                     }
                     return head == kFtpImportToken ? Section::import : Section::none;
                 }
@@ -299,19 +307,19 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         if (isName(tokens_[index])) {
                             project_.process.push_back(NamedLocation{.name = tokens_[index], .location = location});
                         } else {
-                            error("io.ftp.invalid-line", where(location) + ": PROCESS target " + quoted(tokens_[index]) + " is not a name");
+                            error("io.ftp.invalid-line", where(location) + ": PROCESS target " + quoted(tokens_[index]) + " is not a name", location);
                         }
                     }
                     return Section::process;
                 }
                 const auto value = tokens_.size() == 2 ? parseNumber(tokens_[1]) : std::nullopt;
                 if (!value) {
-                    error("io.ftp.invalid-limit", where(location) + ": expected 'LIMIT value'");
+                    error("io.ftp.invalid-limit", where(location) + ": expected 'LIMIT value'", location);
                     return Section::none;
                 }
                 if (project_.limit && *project_.limit != *value) {
                     warning("io.ftp.duplicate-limit", where(location) + ": LIMIT " + std::string(tokens_[1]) + " replaces LIMIT " +
-                                                          std::string(project_.limitText));
+                                                          std::string(project_.limitText), location);
                 }
                 project_.limit = *value;
                 project_.limitText = tokens_[1];
@@ -342,7 +350,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
             void gateLine(const Location location) {
                 if (tokens_.size() < 2 || !isName(tokens_[0]) || !isOperator(tokens_[1])) {
                     openGate_ = kNoGate;
-                    error("io.ftp.invalid-line", where(location) + ": expected 'NAME (+|*|k) operands...'");
+                    error("io.ftp.invalid-line", where(location) + ": expected 'NAME (+|*|k) operands...'", location);
                     return;
                 }
                 Definition definition{.name = tokens_[0], .location = location};
@@ -356,7 +364,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 } else {
                     openGate_ = kNoGate;
                     error("io.ftp.invalid-line", where(location) + ": threshold " + std::string(tokens_[1]) + " of gate " +
-                                                     quoted(tokens_[0]) + " is out of range");
+                                                     quoted(tokens_[0]) + " is out of range", location);
                     return;
                 }
                 definition.operands.reserve(tokens_.size() - 2);
@@ -364,7 +372,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
 
                 if (afterTree_) {
                     error("io.ftp.misplaced-gate", where(location) + ": gate " + quoted(definition.name) +
-                                                       " after the tree section of its file is not read");
+                                                       " after the tree section of its file is not read", location);
                     discarded_ = std::move(definition);
                     openGate_ = kDiscardedGate;
                     return;
@@ -376,7 +384,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 if (const auto [found, inserted] = project_.definitionByName.emplace(definition.name, index); !inserted) {
                     error("io.ftp.duplicate-gate", "gate " + quoted(definition.name) + " is defined twice (" +
                                                        where(project_.definitions[found->second].location) + ", " + where(location) +
-                                                       "); the second definition is not read");
+                                                       "); the second definition is not read", location);
                     discarded_ = std::move(definition);
                     openGate_ = kDiscardedGate;
                     return;
@@ -390,7 +398,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                     auto token = tokens_[index];
                     if (!isReference(token)) {
                         error("io.ftp.invalid-line",
-                              where(location) + ": operand " + quoted(token) + " of gate " + quoted(gate.name) + " is not a name");
+                              where(location) + ": operand " + quoted(token) + " of gate " + quoted(gate.name) + " is not a name", location);
                         continue;
                     }
                     const auto complement = token.front() == kFtpComplementToken;
@@ -402,7 +410,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
             }
 
             void missingEndtree(const Location start, const std::string &before) {
-                error("io.ftp.missing-endtree", "the tree section starting at " + where(start) + " has no ENDTREE before " + before);
+                error("io.ftp.missing-endtree", "the tree section starting at " + where(start) + " has no ENDTREE before " + before, start);
             }
 
             void collectEvents() {
@@ -415,7 +423,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         if (reported.insert(record.name).second) {
                             error("io.ftp.gate-imported", quoted(record.name) + " is both a gate (" +
                                                               where(project_.definitions[gate->second].location) +
-                                                              ") and an imported event (" + where(record.location) + ")");
+                                                              ") and an imported event (" + where(record.location) + ")", project_.definitions[gate->second].location);
                         }
                         continue;
                     }
@@ -460,12 +468,12 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 auto message = "basic event " + quoted(event.name) + " is imported " + std::to_string(event.records.size()) + " times" +
                                (differ ? " with different values" : " with the same value") + " (" + records + ")";
                 if (policy_ == duplicate_import_policy::error) {
-                    error("io.ftp.duplicate-import", std::move(message) + "; policy error");
+                    error("io.ftp.duplicate-import", std::move(message) + "; policy error", project_.imports[event.records.front()].location);
                     return;
                 }
                 warning("io.ftp.duplicate-import", std::move(message) + "; policy " + std::string(policyName(policy_)) + " uses " +
                                                        where(project_.imports[selected].location) +
-                                                       (event.initiator ? ", initiator tag kept" : ""));
+                                                       (event.initiator ? ", initiator tag kept" : ""), project_.imports[event.records.front()].location);
             }
 
             void checkValues() {
@@ -474,12 +482,12 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         auto const &record = project_.imports[index];
                         if (!std::isfinite(record.value) || record.value < 0.0 || (record.value > 1.0 && !event.initiator)) {
                             error("io.ftp.invalid-probability", where(record.location) + ": value " + std::string(record.valueText) +
-                                                                     " of " + quoted(record.name) + " is outside [0, 1]");
+                                                                     " of " + quoted(record.name) + " is outside [0, 1]", record.location);
                         }
                         for (const auto flag : record.flags) {
                             warning("io.ftp.unknown-import-flag", where(record.location) + ": unknown flag " + quoted(flag) +
                                                                        " on the import of " + quoted(record.name) +
-                                                                       " is kept as an attribute");
+                                                                       " is kept as an attribute", record.location);
                         }
                     }
                     if (event.initiator && std::isfinite(event.value) && event.value > 1.0) {
@@ -487,7 +495,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         warning("io.ftp.initiator-frequency", "initiating event " + quoted(event.name) + " at " +
                                                                    where(project_.imports[event.records.front()].location) +
                                                                    " has value " + formatValue(event.value) +
-                                                                   " > 1; it is kept as a frequency, not a probability");
+                                                                   " > 1; it is kept as a frequency, not a probability", project_.imports[event.records.front()].location);
                     }
                 }
             }
@@ -496,11 +504,11 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                 for (auto const &gate : project_.definitions) {
                     const auto count = gate.operands.size();
                     if (count == 0) {
-                        error("io.ftp.invalid-gate", "gate " + quoted(gate.name) + " at " + where(gate.location) + " has no operands");
+                        error("io.ftp.invalid-gate", "gate " + quoted(gate.name) + " at " + where(gate.location) + " has no operands", gate.location);
                     } else if (gate.kind == DefinitionKind::at_least && (gate.threshold == 0 || gate.threshold > count)) {
                         error("io.ftp.invalid-gate", "at-least-" + std::to_string(gate.threshold) + " gate " + quoted(gate.name) + " at " +
                                                          where(gate.location) + " has " + std::to_string(count) +
-                                                         " operands; k must be in [1, n]");
+                                                         " operands; k must be in [1, n]", gate.location);
                     }
                 }
             }
@@ -515,7 +523,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                         }
                         error("io.ftp.undefined-reference", "gate " + quoted(gate.name) + " at " + where(gate.location) +
                                                                 " references " + quoted(operand.name) +
-                                                                ", which is neither a gate nor an imported event");
+                                                                ", which is neither a gate nor an imported event", gate.location);
                     }
                 }
             }
@@ -533,7 +541,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
                             project_.targets.push_back(Target{.name = name, .index = event->second, .gate = false, .location = location});
                         } else {
                             error("io.ftp.undefined-process-target", where(location) + ": PROCESS target " + quoted(name) +
-                                                                         " is neither a gate nor an imported event");
+                                                                         " is neither a gate nor an imported event", location);
                         }
                     }
                     return;

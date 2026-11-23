@@ -14,7 +14,7 @@ from typing import Any, TextIO
 
 from . import __version__, _runtime
 from ._api import compile as compile_pcfb
-from ._api import exact, inspect, pcfb_to_nombrilo, run
+from ._api import _ftp_inspect_native, exact, inspect, pcfb_to_nombrilo, run
 
 ROOT_USAGE = (
     "Usage: fzb <command> [options]\n\n"
@@ -514,10 +514,38 @@ def _inspect_json(summary: Mapping[str, Any], out: TextIO) -> None:
     out.write("\n")
 
 
+def _inspect_ftp_command(args: argparse.Namespace) -> int:
+    for flag in ("validate", "exact"):
+        if getattr(args, flag):
+            print(f"fzb inspect: --{flag} applies to .pcfb input only", file=sys.stderr)
+            return 1
+    try:
+        document, text = _ftp_inspect_native(
+            list(args.input_file),
+            args.duplicate_import or "last",
+            args.complement_events or "atom",
+            args.counts_only,
+        )
+    except Exception as exc:
+        return _cli_error("inspect", exc)
+    if args.json:
+        sys.stdout.write(json.dumps(document, indent=2, ensure_ascii=False) + "\n")
+    else:
+        sys.stdout.write(text)
+    severities = [item["severity"] for item in document["diagnostics"]]
+    if "error" in severities or (args.strict and "warning" in severities):
+        return 1
+    return 0
+
+
 def cmd_inspect(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb inspect",
-        usage="fzb inspect model.pcfb [--validate] [--json] [--exact]",
+        usage=(
+            "fzb inspect model.pcfb [--validate] [--json] [--exact]\n"
+            "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
+            "[--complement-events atom|negation] [--strict] [--counts-only]"
+        ),
         description="fzb inspect options",
         add_help=False,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -530,12 +558,40 @@ def cmd_inspect(argv: Sequence[str]) -> int:
         action="store_true",
         help="exhaustive exact P(query) for small models (≤ 30 events)",
     )
-    parser.add_argument("input_file", nargs="?", help=".pcfb file")
+    parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
+    parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
+    parser.add_argument("--strict", action="store_true", help="FTP: exit 1 on warnings as well as errors")
+    parser.add_argument("--counts-only", action="store_true", help="FTP: print counts without element names")
+    parser.add_argument(
+        "input_file", nargs="*", help=".pcfb file, or CAFTA FTP files / a directory of *.ftp files"
+    )
     args = parser.parse_args(list(argv))
     if not args.input_file:
         print("fzb inspect: missing .pcfb file\n", file=sys.stderr)
         parser.print_help(sys.stderr)
         return 1
+
+    try:
+        kind = _runtime.native().classify_compile_inputs(list(args.input_file))
+    except Exception as exc:
+        return _cli_error("inspect", exc)
+    if kind == "mixed":
+        print("fzb inspect: FTP and non-FTP inputs cannot be combined", file=sys.stderr)
+        return 1
+    if kind == "ftp":
+        return _inspect_ftp_command(args)
+    for flag, value in (
+        ("duplicate-import", args.duplicate_import),
+        ("complement-events", args.complement_events),
+        ("strict", args.strict),
+        ("counts-only", args.counts_only),
+    ):
+        if value:
+            print(f"fzb inspect: --{flag} applies to CAFTA FTP input only", file=sys.stderr)
+            return 1
+    if len(args.input_file) > 1:
+        parser.error("too many positional options have been specified on the command line")
+    args.input_file = args.input_file[0]
 
     try:
         summary = inspect(args.input_file)

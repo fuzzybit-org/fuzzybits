@@ -3,8 +3,10 @@
 # link it next to the MEF path in fuzzybits_compile.
 add_library(fuzzybits_compile_ftp STATIC
   compile.cpp
+  inspect.cpp
   json.cpp
   compile.h
+  inspect.h
   json.h
 )
 set_target_properties(fuzzybits_compile_ftp PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -24,7 +26,7 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_compile_ftp_tests
-    SOURCES tests/compile_tests.cc tests/json_tests.cc
+    SOURCES tests/compile_tests.cc tests/json_tests.cc tests/inspect_tests.cc
     LINK_LIBRARIES fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
   )
 
@@ -32,7 +34,7 @@ if(BUILD_TESTING)
   if(NOT SKBUILD)
     fuzzybits_add_imported_test(
       TARGET fuzzybits_compile_ftp_cli_tests
-      SOURCES tests/cli_tests.cc
+      SOURCES tests/cli_tests.cc tests/inspect_cli_tests.cc
       LINK_LIBRARIES fuzzybits_compile_ftp
       ARGS "~[mc]"
     )

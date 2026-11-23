@@ -1,10 +1,12 @@
 add_library(fuzzybits_io_ftp STATIC
   read.cpp
+  summary.cpp
   write.cpp
   detail/parser.cpp
   detail/pra_builder.cpp
   detail/writer.cpp
   descriptor.h
+  summary.h
   detail/model.h
 )
 set_target_properties(fuzzybits_io_ftp PROPERTIES POSITION_INDEPENDENT_CODE ON)

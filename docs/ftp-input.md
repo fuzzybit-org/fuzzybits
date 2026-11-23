@@ -134,9 +134,79 @@ name and gate nodes their gate name where an output node still computes them. Na
 projection is composed with the pass node maps (`compose_write_options`), so a gate eliminated onto another node, a
 folded constant or an absorbed child loses its name and nothing else does.
 
+## `fzb inspect` and `fuzzybits.read_project`
+
+```text
+fzb inspect model.ftp
+fzb inspect top.ftp systems.ftp imports.ftp --json
+fzb inspect project_dir/ --duplicate-import first --strict
+fzb inspect project_dir/ --json --counts-only
+```
+
+```python
+doc = fuzzybits.read_project("project_dir", duplicate_import="last", complement_events="atom")
+```
+
+`fzb inspect` runs the project reader only: no lowering, no passes, no `.pcfb`. It takes the same inputs as
+`fzb compile` (FTP detection, directories, mixed input rejected), so a project can be validated and what the reader
+understood reviewed before compiling it. `.pcfb` inputs keep their behaviour (`--validate`, `--exact`); those two flags
+are rejected for FTP input, and the FTP flags below for `.pcfb` input.
+
+| Flag | Meaning |
+|---|---|
+| `--json` | print the content below as JSON (text otherwise, with the same fields) |
+| `--duplicate-import error\|first\|last` | as for `fzb compile` (default `last`) |
+| `--complement-events atom\|negation` | as for `fzb compile` (default `atom`) |
+| `--strict` | exit 1 on warnings as well as errors |
+| `--counts-only` | no element names (see below) |
+
+Exit status: 0 without errors, 1 with errors (also when `--strict` and there are warnings). A usage or option error
+prints `fzb inspect: ...` to stderr and exits 1. Reader diagnostics are part of the output, on stdout.
+
+The JSON document (`fuzzybits.read_project` returns the same content as a dict):
+
+| Field | Content |
+|---|---|
+| `schema_version`, `status`, `counts_only` | `1`; `ok` (no errors) or `error`; whether `--counts-only` was given |
+| `files` | the files read, in project order (directories expanded, sorted) |
+| `diagnostics` | `{id, severity, file, line, message}`; severity is `error`, `warning` or `note`; `file` and `line` are `null` when the diagnostic names no location |
+| `structure` | counts below; `null` when the project has errors |
+| `conventions` | `LIMIT` (the text of the line), `ftp.negation`, `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
+
+`structure` uses the keys of `structure` in the conformance `expected.json` files, plus `default_targets` (a top-level
+key of those files), `house_events`, `complemented_edges_to_gates` and `literal_operands`:
+
+| Key | Content |
+|---|---|
+| `gates`, `gates_by_kind` (`or`, `and`, `atleast`), `atleast_k_of_n` (`"k/n"` -> gates) | gates and their kinds and cardinality bounds |
+| `edges`, `single_input_gates`, `max_fan_in`, `depth` | operand count, gates with one operand, widest gate, longest gate chain |
+| `basic_events`, `house_events`, `import_lines` | events, and `IMPORT` records (more than one per event when imported repeatedly) |
+| `initiator_tagged_events`, `initiator_tagged_events_with_p_1` | initiating events, and those with value 1 |
+| `events_p_eq_1`, `events_p_eq_0`, `events_0_lt_p_lt_2^-32` | basic events by value |
+| `complemented_edges`, `complemented_edges_to_basic_events`, `complemented_edges_to_gates` | complemented operands, by what they reference |
+| `literal_operands` | complemented basic-event operands marked as atomic literals (`--complement-events atom`) |
+| `roots` | gates no other gate references |
+| `process_targets`, `default_targets` | the `PROCESS` names as declared (empty when there are none), and the model's targets: those names, or the root gates (with `io.ftp.missing-process`) |
+| `limit` | the `LIMIT` value, `null` when absent |
+| `names_not_valid_xml_ncname` | element names that are not XML NCNames |
+| `duplicate_imports` | per repeated event, its records `{file, line, chosen}` in project order; the chosen record (the one the policy kept) also has `value` |
+
+Under `--duplicate-import error` a repeated import is an error, so `structure` is `null`; the diagnostic names the
+records. `--duplicate-import` and `--complement-events` change `structure` only through those counts.
+
+`--counts-only` is for logs of models whose identifiers must not be published. No element name appears: diagnostics
+keep `id`, `severity` and `file`/`line` and drop `message` (messages quote names); `roots`, `process_targets`,
+`default_targets`, `duplicate_imports` and `header_lines` become counts. Files are still listed. Python: `read_project(..., counts_only=True)`.
+
+Diagnostic ids are the reader's `io.ftp.*` ids (see below; they match the codes in the conformance fixtures) and
+`ir.pra.*` model validation ids. `file` and `line` are the source position the reader recorded for the diagnostic. Python:
+`read_project` raises `fuzzybits.FtpProjectError` (a `RuntimeError`) when the project has errors, with the diagnostics (a
+list of dicts as above) in its `diagnostics` attribute; warnings are returned, not raised. Invalid `duplicate_import` or `complement_events` values
+raise `ValueError`.
+
 ## Diagnostics
 
-Every diagnostic has a stable id; the report lists all of them with severity.
+Every diagnostic has a stable id; the report and `fzb inspect` list them with severity.
 
 | Id | Meaning |
 |---|---|
@@ -166,5 +236,5 @@ values of every fixture (`src/compile/ftp/tests/cli_tests.cc`).
 
 - Probabilities are literals; parameters, rates and distributions are not part of FTP.
 - Hull queries are written but not yet estimated (#183); hull targets with marked literals wait for literal atoms in pcfb.
-- `fzb inspect` for FTP projects (#201) and `--exact` for hull queries (#202) are separate.
+- `fzb inspect --exact` for hull queries (#202) is separate.
 - `--config` reads JSON only.

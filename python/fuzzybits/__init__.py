@@ -7,6 +7,7 @@ Public surface:
 - :func:`list_devices`
 - :func:`probability`
 - :func:`compile` / :func:`compile_file` / :func:`inspect` / :func:`exact` / :func:`run`
+- :func:`read_project` (CAFTA FTP diagnostics, structure and conventions, without compiling)
 - :func:`nombrilo_to_pcfb` / :func:`pcfb_to_nombrilo`
 - :class:`Session` (streaming per-pass popcounts over a ``.pcfb``)
 - :class:`ProgressSnapshot` / :class:`QueryState` (typed ``on_progress=`` payloads)
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 from . import _runtime
 from ._api import (
+    FtpProjectError,
     NodeTally,
     PassResult,
     ProbabilityEstimate,
@@ -35,6 +37,7 @@ from ._api import (
     nombrilo_to_pcfb,
     pcfb_to_nombrilo,
     probability,
+    read_project,
     run,
 )
 from ._runtime import (
@@ -53,6 +56,7 @@ from ._runtime import (
 __version__ = "0.18.6"
 
 __all__ = [
+    "FtpProjectError",
     "NodeTally",
     "PassResult",
     "ProbabilityEstimate",
@@ -79,6 +83,7 @@ __all__ = [
     "nombrilo_to_pcfb",
     "pcfb_to_nombrilo",
     "probability",
+    "read_project",
     "run",
 ]
 
