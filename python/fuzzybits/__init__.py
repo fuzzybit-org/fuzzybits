@@ -53,7 +53,7 @@ from ._runtime import (
     native,
 )
 
-__version__ = "0.18.6"
+__version__ = "0.18.7"
 
 __all__ = [
     "FtpProjectError",
