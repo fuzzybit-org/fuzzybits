@@ -51,8 +51,9 @@ probability of 1. Unknown import flags are kept with a warning.
 
 | Flag | Meaning | Default |
 |---|---|---|
-| `--target NAME` (repeatable) | PROCESS target, gate or basic event, one query each, in the given order | every PROCESS target |
-| `--watch NAME` (repeatable) | extra targets with the watch role (written as ordinary queries) | none |
+| `--target NAME\|@FILE` (repeatable) | PROCESS target, gate or basic event, one query each, in the given order; `@FILE` holds one name per line | every PROCESS target |
+| `--watch NAME\|@FILE` (repeatable) | extra targets with the watch role (written as ordinary queries) | none |
+| `--no-ccf` | accepted and ignored: FTP projects have no common-cause groups | |
 | `--override NAME=0\|1` (repeatable) | the gate, basic event or house event becomes a constant; its operands leave the cone | none |
 | `--duplicate-import error\|first\|last` | duplicate `IMPORT` records | `last` |
 | `--complement-events atom\|negation` | `atom`: `-EVENT` is a marked literal; `negation`: an ordinary complement | `atom` |

@@ -131,6 +131,32 @@ TEST_CASE("compile.options records effective -c/--no-kn", "[compile][metadata]")
   REQUIRE(found);
 }
 
+TEST_CASE("compile.options and compile.ccf record whether CCF groups were expanded", "[compile][metadata][ccf]") {
+  const auto model = repo_input("tests/input/core/beta_factor_ccf.xml");
+  const auto metadata = [&](bool ccf) {
+    fuzzybits::compile::Options opt;
+    opt.ccf = ccf;
+    auto compiled = fuzzybits::compile::compile_files({model}, opt);
+    REQUIRE(compiled);
+    auto circuit = pcfb::io::from_bytes(compiled->bytes);
+    REQUIRE(circuit);
+    std::map<std::string, std::string> out;
+    for (const auto *kv : *circuit->get()->metadata()) {
+      if (kv && kv->key() && kv->value_as_StringValue()) {
+        out[kv->key()->str()] = kv->value_as_StringValue()->value()->str();
+      }
+    }
+    return std::make_pair(out, sample_probabilities(*circuit).size());
+  };
+  fuzzybits::compile::Options defaults;
+  REQUIRE(defaults.ccf);
+  const auto [on, on_samples] = metadata(true);
+  const auto [off, off_samples] = metadata(false);
+  REQUIRE(on.at("compile.options").find("--no-ccf") == std::string::npos);
+  REQUIRE(off.at("compile.options").find("--no-ccf") != std::string::npos);
+  REQUIRE(on_samples > off_samples);
+}
+
 TEST_CASE("compile writes fuzzybits origins and compile.level metadata", "[compile][metadata]") {
   fuzzybits::compile::Options opt;
   opt.compilation_level = 2;

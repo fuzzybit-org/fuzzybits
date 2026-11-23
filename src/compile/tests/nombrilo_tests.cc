@@ -352,6 +352,23 @@ TEST_CASE("pcfb NAND/NOR/XNOR/NOT/NO_OP/ATMOST/EXACTLY lower into nombrilo", "[n
   REQUIRE(p1 == Catch::Approx(p0).margin(1e-12));
 }
 
+TEST_CASE("compile_files rejects watch targets for nombrilo input instead of dropping them", "[nombrilo][watch]") {
+  auto c = make_circuit(1, {0}, {{lit(1)}}, {{"x", lit(1)}, {"r1", lit(2)}}, std::vector<double>{0.01});
+  const auto bytes = must_write(c);
+  const auto path = std::filesystem::temp_directory_path() / "nombrilo_watch_fixture.safetensors";
+  {
+    std::ofstream o(path, std::ios::binary);
+    o.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+  }
+  fuzzybits::compile::Options options;
+  REQUIRE(fuzzybits::compile::compile_files({path.string()}, options));
+  options.watch = {"x"};
+  auto rejected = fuzzybits::compile::compile_files({path.string()}, options);
+  REQUIRE_FALSE(rejected);
+  REQUIRE(rejected.error().message.find("does not take --watch") != std::string::npos);
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("nombrilo metadata records source format and no compile.* keys", "[nombrilo]") {
   auto c = make_circuit(1, {0}, {{lit(1)}}, {{"x", lit(1)}, {"r1", lit(2)}},
                         std::vector<double>{0.01});

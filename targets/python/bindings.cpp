@@ -709,6 +709,7 @@ struct PyProgressCallback {
 
 scram::core::Settings settings_from_options(const py::dict &options, py::object on_progress) {
     scram::core::Settings settings;
+    settings.ccf_analysis(true);
     settings.approximation(scram::core::Approximation::kMonteCarlo);
     settings.probability_analysis(true);
 

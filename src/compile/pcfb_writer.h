@@ -31,7 +31,7 @@ struct Options {
   bool recognize_atleast_groups = true;
   bool recognize_xor_groups = true;
   bool keep_null_gates = false;
-  bool ccf = false;
+  bool ccf = true;
   bool allow_extern = false;
   std::optional<std::string> target;
   /// Extra MEF gate / basic-event names (or PDAG indices) that become additional

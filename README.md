@@ -87,10 +87,12 @@ CAFTA FTP projects compile the same way, from files or a directory:
 `--negation boolean` writes Boolean queries, which `fzb run` samples. Without it, FTP input is
 compiled to monotone-hull queries, which `fzb run` does not sample yet; see docs/ftp-input.md.
 
-Add --ccf to fzb compile to expand common-cause failure groups,
---backend cuda or --backend metal to fzb run to use an NVIDIA or
-Apple Silicon GPU (--backend omp for the CPU), or --json for
-machine-readable output. fzb --help lists all options.
+fzb compile expands common-cause failure groups by default; add --no-ccf
+to leave them out. --target and --watch repeat, and --target @FILE reads
+one name per line (OpenPSA/MEF and nombrilo input take one target). Add
+--backend cuda or --backend metal to fzb run to use an NVIDIA or Apple
+Silicon GPU (--backend omp for the CPU), or --json for machine-readable
+output. fzb --help lists all options.
 
 
 Web UI
@@ -230,7 +232,7 @@ Limits
   repeated runs are not independent replications.
 - Basic events are sampled independently. Dependence comes only from
   events shared in the logic and from common-cause groups expanded
-  with --ccf.
+  unless --no-ccf is given.
 
 
 Status
@@ -240,7 +242,7 @@ Status
 |-----------------------------------------------------------------|-----------|
 | Fault-tree top event, or any gate with --target                 | yes       |
 | k-of-n and XOR gates without expansion                          | yes; --no-kn, --no-xor expand them |
-| Common-cause groups: beta-factor, MGL, alpha-factor, phi-factor | yes, with --ccf |
+| Common-cause groups: beta-factor, MGL, alpha-factor, phi-factor | yes, expanded by default; --no-ccf disables |
 | CPU (OpenMP), NVIDIA GPU (CUDA) and Apple Silicon GPU (Metal)   | yes; Metal with several passes per step: [#171](https://github.com/fuzzybit-org/fuzzybits/issues/171) |
 | Event-tree sequences and end states in one pass                 | not yet ([#92](https://github.com/fuzzybit-org/fuzzybits/issues/92)) |
 | Probabilities of intermediate gates                             | not yet ([#96](https://github.com/fuzzybit-org/fuzzybits/issues/96)) |

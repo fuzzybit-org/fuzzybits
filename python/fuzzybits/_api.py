@@ -329,6 +329,15 @@ def _as_names(value: Any, what: str) -> list[str]:
     return [str(item) for item in value]
 
 
+def _compile_watch(value: Any) -> list[str]:
+    """``watch`` of :func:`compile`: a name, a PDAG index or a sequence of them; names are not split on commas."""
+    if value is None or value is False or value is True:
+        return []
+    if isinstance(value, int):
+        return [str(value)]
+    return _as_names(value, "watch")
+
+
 def _compile_ftp(
     files: list[str],
     *,
@@ -355,7 +364,7 @@ def _compile_ftp(
     opts: dict[str, Any] = {}
     if target is not None:
         opts["target"] = _as_names(target, "target")
-    names = _as_watch(watch)
+    names = _compile_watch(watch)
     if names:
         opts["watch"] = names
     if overrides is not None:
@@ -403,6 +412,7 @@ def compile(  # noqa: A001 - public API name
     *,
     pdag_c: int | None = None,
     no_kn: bool = True,
+    ccf: bool = True,
     watch: Any = None,
     target: str | Sequence[str] | None = None,
     overrides: Mapping[str, bool | int] | Sequence[str] | None = None,
@@ -437,13 +447,21 @@ def compile(  # noqa: A001 - public API name
         or ``1`` (default; the ``ir::pc`` passes).
     no_kn:
         MEF only: match the CLI ``--no-kn`` flag (expand k-out-of-n to AND/OR).
+    ccf:
+        MEF: expand common-cause failure groups (default ``True``; ``False`` is
+        ``fzb compile --no-ccf``). Recorded in the ``compile.options`` and
+        ``compile.ccf`` metadata. FTP projects have no such groups: the argument
+        is accepted and ignored.
     watch:
-        Extra gate / event names (MEF also PDAG indices) emitted as additional
-        queries so :class:`Session` tallies them. Boolean ``True``/``False`` is
-        ignored (that is ``watch_mode``).
+        A name or a sequence of names (MEF also PDAG indices) emitted as
+        additional queries so :class:`Session` tallies them. Names are not split
+        on commas. Boolean ``True``/``False`` is ignored (that is ``watch_mode``).
+        nombrilo input takes none.
     target:
-        MEF: the top gate name. FTP: a PROCESS target, gate or basic event name,
-        or a sequence of them (default: every PROCESS target).
+        A name or a sequence of names. MEF and nombrilo: the top gate, one name
+        (a sequence of several raises :class:`ValueError`). FTP: PROCESS
+        targets, gates or basic events, one query each in the given order
+        (default: every PROCESS target).
     overrides:
         FTP: ``{name: True | False}`` (or ``["NAME=1", ...]``) forcing elements
         to constants under every negation semantics.
@@ -537,16 +555,23 @@ def compile(  # noqa: A001 - public API name
         "compilation_level": 2 if pdag_c is None else pdag_c,
         "no_kn": no_kn,
     }
-    if target is not None:
-        if not isinstance(target, str):
-            raise ValueError("MEF input takes one target")
-        opts["target"] = target
+    targets = [] if target is None else _as_names(target, "target")
+    if len(targets) > 1:
+        raise ValueError("MEF and nombrilo inputs take one target; several targets need the new MEF reader (#148)")
+    if targets:
+        opts["target"] = targets[0]
+    opts["ccf"] = ccf
     opts.update(options)
-    names = _as_watch(watch)
+    names = _compile_watch(watch)
     if not names:
-        names = _as_watch(opts.pop("watch", None))
+        names = _compile_watch(opts.pop("watch", None))
     else:
         opts.pop("watch", None)
+    seen: set[str] = set()
+    for name in [*targets, *names]:
+        if name in seen:
+            raise ValueError(f"target '{name}' is requested more than once")
+        seen.add(name)
     if names:
         opts["watch"] = names
     _flush_progress_streams()

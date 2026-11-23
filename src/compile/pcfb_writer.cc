@@ -404,8 +404,8 @@ std::string Options::to_cli_string() const {
   if (keep_null_gates) {
     os << " --keep-null";
   }
-  if (ccf) {
-    os << " --ccf";
+  if (!ccf) {
+    os << " --no-ccf";
   }
   return os.str();
 }
@@ -835,6 +835,10 @@ pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files
   if (!input_files.empty() && looks_like_nombrilo_file(input_files.front())) {
     if (input_files.size() != 1) {
       return std::unexpected(compile_error("nombrilo.circuit input must be a single file"));
+    }
+    if (!options.watch.empty()) {
+      return std::unexpected(
+          compile_error("nombrilo.circuit input does not take --watch; watch targets need the new MEF reader (#148)"));
     }
     compile_progress progress(options);
     prog::finish_guard guard([&progress] { progress.finish_interrupted(); });
