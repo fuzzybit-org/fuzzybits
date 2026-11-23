@@ -75,6 +75,7 @@ position `i` of the file the writer sets
 | `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
 | `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
 | `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+| `compile.complement_tensors` | bytes: little-endian `uint32` tensor ids in ascending order, the unnamed `NOT` tensors the writer created for sources used in both polarities; only written when there is at least one |
 | `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
@@ -175,7 +176,8 @@ in `pcfb::validate`.
 | `AND` `OR` `XOR` `NAND` `NOR` `XNOR` `NOT` | the gate of the same name; `inverted_inputs` become complemented edges |
 | `ATLEAST` / `ATMOST` / `EXACTLY` (`k`) | cardinality `[k, n]` / `[0, k]` / `[k, k]` |
 | `AND(ATLEAST(k), ATMOST(m))` over the same operands | one cardinality `[k, m]`; the two unnamed tensors have no node |
-| unnamed `NOT` that only feeds operators listing its source positively | complemented edge (the writer's tensor for a source used in both polarities) |
+| `NOT` tensor listed in `compile.complement_tensors` | complemented edge in the position of the tensor in `inputs`; no node |
+| every other `NOT` | `not_gate` node (this includes all NOTs of files without the key, such as other writers' files) |
 | `NO_OP` | one-operand AND (`io.pcfb.no-op-as-and`) |
 | `Query` | target on the tensor's node; consecutive queries with one tensor and one name and distinct kinds are one target with several kinds |
 
@@ -197,6 +199,8 @@ recover the numbering a writer had:
 
 A node's operands are its `inputs` in file order followed by its `inverted_inputs` in file order.
 A NOT tensor folded into a complemented edge takes the position of that tensor in `inputs`.
+Folding is exact and never inferred: only the tensors listed in `compile.complement_tensors` fold, so a
+file from another writer reads every `NOT` as a node.
 
 Rewriting a read file therefore gives an equivalent file, not an identical one: the same
 structure, probabilities, names, kinds, roles and event ids, with operators in the writer's own
@@ -221,7 +225,7 @@ node ids as such.
 | `io.pcfb.sample-source-dropped` | warning | a `SAMPLE` source of `COLLAPSED_MODULE` or `HOUSE_EVENT` reads as a basic event |
 | `io.pcfb.confidence-ignored` | warning | `Query.confidence` cannot be held |
 | `io.pcfb.event-ids-renumbered` | warning | event ids are not exactly `1..B`; the read circuit numbers them by ascending file id |
-| `io.pcfb.invalid-metadata` | warning | an interpreted metadata entry has the wrong type or range, or an unknown role; it is ignored (the target reads as primary) |
+| `io.pcfb.invalid-metadata` | warning | an interpreted metadata entry has the wrong type or range, an unknown role, or a malformed or unusable `compile.complement_tensors` entry; it is ignored (a target reads as primary, a listed tensor that is not a NOT tensor the writer could have created reads as a NOT gate) |
 | `io.pcfb.quantification-conflict` | warning | queries on one target carry different `compile.query.<i>.*` values |
 | `io.pcfb.no-op-as-and` | note | `NO_OP` read as a one-operand AND |
 
