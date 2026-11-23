@@ -329,6 +329,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                                 return false;
                             }
                             negated = *added;
+                            complementTensors_.push_back(*added);
                         }
                         inputs_.push_back(negated);
                     }
@@ -480,6 +481,16 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 if (ok && !options_.compile_options.empty()) {
                     ok = setMetadata("compile.options", builder_.set("compile.options", std::string_view{options_.compile_options}));
                 }
+                if (ok && !complementTensors_.empty()) {
+                    std::vector<std::byte> packed;
+                    packed.reserve(complementTensors_.size() * sizeof(std::uint32_t));
+                    for (const auto tensor : complementTensors_) {
+                        for (unsigned shift = 0; shift < 32; shift += 8) {
+                            packed.push_back(static_cast<std::byte>((tensor >> shift) & 0xFFU));
+                        }
+                    }
+                    ok = setMetadata("compile.complement_tensors", builder_.set("compile.complement_tensors", std::span<std::byte const>{packed}));
+                }
                 return ok;
             }
 
@@ -490,6 +501,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             std::vector<std::uint32_t> tensorByNode_;
             std::vector<std::uint32_t> eventIdByNode_;
             std::vector<std::uint32_t> notTensorByNode_;
+            // Tensors of the NOT operators created to keep inputs and inverted_inputs disjoint, ascending.
+            std::vector<std::uint32_t> complementTensors_;
             std::vector<std::uint32_t> positiveEpoch_;
             std::vector<std::uint32_t> inputs_;
             std::vector<std::uint32_t> inverted_;
