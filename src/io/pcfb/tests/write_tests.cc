@@ -144,13 +144,6 @@ namespace {
         }
     }
 
-    [[nodiscard]] auto seal(pc::builder &&builder) -> pc::circuit {
-        auto sealed = std::move(builder).seal();
-        INFO(diagnosticsText(sealed.diagnostics));
-        REQUIRE(sealed.ok());
-        return sealed.output;
-    }
-
 } // namespace
 
 TEST_CASE("pcfb writer descriptor advertises the pcfb format and its options", "[io][pcfb]") {
@@ -203,12 +196,11 @@ TEST_CASE("pcfb writer maps every PC opcode", "[io][pcfb]") {
     (void)builder.add_target(top);
     (void)builder.add_target(atLeast, pc::observable_role::watch);
     (void)builder.add_target(a, pc::observable_role::projection_anchor);
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     auto written = fuzzybits::io::backend::fuzzybits::pcfb::write(model.to_handle(), {});
     INFO(diagnosticsText(written.diagnostics()));
     REQUIRE(written);
-    REQUIRE(hasCode(written.diagnostics(), "io.pcfb.target-role"));
     const auto output = std::move(written).value();
     const auto circuit = view(output);
     requireWriterInvariants(model, output, circuit);
@@ -281,7 +273,7 @@ TEST_CASE("pcfb writer lowers cardinality(low, high) by range", "[io][pcfb]") {
         range.node = builder.add_cardinality(range.low, range.high, std::span<edge const>{operands});
         (void)builder.add_target(range.node);
     }
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     writer::write_options options;
     options.node_names[ranges.back().node] = "RANGE";
@@ -299,9 +291,7 @@ TEST_CASE("pcfb writer lowers cardinality(low, high) by range", "[io][pcfb]") {
         REQUIRE(indices(op->inverted_inputs()) == inverted);
     };
 
-    auto const *ones = opAt(sub, output.tensor_by_node[ranges[0].node.raw()]);
-    REQUIRE(ones->opcode() == ::pcfb::OpCode::BITWISE_ONES);
-    REQUIRE(indices(ones->inputs()).empty());
+    requireKofN(opAt(sub, output.tensor_by_node[ranges[0].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 0);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[1].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 2);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[2].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 4);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[3].node.raw()]), ::pcfb::OpCode::BITWISE_ATMOST, 2);
@@ -333,7 +323,7 @@ TEST_CASE("pcfb writer reads mixed-polarity operands through one NOT per source"
     for (const auto node : {andGate, orGate, xorGate, range, duplicate}) {
         (void)builder.add_target(node);
     }
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
     const auto output = requireWrite(model);
     const auto circuit = view(output);
     requireWriterInvariants(model, output, circuit);
@@ -364,7 +354,7 @@ TEST_CASE("pcfb writer assigns event ids by basic-event node id, not emission or
     const auto third = builder.add_basic_event(builder.add_literal_probability(0.4));
     (void)builder.add_target(top);
     (void)builder.add_target(other);
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     auto const order = writer::detail::emission_order(writer::detail::graph_view::of(model));
     REQUIRE(order);
@@ -385,7 +375,7 @@ TEST_CASE("pcfb writer keeps basic events that share a probability source indepe
     const auto left = builder.add_basic_event(source);
     const auto right = builder.add_basic_event(source);
     (void)builder.add_target(builder.add_and({edge{.source = left}, edge{.source = right}}));
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
     const auto output = requireWrite(model);
     const auto circuit = view(output);
     requireWriterInvariants(model, output, circuit);
@@ -401,7 +391,7 @@ TEST_CASE("pcfb writer takes names and metadata from options", "[io][pcfb]") {
     const auto other = builder.add_or({edge{.source = pump}, edge{.source = valve}});
     const auto named = builder.add_target(gate);
     (void)builder.add_target(other);
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     writer::write_options options;
     options.node_names[pump] = "PUMP-A";
@@ -470,7 +460,7 @@ TEST_CASE("pcfb writer rejects parameter and unsupported probabilities", "[io][p
     const auto unsupported = builder.add_basic_event(builder.add_unsupported_probability("lognormal deviate"));
     const auto literal = builder.add_basic_event(builder.add_literal_probability(0.5));
     (void)builder.add_target(builder.add_or({edge{.source = parameter}, edge{.source = unsupported}, edge{.source = literal}}));
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     writer::write_options options;
     options.node_names[parameter] = "PARAM";
@@ -488,14 +478,14 @@ TEST_CASE("pcfb writer rejects parameter and unsupported probabilities", "[io][p
 TEST_CASE("pcfb writer rejects circuits without targets and names for unknown ids", "[io][pcfb]") {
     pc::builder untargeted;
     (void)untargeted.add_basic_event(untargeted.add_literal_probability(0.5));
-    const auto noTargets = writer::write(seal(std::move(untargeted)).to_handle(), {});
+    const auto noTargets = writer::write(sealed(std::move(untargeted)).to_handle(), {});
     REQUIRE_FALSE(noTargets);
     REQUIRE(hasCode(noTargets.diagnostics(), "io.pcfb.no-targets"));
 
     pc::builder builder;
     const auto event = builder.add_basic_event(builder.add_literal_probability(0.5));
     (void)builder.add_target(event);
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     writer::write_options badNode;
     badNode.node_names[pc::bool_node_id(7)] = "GHOST";
@@ -512,7 +502,7 @@ TEST_CASE("pcfb stream writer reads scalar options from the request", "[io][pcfb
     pc::builder builder;
     const auto event = builder.add_basic_event(builder.add_literal_probability(0.5));
     (void)builder.add_target(event);
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
 
     fuzzybits::io::write_request request{.format = fuzzybits::io::formats::pcfb()};
     request.options.set(writer::model_name_option(), std::string("streamed"));
@@ -631,7 +621,7 @@ TEST_CASE("pcfb writer handles a deep top-down circuit", "[io][pcfb]") {
     }
     (void)builder.add_basic_event(builder.add_literal_probability(0.5));
     (void)builder.add_target(pc::bool_node_id(0));
-    const auto model = seal(std::move(builder));
+    const auto model = sealed(std::move(builder));
     const auto output = requireWrite(model);
     const auto circuit = view(output);
     requireWriterInvariants(model, output, circuit);

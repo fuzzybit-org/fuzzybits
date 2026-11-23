@@ -1,10 +1,12 @@
-# ir::pc → .pcfb core-1.1 through the pinned pcfb::builder. SCRAM-free: the
+# ir::pc ↔ .pcfb core-1.1 through the pinned pcfb::builder and reader. SCRAM-free: the
 # library links only the IR, the API types and pcfb (cmake/FuzzybitsPcfb.cmake
 # defines that target after src/io; link names resolve at generate time).
 add_library(fuzzybits_io_pcfb STATIC
   write.cpp
+  read.cpp
   detail/order.cpp
   detail/writer.cpp
+  detail/reader.cpp
   descriptor.h
   detail/model.h
 )
@@ -32,8 +34,14 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_pcfb_tests
-    SOURCES tests/write_tests.cc tests/kind_tests.cc
+    SOURCES tests/write_tests.cc tests/kind_tests.cc tests/read_tests.cc
     LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
+  )
+
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_io_pcfb_read_scale_tests
+    SOURCES tests/read_scale_tests.cc
+    LINK_LIBRARIES fuzzybits_io_pcfb pcfb
   )
 
   # Query-kind guard (#217): header-only check plus the exact evaluator; needs only pcfb.

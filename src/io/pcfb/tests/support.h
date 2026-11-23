@@ -11,6 +11,7 @@
 #include "ir/pc/op_code.h"
 #include "ir/pc/probability.h"
 #include "ir/pc/target.h"
+#include "portable_random.h"
 
 #include <algorithm>
 #include <array>
@@ -206,11 +207,16 @@ namespace pcfb_writer_test {
         std::size_t sixteen_event_circuits = 0;
     };
 
-    // Random PC circuit with 1..16 basic events, every opcode, complements, every
+    struct RandomSize final {
+        std::uint32_t max_events = 16;
+        std::uint32_t max_gates = 30;
+    };
+
+    // Random PC circuit with 1..16 basic events (by default), every opcode, complements, every
     // cardinality form, constants, house events, shared nodes and shared
     // probability sources. Node ids are a random permutation of a topological
     // order, so most circuits are not topologically numbered.
-    [[nodiscard]] inline auto randomCircuit(std::mt19937_64 &rng, Coverage &coverage) -> pc::finalize_result {
+    [[nodiscard]] inline auto randomCircuit(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {}) -> pc::finalize_result {
         struct Logical final {
             pc::op_code code = pc::op_code::basic_event;
             std::vector<std::pair<std::uint32_t, bool>> operands;
@@ -220,14 +226,14 @@ namespace pcfb_writer_test {
             std::uint32_t source = 0;
         };
         const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-            return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
+            return static_cast<std::uint32_t>(pcfb_test_random::uniform(rng, low, high));
         };
-        const auto chance = [&](const double p) { return std::bernoulli_distribution(p)(rng); };
+        const auto chance = [&](const double p) { return pcfb_test_random::chance(rng, p); };
 
-        const auto eventCount = uniform(1, 16);
+        const auto eventCount = uniform(1, size.max_events);
         const auto constantCount = uniform(0, 2);
         const auto houseCount = uniform(0, 2);
-        const auto gateCount = uniform(1, 30);
+        const auto gateCount = uniform(1, size.max_gates);
         coverage.sixteen_event_circuits += eventCount == 16 ? 1 : 0;
 
         std::vector<double> probabilities;
@@ -238,8 +244,8 @@ namespace pcfb_writer_test {
                 node.source = uniform(0, static_cast<std::uint32_t>(probabilities.size()) - 1);
                 ++coverage.shared_probability_sources;
             } else {
-                const auto draw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
-                double p = std::uniform_real_distribution<double>(0.01, 0.99)(rng);
+                const auto draw = pcfb_test_random::unit(rng);
+                double p = pcfb_test_random::real(rng, 0.01, 0.99);
                 if (draw < 0.05) {
                     p = 0.0;
                 } else if (draw < 0.1) {
@@ -247,7 +253,7 @@ namespace pcfb_writer_test {
                 } else if (draw < 0.2) {
                     p = 0.5;
                 } else if (draw < 0.3) {
-                    p = 1.0e-6 * std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+                    p = 1.0e-6 * pcfb_test_random::unit(rng);
                 }
                 coverage.extreme_probabilities += p == 0.0 || p == 1.0 ? 1 : 0;
                 node.source = static_cast<std::uint32_t>(probabilities.size());
@@ -258,7 +264,7 @@ namespace pcfb_writer_test {
         for (std::uint32_t index = 0; index < constantCount + houseCount; ++index) {
             nodes.push_back(Logical{.code = index < constantCount ? pc::op_code::constant : pc::op_code::house_event, .value = chance(0.5)});
         }
-        std::ranges::shuffle(nodes, rng);
+        pcfb_test_random::shuffle(std::span{nodes}, rng);
         const auto leafCount = static_cast<std::uint32_t>(nodes.size());
 
         constexpr std::array gateCodes{
@@ -328,7 +334,7 @@ namespace pcfb_writer_test {
         std::vector<std::uint32_t> storage(nodeCount);
         std::iota(storage.begin(), storage.end(), 0U);
         if (chance(0.75)) {
-            std::ranges::shuffle(storage, rng);
+            pcfb_test_random::shuffle(std::span{storage}, rng);
         }
         std::vector<std::uint32_t> logicalAt(nodeCount);
         for (std::uint32_t logical = 0; logical < nodeCount; ++logical) {
@@ -384,6 +390,109 @@ namespace pcfb_writer_test {
             (void)builder.add_target(pc::bool_node_id(storage[logical]), roles[uniform(0, static_cast<std::uint32_t>(roles.size()) - 1)]);
         }
         return std::move(builder).seal();
+    }
+
+    namespace pcfb_io = fuzzybits::io::backend::fuzzybits::pcfb;
+
+    [[nodiscard]] inline auto sealed(pc::builder &&builder) -> pc::circuit {
+        auto result = std::move(builder).seal();
+        INFO(diagnosticsText(result.diagnostics));
+        REQUIRE(result.ok());
+        return std::move(result.output);
+    }
+
+    // Three targets over events a, b, c: a AND b, b OR c, and the event a.
+    [[nodiscard]] inline auto threeTargetModel() -> pc::circuit {
+        pc::builder builder;
+        const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+        const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+        const auto c = builder.add_basic_event(builder.add_literal_probability(0.3));
+        const auto both = builder.add_and({pc::edge_ref{.source = a}, pc::edge_ref{.source = b}});
+        const auto either = builder.add_or({pc::edge_ref{.source = b}, pc::edge_ref{.source = c}});
+        (void)builder.add_target(both);
+        (void)builder.add_target(either);
+        (void)builder.add_target(a);
+        return sealed(std::move(builder));
+    }
+
+    [[nodiscard]] inline auto threeTargetNames() -> pcfb_io::write_options {
+        pcfb_io::write_options options;
+        options.target_names = {{pc::target_id(0), "AND"}, {pc::target_id(1), "OR"}, {pc::target_id(2), "A"}};
+        return options;
+    }
+
+    // A random circuit with the names, query kinds, quantification and metadata a writer can record.
+    struct RandomModel final {
+        pc::circuit circuit;
+        pcfb_io::write_options options;
+    };
+
+    [[nodiscard]] inline auto randomModel(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {}) -> RandomModel {
+        auto result = randomCircuit(rng, coverage, size);
+        INFO(diagnosticsText(result.diagnostics));
+        REQUIRE(result.ok());
+        const auto chance = [&](const double p) { return pcfb_test_random::chance(rng, p); };
+        const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
+            return static_cast<std::uint32_t>(pcfb_test_random::uniform(rng, low, high));
+        };
+        RandomModel model{.circuit = std::move(result.output)};
+        auto &options = model.options;
+        constexpr std::array nameStyles{"n", "node ", "Ünï/", "A-B.", "x_"};
+        for (std::uint32_t node = 0; node < model.circuit.node_count(); ++node) {
+            if (chance(0.5)) {
+                options.node_names[pc::bool_node_id(node)] = std::string(nameStyles[uniform(0, nameStyles.size() - 1)]) + std::to_string(node);
+            }
+        }
+        options.query = chance(0.2) ? pcfb_io::query_kind::monotone_hull_probability : pcfb_io::query_kind::probability;
+        constexpr std::array literalModes{"", "atom_split", "omega_l", "negation"};
+        for (auto const &target : model.circuit.targets()) {
+            // Unique per target: targets that share a node and a name would read back as one target with two kinds.
+            if (chance(0.7)) {
+                options.target_names[target.id] = "T" + std::to_string(target.id.raw()) + (chance(0.3) ? " top/ü" : "");
+            }
+            using kind = pcfb_io::query_kind;
+            switch (uniform(0, 5)) {
+            case 0:
+                options.target_kinds[target.id] = {kind::monotone_hull_probability};
+                break;
+            case 1:
+                options.target_kinds[target.id] = {kind::probability, kind::monotone_hull_probability};
+                break;
+            case 2:
+                options.target_kinds[target.id] = {kind::monotone_hull_probability, kind::probability};
+                break;
+            case 3:
+                options.target_kinds[target.id] = {kind::probability};
+                break;
+            default:
+                break;
+            }
+            if (chance(0.4)) {
+                pcfb_io::target_quantification entry;
+                entry.literal_mode = literalModes[uniform(0, literalModes.size() - 1)];
+                if (chance(0.5)) {
+                    entry.max_initiators_per_cutset = uniform(0, 7);
+                }
+                options.quantification[target.id] = entry;
+            }
+        }
+        if (chance(0.7)) {
+            options.model_name = "model " + std::to_string(uniform(0, 999));
+        }
+        if (chance(0.5)) {
+            options.source_format = chance(0.5) ? "cafta-ftp" : "openpsa-mef-2.0";
+        }
+        if (chance(0.5)) {
+            std::array<std::byte, 32> digest{};
+            for (auto &byte : digest) {
+                byte = static_cast<std::byte>(uniform(0, 255));
+            }
+            options.source_sha256 = digest;
+        }
+        if (chance(0.5)) {
+            options.compile_options = R"({"negation": "hull", "level": )" + std::to_string(uniform(0, 1)) + "}";
+        }
+        return model;
     }
 
     [[nodiscard]] inline auto projectRoot() -> std::filesystem::path {

@@ -329,6 +329,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                                 return false;
                             }
                             negated = *added;
+                            complementTensors_.push_back(*added);
                         }
                         inputs_.push_back(negated);
                     }
@@ -340,7 +341,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 const auto fanIn = model_.operand_counts()[node];
                 const auto low = model_.cardinality_low()[node];
                 const auto high = model_.cardinality_high()[node];
-                if (low == 0 && high == fanIn) {
+                if (fanIn == 0) {
                     return addOp(node, ::pcfb::OpCode::BITWISE_ONES, {}, {}, std::nullopt, name);
                 }
                 if (!partitionOperands(node)) {
@@ -409,7 +410,6 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             }
 
             [[nodiscard]] auto emitQueries() -> bool {
-                std::size_t nonPrimary = 0;
                 std::size_t index = 0;
                 for (auto const &target : model_.targets()) {
                     const auto named = options_.target_names.find(target.id);
@@ -428,14 +428,15 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         if (quantification != options_.quantification.end() && !emitQuantification(index, kind, quantification->second)) {
                             return false;
                         }
+                        if (target.role != ir::pc::observable_role::primary) {
+                            const auto key = "compile.query." + std::to_string(index) + ".role";
+                            const auto role = target.role == ir::pc::observable_role::watch ? std::string_view{"watch"} : std::string_view{"projection_anchor"};
+                            if (!setMetadata(key, builder_.set(key, role))) {
+                                return false;
+                            }
+                        }
                         ++index;
                     }
-                    nonPrimary += target.role == ir::pc::observable_role::primary ? 0 : 1;
-                }
-                if (nonPrimary != 0) {
-                    diagnostics_.push(api::make_note("io.pcfb.target-role", std::to_string(nonPrimary) +
-                                                                                " non-primary target(s) written as ordinary queries; pcfb "
-                                                                                "core-1.1 has no observable roles"));
                 }
                 return true;
             }
@@ -480,6 +481,16 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 if (ok && !options_.compile_options.empty()) {
                     ok = setMetadata("compile.options", builder_.set("compile.options", std::string_view{options_.compile_options}));
                 }
+                if (ok && !complementTensors_.empty()) {
+                    std::vector<std::byte> packed;
+                    packed.reserve(complementTensors_.size() * sizeof(std::uint32_t));
+                    for (const auto tensor : complementTensors_) {
+                        for (unsigned shift = 0; shift < 32; shift += 8) {
+                            packed.push_back(static_cast<std::byte>((tensor >> shift) & 0xFFU));
+                        }
+                    }
+                    ok = setMetadata("compile.complement_tensors", builder_.set("compile.complement_tensors", std::span<std::byte const>{packed}));
+                }
                 return ok;
             }
 
@@ -490,6 +501,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             std::vector<std::uint32_t> tensorByNode_;
             std::vector<std::uint32_t> eventIdByNode_;
             std::vector<std::uint32_t> notTensorByNode_;
+            // Tensors of the NOT operators created to keep inputs and inverted_inputs disjoint, ascending.
+            std::vector<std::uint32_t> complementTensors_;
             std::vector<std::uint32_t> positiveEpoch_;
             std::vector<std::uint32_t> inputs_;
             std::vector<std::uint32_t> inverted_;
