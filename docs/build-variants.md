@@ -6,9 +6,13 @@ the presets in [`CMakePresets.json`](../CMakePresets.json).
 
 ```bash
 cmake --preset <variant> && cmake --build --preset <variant>
-# optional, currently a no-op until #31 re-enables the suite:
 ctest --preset <variant>
 ```
+
+These commands need the pinned toolchain on the host. For development, run them through
+[`scripts/dev/ws.sh`](../scripts/dev/README.md) instead (the `generic` preset inside the CI
+toolchain image). macOS Metal is the exception: see
+[macOS local development](#macos-local-development).
 
 Presets require CMake ≥ 3.25 (schema version 6). `cmake_minimum_required` in
 `CMakeLists.txt` stays 3.18.4 for non-preset configure.

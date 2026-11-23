@@ -22,45 +22,51 @@
 
 namespace {
 
-    using namespace pra_to_pc_test;
-    namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
+using namespace pra_to_pc_test;
+namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 
-    [[nodiscard]] auto build_model() -> pra::model {
-        pra::builder builder;
-        builder.set_project("demo");
-        const auto ie = builder.add_basic_event({.stable_name = "IE"}, pra::expression_spec::literal(0.05));
-        const auto ie2 = builder.add_basic_event({.stable_name = "IE2"}, pra::expression_spec::literal(0.02));
-        const auto pump = builder.add_basic_event({.stable_name = "PUMP"}, pra::expression_spec::literal(0.1));
-        const auto valve = builder.add_basic_event({.stable_name = "VALVE"}, pra::expression_spec::literal(0.2));
-        const auto flag = builder.add_basic_event({.stable_name = "FLAG"}, pra::expression_spec::literal(1.0));
-        const auto crew = builder.add_basic_event({.stable_name = "CREW"}, pra::expression_spec::literal(0.3));
-        (void)builder.add_initiating_event({.stable_name = "IE"}, ie);
-        (void)builder.add_initiating_event({.stable_name = "IE2"}, ie2);
-        const auto maintenance = builder.add_house_event({.stable_name = "MAINT"}, true);
-        const auto tree = builder.add_fault_tree({.stable_name = "FT"});
-        const auto cooling = builder.add_cardinality({.stable_name = "COOLING"}, {.low = 2, .high = 3},
-                                                     {{.event = pump}, {.event = valve}, {.event = crew, .complement = true}}, tree);
-        const auto deleted = builder.add_gate({.stable_name = "DEL"}, pra::gate_kind::and_gate, {{.event = flag}, {.event = valve}}, tree);
-        const auto failed = builder.add_gate({.stable_name = "FAILED"}, pra::gate_kind::and_gate,
-                                             {{.event = cooling}, {.event = deleted, .complement = true}, {.event = maintenance}}, tree);
-        const auto initiators = builder.add_gate({.stable_name = "INIT"}, pra::gate_kind::or_gate, {{.event = ie}, {.event = ie2}}, tree);
-        const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate, {{.event = initiators}, {.event = failed}}, tree);
-        const auto parity = builder.add_gate({.stable_name = "PARITY"}, pra::gate_kind::xor_gate, {{.event = pump}, {.event = ie}}, tree);
-        builder.add_fault_tree_top(tree, top);
-        (void)builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
-        (void)builder.add_target({.stable_name = "PARITY"}, pra::domain_target_kind::gate, parity, pra::target_role::watch);
-        return seal(std::move(builder));
-    }
+[[nodiscard]] auto build_model() -> pra::model {
+    pra::builder builder;
+    builder.set_project("demo");
+    const auto ie = builder.add_basic_event({.stable_name = "IE"}, pra::expression_spec::literal(0.05));
+    const auto ie2 = builder.add_basic_event({.stable_name = "IE2"}, pra::expression_spec::literal(0.02));
+    const auto pump = builder.add_basic_event({.stable_name = "PUMP"}, pra::expression_spec::literal(0.1));
+    const auto valve = builder.add_basic_event({.stable_name = "VALVE"}, pra::expression_spec::literal(0.2));
+    const auto flag = builder.add_basic_event({.stable_name = "FLAG"}, pra::expression_spec::literal(1.0));
+    const auto crew = builder.add_basic_event({.stable_name = "CREW"}, pra::expression_spec::literal(0.3));
+    (void)builder.add_initiating_event({.stable_name = "IE"}, ie);
+    (void)builder.add_initiating_event({.stable_name = "IE2"}, ie2);
+    const auto maintenance = builder.add_house_event({.stable_name = "MAINT"}, true);
+    const auto tree = builder.add_fault_tree({.stable_name = "FT"});
+    const auto cooling =
+        builder.add_cardinality({.stable_name = "COOLING"}, {.low = 2, .high = 3},
+                                {{.event = pump}, {.event = valve}, {.event = crew, .complement = true}}, tree);
+    const auto deleted =
+        builder.add_gate({.stable_name = "DEL"}, pra::gate_kind::and_gate, {{.event = flag}, {.event = valve}}, tree);
+    const auto failed =
+        builder.add_gate({.stable_name = "FAILED"}, pra::gate_kind::and_gate,
+                         {{.event = cooling}, {.event = deleted, .complement = true}, {.event = maintenance}}, tree);
+    const auto initiators =
+        builder.add_gate({.stable_name = "INIT"}, pra::gate_kind::or_gate, {{.event = ie}, {.event = ie2}}, tree);
+    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
+                                      {{.event = initiators}, {.event = failed}}, tree);
+    const auto parity =
+        builder.add_gate({.stable_name = "PARITY"}, pra::gate_kind::xor_gate, {{.event = pump}, {.event = ie}}, tree);
+    builder.add_fault_tree_top(tree, top);
+    (void)builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
+    (void)builder.add_target({.stable_name = "PARITY"}, pra::domain_target_kind::gate, parity, pra::target_role::watch);
+    return seal(std::move(builder));
+}
 
-    void require_valid(::pcfb::ir::Circuit const &circuit) {
-        std::ostringstream text;
-        const auto diagnostics = ::pcfb::validate(circuit);
-        for (auto const &diagnostic : diagnostics) {
-            text << diagnostic.location << ": " << diagnostic.message << '\n';
-        }
-        INFO(text.str());
-        REQUIRE(diagnostics.empty());
+void require_valid(::pcfb::ir::Circuit const &circuit) {
+    std::ostringstream text;
+    const auto diagnostics = ::pcfb::validate(circuit);
+    for (auto const &diagnostic : diagnostics) {
+        text << diagnostic.location << ": " << diagnostic.message << '\n';
     }
+    INFO(text.str());
+    REQUIRE(diagnostics.empty());
+}
 
 } // namespace
 
@@ -99,7 +105,8 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
             REQUIRE(sub->queries()->size() == 2);
             CHECK(sub->queries()->Get(0)->name()->str() == "FT");
             CHECK(sub->queries()->Get(1)->name()->str() == "PARITY");
-            const auto top_tensor = written.value().tensor_by_node[artifact.projection.node_of(model.find_gate("TOP")).raw()];
+            const auto top_tensor =
+                written.value().tensor_by_node[artifact.projection.node_of(model.find_gate("TOP")).raw()];
             CHECK(sub->operators()->Get(top_tensor)->name()->str() == "TOP");
 
             const pra_reference reference(model, overrides);
@@ -116,45 +123,48 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
 
 namespace {
 
-    [[nodiscard]] auto query_summary(::pcfb::ir::Circuit const &circuit) -> std::vector<std::pair<std::string, ::pcfb::QueryKind>> {
-        std::vector<std::pair<std::string, ::pcfb::QueryKind>> rows;
-        for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
-            rows.emplace_back(query->name()->str(), query->kind());
-        }
-        return rows;
+[[nodiscard]] auto query_summary(::pcfb::ir::Circuit const &circuit)
+    -> std::vector<std::pair<std::string, ::pcfb::QueryKind>> {
+    std::vector<std::pair<std::string, ::pcfb::QueryKind>> rows;
+    for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
+        rows.emplace_back(query->name()->str(), query->kind());
     }
+    return rows;
+}
 
-    [[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::string> {
-        auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
-        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
-            return std::nullopt;
-        }
-        return entry->value_as_StringValue()->value()->str();
+[[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, std::string const &key)
+    -> std::optional<std::string> {
+    auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
+    if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
+        return std::nullopt;
     }
+    return entry->value_as_StringValue()->value()->str();
+}
 
-    [[nodiscard]] auto int_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::int64_t> {
-        auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
-        if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::IntValue) {
-            return std::nullopt;
-        }
-        return entry->value_as_IntValue()->value();
+[[nodiscard]] auto int_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::int64_t> {
+    auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
+    if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::IntValue) {
+        return std::nullopt;
     }
+    return entry->value_as_IntValue()->value();
+}
 
-    // SAFE and LIT observe the same gate shape; LIT's cone has an operand marked `literal`, SAFE's has a plain complement.
-    [[nodiscard]] auto build_literal_model() -> pra::model {
-        pra::builder builder;
-        builder.set_project("literals");
-        const auto x = builder.add_basic_event({.stable_name = "X"}, pra::expression_spec::literal(0.1));
-        const auto y = builder.add_basic_event({.stable_name = "Y"}, pra::expression_spec::literal(0.2));
-        const auto z = builder.add_basic_event({.stable_name = "Z"}, pra::expression_spec::literal(0.3));
-        const auto tree = builder.add_fault_tree({.stable_name = "FT"});
-        const auto safe = builder.add_gate({.stable_name = "SAFE_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = z, .complement = true}}, tree);
-        const auto lit =
-            builder.add_gate({.stable_name = "LIT_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = y, .complement = true, .literal = true}}, tree);
-        (void)builder.add_target({.stable_name = "SAFE"}, pra::domain_target_kind::gate, safe);
-        (void)builder.add_target({.stable_name = "LIT"}, pra::domain_target_kind::gate, lit);
-        return seal(std::move(builder));
-    }
+// SAFE and LIT observe the same gate shape; LIT's cone has an operand marked `literal`, SAFE's has a plain complement.
+[[nodiscard]] auto build_literal_model() -> pra::model {
+    pra::builder builder;
+    builder.set_project("literals");
+    const auto x = builder.add_basic_event({.stable_name = "X"}, pra::expression_spec::literal(0.1));
+    const auto y = builder.add_basic_event({.stable_name = "Y"}, pra::expression_spec::literal(0.2));
+    const auto z = builder.add_basic_event({.stable_name = "Z"}, pra::expression_spec::literal(0.3));
+    const auto tree = builder.add_fault_tree({.stable_name = "FT"});
+    const auto safe = builder.add_gate({.stable_name = "SAFE_GATE"}, pra::gate_kind::and_gate,
+                                       {{.event = x}, {.event = z, .complement = true}}, tree);
+    const auto lit = builder.add_gate({.stable_name = "LIT_GATE"}, pra::gate_kind::and_gate,
+                                      {{.event = x}, {.event = y, .complement = true, .literal = true}}, tree);
+    (void)builder.add_target({.stable_name = "SAFE"}, pra::domain_target_kind::gate, safe);
+    (void)builder.add_target({.stable_name = "LIT"}, pra::domain_target_kind::gate, lit);
+    return seal(std::move(builder));
+}
 
 } // namespace
 
@@ -172,7 +182,8 @@ TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[com
     INFO(render(options.diagnostics()));
     REQUIRE(options);
     using kind = writer::query_kind;
-    CHECK(options.value().target_kinds.at(pc::target_id(0)) == std::vector<kind>{kind::probability, kind::monotone_hull_probability});
+    CHECK(options.value().target_kinds.at(pc::target_id(0)) ==
+          std::vector<kind>{kind::probability, kind::monotone_hull_probability});
     CHECK(options.value().target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::probability});
 
     auto written = writer::write(artifact.circuit.to_handle(), options.value());
@@ -199,10 +210,13 @@ TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[com
     }
 }
 
-TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule", "[compile][pra_to_pc][pcfb]") {
+TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule",
+          "[compile][pra_to_pc][pcfb]") {
     const auto model = build_model();
     lowering::quantification_config config;
-    config.targets = {{.name = "FT", .negation = pra::negation_set::of(pra::negation_semantics::monotone_hull), .literals = pra::literal_mode::omega_l},
+    config.targets = {{.name = "FT",
+                       .negation = pra::negation_set::of(pra::negation_semantics::monotone_hull),
+                       .literals = pra::literal_mode::omega_l},
                       {.name = "PARITY"}};
     const auto artifact = require_lower(model, config);
     CHECK_FALSE(artifact.report.max_initiators_per_cutset.has_value());
@@ -216,7 +230,8 @@ TEST_CASE("pra_to_pc write options record the literal mode and omit an absent in
     REQUIRE(circuit);
     require_valid(*circuit);
     using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    CHECK(query_summary(*circuit) ==
+          rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
     CHECK(string_meta(*circuit, "compile.query.0.literal_mode") == "omega_l");
     CHECK(string_meta(*circuit, "compile.query.1.literal_mode") == "atom_split");
     CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
@@ -235,7 +250,8 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
                 REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
                 auto options = lowering::pcfb_write_options(artifact);
                 REQUIRE_FALSE(options);
-                CHECK(codes(options.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
+                CHECK(codes(options.diagnostics()) ==
+                      std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
                 const auto text = render(options.diagnostics());
                 CHECK(text.find("'LIT'") != std::string::npos);
                 CHECK(text.find("'Y'") != std::string::npos);
@@ -261,7 +277,8 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
             CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
             const auto rows = query_summary(*circuit);
             REQUIRE_FALSE(rows.empty());
-            CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+            CHECK(rows.back() ==
+                  std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
             CHECK(rows.size() == (negation.boolean ? 2U : 1U));
             const auto hull = "compile.query." + std::to_string(rows.size() - 1) + ".";
             CHECK(string_meta(*circuit, hull + "negation") == "monotone_hull");
@@ -298,7 +315,8 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
         REQUIRE(circuit);
         require_valid(*circuit);
         using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-        CHECK(query_summary(*circuit) == rows{{"SAFE", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"LIT", ::pcfb::QueryKind::PROBABILITY}});
+        CHECK(query_summary(*circuit) ==
+              rows{{"SAFE", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"LIT", ::pcfb::QueryKind::PROBABILITY}});
         CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
     }
 }

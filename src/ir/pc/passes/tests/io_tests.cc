@@ -25,76 +25,79 @@
 
 namespace {
 
-    using namespace pc_passes_test;
-    namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
+using namespace pc_passes_test;
+namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 
-    [[nodiscard]] auto ftp_files(std::filesystem::path const &root) -> std::vector<std::filesystem::path> {
-        std::vector<std::filesystem::path> files;
-        std::error_code error;
-        constexpr auto skip = std::filesystem::directory_options::skip_permission_denied;
-        for (auto iterator = std::filesystem::recursive_directory_iterator(root, skip, error);
-             !error && iterator != std::filesystem::recursive_directory_iterator(); iterator.increment(error)) {
-            auto extension = iterator->path().extension().string();
-            std::ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
-            std::error_code status;
-            if (iterator->is_regular_file(status) && extension == ".ftp") {
-                files.push_back(iterator->path());
-            }
-        }
-        std::ranges::sort(files);
-        return files;
-    }
-
-    [[nodiscard]] auto read_ftp(std::filesystem::path const &file) -> std::optional<pc::circuit> {
-        std::ifstream input(file, std::ios::binary);
-        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
-        if (!read) {
-            return std::nullopt;
-        }
-        return std::move(read).value().circuit;
-    }
-
-    [[nodiscard]] auto literal_only(pc::circuit const &model) -> bool {
-        return std::ranges::all_of(model.probability_sources(),
-                                   [](auto const &source) { return source.kind == pc::probability_source_kind::literal; });
-    }
-
-    [[nodiscard]] auto event_count(pc::circuit const &model) -> std::size_t {
-        return static_cast<std::size_t>(std::ranges::count(model.op_codes(), pc::op_code::basic_event));
-    }
-
-    // FTP has no NOT gates: a complemented edge into a basic event is a direct
-    // event complement, the atom events of every target (#190).
-    [[nodiscard]] auto direct_complements(pc::circuit const &model) -> std::vector<std::vector<pc::bool_node_id>> {
-        std::vector<pc::bool_node_id> events;
-        for (auto const &operand : model.edges()) {
-            if (operand.complement && model.op_codes()[operand.source.raw()] == pc::op_code::basic_event) {
-                events.push_back(operand.source);
-            }
-        }
-        std::ranges::sort(events);
-        events.erase(std::ranges::unique(events).begin(), events.end());
-        return std::vector(model.targets().size(), events);
-    }
-
-    [[nodiscard]] auto atom_split_hull(pc::circuit const &model) -> passes::pipeline_options {
-        return passes::pipeline_options{.semantics = std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
-                                        .atom_events = direct_complements(model)};
-    }
-
-    // The compiled circuit, written to .pcfb, has the input's exact probabilities.
-    void require_pcfb_exact(pc::circuit const &input, pc::circuit const &compiled) {
-        auto written = writer::write(compiled.to_handle(), writer::write_options{});
-        INFO(diagnostics_text(written.diagnostics()));
-        REQUIRE(written);
-        auto loaded = ::pcfb::io::from_bytes(written.value().bytes);
-        REQUIRE(loaded);
-        const auto expected = exact_probabilities(input);
-        for (std::uint32_t query = 0; query < expected.size(); ++query) {
-            INFO("query " << query);
-            REQUIRE(std::abs(fuzzybits::compile::exact_probability(*loaded, query) - expected[query]) <= 1.0e-12);
+[[nodiscard]] auto ftp_files(std::filesystem::path const &root) -> std::vector<std::filesystem::path> {
+    std::vector<std::filesystem::path> files;
+    std::error_code error;
+    constexpr auto skip = std::filesystem::directory_options::skip_permission_denied;
+    for (auto iterator = std::filesystem::recursive_directory_iterator(root, skip, error);
+         !error && iterator != std::filesystem::recursive_directory_iterator(); iterator.increment(error)) {
+        auto extension = iterator->path().extension().string();
+        std::ranges::transform(extension, extension.begin(),
+                               [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        std::error_code status;
+        if (iterator->is_regular_file(status) && extension == ".ftp") {
+            files.push_back(iterator->path());
         }
     }
+    std::ranges::sort(files);
+    return files;
+}
+
+[[nodiscard]] auto read_ftp(std::filesystem::path const &file) -> std::optional<pc::circuit> {
+    std::ifstream input(file, std::ios::binary);
+    auto read =
+        ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
+    if (!read) {
+        return std::nullopt;
+    }
+    return std::move(read).value().circuit;
+}
+
+[[nodiscard]] auto literal_only(pc::circuit const &model) -> bool {
+    return std::ranges::all_of(model.probability_sources(),
+                               [](auto const &source) { return source.kind == pc::probability_source_kind::literal; });
+}
+
+[[nodiscard]] auto event_count(pc::circuit const &model) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count(model.op_codes(), pc::op_code::basic_event));
+}
+
+// FTP has no NOT gates: a complemented edge into a basic event is a direct
+// event complement, the atom events of every target (#190).
+[[nodiscard]] auto direct_complements(pc::circuit const &model) -> std::vector<std::vector<pc::bool_node_id>> {
+    std::vector<pc::bool_node_id> events;
+    for (auto const &operand : model.edges()) {
+        if (operand.complement && model.op_codes()[operand.source.raw()] == pc::op_code::basic_event) {
+            events.push_back(operand.source);
+        }
+    }
+    std::ranges::sort(events);
+    events.erase(std::ranges::unique(events).begin(), events.end());
+    return std::vector(model.targets().size(), events);
+}
+
+[[nodiscard]] auto atom_split_hull(pc::circuit const &model) -> passes::pipeline_options {
+    return passes::pipeline_options{.semantics =
+                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+                                    .atom_events = direct_complements(model)};
+}
+
+// The compiled circuit, written to .pcfb, has the input's exact probabilities.
+void require_pcfb_exact(pc::circuit const &input, pc::circuit const &compiled) {
+    auto written = writer::write(compiled.to_handle(), writer::write_options{});
+    INFO(diagnostics_text(written.diagnostics()));
+    REQUIRE(written);
+    auto loaded = ::pcfb::io::from_bytes(written.value().bytes);
+    REQUIRE(loaded);
+    const auto expected = exact_probabilities(input);
+    for (std::uint32_t query = 0; query < expected.size(); ++query) {
+        INFO("query " << query);
+        REQUIRE(std::abs(fuzzybits::compile::exact_probability(*loaded, query) - expected[query]) <= 1.0e-12);
+    }
+}
 
 } // namespace
 
@@ -135,15 +138,17 @@ TEST_CASE("C1 on public FTP fixtures: fewer or equal edges, same probabilities",
             require_close(hull_probabilities(*input),
                           hull_probabilities(
                               passes::compile(*input, passes::compile_level::c1,
-                                              passes::pipeline_options{.semantics = std::vector(input->targets().size(),
-                                                                                                passes::target_semantics::monotone_hull)})
+                                              passes::pipeline_options{
+                                                  .semantics = std::vector(input->targets().size(),
+                                                                           passes::target_semantics::monotone_hull)})
                                   .output));
             const auto atoms = direct_complements(*input);
             if (event_count(*input) + atoms.front().size() <= 20) {
                 const auto split = passes::compile(*input, passes::compile_level::c1, atom_split_hull(*input));
                 REQUIRE(split.ok());
-                require_close(split_hull_probabilities(*input, atoms),
-                              split_hull_probabilities(split.output, carried_atoms(split.output, split.node_map, atoms)));
+                require_close(
+                    split_hull_probabilities(*input, atoms),
+                    split_hull_probabilities(split.output, carried_atoms(split.output, split.node_map, atoms)));
             }
             require_pcfb_exact(*input, compiled.output);
         }
@@ -191,7 +196,8 @@ TEST_CASE("C1 on private FTP models reports aggregate node and edge counts", "[i
 
         const auto hull = passes::compile(
             *input, passes::compile_level::c1,
-            passes::pipeline_options{.semantics = std::vector(input->targets().size(), passes::target_semantics::monotone_hull)});
+            passes::pipeline_options{
+                .semantics = std::vector(input->targets().size(), passes::target_semantics::monotone_hull)});
         REQUIRE(hull.ok());
         REQUIRE(hull.edges_after <= hull.edges_before);
         hull_nodes += hull.nodes_after;
@@ -207,9 +213,9 @@ TEST_CASE("C1 on private FTP models reports aggregate node and edge counts", "[i
             split_skipped += report.skipped;
         }
     }
-    std::cout << "private FTP aggregate: models " << models << " (unreadable " << unread << "), raw nodes " << nodes << ", raw edges "
-              << edges << "; C1 boolean nodes " << boolean_nodes << ", edges " << boolean_edges << " (" << seconds
-              << " s); C1 monotone_hull (no atoms) nodes " << hull_nodes << ", edges " << hull_edges << "; C1 monotone_hull (atom-split, "
-              << atom_events << " atom events) nodes " << split_nodes << ", edges " << split_edges << ", skipped rewrites " << split_skipped
-              << '\n';
+    std::cout << "private FTP aggregate: models " << models << " (unreadable " << unread << "), raw nodes " << nodes
+              << ", raw edges " << edges << "; C1 boolean nodes " << boolean_nodes << ", edges " << boolean_edges
+              << " (" << seconds << " s); C1 monotone_hull (no atoms) nodes " << hull_nodes << ", edges " << hull_edges
+              << "; C1 monotone_hull (atom-split, " << atom_events << " atom events) nodes " << split_nodes
+              << ", edges " << split_edges << ", skipped rewrites " << split_skipped << '\n';
 }

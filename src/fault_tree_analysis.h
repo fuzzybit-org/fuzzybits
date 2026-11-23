@@ -37,129 +37,110 @@
 #include "settings.h"
 #include "zbdd.h"
 
-namespace scram::mef {  // Decouple from the analysis code.
-class Model;  // Provider of substitutions.
+namespace scram::mef { // Decouple from the analysis code.
+class Model;           // Provider of substitutions.
 class Gate;
 class BasicEvent;
-}  // namespace scram::mef
+} // namespace scram::mef
 
 namespace scram::core {
 
 /// Event or its complement
 /// that may appear in products.
 struct Literal {
-  bool complement;  ///< Indication of a complement event.
-  const mef::BasicEvent& event;  ///< The event in the product.
+    bool complement;              ///< Indication of a complement event.
+    const mef::BasicEvent &event; ///< The event in the product.
 };
 
 /// Collection of unique literals.
 class Product {
-  /// Converter of indices in products to Literals.
-  struct LiteralExtractor {
-    /// @param[in] index  The index in a result product.
+    /// Converter of indices in products to Literals.
+    struct LiteralExtractor {
+        /// @param[in] index  The index in a result product.
+        ///
+        /// @returns Literal representing the event with the index.
+        Literal operator()(int index) const { return {index < 0, *graph.basic_events()[std::abs(index)]}; }
+        const Pdag &graph; ///< The host graph.
+    };
+
+  public:
+    /// Initializes product literals.
     ///
-    /// @returns Literal representing the event with the index.
-    Literal operator()(int index) const {
-      return {index < 0, *graph.basic_events()[std::abs(index)]};
-    }
-    const Pdag& graph;  ///< The host graph.
-  };
+    /// @param[in] data  The underlying set.
+    /// @param[in] graph  The graph with indices to events map.
+    Product(const std::vector<int> &data, const Pdag &graph) : data_(data), graph_(graph) {}
 
- public:
-  /// Initializes product literals.
-  ///
-  /// @param[in] data  The underlying set.
-  /// @param[in] graph  The graph with indices to events map.
-  Product(const std::vector<int>& data, const Pdag& graph)
-      : data_(data), graph_(graph) {}
+    /// @returns true for unity product with no literals.
+    bool empty() const { return data_.empty(); }
 
-  /// @returns true for unity product with no literals.
-  bool empty() const { return data_.empty(); }
+    /// @returns The number of literals in the product.
+    int size() const { return data_.size(); }
 
-  /// @returns The number of literals in the product.
-  int size() const { return data_.size(); }
+    /// @returns The order of the product.
+    ///
+    /// @note An empty set indicates the Base/Unity set.
+    int order() const { return empty() ? 1 : size(); }
 
-  /// @returns The order of the product.
-  ///
-  /// @note An empty set indicates the Base/Unity set.
-  int order() const { return empty() ? 1 : size(); }
+    /// @returns The product of the literal probabilities.
+    ///
+    /// @pre Events are initialized with expressions.
+    double p() const;
 
-  /// @returns The product of the literal probabilities.
-  ///
-  /// @pre Events are initialized with expressions.
-  double p() const;
+    /// @returns A read proxy iterator that points to the first element.
+    auto begin() const { return boost::make_transform_iterator(data_.begin(), LiteralExtractor{graph_}); }
 
-  /// @returns A read proxy iterator that points to the first element.
-  auto begin() const {
-    return boost::make_transform_iterator(data_.begin(),
-                                          LiteralExtractor{graph_});
-  }
+    /// @returns A sentinel iterator signifying the end of iteration.
+    auto end() const { return boost::make_transform_iterator(data_.end(), LiteralExtractor{graph_}); }
 
-  /// @returns A sentinel iterator signifying the end of iteration.
-  auto end() const {
-    return boost::make_transform_iterator(data_.end(),
-                                          LiteralExtractor{graph_});
-  }
-
- private:
-  const std::vector<int>& data_;  ///< The collection of event indices.
-  const Pdag& graph_;  ///< The host graph.
+  private:
+    const std::vector<int> &data_; ///< The collection of event indices.
+    const Pdag &graph_;            ///< The host graph.
 };
 
 /// A container of analysis result products with Literals.
 /// This is a wrapper of the analysis resultant ZBDD to work with Literals.
 class ProductContainer {
-  /// Converter of analysis products with indices into products with literals.
-  struct ProductExtractor {
-    /// @param[in] product  The product with indices from analysis results.
+    /// Converter of analysis products with indices into products with literals.
+    struct ProductExtractor {
+        /// @param[in] product  The product with indices from analysis results.
+        ///
+        /// @returns The wrapped product of Literals.
+        Product operator()(const std::vector<int> &product) const { return Product(product, graph); }
+        const Pdag &graph; ///< The host graph.
+    };
+
+  public:
+    /// The constructor also collects basic events in products.
     ///
-    /// @returns The wrapped product of Literals.
-    Product operator()(const std::vector<int>& product) const {
-      return Product(product, graph);
-    }
-    const Pdag& graph;  ///< The host graph.
-  };
+    /// @param[in] products  Sets with indices of events from calculations.
+    /// @param[in] graph  PDAG with basic event indices and pointers.
+    ProductContainer(const Zbdd &products, const Pdag &graph);
 
- public:
-  /// The constructor also collects basic events in products.
-  ///
-  /// @param[in] products  Sets with indices of events from calculations.
-  /// @param[in] graph  PDAG with basic event indices and pointers.
-  ProductContainer(const Zbdd& products, const Pdag& graph) ;
+    /// @returns Collection of basic events that are in the products.
+    const std::unordered_set<const mef::BasicEvent *> &product_events() const { return product_events_; }
 
-  /// @returns Collection of basic events that are in the products.
-  const std::unordered_set<const mef::BasicEvent*>& product_events() const {
-    return product_events_;
-  }
+    /// Begin and end iterators over products in the container.
+    /// @{
+    auto begin() const { return boost::make_transform_iterator(products_.begin(), ProductExtractor{graph_}); }
+    auto end() const { return boost::make_transform_iterator(products_.end(), ProductExtractor{graph_}); }
+    /// @}
 
-  /// Begin and end iterators over products in the container.
-  /// @{
-  auto begin() const {
-    return boost::make_transform_iterator(products_.begin(),
-                                          ProductExtractor{graph_});
-  }
-  auto end() const {
-    return boost::make_transform_iterator(products_.end(),
-                                          ProductExtractor{graph_});
-  }
-  /// @}
+    /// @returns true if no products in the container.
+    bool empty() const { return products_.empty(); }
 
-  /// @returns true if no products in the container.
-  bool empty() const { return products_.empty(); }
+    /// @returns The number of products in the container.
+    int size() const { return size_; }
 
-  /// @returns The number of products in the container.
-  int size() const { return size_; }
+    /// @returns The product distribution by order.
+    const std::vector<int> &distribution() const { return distribution_; }
 
-  /// @returns The product distribution by order.
-  const std::vector<int>& distribution() const { return distribution_; }
-
- private:
-  const Zbdd& products_;  ///< Container of analysis results.
-  const Pdag& graph_;  ///< The analysis graph.
-  int size_;  ///< The number of products.
-  std::vector<int> distribution_;  ///< Product counts by order.
-  /// The set of events in the resultant products.
-  std::unordered_set<const mef::BasicEvent*> product_events_;
+  private:
+    const Zbdd &products_;          ///< Container of analysis results.
+    const Pdag &graph_;             ///< The analysis graph.
+    int size_;                      ///< The number of products.
+    std::vector<int> distribution_; ///< Product counts by order.
+    /// The set of events in the resultant products.
+    std::unordered_set<const mef::BasicEvent *> product_events_;
 };
 
 /// Prints a collection of products to the standard error.
@@ -171,7 +152,7 @@ class ProductContainer {
 /// The literals of a product are sorted by their names.
 ///
 /// @param[in] products  Valid, unique collection of analysis results.
-void Print(const ProductContainer& products);
+void Print(const ProductContainer &products);
 
 /// Fault tree analysis functionality.
 /// The analysis must be done on
@@ -193,119 +174,117 @@ void Print(const ProductContainer& products);
 /// @warning Run analysis only once.
 ///          One analysis per FaultTreeAnalysis object.
 class FaultTreeAnalysis : public Analysis {
- public:
-  /// Traverses a valid fault tree from the root gate
-  /// to collect databases of events, gates,
-  /// and other members of the fault tree.
-  /// The passed fault tree must be pre-validated without cycles,
-  /// and its events must be fully initialized.
-  ///
-  /// @param[in] root  The top event of the fault tree to analyze.
-  /// @param[in] settings  Analysis settings for all calculations.
-  /// @param[in] model  The Model containing substitutions if any.
-  ///
-  /// @note It is assumed that analysis is done only once.
-  ///
-  /// @warning If the fault tree structure is changed,
-  ///          this analysis does not incorporate the changed structure.
-  ///          Moreover, the analysis results may get corrupted.
-  FaultTreeAnalysis(const mef::Gate& root, const Settings& settings,
-                    const mef::Model* model = nullptr);
+  public:
+    /// Traverses a valid fault tree from the root gate
+    /// to collect databases of events, gates,
+    /// and other members of the fault tree.
+    /// The passed fault tree must be pre-validated without cycles,
+    /// and its events must be fully initialized.
+    ///
+    /// @param[in] root  The top event of the fault tree to analyze.
+    /// @param[in] settings  Analysis settings for all calculations.
+    /// @param[in] model  The Model containing substitutions if any.
+    ///
+    /// @note It is assumed that analysis is done only once.
+    ///
+    /// @warning If the fault tree structure is changed,
+    ///          this analysis does not incorporate the changed structure.
+    ///          Moreover, the analysis results may get corrupted.
+    FaultTreeAnalysis(const mef::Gate &root, const Settings &settings, const mef::Model *model = nullptr);
 
-  virtual ~FaultTreeAnalysis() = default;
+    virtual ~FaultTreeAnalysis() = default;
 
-  /// @returns The top gate that is passed to the analysis.
-  const mef::Gate& top_event() const { return top_event_; }
+    /// @returns The top gate that is passed to the analysis.
+    const mef::Gate &top_event() const { return top_event_; }
 
-  /// Analyzes the fault tree and performs computations.
-  /// This function must be called
-  /// only after initializing the fault tree
-  /// with or without its probabilities.
-  ///
-  /// @note This function is expected to be called only once.
-  ///
-  /// @warning If the original fault tree is invalid,
-  ///          this function will not throw or indicate any errors.
-  ///          The behavior is undefined for invalid fault trees.
-  /// @warning If the fault tree structure has changed
-  ///          since the construction of the analysis,
-  ///          the analysis will be invalid or fail.
-  void Analyze() ;
+    /// Analyzes the fault tree and performs computations.
+    /// This function must be called
+    /// only after initializing the fault tree
+    /// with or without its probabilities.
+    ///
+    /// @note This function is expected to be called only once.
+    ///
+    /// @warning If the original fault tree is invalid,
+    ///          this function will not throw or indicate any errors.
+    ///          The behavior is undefined for invalid fault trees.
+    /// @warning If the fault tree structure has changed
+    ///          since the construction of the analysis,
+    ///          the analysis will be invalid or fail.
+    void Analyze();
 
-  /// @returns A collection of Boolean products as the analysis results.
-  ///
-  /// @pre The analysis is done.
-  const ProductContainer& products() const {
-    assert(products_ && "The analysis is not done!");
-    return *products_;
-  }
+    /// @returns A collection of Boolean products as the analysis results.
+    ///
+    /// @pre The analysis is done.
+    const ProductContainer &products() const {
+        assert(products_ && "The analysis is not done!");
+        return *products_;
+    }
 
-  [[nodiscard]] std::shared_ptr<Pdag> pdag() { return std::move(graph_); }
+    [[nodiscard]] std::shared_ptr<Pdag> pdag() { return std::move(graph_); }
 
- protected:
-  /// @returns Pointer to the PDAG representing the fault tree.
-  [[nodiscard]] Pdag* graph() const { return graph_.get(); }
+  protected:
+    /// @returns Pointer to the PDAG representing the fault tree.
+    [[nodiscard]] Pdag *graph() const { return graph_.get(); }
 
- private:
-  /// Preprocesses a PDAG for future analysis with a specific algorithm.
-  ///
-  /// @param[in,out] graph  A valid PDAG for analysis.
-  ///
-  /// @post The graph transformation is semantically equivalent/isomorphic.
-  virtual void Preprocess(Pdag* graph)  = 0;
+  private:
+    /// Preprocesses a PDAG for future analysis with a specific algorithm.
+    ///
+    /// @param[in,out] graph  A valid PDAG for analysis.
+    ///
+    /// @post The graph transformation is semantically equivalent/isomorphic.
+    virtual void Preprocess(Pdag *graph) = 0;
 
-  /// Generates a sum of products from a preprocessed PDAG.
-  ///
-  /// @param[in] graph  The analysis PDAG.
-  ///
-  /// @returns The set of products.
-  ///
-  /// @pre The graph is specifically preprocessed for the algorithm.
-  ///
-  /// @post The result ZBDD lives as long as the host analysis.
-  virtual const Zbdd& GenerateProducts(const Pdag* graph)  = 0;
+    /// Generates a sum of products from a preprocessed PDAG.
+    ///
+    /// @param[in] graph  The analysis PDAG.
+    ///
+    /// @returns The set of products.
+    ///
+    /// @pre The graph is specifically preprocessed for the algorithm.
+    ///
+    /// @post The result ZBDD lives as long as the host analysis.
+    virtual const Zbdd &GenerateProducts(const Pdag *graph) = 0;
 
-  /// Stores resultant sets of products for future reporting.
-  ///
-  /// @param[in] products  Sets with indices of events from calculations.
-  /// @param[in] graph  PDAG with basic event indices and pointers.
-  void Store(const Zbdd& products, const Pdag& graph) ;
+    /// Stores resultant sets of products for future reporting.
+    ///
+    /// @param[in] products  Sets with indices of events from calculations.
+    /// @param[in] graph  PDAG with basic event indices and pointers.
+    void Store(const Zbdd &products, const Pdag &graph);
 
-  const mef::Gate& top_event_;  ///< The root of the graph under analysis.
-  const mef::Model* model_;  ///< The optional Model with substitutions.
-  std::unique_ptr<Pdag> graph_;  ///< PDAG of the fault tree.
-  std::unique_ptr<const ProductContainer> products_;  ///< Container of results.
+    const mef::Gate &top_event_;                       ///< The root of the graph under analysis.
+    const mef::Model *model_;                          ///< The optional Model with substitutions.
+    std::unique_ptr<Pdag> graph_;                      ///< PDAG of the fault tree.
+    std::unique_ptr<const ProductContainer> products_; ///< Container of results.
 };
 
 /// Fault tree analysis facility with specific algorithms.
 /// This class is meant to be specialized by fault tree analysis algorithms.
 ///
 /// @tparam Algorithm  Fault tree analysis algorithm.
-template <class Algorithm>
-class FaultTreeAnalyzer : public FaultTreeAnalysis {
- public:
-  using FaultTreeAnalysis::FaultTreeAnalysis;
-  using FaultTreeAnalysis::graph;  // Provide access to other analyses.
+template <class Algorithm> class FaultTreeAnalyzer : public FaultTreeAnalysis {
+  public:
+    using FaultTreeAnalysis::FaultTreeAnalysis;
+    using FaultTreeAnalysis::graph; // Provide access to other analyses.
 
-  /// @returns The analysis algorithm for use by other analyses.
-  /// @{
-  const Algorithm* algorithm() const { return algorithm_.get(); }
-  Algorithm* algorithm() { return algorithm_.get(); }
-  /// @}
+    /// @returns The analysis algorithm for use by other analyses.
+    /// @{
+    const Algorithm *algorithm() const { return algorithm_.get(); }
+    Algorithm *algorithm() { return algorithm_.get(); }
+    /// @}
 
- private:
-  void Preprocess(Pdag* graph)  override {
-    std::optional<Settings>  settings_opt = std::optional<Settings>(settings());
-    CustomPreprocessor<Algorithm>{graph,settings_opt}();
-  }
+  private:
+    void Preprocess(Pdag *graph) override {
+        std::optional<Settings> settings_opt = std::optional<Settings>(settings());
+        CustomPreprocessor<Algorithm>{graph, settings_opt}();
+    }
 
-  const Zbdd& GenerateProducts(const Pdag* graph)  override {
-    algorithm_ = std::make_unique<Algorithm>(graph, Analysis::settings());
-    algorithm_->Analyze(graph);
-    return algorithm_->products();
-  }
+    const Zbdd &GenerateProducts(const Pdag *graph) override {
+        algorithm_ = std::make_unique<Algorithm>(graph, Analysis::settings());
+        algorithm_->Analyze(graph);
+        return algorithm_->products();
+    }
 
-  std::unique_ptr<Algorithm> algorithm_;  ///< Analysis algorithm.
+    std::unique_ptr<Algorithm> algorithm_; ///< Analysis algorithm.
 };
 
-}  // namespace scram::core
+} // namespace scram::core

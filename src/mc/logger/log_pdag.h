@@ -3,11 +3,11 @@
 #include "mc/logger/csv.h"
 #include "pdag.h"
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <unordered_set>
 #include <vector>
-#include <algorithm>
 
 namespace scram::log::pdag {
 
@@ -16,7 +16,8 @@ namespace detail {
 inline int count_unique(const std::unordered_set<int> &s) {
     int c = 0;
     for (const int idx : s) {
-        if (idx > 0 || !s.contains(-idx)) ++c;
+        if (idx > 0 || !s.contains(-idx))
+            ++c;
     }
     return c;
 }
@@ -26,7 +27,8 @@ inline int count_negative(const std::unordered_set<int> &s) {
 inline int count_overlap(const std::unordered_set<int> &s) {
     int c = 0;
     for (const int idx : s) {
-        if (idx < 0 && s.contains(-idx)) ++c;
+        if (idx < 0 && s.contains(-idx))
+            ++c;
     }
     return c;
 }
@@ -35,8 +37,7 @@ inline int count_overlap(const std::unordered_set<int> &s) {
 // -----------------------------------------------------------------------------
 //  csv_pairs – collect a rich set of PDAG statistics for CSV logging
 // -----------------------------------------------------------------------------
-inline std::vector<std::pair<std::string, std::string>>
-csv_pairs(const core::Pdag &g) {
+inline std::vector<std::pair<std::string, std::string>> csv_pairs(const core::Pdag &g) {
     using pair_t = std::pair<std::string, std::string>;
     using scram::log::csv_string;
 
@@ -46,10 +47,10 @@ csv_pairs(const core::Pdag &g) {
     // ---------------------------------------------------------------------
     //  Basic identity / configuration flags
     // ---------------------------------------------------------------------
-    out.emplace_back("pdag_root_index",           csv_string(g.root().index()));
-    out.emplace_back("pdag_complement_graph",     csv_string(g.complement()));
-    out.emplace_back("pdag_coherent_graph",       csv_string(g.coherent()));
-    out.emplace_back("pdag_normalized_graph",     csv_string(g.normal()));
+    out.emplace_back("pdag_root_index", csv_string(g.root().index()));
+    out.emplace_back("pdag_complement_graph", csv_string(g.complement()));
+    out.emplace_back("pdag_coherent_graph", csv_string(g.coherent()));
+    out.emplace_back("pdag_normalized_graph", csv_string(g.normal()));
 
     // ---------------------------------------------------------------------
     //  Gather node-level information with one traversal
@@ -62,7 +63,8 @@ csv_pairs(const core::Pdag &g) {
     core::TraverseGates(g.root_ptr(), [&](const core::GatePtr &pg) {
         gate_indices.insert(pg->index());
         ++gate_type_counts[pg->type()];
-        if (pg->module()) ++num_modules;
+        if (pg->module())
+            ++num_modules;
 
         // Record signed indices of all arguments so we can later derive
         // negated / overlap counts in the same way GraphLogger does.
@@ -80,18 +82,17 @@ csv_pairs(const core::Pdag &g) {
     // ---------------------------------------------------------------------
     //  Size & composition metrics
     // ---------------------------------------------------------------------
-    out.emplace_back("pdag_num_gates_total",        csv_string(detail::count_unique(gate_indices)));
-    out.emplace_back("pdag_num_modules",            csv_string(num_modules));
-    out.emplace_back("pdag_num_gates_neg_indices",  csv_string(detail::count_negative(gate_indices)));
-    out.emplace_back("pdag_num_gates_pos_and_neg",  csv_string(detail::count_overlap(gate_indices)));
+    out.emplace_back("pdag_num_gates_total", csv_string(detail::count_unique(gate_indices)));
+    out.emplace_back("pdag_num_modules", csv_string(num_modules));
+    out.emplace_back("pdag_num_gates_neg_indices", csv_string(detail::count_negative(gate_indices)));
+    out.emplace_back("pdag_num_gates_pos_and_neg", csv_string(detail::count_overlap(gate_indices)));
 
-    out.emplace_back("pdag_num_variables_total",        csv_string(detail::count_unique(var_indices)));
-    out.emplace_back("pdag_num_variables_neg_indices",  csv_string(detail::count_negative(var_indices)));
-    out.emplace_back("pdag_num_variables_pos_and_neg",  csv_string(detail::count_overlap(var_indices)));
+    out.emplace_back("pdag_num_variables_total", csv_string(detail::count_unique(var_indices)));
+    out.emplace_back("pdag_num_variables_neg_indices", csv_string(detail::count_negative(var_indices)));
+    out.emplace_back("pdag_num_variables_pos_and_neg", csv_string(detail::count_overlap(var_indices)));
 
     // Gate-type breakdown – use same labels as earlier suggestion.
-    static const char *kTag[core::kNumConnectives] =
-        {"and","or","atleast","xor","not","nand","nor","null"};
+    static const char *kTag[core::kNumConnectives] = {"and", "or", "atleast", "xor", "not", "nand", "nor", "null"};
     for (int i = 0; i < core::kNumConnectives; ++i) {
         out.emplace_back(std::string("pdag_num_gates_") + kTag[i], csv_string(gate_type_counts[i]));
     }

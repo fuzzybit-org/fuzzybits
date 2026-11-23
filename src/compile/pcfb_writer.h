@@ -14,61 +14,61 @@
 namespace scram::core {
 class Pdag;
 class Settings;
-}  // namespace scram::core
+} // namespace scram::core
 
 namespace scram::mef {
 class Model;
-}  // namespace scram::mef
+} // namespace scram::mef
 
 namespace fuzzybits::compile {
 
 /// Effective preprocessor flags, matching `scram-cli --pdag -c N [--no-kn …]`
 /// and `run_compile`.
 struct Options {
-  int compilation_level = 2;
-  bool expand_atleast_gates = false;  // --no-kn
-  bool expand_xor_gates = false;      // --no-xor
-  bool recognize_atleast_groups = true;
-  bool recognize_xor_groups = true;
-  bool keep_null_gates = false;
-  bool ccf = true;
-  bool allow_extern = false;
-  std::optional<std::string> target;
-  /// Extra MEF gate / basic-event names (or PDAG indices) that become additional
-  /// `PROBABILITY` queries. Identified the same way the server resolves
-  /// `MCSCRAM_WATCH` / `watch` node lists: id, name, full_path, or decimal index.
-  std::vector<std::string> watch;
-  /// Nombrilo variant weights file. Ignored for MEF inputs.
-  std::optional<std::string> weights_file;
-  /// Progress sinks. Not owned; they must outlive the compile. Empty means no
-  /// snapshot is ever built.
-  std::vector<runtime::progress::sink *> progress_sinks;
-  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
-  double progress_max_rate_hz = 10.0;
+    int compilation_level = 2;
+    bool expand_atleast_gates = false; // --no-kn
+    bool expand_xor_gates = false;     // --no-xor
+    bool recognize_atleast_groups = true;
+    bool recognize_xor_groups = true;
+    bool keep_null_gates = false;
+    bool ccf = true;
+    bool allow_extern = false;
+    std::optional<std::string> target;
+    /// Extra MEF gate / basic-event names (or PDAG indices) that become additional
+    /// `PROBABILITY` queries. Identified the same way the server resolves
+    /// `MCSCRAM_WATCH` / `watch` node lists: id, name, full_path, or decimal index.
+    std::vector<std::string> watch;
+    /// Nombrilo variant weights file. Ignored for MEF inputs.
+    std::optional<std::string> weights_file;
+    /// Progress sinks. Not owned; they must outlive the compile. Empty means no
+    /// snapshot is ever built.
+    std::vector<runtime::progress::sink *> progress_sinks;
+    /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+    double progress_max_rate_hz = 10.0;
 
-  /// Reconstruct the effective CLI fragment written to `compile.options`.
-  [[nodiscard]] std::string to_cli_string() const;
+    /// Reconstruct the effective CLI fragment written to `compile.options`.
+    [[nodiscard]] std::string to_cli_string() const;
 };
 
 struct Compiled {
-  std::vector<std::byte> bytes;
-  std::string model_name;
-  std::string target_id;
-  std::string target_name;
+    std::vector<std::byte> bytes;
+    std::string model_name;
+    std::string target_id;
+    std::string target_name;
 };
 
 /// In-memory compile result. `model` must outlive `graph` (BasicEvent pointers).
 struct CompiledGraph {
-  std::unique_ptr<scram::mef::Model> model;
-  std::unique_ptr<scram::core::Pdag> graph;
-  std::string model_name;
-  std::string target_id;
-  std::string target_name;
+    std::unique_ptr<scram::mef::Model> model;
+    std::unique_ptr<scram::core::Pdag> graph;
+    std::string model_name;
+    std::string target_id;
+    std::string target_name;
 
-  CompiledGraph();
-  CompiledGraph(CompiledGraph &&) noexcept;
-  CompiledGraph &operator=(CompiledGraph &&) noexcept;
-  ~CompiledGraph();
+    CompiledGraph();
+    CompiledGraph(CompiledGraph &&) noexcept;
+    CompiledGraph &operator=(CompiledGraph &&) noexcept;
+    ~CompiledGraph();
 };
 
 /// Apply `options` to a Settings object (compilation flags only).
@@ -79,17 +79,15 @@ void apply_options(scram::core::Settings &settings, const Options &options);
                                                            const Options &options);
 
 /// OpenPSA/MEF XML → preprocessed PDAG → pcfb core-1.1 buffer.
-[[nodiscard]] pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files,
-                                                   const Options &options);
+[[nodiscard]] pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files, const Options &options);
 
 /// Lower an already-preprocessed PDAG. `event_id` of each SAMPLE is the PDAG index.
 /// `source_path` / `input_files` / `target_name` are written to `fuzzybits.*`
 /// metadata so `Session.graph()` can round-trip the server DAG views.
 [[nodiscard]] pcfb::Result<std::vector<std::byte>>
-pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name,
-             std::string_view query_name, std::span<const std::byte> source_sha256,
-             std::string_view source_path = {}, std::span<const std::string> input_files = {},
-             std::string_view target_name = {});
+pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name, std::string_view query_name,
+             std::span<const std::byte> source_sha256, std::string_view source_path = {},
+             std::span<const std::string> input_files = {}, std::string_view target_name = {});
 
 namespace testing {
 
@@ -99,6 +97,6 @@ namespace testing {
 /// any production path.
 void fail_next_compile_after_stage(std::string_view stage);
 
-}  // namespace testing
+} // namespace testing
 
-}  // namespace fuzzybits::compile
+} // namespace fuzzybits::compile

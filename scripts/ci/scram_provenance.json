@@ -34,8 +34,8 @@
     "tests/input/*"
   ],
   "baseline": {
-    "gpl_files": 150,
-    "upstream_data_files": 434,
+    "gpl_files": 141,
+    "upstream_data_files": 360,
     "including_files": [
       "src/compile/direct_eval_host_stubs.cc",
       "src/compile/pcfb_writer.cc",

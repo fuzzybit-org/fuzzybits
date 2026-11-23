@@ -1,70 +1,75 @@
-# How to Contribute
+# Contributing to fuzzybits
 
-Thank you for your interest in contributing to SCRAM.
-Contributions are accepted through [GitHub](https://help.github.com)
-Pull Requests and Issue Tracker.
+Issues and pull requests: https://github.com/fuzzybit-org/fuzzybits. These conventions apply to
+people and to coding agents alike; agents also read [CLAUDE.md](CLAUDE.md).
 
+## Branches and pull requests
 
-## Reporting Bugs, Suggesting Enhancements, Opening GitHub Issues
+- Branch from `develop` as `<type>/<short-name>` (for example `feat/pcfb-reader`,
+  `chore/dev-workspaces`). Pull requests target `develop`.
+- Rebase on `origin/develop` before review. Never rebase commits that others have pulled.
+- Every commit compiles and passes its tests.
+- PR description sections: **Summary**, **Changes** (by file or area), **Decisions** (the
+  trade-offs and alternatives rejected), **Tests** (the exact commands you ran and their results).
 
-Please check for duplicates in the [Issue Tracker] and project [todo list].
-If you are uncertain or have questions,
-consider posting on [user mailing list].
-In bug reports, please supply as much information as feasible,
-such as the platform, version number, logs, and (sufficient) input.
+## Commit messages
 
-[Issue Tracker]: https://github.com/rakhimov/scram/issues?utf8=%E2%9C%93&q=
-[todo list]: https://scram-pra.org/doc/todo.html
-[user mailing list]: https://groups.google.com/forum/#!forum/scram-users
+[Conventional Commits](https://www.conventionalcommits.org): `<type>(<scope>): <summary> (#<issue>)`.
+The squash merge appends the PR number, e.g. `feat(io): .pcfb reader to ir::pc (#219) (#231)`.
 
+- Types in use: `feat`, `fix`, `docs`, `build`, `ci`, `chore`, `bench`, `refactor`, `test`.
+- Scopes are the area touched: `io`, `ir`, `compile`, `cli`, `runtime`, `hip`, `bench`, `dev`,
+  `release`, `server`, `python`, …
+- Summary in the imperative, lower case, no trailing period.
 
-## GUI Issues and Commits
+## Building and testing
 
-Prepend GUI issue and commit titles with "GUI:".
-For example, a GUI issue can be opened as "GUI: Crash with internal exception",
-and a git commit related to the GUI code can be "GUI: Fix the memory leak in Gate".
+Build and test with [`scripts/dev/ws.sh`](scripts/dev/README.md). It runs the checkout inside the
+pinned CI toolchain image on a Docker host, so results match CI. This is the preferred method for
+local development, for people and agents alike.
 
+- macOS Metal work, and only that, uses `scripts/dev/macos-dev.sh`
+  ([build-variants.md](docs/build-variants.md#macos-local-development)).
+- Plain `cmake --preset …` on a host with the pinned toolchain also works
+  ([build-variants.md](docs/build-variants.md)), but it is not what CI runs.
+- CI ([`.github/workflows`](.github/workflows)) is the authority. A PR that changes behaviour adds or
+  updates tests: C++ tests next to the code (`src/*/tests`, `tests/`), Python tests in
+  `tests/python`.
 
-## Developer Workflow
+## Changes, docs and licensing
 
-1. Start by forking this repository and setting it as the upstream repository.
-2. Create your **topic** branch from the **develop** branch.
-3. Keep in sync your **origin** develop branch with the **upstream** develop branch.
-4. Develop your contributions following the [Coding Style and Quality Assurance].
-   Every commit should compile and pass tests. To build and test in the CI toolchain image on a
-   Docker host, use `scripts/dev/ws.sh` ([scripts/dev/README.md](scripts/dev/README.md)).
-5. Keep your **topic** branch in sync with the **develop** branch
-   by merging or rebasing your **topic** branch on top of the **develop**.
-   Rebasing is highly recommended for streamlining the history.
-   However, **DO NOT** rebase any commits
-   that have been pulled/pushed anywhere else other than your own fork.
-6. Use the [developer mailing list] and [Issue Tracker]
-   to stay in touch with the project development.
-7. Submit your [pull request] from **your topic** branch to the **upstream develop** branch.
-8. Your pull request will be reviewed by another developer before merging.
+- User-visible changes go under `## Unreleased` in [CHANGELOG.md](CHANGELOG.md). Breaking changes
+  go under **Breaking changes**, with the way to opt out.
+- Docs state only what CI or a reproducible command proves. Plans and vision go in
+  [ROADMAP.md](ROADMAP.md) and issues. The docs index is [docs/README.md](docs/README.md).
+- C++ follows [`.clang-format`](.clang-format) and [`.clang-tidy`](.clang-tidy).
+  - CI checks formatting with clang-format 20.1.8 (`scripts/ci/clang-format.sh`).
+  - To fix, run `scripts/ci/clang-format.sh --fix`. It uses `$CLANG_FORMAT` from
+    `macos-dev.sh` when set, otherwise `uvx`.
+  - Commits that only reformat go in [`.git-blame-ignore-revs`](.git-blame-ignore-revs). Run
+    `git config blame.ignoreRevsFile .git-blame-ignore-revs` once.
+- fuzzybits is AGPL-3.0 and still contains SCRAM-derived GPL-3.0-or-later code ([NOTICE](NOTICE)).
+  - Do not add new includes of SCRAM-derived headers.
+  - Do not copy the upstream copyright into new files.
+  - `scripts/ci/scram_provenance.py` (run in CI) enforces both. After removing SCRAM code, run it
+    with `--update-baseline` and commit the result.
+  - Retiring SCRAM is tracked in [#144](https://github.com/fuzzybit-org/fuzzybits/issues/144).
 
-[Coding Style and Quality Assurance]: https://scram-pra.org/doc/coding_standards.html
-[developer mailing list]: https://groups.google.com/forum/#!forum/scram-dev
-[pull request]: https://help.github.com/articles/using-pull-requests/
+### Rebasing a branch across the clang-format commit
 
+`b173731d` reformatted every C++ source. To move a branch that started before it:
 
-## Contributor License Agreement
+```bash
+git rebase b173731d^       # 1. resolve real conflicts by hand, as usual
+git rebase -X theirs --exec 'scripts/ci/clang-format.sh --fix && git add -u && git commit -q --amend --no-edit --allow-empty' b173731d
+```
 
-Upon pull requests,
-first time contributors will be asked to sign the [Contributor License Agreement]
-through [CLA Assistant] with a GitHub account.
-This license is for your protection as a contributor
-as well as the protection of SCRAM and its users;
-it does not change your rights to use your own contributions for any other purpose.
+Step 2 is safe only after step 1. `b173731d` changes nothing but C++ layout, so the only conflicts
+left are formatting, and each replayed commit is reformatted. Run step 2 without step 1 and
+`-X theirs` silently drops `develop`'s side of any real conflict.
 
-[Contributor License Agreement]: https://github.com/rakhimov/scram/blob/develop/ICLA.md
-[CLA Assistant]: https://cla-assistant.io/
+## Private fixtures
 
-
-## Contributor Code of Conduct
-
-Please note that this project is released with a [Contributor Code of Conduct].
-By participating in this project,
-you agree to abide by its terms.
-
-[Contributor Code of Conduct]: https://github.com/rakhimov/scram/blob/develop/CODE_OF_CONDUCT.md
+Some tests and benchmarks use private models (`--private` in `ws.sh`,
+`FUZZYBITS_PRIVATE_FIXTURES_DIR`). Never print, commit or paste their identifiers or values. Report
+aggregates only.

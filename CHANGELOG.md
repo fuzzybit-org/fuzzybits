@@ -17,6 +17,9 @@
 
 ### Changes
 
+- AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks
+  cuda, then hip, then omp) in the `generic` wheel and images. Needs the ROCm 7 user space and
+  access to `/dev/kfd` and a render node (#228).
 - `fzb compile` and `fuzzybits.compile` take `--target` and `--watch` repeatedly, and
   `--target @FILE` / `--watch @FILE` read one name per line (the Python API takes a name or a
   sequence). A file that is missing, is not a regular file or lists no names is an error.

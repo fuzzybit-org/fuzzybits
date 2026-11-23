@@ -4,13 +4,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 #include <boost/math/distributions/beta.hpp>
-#include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
 
 using scram::mc::stats::bayes_policy;
 using scram::mc::stats::tally;
@@ -19,28 +19,23 @@ using scram::mc::stats::wald_policy;
 
 namespace {
 
-tally make_tally(const std::size_t k, const std::size_t n)
-{
+tally make_tally(const std::size_t k, const std::size_t n) {
     tally t{};
     t.num_one_bits = k;
     t.total_bits = n;
     return t;
 }
 
-double z99()
-{
-    return scram::mc::stats::normal_quantile_two_sided(0.99);
-}
+double z99() { return scram::mc::stats::normal_quantile_two_sided(0.99); }
 
 } // namespace
 
-TEST_CASE("bayes policy does not throw at k = 0 for small and huge n", "[convergence][bayes]")
-{
+TEST_CASE("bayes policy does not throw at k = 0 for small and huge n", "[convergence][bayes]") {
     const double z = z99();
     const double delta = 0.001;
 
-    for (const std::size_t n : {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000},
-                                static_cast<std::size_t>(1e12)}) {
+    for (const std::size_t n :
+         {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
         tally t = make_tally(0, n);
         REQUIRE_NOTHROW(update_convergence<bayes_policy>(t, delta, z));
         CHECK(t.mean == 0.0);
@@ -50,13 +45,12 @@ TEST_CASE("bayes policy does not throw at k = 0 for small and huge n", "[converg
     }
 }
 
-TEST_CASE("bayes policy does not throw at k = n for small and huge n", "[convergence][bayes]")
-{
+TEST_CASE("bayes policy does not throw at k = n for small and huge n", "[convergence][bayes]") {
     const double z = z99();
     const double delta = 0.001;
 
-    for (const std::size_t n : {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000},
-                                static_cast<std::size_t>(1e12)}) {
+    for (const std::size_t n :
+         {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
         tally t = make_tally(n, n);
         REQUIRE_NOTHROW(update_convergence<bayes_policy>(t, delta, z));
         CHECK(t.mean == 1.0);
@@ -66,8 +60,7 @@ TEST_CASE("bayes policy does not throw at k = n for small and huge n", "[converg
     }
 }
 
-TEST_CASE("bayes policy handles k = 1 interior counts", "[convergence][bayes]")
-{
+TEST_CASE("bayes policy handles k = 1 interior counts", "[convergence][bayes]") {
     const double z = z99();
     const double delta = 0.001;
 
@@ -86,13 +79,11 @@ TEST_CASE("bayes policy handles k = 1 interior counts", "[convergence][bayes]")
         // Interior k at this n may fall back to "not converged" if Boost cannot
         // evaluate the incomplete beta; either a finite half-width or +inf is
         // acceptable as long as the policy does not throw.
-        CHECK((std::isfinite(t.linear.epsilon) ||
-               t.linear.epsilon == std::numeric_limits<double>::infinity()));
+        CHECK((std::isfinite(t.linear.epsilon) || t.linear.epsilon == std::numeric_limits<double>::infinity()));
     }
 }
 
-TEST_CASE("wald policy is defined at k = 0, 1, n", "[convergence][wald]")
-{
+TEST_CASE("wald policy is defined at k = 0, 1, n", "[convergence][wald]") {
     const double z = z99();
     const double delta = 0.001;
 
@@ -118,19 +109,16 @@ TEST_CASE("wald policy is defined at k = 0, 1, n", "[convergence][wald]")
     }
 }
 
-TEST_CASE("beta_half_quantile_approx error vs Boost for n = 1e2..1e6",
-          "[convergence][bayes][approx]")
-{
-    using scram::mc::stats::detail::beta_half_quantile;
-    using scram::mc::stats::detail::beta_half_quantile_approx;
+TEST_CASE("beta_half_quantile_approx error vs Boost for n = 1e2..1e6", "[convergence][bayes][approx]") {
     using boost::math::beta_distribution;
     using boost::math::quantile;
+    using scram::mc::stats::detail::beta_half_quantile;
+    using scram::mc::stats::detail::beta_half_quantile_approx;
 
     // Include the Jeffreys-prior two-sided tail used at z = 4
     // (Φ(4) ≈ 0.999968, cred ≈ 0.999936, tail ≈ 3.17e-5) plus a coarse grid.
     const std::vector<double> us{
-        3.167e-5, 1e-4, 1e-3, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 1.0 - 1e-3,
-        1.0 - 1e-4, 1.0 - 3.167e-5,
+        3.167e-5, 1e-4, 1e-3, 0.025, 0.05, 0.25, 0.5, 0.75, 0.95, 0.975, 1.0 - 1e-3, 1.0 - 1e-4, 1.0 - 3.167e-5,
     };
     const std::vector<double> ns{1e2, 1e3, 1e4, 1e5, 1e6};
 

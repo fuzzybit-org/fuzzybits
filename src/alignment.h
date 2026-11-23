@@ -31,49 +31,45 @@ namespace scram::mef {
 
 /// Phases of alignments the models spends its time fraction.
 class Phase : public Element {
- public:
-  static constexpr const char* kTypeString = "phase";  ///< For error messages.
+  public:
+    static constexpr const char *kTypeString = "phase"; ///< For error messages.
 
-  /// @copydoc Element::Element
-  ///
-  /// @param[in] time_fraction  The fraction of mission-time spent in the phase.
-  ///
-  /// @throws DomainError  The fraction is not a valid value in (0, 1].
-  Phase(std::string name, double time_fraction);
+    /// @copydoc Element::Element
+    ///
+    /// @param[in] time_fraction  The fraction of mission-time spent in the phase.
+    ///
+    /// @throws DomainError  The fraction is not a valid value in (0, 1].
+    Phase(std::string name, double time_fraction);
 
-  /// @returns The positive fraction of mission-time spent in this phase.
-  double time_fraction() const { return time_fraction_; }
+    /// @returns The positive fraction of mission-time spent in this phase.
+    double time_fraction() const { return time_fraction_; }
 
-  /// @returns The instructions applied in this phase.
-  const std::vector<SetHouseEvent*>& instructions() const {
-    return instructions_;
-  }
+    /// @returns The instructions applied in this phase.
+    const std::vector<SetHouseEvent *> &instructions() const { return instructions_; }
 
-  /// @param[in] instructions  Zero or more instructions for this phase.
-  void instructions(std::vector<SetHouseEvent*> instructions) {
-    instructions_ = std::move(instructions);
-  }
+    /// @param[in] instructions  Zero or more instructions for this phase.
+    void instructions(std::vector<SetHouseEvent *> instructions) { instructions_ = std::move(instructions); }
 
- public:
-  double time_fraction_;  ///< The positive fraction of the mission time.
-  std::vector<SetHouseEvent*> instructions_;  ///< The phase modifiers.
+  public:
+    double time_fraction_;                      ///< The positive fraction of the mission time.
+    std::vector<SetHouseEvent *> instructions_; ///< The phase modifiers.
 };
 
 /// Alignment configuration for the whole model per analysis.
 class Alignment : public Element, public Container<Alignment, Phase> {
- public:
-  /// Type string for error messages.
-  static constexpr const char* kTypeString = "alignment";
+  public:
+    /// Type string for error messages.
+    static constexpr const char *kTypeString = "alignment";
 
-  using Element::Element;
+    using Element::Element;
 
-  /// @returns The table range of phases in the alignment.
-  auto phases() const { return Container::table(); }
+    /// @returns The table range of phases in the alignment.
+    auto phases() const { return Container::table(); }
 
-  /// Ensures that all phases add up to be valid for the alignment.
-  ///
-  /// @throws ValidityError  Phases are incomplete (e.g., don't sum to 1).
-  void Validate();
+    /// Ensures that all phases add up to be valid for the alignment.
+    ///
+    /// @throws ValidityError  Phases are incomplete (e.g., don't sum to 1).
+    void Validate();
 };
 
-}  // namespace scram::mef
+} // namespace scram::mef

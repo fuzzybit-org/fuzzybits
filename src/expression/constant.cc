@@ -27,7 +27,7 @@ namespace scram::mef {
 
 ConstantExpression ConstantExpression::kOne(1);
 ConstantExpression ConstantExpression::kZero(0);
-ConstantExpression ConstantExpression::kPi(  // This line confuses some linters!
+ConstantExpression ConstantExpression::kPi( // This line confuses some linters!
     boost::math::constants::pi<double>());
 
-}  // namespace scram::mef
+} // namespace scram::mef

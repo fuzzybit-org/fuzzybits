@@ -110,25 +110,25 @@ for (auto i = 0; i < num_inputs; ++i) {
 
 ## Build and Installation
 
-Python: `pip install` a Linux x86_64 wheel (see [`docs/python.md`](docs/python.md)). The import name is **`fuzzybits`**; the wheel also installs an `fzb` console script matching the native CLI. Wheels bundle AdaptiveCpp (`MALLOC_TYPE=malloc`, no `LD_PRELOAD` / `PYTHONPATH`). Variants are `generic` (default, SSCP JIT) and the CUDA AOT builds `cuda-sm70`, `cuda-sm86` and `cuda-sm120`.
+Python: `pip install` a Linux x86_64 wheel (see [`python.md`](python.md)). The import name is **`fuzzybits`**; the wheel also installs an `fzb` console script matching the native CLI. Wheels bundle AdaptiveCpp (`MALLOC_TYPE=malloc`, no `LD_PRELOAD` / `PYTHONPATH`). Variants are `generic` (default, SSCP JIT) and the CUDA AOT builds `cuda-sm70`, `cuda-sm86` and `cuda-sm120`.
 
-### Container-based Development (Recommended)
+### Development builds
 
-The project provides multi-stage Docker builds for different phases. Architecture-specific CUDA 12.8 images, build args, and Nsight notes: [docs/cuda-builds.md](docs/cuda-builds.md). 
+Build and test with [`scripts/dev/ws.sh`](../scripts/dev/README.md), which runs the checkout in the
+pinned CI toolchain image on a Docker host (see [CONTRIBUTING.md](../CONTRIBUTING.md)). macOS Metal
+development uses `scripts/dev/macos-dev.sh` ([build-variants.md](build-variants.md#macos-local-development)).
+
+### Container images
+
+Published runtime images: [images.md](images.md). Architecture-specific CUDA 12.8 images, build args,
+and Nsight notes: [cuda-builds.md](cuda-builds.md).
 
 - For CUDA runtime support, install the [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit).
 - For AMD/ROCm runtime support, install the [AMD Container Toolkit](https://instinct.docs.amd.com/projects/container-toolkit/en/latest/container-runtime/docker-compose.html).
  -- alternatively, you can try mapping devices `/dev/dri`, `/dev/kfd`, but ymmw.
 - For Intel GPUs (discrete or embedded), you just need to map devices `/dev/dri`.
 ```bash
-# Development environment with full toolchain
-docker build --target devimage -t mc-scram:dev .
-docker run -it --rm --gpus all -v $(pwd):/workspace mc-scram:dev
-
-## for intel, amd 
-docker run -it --rm --device=/dev/dri -v $(pwd):/workspace mc-scram:dev
-
-# Production runtime (minimal dependencies)
+# Production runtime from the root Dockerfile (minimal dependencies)
 docker build --target scramruntime -t mc-scram:runtime .
 ```
 
@@ -352,7 +352,7 @@ For large models with memory constraints:
 
 ## Contributing
 
-Please see `CONTRIBUTING.md` for development guidelines and `ICLA.md` for contributor license requirements.
+See [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Licensing
 

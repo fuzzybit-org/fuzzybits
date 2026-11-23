@@ -27,63 +27,64 @@
 
 namespace {
 
-    using namespace pcfb_writer_test;
-    namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
-    using edge = pc::edge_ref;
+using namespace pcfb_writer_test;
+namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
+using edge = pc::edge_ref;
 
-    [[nodiscard]] auto quoted(std::string const &text) -> std::string {
+[[nodiscard]] auto quoted(std::string const &text) -> std::string {
 #ifdef _WIN32
-        return "\"" + text + "\"";
+    return "\"" + text + "\"";
 #else
-        return "'" + text + "'";
+    return "'" + text + "'";
 #endif
-    }
+}
 
-    // Runs `fzb <arguments>` with stdout and stderr captured to files.
-    struct FzbRun final {
-        int status = -1;
-        std::string out;
-        std::string err;
-    };
+// Runs `fzb <arguments>` with stdout and stderr captured to files.
+struct FzbRun final {
+    int status = -1;
+    std::string out;
+    std::string err;
+};
 
-    [[nodiscard]] auto readText(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        std::ostringstream text;
-        text << input.rdbuf();
-        return text.str();
-    }
+[[nodiscard]] auto readText(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    std::ostringstream text;
+    text << input.rdbuf();
+    return text.str();
+}
 
-    [[nodiscard]] auto runFzb(std::string const &arguments, std::filesystem::path const &scratch) -> FzbRun {
-        const auto outPath = scratch / "fzb.out";
-        const auto errPath = scratch / "fzb.err";
-        const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(outPath.string()) + " 2> " + quoted(errPath.string());
+[[nodiscard]] auto runFzb(std::string const &arguments, std::filesystem::path const &scratch) -> FzbRun {
+    const auto outPath = scratch / "fzb.out";
+    const auto errPath = scratch / "fzb.err";
+    const auto command =
+        quoted(FZB_PATH) + " " + arguments + " > " + quoted(outPath.string()) + " 2> " + quoted(errPath.string());
 #ifdef _WIN32
-        const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
+    const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
 #else
-        const int status = std::system(command.c_str());
+    const int status = std::system(command.c_str());
 #endif
-        return FzbRun{.status = status, .out = readText(outPath), .err = readText(errPath)};
-    }
+    return FzbRun{.status = status, .out = readText(outPath), .err = readText(errPath)};
+}
 
-    [[nodiscard]] auto scratchDirectory(std::string const &name) -> std::filesystem::path {
-        const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-io-pcfb-" + name);
-        std::filesystem::remove_all(path);
-        std::filesystem::create_directories(path);
-        return path;
-    }
+[[nodiscard]] auto scratchDirectory(std::string const &name) -> std::filesystem::path {
+    const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-io-pcfb-" + name);
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
+    return path;
+}
 
-    void writeFile(std::filesystem::path const &path, std::vector<std::byte> const &bytes) {
-        std::ofstream output(path, std::ios::binary);
-        output.write(reinterpret_cast<char const *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        REQUIRE(output);
-    }
+void writeFile(std::filesystem::path const &path, std::vector<std::byte> const &bytes) {
+    std::ofstream output(path, std::ios::binary);
+    output.write(reinterpret_cast<char const *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    REQUIRE(output);
+}
 
-    [[nodiscard]] auto numberAfter(std::string const &text, std::string const &key) -> double {
-        const auto position = text.rfind(key);
-        INFO(text);
-        REQUIRE(position != std::string::npos);
-        return std::strtod(text.c_str() + position + key.size(), nullptr);
-    }
+[[nodiscard]] auto numberAfter(std::string const &text, std::string const &key) -> double {
+    const auto position = text.rfind(key);
+    INFO(text);
+    REQUIRE(position != std::string::npos);
+    return std::strtod(text.c_str() + position + key.size(), nullptr);
+}
 
 } // namespace
 
@@ -97,16 +98,19 @@ TEST_CASE("fzb inspect validates and exactly evaluates written FTP fixtures", "[
         INFO(file.filename().string());
         std::ifstream input(file, std::ios::binary);
         REQUIRE(input);
-        auto read = ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
+        auto read =
+            ftp_lowering_test::lower_text({std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()});
         INFO(diagnosticsText(read.diagnostics()));
         REQUIRE(read);
         auto const *model = &read.value().circuit;
-        if (!std::ranges::all_of(model->probability_sources(),
-                                 [](auto const &source) { return source.kind == pc::probability_source_kind::literal; })) {
+        if (!std::ranges::all_of(model->probability_sources(), [](auto const &source) {
+                return source.kind == pc::probability_source_kind::literal;
+            })) {
             continue;
         }
 
-        const auto written = writer::write(model->to_handle(), writer::write_options{.model_name = file.stem().string()});
+        const auto written =
+            writer::write(model->to_handle(), writer::write_options{.model_name = file.stem().string()});
         INFO(diagnosticsText(written.diagnostics()));
         REQUIRE(written);
         const auto path = scratch / (file.stem().string() + ".pcfb");
@@ -145,15 +149,21 @@ TEST_CASE("fzb run estimates a written pcfb within 4 standard errors of the exac
     }
     const auto yes = builder.add_constant(true);
     const auto no = builder.add_house_event(false);
-    const auto parity = builder.add_gate(pc::op_code::xor_gate, {edge{.source = e[0]}, edge{.source = e[1], .complement = true}});
+    const auto parity =
+        builder.add_gate(pc::op_code::xor_gate, {edge{.source = e[0]}, edge{.source = e[1], .complement = true}});
     const auto nand = builder.add_gate(pc::op_code::nand_gate, {edge{.source = e[2]}, edge{.source = e[3]}});
     const auto range = builder.add_cardinality(
-        1, 2, {edge{.source = e[0]}, edge{.source = e[3], .complement = true}, edge{.source = e[4]}, edge{.source = e[5]}});
-    const auto exactly = builder.add_cardinality(2, 2, {edge{.source = e[1]}, edge{.source = e[2]}, edge{.source = e[5], .complement = true}});
-    const auto atMost = builder.add_cardinality(0, 1, {edge{.source = e[0]}, edge{.source = e[1]}, edge{.source = e[2]}});
-    const auto atLeast = builder.add_cardinality(2, 3, {edge{.source = range}, edge{.source = e[3]}, edge{.source = e[4]}});
+        1, 2,
+        {edge{.source = e[0]}, edge{.source = e[3], .complement = true}, edge{.source = e[4]}, edge{.source = e[5]}});
+    const auto exactly = builder.add_cardinality(
+        2, 2, {edge{.source = e[1]}, edge{.source = e[2]}, edge{.source = e[5], .complement = true}});
+    const auto atMost =
+        builder.add_cardinality(0, 1, {edge{.source = e[0]}, edge{.source = e[1]}, edge{.source = e[2]}});
+    const auto atLeast =
+        builder.add_cardinality(2, 3, {edge{.source = range}, edge{.source = e[3]}, edge{.source = e[4]}});
     const auto contradiction = builder.add_and({edge{.source = e[4]}, edge{.source = e[4], .complement = true}});
-    const auto equivalent = builder.add_gate(pc::op_code::xnor_gate, {edge{.source = e[4]}, edge{.source = e[5], .complement = true}});
+    const auto equivalent =
+        builder.add_gate(pc::op_code::xnor_gate, {edge{.source = e[4]}, edge{.source = e[5], .complement = true}});
     const auto inverted = builder.add_not(edge{.source = nand, .complement = true});
     const auto neither = builder.add_gate(pc::op_code::nor_gate, {edge{.source = atMost}, edge{.source = no}});
     const auto top = builder.add_or({
@@ -230,7 +240,8 @@ TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts lat
     query_guard_files::write(future, query_guard_files::boolean_with_minor(3));
 
     for (auto const &path : {hull, mixed}) {
-        const auto run = runFzb("run " + quoted(path.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+        const auto run =
+            runFzb("run " + quoted(path.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
         INFO(run.out << run.err);
         CHECK(run.status != 0);
         CHECK(run.err.find("pcfb.unsupported-query-kind") != std::string::npos);
@@ -238,14 +249,16 @@ TEST_CASE("fzb run refuses monotone-hull queries before sampling and accepts lat
         CHECK(run.out.find("estimate") == std::string::npos);
     }
     // Readers accept any minor of major 1 (pcfb spec 1.1 section 2).
-    const auto later = runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
+    const auto later =
+        runFzb("run " + quoted(future.string()) + " --trials 1024 --backend omp --json --no-progress", scratch);
     INFO(later.out << later.err);
     CHECK(later.status == 0);
     CHECK(later.out.find("\"name\": \"TOP\"") != std::string::npos);
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorded quantification", "[io][pcfb][cli][kind]") {
+TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorded quantification",
+          "[io][pcfb][cli][kind]") {
     pc::builder builder;
     const auto a = builder.add_basic_event(builder.add_literal_probability(0.25));
     const auto b = builder.add_basic_event(builder.add_literal_probability(0.5));
@@ -257,8 +270,10 @@ TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorde
 
     writer::write_options options;
     options.target_names = {{pc::target_id(0), "TOP"}, {pc::target_id(1), "A"}};
-    options.target_kinds = {{pc::target_id(0), {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}}};
-    options.quantification = {{pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split", .max_initiators_per_cutset = 1}}};
+    options.target_kinds = {
+        {pc::target_id(0), {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}}};
+    options.quantification = {{pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split",
+                                                                               .max_initiators_per_cutset = 1}}};
     const auto written = writer::write(sealed.output.to_handle(), options);
     INFO(diagnosticsText(written.diagnostics()));
     REQUIRE(written);

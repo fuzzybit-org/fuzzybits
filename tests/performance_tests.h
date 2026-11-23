@@ -31,52 +31,52 @@
 namespace scram::core::test {
 
 class PerformanceTest {
- public:
-  PerformanceTest() {
-    settings.algorithm("mocus");
-    delta = 0.10;  // % variation of values.
-  }
-
- protected:
-  // Convenient function to manage analysis of one model in input files.
-  void Analyze(const std::vector<std::string>& input_files) {
-    {
-      model = mef::Initializer(input_files, settings).model();
-      analysis = std::make_unique<RiskAnalysis>(model.get(), settings);
+  public:
+    PerformanceTest() {
+        settings.algorithm("mocus");
+        delta = 0.10; // % variation of values.
     }
-    analysis->Analyze();
-  }
 
-  // Total probability as a result of analysis.
-  double p_total() {
-    assert(analysis->results().size() == 1);
-    assert(analysis->results().front().probability_analysis);
-    return analysis->results().front().probability_analysis->p_total();
-  }
+  protected:
+    // Convenient function to manage analysis of one model in input files.
+    void Analyze(const std::vector<std::string> &input_files) {
+        {
+            model = mef::Initializer(input_files, settings).model();
+            analysis = std::make_unique<RiskAnalysis>(model.get(), settings);
+        }
+        analysis->Analyze();
+    }
 
-  // The number of products as a result of analysis.
-  int NumOfProducts() {
-    assert(analysis->results().size() == 1);
-    return analysis->results().front().fault_tree_analysis->products().size();
-  }
+    // Total probability as a result of analysis.
+    double p_total() {
+        assert(analysis->results().size() == 1);
+        assert(analysis->results().front().probability_analysis);
+        return analysis->results().front().probability_analysis->p_total();
+    }
 
-  // Time taken to find products.
-  double ProductGenerationTime() {
-    assert(analysis->results().size() == 1);
-    return analysis->results().front().fault_tree_analysis->analysis_time();
-  }
+    // The number of products as a result of analysis.
+    int NumOfProducts() {
+        assert(analysis->results().size() == 1);
+        return analysis->results().front().fault_tree_analysis->products().size();
+    }
 
-  // Time taken to calculate total probability.
-  double ProbabilityCalculationTime() {
-    assert(analysis->results().size() == 1);
-    assert(analysis->results().front().probability_analysis);
-    return analysis->results().front().probability_analysis->analysis_time();
-  }
+    // Time taken to find products.
+    double ProductGenerationTime() {
+        assert(analysis->results().size() == 1);
+        return analysis->results().front().fault_tree_analysis->analysis_time();
+    }
 
-  std::unique_ptr<mef::Model> model;
-  std::unique_ptr<RiskAnalysis> analysis;
-  Settings settings;
-  double delta;  // The range indicator for values.
+    // Time taken to calculate total probability.
+    double ProbabilityCalculationTime() {
+        assert(analysis->results().size() == 1);
+        assert(analysis->results().front().probability_analysis);
+        return analysis->results().front().probability_analysis->analysis_time();
+    }
+
+    std::unique_ptr<mef::Model> model;
+    std::unique_ptr<RiskAnalysis> analysis;
+    Settings settings;
+    double delta; // The range indicator for values.
 };
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

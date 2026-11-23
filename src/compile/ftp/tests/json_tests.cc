@@ -9,7 +9,7 @@
 
 namespace {
 
-    namespace json = fuzzybits::compile::ftp::json;
+namespace json = fuzzybits::compile::ftp::json;
 
 } // namespace
 
@@ -33,8 +33,8 @@ TEST_CASE("json parses documents and keeps key order", "[compile][ftp][json]") {
 }
 
 TEST_CASE("json rejects malformed documents with a stable id", "[compile][ftp][json]") {
-    for (const char *text : {"", "{", "[1,]", "{\"a\":1,}", "{\"a\":1 \"b\":2}", "{\"a\":1,\"a\":2}", "01", "1.", "\"\\x\"", "\"\\ud800\"",
-                             "[1] 2", "nul", "\"unterminated", "{\"a\":\"\t\"}", "1e999"}) {
+    for (const char *text : {"", "{", "[1,]", "{\"a\":1,}", "{\"a\":1 \"b\":2}", "{\"a\":1,\"a\":2}", "01", "1.",
+                             "\"\\x\"", "\"\\ud800\"", "[1] 2", "nul", "\"unterminated", "{\"a\":\"\t\"}", "1e999"}) {
         INFO(text);
         const auto parsed = json::parse(text);
         REQUIRE_FALSE(parsed);
@@ -46,7 +46,10 @@ TEST_CASE("json rejects malformed documents with a stable id", "[compile][ftp][j
 TEST_CASE("json dump round-trips", "[compile][ftp][json]") {
     auto root = json::value::make_object();
     root.set("text", json::value::make_string("a\"b\\c\n\x01"));
-    root.set("list", json::value::make_array().push(json::value::make_int(-3)).push(json::value::make_number(0.1)).push(json::value::make_bool(false)));
+    root.set("list", json::value::make_array()
+                         .push(json::value::make_int(-3))
+                         .push(json::value::make_number(0.1))
+                         .push(json::value::make_bool(false)));
     root.set("none", json::value::make_null());
     root.set("empty", json::value::make_object());
     const auto compact = json::dump(root);
@@ -60,32 +63,32 @@ TEST_CASE("json dump round-trips", "[compile][ftp][json]") {
 
 namespace {
 
-    [[nodiscard]] auto parse_ok(std::string const &text) -> json::value {
-        auto parsed = json::parse(text);
-        INFO(text);
-        REQUIRE(parsed);
-        return std::move(parsed).value();
-    }
+[[nodiscard]] auto parse_ok(std::string const &text) -> json::value {
+    auto parsed = json::parse(text);
+    INFO(text);
+    REQUIRE(parsed);
+    return std::move(parsed).value();
+}
 
-    void require_rejected(std::string const &text) {
-        const auto parsed = json::parse(text);
-        INFO(text.substr(0, 60));
-        REQUIRE_FALSE(parsed);
-        REQUIRE(parsed.diagnostics().items().front().code == "compile.ftp.invalid-json");
-    }
+void require_rejected(std::string const &text) {
+    const auto parsed = json::parse(text);
+    INFO(text.substr(0, 60));
+    REQUIRE_FALSE(parsed);
+    REQUIRE(parsed.diagnostics().items().front().code == "compile.ftp.invalid-json");
+}
 
-    [[nodiscard]] auto nested(const std::size_t levels, const char open, const char close) -> std::string {
-        std::string out;
-        for (std::size_t level = 0; level < levels; ++level) {
-            out += open;
-            if (open == '{') {
-                out += "\"k\":";
-            }
+[[nodiscard]] auto nested(const std::size_t levels, const char open, const char close) -> std::string {
+    std::string out;
+    for (std::size_t level = 0; level < levels; ++level) {
+        out += open;
+        if (open == '{') {
+            out += "\"k\":";
         }
-        out += "0";
-        out.append(levels, close);
-        return out;
     }
+    out += "0";
+    out.append(levels, close);
+    return out;
+}
 
 } // namespace
 
@@ -98,16 +101,27 @@ TEST_CASE("json string escapes and surrogate pairs", "[compile][ftp][json]") {
     REQUIRE(parse_ok("\"caf\xC3\xA9 \xE2\x82\xAC\"").string == "caf\xC3\xA9 \xE2\x82\xAC");
     // Keys decode like values.
     REQUIRE(parse_ok(R"({"\u0041\n": 1})").keys.front() == "A\n");
-    for (const char *bad : {R"("\uD83D")", R"("\uD83Dx")", R"("\uD83D\u0041")", R"("\uDE00")", R"("\uD83D\uD83D")", R"("\u12G4")", R"("\u12")",
-                            R"("\U0041")", R"("\a")", R"("\')", "\"\n\"", "\"\x1f\"", "\"abc"}) {
+    for (const char *bad :
+         {R"("\uD83D")", R"("\uD83Dx")", R"("\uD83D\u0041")", R"("\uDE00")", R"("\uD83D\uD83D")", R"("\u12G4")",
+          R"("\u12")", R"("\U0041")", R"("\a")", R"("\')", "\"\n\"", "\"\x1f\"", "\"abc"}) {
         require_rejected(bad);
     }
 }
 
 TEST_CASE("json numbers", "[compile][ftp][json]") {
-    for (const auto &[text, expected] : std::vector<std::pair<std::string, double>>{
-             {"0", 0.0}, {"-0", 0.0}, {"7", 7.0}, {"-12", -12.0}, {"1.5", 1.5}, {"-0.25", -0.25}, {"1e2", 100.0}, {"1E+2", 100.0}, {"1e-2", 0.01},
-             {"-12.5e3", -12500.0}, {"0.0", 0.0}, {"1.0e0", 1.0}, {"2.5e-3", 0.0025}}) {
+    for (const auto &[text, expected] : std::vector<std::pair<std::string, double>>{{"0", 0.0},
+                                                                                    {"-0", 0.0},
+                                                                                    {"7", 7.0},
+                                                                                    {"-12", -12.0},
+                                                                                    {"1.5", 1.5},
+                                                                                    {"-0.25", -0.25},
+                                                                                    {"1e2", 100.0},
+                                                                                    {"1E+2", 100.0},
+                                                                                    {"1e-2", 0.01},
+                                                                                    {"-12.5e3", -12500.0},
+                                                                                    {"0.0", 0.0},
+                                                                                    {"1.0e0", 1.0},
+                                                                                    {"2.5e-3", 0.0025}}) {
         const auto value = parse_ok(text);
         INFO(text);
         const auto as_double = value.is_integer() ? static_cast<double>(value.integer) : value.number;
@@ -122,8 +136,9 @@ TEST_CASE("json numbers", "[compile][ftp][json]") {
     REQUIRE(big.kind == json::value::kind_type::number);
     REQUIRE(big.number == 9223372036854775808.0);
     REQUIRE(parse_ok("1e308").number == 1e308);
-    for (const char *bad : {"1e309", "-1e309", "1e99999", "1e-99999", "+1", ".5", "5.", "-", "--1", "1e", "1e+", "1.e2", "0x10", "01", "-01", "1_000",
-                            "NaN", "Infinity", "-Infinity", "1 2", "1,2"}) {
+    for (const char *bad :
+         {"1e309", "-1e309", "1e99999", "1e-99999", "+1",    ".5",  "5.",       "-",         "--1", "1e", "1e+",
+          "1.e2",  "0x10",   "01",      "-01",      "1_000", "NaN", "Infinity", "-Infinity", "1 2", "1,2"}) {
         require_rejected(bad);
     }
 }
@@ -163,8 +178,8 @@ TEST_CASE("json duplicate keys and trailing data", "[compile][ftp][json]") {
     require_rejected("");
     require_rejected(" \n ");
     // Structure errors.
-    for (const char *bad : {"{", "}", "[", "]", "{\"a\"}", "{\"a\":}", "{\"a\" 1}", "{1: 2}", "{'a': 1}", "{\"a\": 1,}", "[,1]", "[1,,2]", "[1 2]", "tru", "nul",
-                            "True", "NULL"}) {
+    for (const char *bad : {"{", "}", "[", "]", "{\"a\"}", "{\"a\":}", "{\"a\" 1}", "{1: 2}", "{'a': 1}", "{\"a\": 1,}",
+                            "[,1]", "[1,,2]", "[1 2]", "tru", "nul", "True", "NULL"}) {
         require_rejected(bad);
     }
 }

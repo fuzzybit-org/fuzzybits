@@ -25,13 +25,18 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
     (void)builder.add_initiating_event({.stable_name = "J"}, j);
     const auto house = builder.add_house_event({.stable_name = "H"}, false);
     const auto tree = builder.add_fault_tree({.stable_name = "FT"});
-    const auto left = builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = a}, {.event = i}}, tree);
-    const auto right = builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = b, .complement = true, .literal = true}, {.event = j}}, tree);
-    const auto flag = builder.add_gate({.stable_name = "FLAG"}, pra::gate_kind::or_gate, {{.event = house}, {.event = a}}, tree);
-    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}, {.event = flag}}, tree);
+    const auto left =
+        builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = a}, {.event = i}}, tree);
+    const auto right = builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate,
+                                        {{.event = b, .complement = true, .literal = true}, {.event = j}}, tree);
+    const auto flag =
+        builder.add_gate({.stable_name = "FLAG"}, pra::gate_kind::or_gate, {{.event = house}, {.event = a}}, tree);
+    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
+                                      {{.event = left}, {.event = right}, {.event = flag}}, tree);
     builder.add_fault_tree_top(tree, top);
     const auto ft = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
-    const auto watched = builder.add_target({.stable_name = "R"}, pra::domain_target_kind::gate, right, pra::target_role::watch);
+    const auto watched =
+        builder.add_target({.stable_name = "R"}, pra::domain_target_kind::gate, right, pra::target_role::watch);
     const auto model = seal(std::move(builder));
 
     lowering::quantification_config config;
@@ -58,7 +63,8 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
         CHECK(projection.find_event(generated.node) == nullptr);
         CHECK(projection.find_target(generated.target) != nullptr);
     }
-    for (const pra::domain_ref element : {pra::domain_ref(a), pra::domain_ref(b), pra::domain_ref(i), pra::domain_ref(j)}) {
+    for (const pra::domain_ref element :
+         {pra::domain_ref(a), pra::domain_ref(b), pra::domain_ref(i), pra::domain_ref(j)}) {
         REQUIRE(projection.find_event(element) != nullptr);
         CHECK(projection.find_event(element)->kind == pra::event_binding_kind::basic_event);
     }

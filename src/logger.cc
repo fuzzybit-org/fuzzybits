@@ -27,22 +27,21 @@
 
 namespace scram {
 
-const char* const Logger::kLevelToString_[] = {"ERROR",  "WARNING", "INFO",
-                                               "DEBUG1", "DEBUG2",  "DEBUG3",
-                                               "DEBUG4", "DEBUG5"};
+const char *const Logger::kLevelToString_[] = {"ERROR",  "WARNING", "INFO",   "DEBUG1",
+                                               "DEBUG2", "DEBUG3",  "DEBUG4", "DEBUG5"};
 LogLevel Logger::report_level_ = ERROR;
 
-Logger::~Logger()  {
-  os_ << "\n";
-  std::fputs(os_.str().c_str(), stderr);  // stdio is used for thread safety.
-  std::fflush(stderr);  // Should be no-op for the unbuffered stderr.
+Logger::~Logger() {
+    os_ << "\n";
+    std::fputs(os_.str().c_str(), stderr); // stdio is used for thread safety.
+    std::fflush(stderr);                   // Should be no-op for the unbuffered stderr.
 }
 
-std::ostringstream& Logger::Get(LogLevel level) {
-  os_ << Logger::kLevelToString_[level] << ": ";
-  if (level > INFO)
-    os_ << std::string(level - INFO, '\t');
-  return os_;
+std::ostringstream &Logger::Get(LogLevel level) {
+    os_ << Logger::kLevelToString_[level] << ": ";
+    if (level > INFO)
+        os_ << std::string(level - INFO, '\t');
+    return os_;
 }
 
-}  // namespace scram
+} // namespace scram

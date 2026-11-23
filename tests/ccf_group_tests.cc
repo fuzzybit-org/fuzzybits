@@ -26,25 +26,25 @@
 namespace scram::mef::test {
 
 TEST_CASE("CcfGroupTest.AddMemberRepeated", "[mef::ccf_group]") {
-  BetaFactorModel ccf_group("general");
-  BasicEvent member("id");
-  REQUIRE_NOTHROW(ccf_group.AddMember(&member));
-  CHECK_THROWS_AS(ccf_group.AddMember(&member), ValidityError);
+    BetaFactorModel ccf_group("general");
+    BasicEvent member("id");
+    REQUIRE_NOTHROW(ccf_group.AddMember(&member));
+    CHECK_THROWS_AS(ccf_group.AddMember(&member), ValidityError);
 }
 
 TEST_CASE("CcfGroupTest.AddMemberAfterDistribution", "[mef::ccf_group]") {
-  BetaFactorModel ccf_group("general");
+    BetaFactorModel ccf_group("general");
 
-  BasicEvent member_one("id");
-  REQUIRE_NOTHROW(ccf_group.AddMember(&member_one));
+    BasicEvent member_one("id");
+    REQUIRE_NOTHROW(ccf_group.AddMember(&member_one));
 
-  BasicEvent member_two("two");
-  CHECK_NOTHROW(ccf_group.AddMember(&member_two));
+    BasicEvent member_two("two");
+    CHECK_NOTHROW(ccf_group.AddMember(&member_two));
 
-  REQUIRE_NOTHROW(ccf_group.AddDistribution(&ConstantExpression::kOne));
+    REQUIRE_NOTHROW(ccf_group.AddDistribution(&ConstantExpression::kOne));
 
-  BasicEvent member_three("three");
-  CHECK_THROWS_AS(ccf_group.AddMember(&member_three), LogicError);
+    BasicEvent member_three("three");
+    CHECK_THROWS_AS(ccf_group.AddMember(&member_three), LogicError);
 }
 
-}  // namespace scram::mef::test
+} // namespace scram::mef::test

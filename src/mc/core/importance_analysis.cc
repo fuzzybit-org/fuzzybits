@@ -32,6 +32,4 @@
 ///  added later.
 /// ---------------------------------------------------------------------------
 
-namespace scram::core {
-
-}  // namespace scram::core
+namespace scram::core {} // namespace scram::core

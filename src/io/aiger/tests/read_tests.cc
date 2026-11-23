@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "api/ids.h"
 #include "api/diagnostics.h"
+#include "api/ids.h"
 #include "io/aiger/descriptor.h"
 #include "io/formats.h"
 #include "ir/forms.h"
@@ -14,13 +14,13 @@
 
 namespace {
 
-    [[nodiscard]] auto diagnosticsText(fuzzybits::api::diagnostic_list const &diagnostics) -> std::string {
-        std::ostringstream output;
-        for (auto const &diagnostic : diagnostics.items()) {
-            output << diagnostic.code << ": " << diagnostic.message << '\n';
-        }
-        return output.str();
+[[nodiscard]] auto diagnosticsText(fuzzybits::api::diagnostic_list const &diagnostics) -> std::string {
+    std::ostringstream output;
+    for (auto const &diagnostic : diagnostics.items()) {
+        output << diagnostic.code << ": " << diagnostic.message << '\n';
     }
+    return output.str();
+}
 
 } // namespace
 

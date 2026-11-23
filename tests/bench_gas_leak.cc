@@ -21,31 +21,29 @@
 namespace scram::core::test {
 
 TEST_F(RiskAnalysisTest, GasLeakReactive) {
-  const char* tree_input = "input/EventTrees/gas_leak/gas_leak_reactive.xml";
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  EXPECT_EQ(1, analysis->event_tree_results().size());
-  std::map<std::string, double> expected = {
-      {"S1", 0.81044}, {"S2", 0.04479}, {"S3", 0.04265}, {"S4", 2.36e-3},
-      {"S5", 0.04265}, {"S6", 2.36e-3}, {"S7", 4.5e-3},  {"S8", 0.05025}};
-  const auto& results = sequences();
-  ASSERT_EQ(8, results.size());
-  for (const auto& result : expected) {
-    INFO("seq: " + result.first);
-    ASSERT_TRUE(results.count(result.first));
-    EXPECT_NEAR(result.second, results.at(result.first), 1e-5);
-  }
+    const char *tree_input = "input/EventTrees/gas_leak/gas_leak_reactive.xml";
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    EXPECT_EQ(1, analysis->event_tree_results().size());
+    std::map<std::string, double> expected = {{"S1", 0.81044}, {"S2", 0.04479}, {"S3", 0.04265}, {"S4", 2.36e-3},
+                                              {"S5", 0.04265}, {"S6", 2.36e-3}, {"S7", 4.5e-3},  {"S8", 0.05025}};
+    const auto &results = sequences();
+    ASSERT_EQ(8, results.size());
+    for (const auto &result : expected) {
+        INFO("seq: " + result.first);
+        ASSERT_TRUE(results.count(result.first));
+        EXPECT_NEAR(result.second, results.at(result.first), 1e-5);
+    }
 }
 
 /// @todo Expand
 TEST_F(RiskAnalysisTest, GasLeak) {
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(
-      ProcessInputFiles({"input/EventTrees/gas_leak/gas_leak_reactive.xml",
-                         "input/EventTrees/gas_leak/gas_leak.xml"}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  EXPECT_EQ(2, analysis->event_tree_results().size());
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles(
+        {"input/EventTrees/gas_leak/gas_leak_reactive.xml", "input/EventTrees/gas_leak/gas_leak.xml"}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    EXPECT_EQ(2, analysis->event_tree_results().size());
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

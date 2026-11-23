@@ -28,69 +28,72 @@
 
 namespace {
 
-    namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
-    namespace pra = fuzzybits::ir::pra;
-    using fuzzybits::api::diagnostic_severity;
+namespace ftp = fuzzybits::io::backend::fuzzybits::ftp;
+namespace pra = fuzzybits::ir::pra;
+using fuzzybits::api::diagnostic_severity;
 
-    [[nodiscard]] auto diagnosticsText(fuzzybits::api::diagnostic_list const &diagnostics) -> std::string {
-        std::ostringstream output;
-        for (auto const &diagnostic : diagnostics.items()) {
-            output << diagnostic.code << ": " << diagnostic.message << '\n';
+[[nodiscard]] auto diagnosticsText(fuzzybits::api::diagnostic_list const &diagnostics) -> std::string {
+    std::ostringstream output;
+    for (auto const &diagnostic : diagnostics.items()) {
+        output << diagnostic.code << ": " << diagnostic.message << '\n';
+    }
+    return output.str();
+}
+
+[[nodiscard]] auto sources(std::initializer_list<std::pair<std::string_view, std::string_view>> files)
+    -> std::vector<ftp::source_text> {
+    std::vector<ftp::source_text> out;
+    for (auto const &[path, text] : files) {
+        out.push_back(ftp::source_text{.path = std::string(path), .text = std::string(text)});
+    }
+    return out;
+}
+
+[[nodiscard]] auto readText(std::string_view text, fuzzybits::api::option_set const &options = {})
+    -> fuzzybits::io::read_result {
+    return ftp::read_project(sources({{"m.ftp", text}}), options);
+}
+
+[[nodiscard]] auto withPolicy(std::string policy) -> fuzzybits::api::option_set {
+    fuzzybits::api::option_set options;
+    options.set(ftp::duplicate_import_option(), std::move(policy));
+    return options;
+}
+
+[[nodiscard]] auto count(fuzzybits::api::diagnostic_list const &diagnostics, const diagnostic_severity severity,
+                         std::string_view code, std::string_view fragment = {}) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(diagnostics.items(), [&](auto const &item) {
+        return item.severity == severity && item.code == code && item.message.find(fragment) != std::string::npos;
+    }));
+}
+
+[[nodiscard]] auto requireModel(fuzzybits::io::read_result const &read) -> pra::model const & {
+    INFO(diagnosticsText(read.diagnostics()));
+    REQUIRE(read);
+    auto const *model = pra::model_from(read.value());
+    REQUIRE(model != nullptr);
+    return *model;
+}
+
+[[nodiscard]] auto attribute(pra::model const &model, std::span<pra::attribute const> attributes, std::string_view name)
+    -> std::vector<std::string> {
+    std::vector<std::string> out;
+    for (auto const &item : attributes) {
+        if (model.text(item.name) == name) {
+            out.emplace_back(model.text(item.value));
         }
-        return output.str();
     }
+    return out;
+}
 
-    [[nodiscard]] auto sources(std::initializer_list<std::pair<std::string_view, std::string_view>> files) -> std::vector<ftp::source_text> {
-        std::vector<ftp::source_text> out;
-        for (auto const &[path, text] : files) {
-            out.push_back(ftp::source_text{.path = std::string(path), .text = std::string(text)});
-        }
-        return out;
-    }
+[[nodiscard]] auto firstSource(pra::model const &model, const pra::domain_ref ref)
+    -> std::pair<std::string, std::uint32_t> {
+    const auto where = model.sources(model.element_of(ref));
+    REQUIRE_FALSE(where.empty());
+    return {std::string(model.text(model.source_files()[where.front().file.raw()].path)), where.front().line};
+}
 
-    [[nodiscard]] auto readText(std::string_view text, fuzzybits::api::option_set const &options = {}) -> fuzzybits::io::read_result {
-        return ftp::read_project(sources({{"m.ftp", text}}), options);
-    }
-
-    [[nodiscard]] auto withPolicy(std::string policy) -> fuzzybits::api::option_set {
-        fuzzybits::api::option_set options;
-        options.set(ftp::duplicate_import_option(), std::move(policy));
-        return options;
-    }
-
-    [[nodiscard]] auto count(fuzzybits::api::diagnostic_list const &diagnostics, const diagnostic_severity severity, std::string_view code,
-                             std::string_view fragment = {}) -> std::size_t {
-        return static_cast<std::size_t>(std::ranges::count_if(diagnostics.items(), [&](auto const &item) {
-            return item.severity == severity && item.code == code && item.message.find(fragment) != std::string::npos;
-        }));
-    }
-
-    [[nodiscard]] auto requireModel(fuzzybits::io::read_result const &read) -> pra::model const & {
-        INFO(diagnosticsText(read.diagnostics()));
-        REQUIRE(read);
-        auto const *model = pra::model_from(read.value());
-        REQUIRE(model != nullptr);
-        return *model;
-    }
-
-    [[nodiscard]] auto attribute(pra::model const &model, std::span<pra::attribute const> attributes, std::string_view name)
-        -> std::vector<std::string> {
-        std::vector<std::string> out;
-        for (auto const &item : attributes) {
-            if (model.text(item.name) == name) {
-                out.emplace_back(model.text(item.value));
-            }
-        }
-        return out;
-    }
-
-    [[nodiscard]] auto firstSource(pra::model const &model, const pra::domain_ref ref) -> std::pair<std::string, std::uint32_t> {
-        const auto where = model.sources(model.element_of(ref));
-        REQUIRE_FALSE(where.empty());
-        return {std::string(model.text(model.source_files()[where.front().file.raw()].path)), where.front().line};
-    }
-
-    constexpr std::string_view kSimple = R"ftp(**CHAR32
+constexpr std::string_view kSimple = R"ftp(**CHAR32
 **DBNAME: unit
 TOP + G1 -G2
 G1 * A B
@@ -165,7 +168,8 @@ TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[i
     REQUIRE(attribute(model, model.project_attributes(), "ftp.header") ==
             std::vector<std::string>{"**CHAR32", "**DBNAME: unit", "**FTITLE: simple", "*XEQ"});
     REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") == std::vector<std::string>{"delete_term"});
-    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset") == std::vector<std::string>{"1"});
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset") ==
+            std::vector<std::string>{"1"});
 }
 
 TEST_CASE("FTP -EVENT operands are marked literal, -GATE operands are not", "[io][ftp][project]") {
@@ -217,7 +221,8 @@ IMPORT
         options.set(ftp::complement_events_option(), std::string("literal"));
         const auto read = readText(text, options);
         REQUIRE_FALSE(read);
-        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option", "io.ftp.complement_events") == 1);
+        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option",
+                      "io.ftp.complement_events") == 1);
     }
 }
 
@@ -225,7 +230,8 @@ TEST_CASE("FTP conventions are recorded as model attributes", "[io][ftp][project
     const auto initiators = [](fuzzybits::api::option_set const &options) {
         const auto read = readText(kSimple, options);
         auto const &model = requireModel(read);
-        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") == std::vector<std::string>{"delete_term"});
+        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") ==
+                std::vector<std::string>{"delete_term"});
         return attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset");
     };
     fuzzybits::api::option_set options;
@@ -237,11 +243,13 @@ TEST_CASE("FTP conventions are recorded as model attributes", "[io][ftp][project
     options.set(ftp::max_initiators_option(), std::string("none"));
     REQUIRE(initiators(options).empty());
 
-    for (auto const &value : {fuzzybits::api::option_value{std::string("2")}, fuzzybits::api::option_value{std::int64_t{2}}}) {
+    for (auto const &value :
+         {fuzzybits::api::option_value{std::string("2")}, fuzzybits::api::option_value{std::int64_t{2}}}) {
         options.set(ftp::max_initiators_option(), value);
         const auto read = readText(kSimple, options);
         REQUIRE_FALSE(read);
-        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option", "io.ftp.max_initiators_per_cutset") == 1);
+        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option",
+                      "io.ftp.max_initiators_per_cutset") == 1);
     }
 }
 
@@ -264,14 +272,16 @@ TEST_CASE("FTP project reader reads several files as one model", "[io][ftp][proj
 }
 
 TEST_CASE("FTP project reader expands a directory to its sorted .ftp files", "[io][ftp][project]") {
-    const auto directory = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / "multi_file_project";
+    const auto directory =
+        std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / "multi_file_project";
     const auto files = ftp::project_files(std::vector{directory});
     REQUIRE(files);
     REQUIRE(files.value().size() == 3);
     REQUIRE(files.value()[0].filename() == "01_top.ftp");
     REQUIRE(files.value()[2].filename() == "03_imports.ftp");
 
-    const auto read = ftp::read_project(fuzzybits::io::read_request{.path = directory, .format = fuzzybits::io::formats::ftp()});
+    const auto read =
+        ftp::read_project(fuzzybits::io::read_request{.path = directory, .format = fuzzybits::io::formats::ftp()});
     auto const &model = requireModel(read);
     REQUIRE(model.gates().size() == 7);
     REQUIRE(model.basic_events().size() == 8);
@@ -280,12 +290,14 @@ TEST_CASE("FTP project reader expands a directory to its sorted .ftp files", "[i
     REQUIRE(count(missing.diagnostics(), diagnostic_severity::error, "io.ftp.open-failed") == 1);
     const auto empty = ftp::project_files(std::span<std::filesystem::path const>{});
     REQUIRE(count(empty.diagnostics(), diagnostic_severity::error, "io.ftp.no-files") == 1);
-    const auto mismatch = ftp::read_project(fuzzybits::io::read_request{.path = directory, .format = fuzzybits::io::formats::aiger()});
+    const auto mismatch =
+        ftp::read_project(fuzzybits::io::read_request{.path = directory, .format = fuzzybits::io::formats::aiger()});
     REQUIRE(count(mismatch.diagnostics(), diagnostic_severity::error, "io.ftp.format-mismatch") == 1);
 }
 
 TEST_CASE("FTP names keep every character the grammar allows", "[io][ftp][project]") {
-    const auto read = readText("1A + X/Y A--B 100\n100 * 7 -A--B\nENDTREE\nPROCESS 1A\nIMPORT\n  1.0E-01 X/Y\n  2.0E-01 A--B\n  3.0E-01 7\n");
+    const auto read = readText(
+        "1A + X/Y A--B 100\n100 * 7 -A--B\nENDTREE\nPROCESS 1A\nIMPORT\n  1.0E-01 X/Y\n  2.0E-01 A--B\n  3.0E-01 7\n");
     auto const &model = requireModel(read);
     REQUIRE(model.find_gate("1A").valid());
     REQUIRE(model.find_gate("100").valid());
@@ -324,7 +336,8 @@ TEST_CASE("FTP without PROCESS targets the root gates with a warning", "[io][ftp
 }
 
 TEST_CASE("FTP duplicate imports follow the duplicate-import policy", "[io][ftp][project]") {
-    constexpr std::string_view text = "TOP + A IE\nENDTREE\nPROCESS TOP\nIMPORT\n  3.0E-01 A\n  1.0E-02 IE\n  2.0E-01 A\n  2.0E-02 IE I\n";
+    constexpr std::string_view text =
+        "TOP + A IE\nENDTREE\nPROCESS TOP\nIMPORT\n  3.0E-01 A\n  1.0E-02 IE\n  2.0E-01 A\n  2.0E-02 IE I\n";
     const auto value = [](pra::model const &model, std::string_view name) {
         return ftp_test::literal_value(model, model.find_basic_event(name));
     };
@@ -335,7 +348,8 @@ TEST_CASE("FTP duplicate imports follow the duplicate-import policy", "[io][ftp]
         REQUIRE(value(model, "A") == 0.2);
         REQUIRE(value(model, "IE") == 0.02);
         REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-import", "'A'") == 1);
-        REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-import", "m.ftp:5 = 3.0E-01, m.ftp:7 = 2.0E-01") == 1);
+        REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-import",
+                      "m.ftp:5 = 3.0E-01, m.ftp:7 = 2.0E-01") == 1);
         REQUIRE(model.initiating_events().size() == 1);
         REQUIRE(firstSource(model, model.find_basic_event("A")) == std::pair<std::string, std::uint32_t>{"m.ftp", 7});
         REQUIRE(model.sources(model.basic_events()[model.find_basic_event("A").raw()].element).size() == 2);
@@ -365,7 +379,8 @@ TEST_CASE("FTP initiator values above 1 are frequencies; other values must be pr
     const auto read = readText("TOP * IE A\nENDTREE\nPROCESS TOP\nIMPORT\n  2.5E+00 IE I\n  1.0E-01 A\n");
     auto const &model = requireModel(read);
     REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.initiator-frequency", "'IE'") == 1);
-    auto const &expression = model.expressions()[model.basic_events()[model.find_basic_event("IE").raw()].expression.raw()];
+    auto const &expression =
+        model.expressions()[model.basic_events()[model.find_basic_event("IE").raw()].expression.raw()];
     REQUIRE(expression.quantity == pra::quantity_kind::frequency);
     REQUIRE(expression.value == 2.5);
 
@@ -373,7 +388,8 @@ TEST_CASE("FTP initiator values above 1 are frequencies; other values must be pr
         const auto rejected = readText(std::string("TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n") + bad);
         INFO(bad);
         REQUIRE_FALSE(rejected);
-        REQUIRE(count(rejected.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-probability", "m.ftp:5") == 1);
+        REQUIRE(count(rejected.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-probability", "m.ftp:5") ==
+                1);
     }
 }
 
@@ -393,17 +409,21 @@ TEST_CASE("FTP structural errors have stable diagnostics", "[io][ftp][project]")
         std::string_view fragment;
     };
     const auto cases = std::vector<error_case>{
-        {"TOP + A\nIMPORT\n  1.0E-01 A\n", "io.ftp.missing-endtree", "m.ftp:1 has no ENDTREE before the IMPORT line at m.ftp:2"},
+        {"TOP + A\nIMPORT\n  1.0E-01 A\n", "io.ftp.missing-endtree",
+         "m.ftp:1 has no ENDTREE before the IMPORT line at m.ftp:2"},
         {"TOP + A\n", "io.ftp.missing-endtree", "before the end of the file"},
         {"TOP + A\nLIMIT 1.0E-05\n", "io.ftp.missing-endtree", "LIMIT line"},
         {"TOP + A\nENDTREE\nPROCESS TOP\n  1.0E-01 A\n", "io.ftp.import-without-header", "m.ftp:4"},
-        {"TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n**FTITLE: x\n  2.0E-01 B\n", "io.ftp.import-without-header", "'B'"},
+        {"TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n**FTITLE: x\n  2.0E-01 B\n",
+         "io.ftp.import-without-header", "'B'"},
         {"TOP + G\nENDTREE\nG + A\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.misplaced-gate", "'G'"},
         {"TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\nG + A\n", "io.ftp.misplaced-gate", "m.ftp:6"},
-        {"TOP + A\nTOP * A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.duplicate-gate", "(m.ftp:1, m.ftp:2)"},
+        {"TOP + A\nTOP * A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.duplicate-gate",
+         "(m.ftp:1, m.ftp:2)"},
         {"TOP +\nENDTREE\nPROCESS TOP\n", "io.ftp.invalid-gate", "no operands"},
         {"TOP 0 A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  1.0E-01 B\n", "io.ftp.invalid-gate", "at-least-0"},
-        {"TOP 3 A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  1.0E-01 B\n", "io.ftp.invalid-gate", "has 2 operands"},
+        {"TOP 3 A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  1.0E-01 B\n", "io.ftp.invalid-gate",
+         "has 2 operands"},
         {"TOP + G\nG + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  1.0E-01 G\n", "io.ftp.gate-imported", "'G'"},
         {"TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.undefined-reference", "'B'"},
         {"TOP + A\nENDTREE\nPROCESS TOP NOPE\nIMPORT\n  1.0E-01 A\n", "io.ftp.undefined-process-target", "'NOPE'"},
@@ -477,57 +497,57 @@ TEST_CASE("FTP reader handles a 1e5-gate chain without recursion", "[io][ftp][pr
 
 namespace {
 
-    [[nodiscard]] auto fileText(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    }
+[[nodiscard]] auto fileText(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
 
-    [[nodiscard]] auto cardNames(ftp_test::json const &list) -> std::vector<std::string> {
-        std::vector<std::string> out;
-        for (auto const &item : list.array()) {
-            out.push_back(item.string());
-        }
-        return out;
+[[nodiscard]] auto cardNames(ftp_test::json const &list) -> std::vector<std::string> {
+    std::vector<std::string> out;
+    for (auto const &item : list.array()) {
+        out.push_back(item.string());
     }
+    return out;
+}
 
-    // Field names that differ from the card; never their values (#38).
-    [[nodiscard]] auto cardMismatches(ftp::structure_summary const &actual, ftp_test::json const &card)
-        -> std::vector<std::string> {
-        std::vector<std::string> out;
-        const auto number = [](ftp_test::json const &value) { return static_cast<std::size_t>(value.number()); };
-        const auto check = [&out](const bool equal, std::string field) {
-            if (!equal) {
-                out.push_back(std::move(field));
-            }
-        };
-        check(actual.gates == number(card["gates"]), "gates");
-        check(actual.or_gates == number(card["gates_by_kind"]["or"]), "gates_by_kind.or");
-        check(actual.and_gates == number(card["gates_by_kind"]["and"]), "gates_by_kind.and");
-        check(actual.atleast_gates == number(card["gates_by_kind"]["atleast"]), "gates_by_kind.atleast");
-        bool kOfN = actual.atleast_k_of_n.size() == card["atleast_k_of_n"].object().size();
-        for (auto const &[key, value] : card["atleast_k_of_n"].object()) {
-            kOfN = kOfN && actual.atleast_k_of_n.contains(key) && actual.atleast_k_of_n.at(key) == number(value);
+// Field names that differ from the card; never their values (#38).
+[[nodiscard]] auto cardMismatches(ftp::structure_summary const &actual, ftp_test::json const &card)
+    -> std::vector<std::string> {
+    std::vector<std::string> out;
+    const auto number = [](ftp_test::json const &value) { return static_cast<std::size_t>(value.number()); };
+    const auto check = [&out](const bool equal, std::string field) {
+        if (!equal) {
+            out.push_back(std::move(field));
         }
-        check(kOfN, "atleast_k_of_n");
-        check(actual.edges == number(card["edges"]), "edges");
-        check(actual.single_input_gates == number(card["single_input_gates"]), "single_input_gates");
-        check(actual.max_fan_in == number(card["max_fan_in"]), "max_fan_in");
-        check(actual.depth == number(card["depth"]), "depth");
-        check(actual.basic_events == number(card["basic_events"]), "basic_events");
-        check(actual.import_lines == number(card["import_lines"]), "import_lines");
-        check(actual.complemented_edges == number(card["complemented_edges"]), "complemented_edges");
-        check(actual.complemented_edges_to_basic_events == number(card["complemented_edges_to_basic_events"]),
-              "complemented_edges_to_basic_events");
-        check(actual.roots == cardNames(card["roots"]), "roots");
-        check(actual.process_targets == cardNames(card["process_targets"]), "process_targets");
-        check(actual.initiating_events == number(card["initiator_tagged_events"]), "initiator_tagged_events");
-        check(actual.names_not_ncname == number(card["names_not_valid_xml_ncname"]), "names_not_valid_xml_ncname");
-        check(actual.duplicate_imports.size() == card["duplicate_imports"].object().size(), "duplicate_imports");
-        check(actual.limit.has_value() == !card["limit"].is_null() &&
-                  (!actual.limit || *actual.limit == card["limit"].number()),
-              "limit");
-        return out;
+    };
+    check(actual.gates == number(card["gates"]), "gates");
+    check(actual.or_gates == number(card["gates_by_kind"]["or"]), "gates_by_kind.or");
+    check(actual.and_gates == number(card["gates_by_kind"]["and"]), "gates_by_kind.and");
+    check(actual.atleast_gates == number(card["gates_by_kind"]["atleast"]), "gates_by_kind.atleast");
+    bool kOfN = actual.atleast_k_of_n.size() == card["atleast_k_of_n"].object().size();
+    for (auto const &[key, value] : card["atleast_k_of_n"].object()) {
+        kOfN = kOfN && actual.atleast_k_of_n.contains(key) && actual.atleast_k_of_n.at(key) == number(value);
     }
+    check(kOfN, "atleast_k_of_n");
+    check(actual.edges == number(card["edges"]), "edges");
+    check(actual.single_input_gates == number(card["single_input_gates"]), "single_input_gates");
+    check(actual.max_fan_in == number(card["max_fan_in"]), "max_fan_in");
+    check(actual.depth == number(card["depth"]), "depth");
+    check(actual.basic_events == number(card["basic_events"]), "basic_events");
+    check(actual.import_lines == number(card["import_lines"]), "import_lines");
+    check(actual.complemented_edges == number(card["complemented_edges"]), "complemented_edges");
+    check(actual.complemented_edges_to_basic_events == number(card["complemented_edges_to_basic_events"]),
+          "complemented_edges_to_basic_events");
+    check(actual.roots == cardNames(card["roots"]), "roots");
+    check(actual.process_targets == cardNames(card["process_targets"]), "process_targets");
+    check(actual.initiating_events == number(card["initiator_tagged_events"]), "initiator_tagged_events");
+    check(actual.names_not_ncname == number(card["names_not_valid_xml_ncname"]), "names_not_valid_xml_ncname");
+    check(actual.duplicate_imports.size() == card["duplicate_imports"].object().size(), "duplicate_imports");
+    check(actual.limit.has_value() == !card["limit"].is_null() &&
+              (!actual.limit || *actual.limit == card["limit"].number()),
+          "limit");
+    return out;
+}
 
 } // namespace
 
@@ -555,7 +575,8 @@ TEST_CASE("FTP private projects match their cards", "[io][ftp][private]") {
         bool ok = card.has_value() && card->find("structure") != nullptr;
         std::string policy = "last";
         if (ok) {
-            if (auto const *section = card->find("policy"); section != nullptr && section->find("duplicate_import") != nullptr) {
+            if (auto const *section = card->find("policy");
+                section != nullptr && section->find("duplicate_import") != nullptr) {
                 const auto &text = (*section)["duplicate_import"].string();
                 policy = text.substr(0, text.find_first_of(" ("));
             }
@@ -577,8 +598,8 @@ TEST_CASE("FTP private projects match their cards", "[io][ftp][private]") {
             const auto counts = ftp::structure_of(*pra::model_from(read.value()));
             mismatches = cardMismatches(counts, (*card)["structure"]);
             ok = mismatches.empty();
-            std::cout << "private FTP project " << index + 1 << ": " << (ok ? "pass" : "FAIL") << " (policy " << policy << ", read "
-                      << seconds << " s";
+            std::cout << "private FTP project " << index + 1 << ": " << (ok ? "pass" : "FAIL") << " (policy " << policy
+                      << ", read " << seconds << " s";
             for (auto const &field : mismatches) {
                 std::cout << ", mismatch " << field;
             }

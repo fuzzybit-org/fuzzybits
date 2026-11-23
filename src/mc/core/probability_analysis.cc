@@ -45,16 +45,15 @@
 #include "mc/stats/tally_node.h"
 #include "mc/stats/tally_node_map.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <vector>
-#include <string>
-#include <chrono>
 #include <ctime>
+#include <string>
 #include <variant>
+#include <vector>
 
 namespace scram::core {
-
 
 /**
  * @brief Constructs a Monte Carlo probability analyzer from a fault tree analyzer
@@ -113,24 +112,27 @@ void ProbabilityAnalyzer<mc::DirectEval>::ComputeTallies(const bool converge_on_
     using prob_t_ = std::double_t;
     using size_t_ = std::size_t;
     const mc::stats::TallyNodeMap &tally_node_map = this->monitored();
-    mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_> manager(pdag, N, tally_node_map, settings.requested_trials_per_pass());
+    mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_> manager(pdag, N, tally_node_map,
+                                                                   settings.requested_trials_per_pass());
 
     using bayes_t = mc::stats::bayes_policy;
-    using wald_t  = mc::stats::wald_policy;
+    using wald_t = mc::stats::wald_policy;
 
     std::variant<mc::scheduler::convergence_controller<bayes_t, bitpack_t_>,
-                 mc::scheduler::convergence_controller<wald_t,  bitpack_t_>> scheduler_var{std::in_place_type<mc::scheduler::convergence_controller<bayes_t, bitpack_t_>>, manager, settings};
+                 mc::scheduler::convergence_controller<wald_t, bitpack_t_>>
+        scheduler_var{std::in_place_type<mc::scheduler::convergence_controller<bayes_t, bitpack_t_>>, manager,
+                      settings};
 
-    auto make_scheduler = [&](auto tag){
+    auto make_scheduler = [&](auto tag) {
         using pol_t = std::decay_t<decltype(tag)>;
         return mc::scheduler::convergence_controller<pol_t, bitpack_t_>{manager, settings};
     };
 
     if (settings.ci_policy() == scram::core::CIPolicy::kWald) {
-        scheduler_var.emplace<mc::scheduler::convergence_controller<wald_t, bitpack_t_> >(manager, settings);
+        scheduler_var.emplace<mc::scheduler::convergence_controller<wald_t, bitpack_t_>>(manager, settings);
     }
 
-    auto visit_sched = [&](auto &scheduler){
+    auto visit_sched = [&](auto &scheduler) {
         // Time the result() execution with high precision
         const auto start_time = std::chrono::high_resolution_clock::now();
 
@@ -148,17 +150,16 @@ void ProbabilityAnalyzer<mc::DirectEval>::ComputeTallies(const bool converge_on_
         const auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
         long long convergence_time_ms = duration.count();
 
-
         // benchmark specific log
         {
             using namespace scram;
-            const auto &cur_state  = scheduler.current_state();
-            const auto &steps_cur  = scheduler.current_steps();
+            const auto &cur_state = scheduler.current_state();
+            const auto &steps_cur = scheduler.current_steps();
             const auto &steps_proj = scheduler.projected_steps();
 
             const auto &root_tally = monitored_.at(this->graph()->root()->index()).tally_stats;
 
-            std::vector<std::pair<std::string,std::string>> kv;
+            std::vector<std::pair<std::string, std::string>> kv;
             // settings
             {
                 auto s_pairs = log::settings::csv_pairs(this->settings());
@@ -220,13 +221,15 @@ std::unordered_set<int> ProbabilityAnalyzer<mc::DirectEval>::ObserveNodes(Pdag *
     std::unordered_set<index_t> will_observe;
     // Depth-first traversal collecting every Node
     pdag->Clear<Pdag::kGateMark>();
-    TraverseNodes(pdag->root(), [&will_observe, &observing, &to_observe, &track_convergence, &clear_stats](const std::shared_ptr<Node> &n) {
+    TraverseNodes(pdag->root(), [&will_observe, &observing, &to_observe, &track_convergence,
+                                 &clear_stats](const std::shared_ptr<Node> &n) {
         // we want to observe this node
         // node from pdag is in to_observe set, i.e. we intend to observe this node
         if (const index_t &idx = n->index(); to_observe.contains(idx)) {
 
             auto temp = TallyNode{
-                .status = track_convergence ? mc::stats::convergence::not_converged : mc::stats::convergence::not_tracked,
+                .status =
+                    track_convergence ? mc::stats::convergence::not_converged : mc::stats::convergence::not_tracked,
                 .tally_stats = mc::stats::tally{},
                 .node = n,
             };
@@ -275,10 +278,10 @@ std::unordered_set<int> ProbabilityAnalyzer<mc::DirectEval>::GatherGates(Pdag *p
 }
 
 void ProbabilityAnalyzer<mc::DirectEval>::SanitizeWatchState() {
-    //std::unordered_set<index_t> node_indices;
-    //auto bimap = WalkAndCollectMefGatesWithIndices(this->graph());
-    //auto keys = bimap.A_to_B | std::ranges::views::keys;
-    //observe(keys, false, false);
+    // std::unordered_set<index_t> node_indices;
+    // auto bimap = WalkAndCollectMefGatesWithIndices(this->graph());
+    // auto keys = bimap.A_to_B | std::ranges::views::keys;
+    // observe(keys, false, false);
 }
 
 /**
@@ -297,7 +300,7 @@ std::vector<std::pair<double, double>> ProbabilityAnalyzer<mc::DirectEval>::Calc
     if (const std::double_t total_time = ProbabilityAnalysis::mission_time().value();
         Analysis::settings().mission_time() != total_time) {
         throw std::invalid_argument("cannot compute CalculateProbabilityOverTime(), mission time mismatch");
-        }
+    }
 
     //
     // auto update = [this, &p_time](double time) {
@@ -318,30 +321,30 @@ inline ProbabilityAnalyzer<mc::DirectEval>::~ProbabilityAnalyzer() = default;
 
 // Helper: collect indices of PDAG gates that have an origin pointer.
 static void FillIndicesWithMefOrigin(Pdag *graph, std::unordered_set<int> *out) {
-    if (!graph || !out) return;
+    if (!graph || !out)
+        return;
     graph->Clear<Pdag::kGateMark>();
     TraverseGates(graph->root_ptr(), [out](const std::shared_ptr<core::Gate> &g) {
-      // if gate has origin (was watched using watch-guard and mef_origin_ptr)
-      if (g->mef_origin_ptr()) {
-        // get its index
-        int idx = g->index();
-        // if we haven't seen this gate's index before, add it to the list.
-        if (!out->contains(idx)) {
-          out->insert(idx);
+        // if gate has origin (was watched using watch-guard and mef_origin_ptr)
+        if (g->mef_origin_ptr()) {
+            // get its index
+            int idx = g->index();
+            // if we haven't seen this gate's index before, add it to the list.
+            if (!out->contains(idx)) {
+                out->insert(idx);
+            }
         }
-      }
     });
     graph->Clear<Pdag::kGateMark>();
 }
-
 
 static int FindIndexForMEFGate(Pdag *graph, const mef::Gate *gptr) {
     int result = 0;
     graph->Clear<Pdag::kGateMark>();
     TraverseGates(graph->root_ptr(), [&result, gptr](const std::shared_ptr<core::Gate> &pg) {
-      if (pg->mef_origin_ptr() == gptr) {
-        result = pg->index();
-      }
+        if (pg->mef_origin_ptr() == gptr) {
+            result = pg->index();
+        }
     });
     graph->Clear<Pdag::kGateMark>();
     return result;

@@ -13,8 +13,7 @@ work is distributed under the AGPL-3.0.
 
 Model data, test fixtures and documentation that came with SCRAM are
 listed in scripts/ci/scram_provenance.json, and scripts/ci/scram_provenance.py
-reports what remains. The scripts/translators submodule is SCRAM's model
-translators (https://github.com/rakhimov/translators), under its own licence.
+reports what remains.
 
 src/ext/combination.h (Howard Hinnant) and src/ext/scope_guard.h
 (Yuri Kilochek) are distributed under the Boost Software License 1.0.

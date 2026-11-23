@@ -46,11 +46,11 @@ namespace scram::mef::cycle {
 /// @returns The connector belonging to the node.
 ///
 /// @{
-inline const Formula* GetConnector(Gate* node) { return &node->formula(); }
-inline Expression* GetConnector(Parameter* node) { return node; }
-inline Branch* GetConnector(NamedBranch* node) { return node; }
-inline const Instruction* GetConnector(Rule* node) { return node; }
-inline const EventTree* GetConnector(Link* node) { return &node->event_tree(); }
+inline const Formula *GetConnector(Gate *node) { return &node->formula(); }
+inline Expression *GetConnector(Parameter *node) { return node; }
+inline Branch *GetConnector(NamedBranch *node) { return node; }
+inline const Instruction *GetConnector(Rule *node) { return node; }
+inline const EventTree *GetConnector(Link *node) { return &node->event_tree(); }
 /// @}
 
 /// Retrieves nodes from a connector.
@@ -60,20 +60,18 @@ inline const EventTree* GetConnector(Link* node) { return &node->event_tree(); }
 /// @returns  The iterable collection of nodes on the other end of connection.
 ///
 /// @{
-inline auto GetNodes(const Formula* connector) {
-  return connector->args() |
-         boost::adaptors::transformed([](const Formula::Arg& arg) -> Gate* {
-           if (auto* arg_gate = std::get_if<Gate*>(&arg.event))
-             return *arg_gate;
-           return nullptr;
-         }) |
-         boost::adaptors::filtered([](auto* ptr) { return ptr != nullptr; });
+inline auto GetNodes(const Formula *connector) {
+    return connector->args() | boost::adaptors::transformed([](const Formula::Arg &arg) -> Gate * {
+               if (auto *arg_gate = std::get_if<Gate *>(&arg.event))
+                   return *arg_gate;
+               return nullptr;
+           }) |
+           boost::adaptors::filtered([](auto *ptr) { return ptr != nullptr; });
 }
-inline auto GetNodes(Expression* connector) {
-  return connector->args() | boost::adaptors::transformed([](Expression* arg) {
-           return dynamic_cast<Parameter*>(arg);
-         }) |
-         boost::adaptors::filtered([](auto* ptr) { return ptr != nullptr; });
+inline auto GetNodes(Expression *connector) {
+    return connector->args() |
+           boost::adaptors::transformed([](Expression *arg) { return dynamic_cast<Parameter *>(arg); }) |
+           boost::adaptors::filtered([](auto *ptr) { return ptr != nullptr; });
 }
 /// @}
 
@@ -84,14 +82,13 @@ inline auto GetNodes(Expression* connector) {
 /// @returns  The iterable collection of connectors.
 ///
 /// @{
-inline auto GetConnectors(const Formula* connector) {
-  (void)connector;
-  return std::array<const Formula*, 0>();  // Empty range.
+inline auto GetConnectors(const Formula *connector) {
+    (void)connector;
+    return std::array<const Formula *, 0>(); // Empty range.
 }
-inline auto GetConnectors(Expression* connector) {
-  return connector->args() | boost::adaptors::filtered([](Expression* arg) {
-           return dynamic_cast<Parameter*>(arg) == nullptr;
-         });
+inline auto GetConnectors(Expression *connector) {
+    return connector->args() |
+           boost::adaptors::filtered([](Expression *arg) { return dynamic_cast<Parameter *>(arg) == nullptr; });
 }
 /// @}
 
@@ -108,8 +105,7 @@ inline auto GetConnectors(Expression* connector) {
 /// @param[out] cycle  The cycle path if detected.
 ///
 /// @returns True if a cycle is detected.
-template <class T, class N>
-bool ContinueConnector(T* connector, std::vector<N*>* cycle);
+template <class T, class N> bool ContinueConnector(T *connector, std::vector<N *> *cycle);
 
 /// Traverses nodes with connectors to find a cycle.
 /// Interrupts the detection at first cycle.
@@ -128,61 +124,50 @@ bool ContinueConnector(T* connector, std::vector<N*>* cycle);
 /// @returns True if a cycle is found.
 ///
 /// @post All traversed nodes are marked with non-clear marks.
-template <class T>
-bool DetectCycle(T* node, std::vector<T*>* cycle) {
-  if (!node->mark()) {
-    node->mark(NodeMark::kTemporary);
-    if (ContinueConnector(GetConnector(node), cycle)) {
-      if (cycle->size() == 1 || cycle->back() != cycle->front())
+template <class T> bool DetectCycle(T *node, std::vector<T *> *cycle) {
+    if (!node->mark()) {
+        node->mark(NodeMark::kTemporary);
+        if (ContinueConnector(GetConnector(node), cycle)) {
+            if (cycle->size() == 1 || cycle->back() != cycle->front())
+                cycle->push_back(node);
+            return true;
+        }
+        node->mark(NodeMark::kPermanent);
+    } else if (node->mark() == NodeMark::kTemporary) {
+        assert(cycle->empty() && "The report container must be provided empty.");
         cycle->push_back(node);
-      return true;
+        return true;
     }
-    node->mark(NodeMark::kPermanent);
-  } else if (node->mark() == NodeMark::kTemporary) {
-    assert(cycle->empty() && "The report container must be provided empty.");
-    cycle->push_back(node);
-    return true;
-  }
-  assert(node->mark() == NodeMark::kPermanent);
-  return false;
+    assert(node->mark() == NodeMark::kPermanent);
+    return false;
 }
 
-template <class T, class N>
-bool ContinueConnector(T* connector, std::vector<N*>* cycle) {
-  for (N* node : GetNodes(connector)) {
-    if (DetectCycle(node, cycle))
-      return true;
-  }
-  for (auto* link : GetConnectors(connector)) {
-    if (ContinueConnector(link, cycle))
-      return true;
-  }
-  return false;
+template <class T, class N> bool ContinueConnector(T *connector, std::vector<N *> *cycle) {
+    for (N *node : GetNodes(connector)) {
+        if (DetectCycle(node, cycle))
+            return true;
+    }
+    for (auto *link : GetConnectors(connector)) {
+        if (ContinueConnector(link, cycle))
+            return true;
+    }
+    return false;
 }
 
 /// Cycle detection specialization for event tree named branches.
-template <>
-bool ContinueConnector(Branch* connector, std::vector<NamedBranch*>* cycle);
+template <> bool ContinueConnector(Branch *connector, std::vector<NamedBranch *> *cycle);
 
 /// Cycle detection specialization for visitor-based traversal of instructions.
-template <>
-bool ContinueConnector(const Instruction* connector, std::vector<Rule*>* cycle);
+template <> bool ContinueConnector(const Instruction *connector, std::vector<Rule *> *cycle);
 
 /// Cycle detection specialization for visitor-based traversal of event-trees.
-template <>
-bool ContinueConnector(const EventTree* connector, std::vector<Link*>* cycle);
+template <> bool ContinueConnector(const EventTree *connector, std::vector<Link *> *cycle);
 
 /// Retrieves a unique name for a node.
-template <class T>
-const std::string& GetUniqueName(const T* node) {
-  return Id::unique_name(*node);
-}
+template <class T> const std::string &GetUniqueName(const T *node) { return Id::unique_name(*node); }
 
 /// Specialization for event-tree link name retrieval.
-template <>
-inline const std::string& GetUniqueName(const Link* node) {
-  return node->event_tree().name();
-}
+template <> inline const std::string &GetUniqueName(const Link *node) { return node->event_tree().name(); }
 
 /// Prints the detected cycle from the output
 /// produced by cycle detection functions.
@@ -192,15 +177,12 @@ inline const std::string& GetUniqueName(const Link* node) {
 /// @param[in] cycle  Cycle containing nodes in reverse order.
 ///
 /// @returns String representation of the cycle.
-template <class T>
-std::string PrintCycle(const std::vector<T*>& cycle) {
-  assert(cycle.size() > 1);
-  assert(cycle.front() == cycle.back() && "No cycle is provided.");
-  return boost::join(
-      boost::adaptors::reverse(cycle) |
-          boost::adaptors::transformed(
-              [](T* node) -> decltype(auto) { return GetUniqueName(node); }),
-      "->");
+template <class T> std::string PrintCycle(const std::vector<T *> &cycle) {
+    assert(cycle.size() > 1);
+    assert(cycle.front() == cycle.back() && "No cycle is provided.");
+    return boost::join(boost::adaptors::reverse(cycle) |
+                           boost::adaptors::transformed([](T *node) -> decltype(auto) { return GetUniqueName(node); }),
+                       "->");
 }
 
 /// Checks for cycles in a model constructs.
@@ -212,15 +194,14 @@ std::string PrintCycle(const std::vector<T*>& cycle) {
 /// @param[in] type  The type of nodes for error messages.
 ///
 /// @throws CycleError  A cycle is detected in the graph of nodes.
-template <class T, class SinglePassRange>
-void CheckCycle(const SinglePassRange& container, const char* type) {
-  std::vector<T*> cycle;
-  for (T& node : container) {
-    if (DetectCycle(&node, &cycle)) {
-      SCRAM_THROW(CycleError()) << errinfo_element(GetUniqueName(&node), type)
-                                << errinfo_cycle(PrintCycle(cycle));
+template <class T, class SinglePassRange> void CheckCycle(const SinglePassRange &container, const char *type) {
+    std::vector<T *> cycle;
+    for (T &node : container) {
+        if (DetectCycle(&node, &cycle)) {
+            SCRAM_THROW(CycleError()) << errinfo_element(GetUniqueName(&node), type)
+                                      << errinfo_cycle(PrintCycle(cycle));
+        }
     }
-  }
 }
 
-}  // namespace scram::mef::cycle
+} // namespace scram::mef::cycle

@@ -27,24 +27,24 @@ namespace scram::mef {
 
 /// Indicates a constant value.
 class ConstantExpression : public Expression {
- public:
-  static ConstantExpression kOne;  ///< Constant 1 or True.
-  static ConstantExpression kZero;  ///< Constant 0 or False.
-  static ConstantExpression kPi;  ///< Constant PI value.
+  public:
+    static ConstantExpression kOne;  ///< Constant 1 or True.
+    static ConstantExpression kZero; ///< Constant 0 or False.
+    static ConstantExpression kPi;   ///< Constant PI value.
 
-  /// Constructor for constant integer, float, and bool values.
-  /// In other words, this constructor is implicitly generic.
-  ///
-  /// @param[in] value  Numerical value.
-  explicit ConstantExpression(double value) : value_(value) {}
+    /// Constructor for constant integer, float, and bool values.
+    /// In other words, this constructor is implicitly generic.
+    ///
+    /// @param[in] value  Numerical value.
+    explicit ConstantExpression(double value) : value_(value) {}
 
-  double value()  override { return value_; }
-  bool IsDeviate()  override { return false; }
+    double value() override { return value_; }
+    bool IsDeviate() override { return false; }
 
- private:
-  double DoSample()  override { return value_; }
+  private:
+    double DoSample() override { return value_; }
 
-  const double value_;  ///< The universal value to represent int, bool, double.
+    const double value_; ///< The universal value to represent int, bool, double.
 };
 
-}  // namespace scram::mef
+} // namespace scram::mef

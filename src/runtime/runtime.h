@@ -15,37 +15,37 @@
 namespace scram::core {
 class Pdag;
 class Node;
-}  // namespace scram::core
+} // namespace scram::core
 
 namespace scram::mef {
 class BasicEvent;
 class ConstantExpression;
 class Gate;
-}  // namespace scram::mef
+} // namespace scram::mef
 
 namespace fuzzybits::runtime {
 
 class RuntimeError : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
+  public:
+    using std::runtime_error::runtime_error;
 };
 
 class InvalidPcfbError : public RuntimeError {
- public:
-  explicit InvalidPcfbError(std::string message, std::vector<pcfb::Diagnostic> diags = {})
-      : RuntimeError(std::move(message)), diagnostics(std::move(diags)) {}
+  public:
+    explicit InvalidPcfbError(std::string message, std::vector<pcfb::Diagnostic> diags = {})
+        : RuntimeError(std::move(message)), diagnostics(std::move(diags)) {}
 
-  std::vector<pcfb::Diagnostic> diagnostics;
+    std::vector<pcfb::Diagnostic> diagnostics;
 };
 
 /// A file the runtime cannot answer: a query kind it does not implement.
 /// `id` is the stable diagnostic id (`pcfb.unsupported-query-kind`).
 class UnsupportedPcfbError : public RuntimeError {
- public:
-  UnsupportedPcfbError(std::string diagnostic_id, const std::string &message)
-      : RuntimeError("[" + diagnostic_id + "] " + message), id(std::move(diagnostic_id)) {}
+  public:
+    UnsupportedPcfbError(std::string diagnostic_id, const std::string &message)
+        : RuntimeError("[" + diagnostic_id + "] " + message), id(std::move(diagnostic_id)) {}
 
-  std::string id;
+    std::string id;
 };
 
 /// Throws `UnsupportedPcfbError` unless every query of `circuit` is one the runtime implements
@@ -54,83 +54,83 @@ class UnsupportedPcfbError : public RuntimeError {
 void require_implemented_queries(const pcfb::ir::Circuit &circuit, const char *op);
 
 struct RunOptions {
-  std::uint64_t trials = 0;
-  int seed = 372;
-  /// "cuda", "hip", "metal", "omp", or empty (AdaptiveCpp default). Applied via
-  /// ACPP_VISIBILITY_MASK, which make_throwing_sycl_queue() reads at queue
-  /// construction. Plugins are filtered by the mask AdaptiveCpp cached before
-  /// main(), so this only narrows selection among backends that mask loaded
-  /// (an empty or multi-backend mask such as `cuda;hip`).
-  std::string backend;
-  /// Progress sinks. Not owned; they must outlive the run. Empty means no
-  /// snapshot is ever built.
-  std::vector<progress::sink *> progress_sinks;
-  /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
-  double progress_max_rate_hz = 10.0;
+    std::uint64_t trials = 0;
+    int seed = 372;
+    /// "cuda", "hip", "metal", "omp", or empty (AdaptiveCpp default). Applied via
+    /// ACPP_VISIBILITY_MASK, which make_throwing_sycl_queue() reads at queue
+    /// construction. Plugins are filtered by the mask AdaptiveCpp cached before
+    /// main(), so this only narrows selection among backends that mask loaded
+    /// (an empty or multi-backend mask such as `cuda;hip`).
+    std::string backend;
+    /// Progress sinks. Not owned; they must outlive the run. Empty means no
+    /// snapshot is ever built.
+    std::vector<progress::sink *> progress_sinks;
+    /// Coalescing rate for `progress_sinks`; <= 0 means every emission is delivered.
+    double progress_max_rate_hz = 10.0;
 };
 
 struct QueryResult {
-  std::string name;
-  double estimate = 0;
-  double ci_low = 0;
-  double ci_high = 0;
-  std::uint64_t n = 0;     ///< total Bernoulli trials (tally.total_bits)
-  std::uint64_t hits = 0;  ///< raw one-bits (tally.num_one_bits)
+    std::string name;
+    double estimate = 0;
+    double ci_low = 0;
+    double ci_high = 0;
+    std::uint64_t n = 0;    ///< total Bernoulli trials (tally.total_bits)
+    std::uint64_t hits = 0; ///< raw one-bits (tally.num_one_bits)
 };
 
 struct ReconstructedQuery {
-  std::string name;
-  int node_index = 0;
-  std::shared_ptr<scram::core::Node> node;
+    std::string name;
+    int node_index = 0;
+    std::shared_ptr<scram::core::Node> node;
 };
 
 /// Fields `Pdag.to_graph()` / the server DAG views need, restored from
 /// `compile.*` / `fuzzybits.*` metadata written at lowering.
 struct GraphMeta {
-  std::string model_name;
-  std::string source;
-  std::vector<std::string> input_files;
-  std::string target;
-  std::string target_name;
-  int compilation_level = 2;
-  bool ccf = false;
-  bool expand_atleast_gates = false;
-  bool expand_xor_gates = false;
-  bool recognize_atleast_groups = true;
-  bool recognize_xor_groups = true;
-  bool keep_null_gates = false;
-  bool has_compilation = false;
+    std::string model_name;
+    std::string source;
+    std::vector<std::string> input_files;
+    std::string target;
+    std::string target_name;
+    int compilation_level = 2;
+    bool ccf = false;
+    bool expand_atleast_gates = false;
+    bool expand_xor_gates = false;
+    bool recognize_atleast_groups = true;
+    bool recognize_xor_groups = true;
+    bool keep_null_gates = false;
+    bool has_compilation = false;
 };
 
 struct OriginRecord {
-  int pdag_index = 0;
-  std::string kind;
-  std::string id;
-  std::string name;
-  std::string label;
-  std::string full_path;
+    int pdag_index = 0;
+    std::string kind;
+    std::string id;
+    std::string name;
+    std::string label;
+    std::string full_path;
 };
 
 /// Owns the reconstructed PDAG plus the MEF objects kernel_builder reads
 /// through `Pdag::basic_events()`. Special members are out-of-line because
 /// `Pdag` / `BasicEvent` / `ConstantExpression` are incomplete here.
 struct ReconstructedPdag {
-  std::unique_ptr<scram::core::Pdag> graph;
-  std::vector<std::unique_ptr<scram::mef::BasicEvent>> events;
-  std::vector<std::unique_ptr<scram::mef::ConstantExpression>> expressions;
-  std::vector<std::unique_ptr<scram::mef::Gate>> origin_gates;
-  std::vector<ReconstructedQuery> queries;
-  GraphMeta meta;
-  std::vector<OriginRecord> origins;
-  /// Notes about 32-bit Bernoulli truncation (#17 is Phase 2).
-  std::vector<std::string> threshold_notes;
+    std::unique_ptr<scram::core::Pdag> graph;
+    std::vector<std::unique_ptr<scram::mef::BasicEvent>> events;
+    std::vector<std::unique_ptr<scram::mef::ConstantExpression>> expressions;
+    std::vector<std::unique_ptr<scram::mef::Gate>> origin_gates;
+    std::vector<ReconstructedQuery> queries;
+    GraphMeta meta;
+    std::vector<OriginRecord> origins;
+    /// Notes about 32-bit Bernoulli truncation (#17 is Phase 2).
+    std::vector<std::string> threshold_notes;
 
-  ReconstructedPdag();
-  ReconstructedPdag(ReconstructedPdag &&) noexcept;
-  ReconstructedPdag &operator=(ReconstructedPdag &&) noexcept;
-  ~ReconstructedPdag();
-  ReconstructedPdag(const ReconstructedPdag &) = delete;
-  ReconstructedPdag &operator=(const ReconstructedPdag &) = delete;
+    ReconstructedPdag();
+    ReconstructedPdag(ReconstructedPdag &&) noexcept;
+    ReconstructedPdag &operator=(ReconstructedPdag &&) noexcept;
+    ~ReconstructedPdag();
+    ReconstructedPdag(const ReconstructedPdag &) = delete;
+    ReconstructedPdag &operator=(const ReconstructedPdag &) = delete;
 };
 
 /// Apply `--backend` to the process environment. Must run before any
@@ -146,25 +146,21 @@ namespace testing {
 /// production path.
 void fail_next_run_after_passes(std::uint64_t passes);
 
-}  // namespace testing
+} // namespace testing
 
 /// Reconstruct a preprocessed `core::Pdag` from a validated pcfb circuit.
 /// Variables are created at SAMPLE `event_id` so Philox `pdag_idx` matches
 /// the in-memory compile path.
 [[nodiscard]] ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit);
 
-[[nodiscard]] std::vector<QueryResult> run_graph(scram::core::Pdag &pdag,
-                                                 const std::vector<ReconstructedQuery> &queries,
-                                                 const RunOptions &options);
+[[nodiscard]] std::vector<QueryResult>
+run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries, const RunOptions &options);
 
-[[nodiscard]] std::vector<QueryResult> run_pcfb(const pcfb::ir::Circuit &circuit,
-                                                const RunOptions &options);
+[[nodiscard]] std::vector<QueryResult> run_pcfb(const pcfb::ir::Circuit &circuit, const RunOptions &options);
 
-[[nodiscard]] std::vector<QueryResult> run_pcfb(const std::filesystem::path &path,
-                                                const RunOptions &options);
+[[nodiscard]] std::vector<QueryResult> run_pcfb(const std::filesystem::path &path, const RunOptions &options);
 
-[[nodiscard]] std::vector<QueryResult> run_pcfb(std::span<const std::byte> bytes,
-                                                const RunOptions &options);
+[[nodiscard]] std::vector<QueryResult> run_pcfb(std::span<const std::byte> bytes, const RunOptions &options);
 
 /// Read + `pcfb::validate`. Throws `InvalidPcfbError` on diagnostics, `RuntimeError`
 /// on I/O / verification failure. `from_bytes` is a non-owning view: `bytes` must
@@ -173,70 +169,69 @@ void fail_next_run_after_passes(std::uint64_t passes);
 [[nodiscard]] pcfb::ir::Circuit load_pcfb(std::span<const std::byte> bytes);
 
 struct SampleShape {
-  std::size_t batch_size = 0;
-  std::size_t bitpacks_per_batch = 0;
-  std::size_t bits_per_bitpack = 64;
-  std::uint64_t trials_per_pass = 0;
-  std::uint64_t total_iterations = 0;  ///< 0 when the shaper is unbounded
+    std::size_t batch_size = 0;
+    std::size_t bitpacks_per_batch = 0;
+    std::size_t bits_per_bitpack = 64;
+    std::uint64_t trials_per_pass = 0;
+    std::uint64_t total_iterations = 0; ///< 0 when the shaper is unbounded
 };
 
 struct PassTally {
-  int index = 0;
-  std::uint64_t num_one_bits = 0;  ///< cumulative one-bits through this pass
-  std::uint64_t total_bits = 0;    ///< cumulative Bernoulli trials through this pass
+    int index = 0;
+    std::uint64_t num_one_bits = 0; ///< cumulative one-bits through this pass
+    std::uint64_t total_bits = 0;   ///< cumulative Bernoulli trials through this pass
 };
 
 struct PassResult {
-  std::uint64_t pass_index = 0;  ///< passes run so far, including this step's
-  std::uint64_t trials_per_pass = 0;
-  int target_index = 0;
-  std::vector<PassTally> nodes;
+    std::uint64_t pass_index = 0; ///< passes run so far, including this step's
+    std::uint64_t trials_per_pass = 0;
+    int target_index = 0;
+    std::vector<PassTally> nodes;
 };
 
 /// Streaming Monte Carlo over a reconstructed pcfb PDAG. One `step()` is one
 /// device pass (same kernel path as `fzb run` / `layer_manager`). Destroy or
 /// `close()` to release USM. Not thread-safe.
 class Session {
- public:
-  Session(ReconstructedPdag reconstructed, const std::string &backend = {},
-          std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-          std::size_t num_trials = 0);
-  Session(Session &&) noexcept;
-  Session &operator=(Session &&) noexcept;
-  ~Session();
-  Session(const Session &) = delete;
-  Session &operator=(const Session &) = delete;
+  public:
+    Session(ReconstructedPdag reconstructed, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0,
+            std::vector<std::string> watch = {}, std::size_t num_trials = 0);
+    Session(Session &&) noexcept;
+    Session &operator=(Session &&) noexcept;
+    ~Session();
+    Session(const Session &) = delete;
+    Session &operator=(const Session &) = delete;
 
-  static Session from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend = {},
+    static Session from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend = {},
+                                std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
+                                std::size_t num_trials = 0);
+    static Session from_bytes(std::span<const std::byte> bytes, const std::string &backend = {},
                               std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
                               std::size_t num_trials = 0);
-  static Session from_bytes(std::span<const std::byte> bytes, const std::string &backend = {},
-                            std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-                            std::size_t num_trials = 0);
-  static Session from_path(const std::filesystem::path &path, const std::string &backend = {},
-                           std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-                           std::size_t num_trials = 0);
+    static Session from_path(const std::filesystem::path &path, const std::string &backend = {},
+                             std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
+                             std::size_t num_trials = 0);
 
-  [[nodiscard]] scram::core::Pdag &pdag();
-  [[nodiscard]] const scram::core::Pdag &pdag() const;
-  [[nodiscard]] const std::vector<ReconstructedQuery> &queries() const;
-  [[nodiscard]] const GraphMeta &meta() const;
-  [[nodiscard]] SampleShape sample_shape() const;
-  [[nodiscard]] bool closed() const;
+    [[nodiscard]] scram::core::Pdag &pdag();
+    [[nodiscard]] const scram::core::Pdag &pdag() const;
+    [[nodiscard]] const std::vector<ReconstructedQuery> &queries() const;
+    [[nodiscard]] const GraphMeta &meta() const;
+    [[nodiscard]] SampleShape sample_shape() const;
+    [[nodiscard]] bool closed() const;
 
-  /// Resolve extra watch names (id / name / full_path / decimal PDAG index)
-  /// against the reconstructed graph. Unknown names throw `RuntimeError`.
-  [[nodiscard]] static std::vector<int> resolve_watch(const ReconstructedPdag &reconstructed,
-                                                      const std::vector<std::string> &names);
+    /// Resolve extra watch names (id / name / full_path / decimal PDAG index)
+    /// against the reconstructed graph. Unknown names throw `RuntimeError`.
+    [[nodiscard]] static std::vector<int> resolve_watch(const ReconstructedPdag &reconstructed,
+                                                        const std::vector<std::string> &names);
 
-  /// Run `passes` device passes (at least 1), waiting once at the end, and
-  /// return the cumulative tallies.
-  PassResult step(std::size_t passes = 1);
-  void close();
+    /// Run `passes` device passes (at least 1), waiting once at the end, and
+    /// return the cumulative tallies.
+    PassResult step(std::size_t passes = 1);
+    void close();
 
- private:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
+  private:
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace fuzzybits::runtime
+} // namespace fuzzybits::runtime

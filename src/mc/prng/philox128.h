@@ -45,8 +45,8 @@ namespace scram::mc::prng::philox {
     state128 counters = *seeds;
     counters.x[3] += generation;
 
-    #define PHILOX4x32_DEFAULT_ROUNDS 10
-    #pragma unroll
+#define PHILOX4x32_DEFAULT_ROUNDS 10
+#pragma unroll
     for (auto i = 0; i < PHILOX4x32_DEFAULT_ROUNDS; i++) {
         prng::philox::round(counters, key);
     }
@@ -57,7 +57,8 @@ namespace scram::mc::prng::philox {
  * @brief Bernoulli-sample four bits using the Philox 4x32-10 counter-based PRNG.
  */
 template <typename bitpack_t_>
-[[gnu::always_inline]] static bitpack_t_ sample(const state128 *seeds, const std::uint64_t threshold, const std::uint32_t generation) {
+[[gnu::always_inline]] static bitpack_t_ sample(const state128 *seeds, const std::uint64_t threshold,
+                                                const std::uint32_t generation) {
     prng::state128 results;
     prng::philox::generate(seeds, &results, static_cast<uint8_t>(generation));
 
@@ -66,24 +67,29 @@ template <typename bitpack_t_>
 
     using b = bitpack_t_;
     bitpack_t_ out_bits = b(0);
-    out_bits |= (static_cast<std::uint64_t>(results.x[0]) < threshold ? b(1) : b(0)) << bitpack_t_(bernoulli_bits_offset + 0);
-    out_bits |= (static_cast<std::uint64_t>(results.x[1]) < threshold ? b(1) : b(0)) << bitpack_t_(bernoulli_bits_offset + 1);
-    out_bits |= (static_cast<std::uint64_t>(results.x[2]) < threshold ? b(1) : b(0)) << bitpack_t_(bernoulli_bits_offset + 2);
-    out_bits |= (static_cast<std::uint64_t>(results.x[3]) < threshold ? b(1) : b(0)) << bitpack_t_(bernoulli_bits_offset + 3);
+    out_bits |= (static_cast<std::uint64_t>(results.x[0]) < threshold ? b(1) : b(0))
+                << bitpack_t_(bernoulli_bits_offset + 0);
+    out_bits |= (static_cast<std::uint64_t>(results.x[1]) < threshold ? b(1) : b(0))
+                << bitpack_t_(bernoulli_bits_offset + 1);
+    out_bits |= (static_cast<std::uint64_t>(results.x[2]) < threshold ? b(1) : b(0))
+                << bitpack_t_(bernoulli_bits_offset + 2);
+    out_bits |= (static_cast<std::uint64_t>(results.x[3]) < threshold ? b(1) : b(0))
+                << bitpack_t_(bernoulli_bits_offset + 3);
     return out_bits;
 }
 
 template <typename bitpack_t_>
-[[gnu::always_inline]] static bitpack_t_ pack_bernoulli_draws(const state128 &seed_base, const std::uint64_t p_threshold) {
+[[gnu::always_inline]] static bitpack_t_ pack_bernoulli_draws(const state128 &seed_base,
+                                                              const std::uint64_t p_threshold) {
     static constexpr std::uint8_t bernoulli_bits_per_generation = 4;
     static constexpr std::uint8_t num_generations = sizeof(bitpack_t_) * 8 / bernoulli_bits_per_generation;
 
     bitpack_t_ bitpacked_sample = bitpack_t_(0);
-    #pragma unroll
+#pragma unroll
     for (std::uint32_t i = 0; i < num_generations; ++i) {
         const bitpack_t_ four_bits = prng::philox::sample<bitpack_t_>(&seed_base, p_threshold, i);
         bitpacked_sample |= four_bits;
     }
     return bitpacked_sample;
 }
-} // namespace scram::mc::prng
+} // namespace scram::mc::prng::philox

@@ -29,108 +29,101 @@
 
 namespace scram::mef {
 
-Expression::Expression(std::vector<Expression*> args)
-    : args_(std::move(args)), sampled_value_(0), sampled_(false) {}
+Expression::Expression(std::vector<Expression *> args) : args_(std::move(args)), sampled_value_(0), sampled_(false) {}
 
-double Expression::Sample()  {
-  if (!sampled_) {
-    sampled_ = true;
-    sampled_value_ = this->DoSample();
-  }
-  return sampled_value_;
+double Expression::Sample() {
+    if (!sampled_) {
+        sampled_ = true;
+        sampled_value_ = this->DoSample();
+    }
+    return sampled_value_;
 }
 
-void Expression::Reset()  {
-  if (!sampled_)
-    return;
-  sampled_ = false;
-  for (Expression* arg : args_)
-    arg->Reset();
+void Expression::Reset() {
+    if (!sampled_)
+        return;
+    sampled_ = false;
+    for (Expression *arg : args_)
+        arg->Reset();
 }
 
-bool Expression::IsDeviate()  {
-  return ext::any_of(args_, [](Expression* arg) { return arg->IsDeviate(); });
+bool Expression::IsDeviate() {
+    return ext::any_of(args_, [](Expression *arg) { return arg->IsDeviate(); });
 }
 
 namespace detail {
 
-void EnsureMultivariateArgs(std::vector<Expression*> args) {
-  if (args.size() < 2)
-    SCRAM_THROW(ValidityError("Expression requires 2 or more arguments."))
-        << errinfo_value(std::to_string(args.size()));
+void EnsureMultivariateArgs(std::vector<Expression *> args) {
+    if (args.size() < 2)
+        SCRAM_THROW(ValidityError("Expression requires 2 or more arguments."))
+            << errinfo_value(std::to_string(args.size()));
 }
 
-}  // namespace detail
+} // namespace detail
 
-namespace {  // Interval to string.
+namespace { // Interval to string.
 
 /// Converts an interval into a string.
-std::string ToString(const Interval& interval) {
-  std::stringstream ss;
-  ss << interval;
-  return ss.str();
-}
-
-}  // namespace
-
-void EnsureProbability(Expression* expression, const char* type) {
-  double value = expression->value();
-  if (value < 0 || value > 1)
-    SCRAM_THROW(DomainError("Invalid " + std::string(type) + " value"))
-        << errinfo_value(std::to_string(value));
-
-  Interval interval = expression->interval();
-  if (IsProbability(interval) == false)
-    SCRAM_THROW(DomainError("Invalid " + std::string(type) + " sample domain"))
-        << errinfo_value(ToString(interval));
-}
-
-void EnsurePositive(Expression* expression, const char* description) {
-  using namespace std::string_literals;  // NOLINT
-
-  double value = expression->value();
-  if (value <= 0)
-    SCRAM_THROW(DomainError(description + " argument value must be positive."s))
-        << errinfo_value(std::to_string(value));
-
-  Interval interval = expression->interval();
-  if (IsPositive(interval) == false)
-    SCRAM_THROW(
-        DomainError(description + " argument sample domain must be positive."s))
-        << errinfo_value(ToString(interval));
-}
-
-void EnsureNonNegative(Expression* expression, const char* description) {
-  using namespace std::string_literals;  // NOLINT
-
-  double value = expression->value();
-  if (value < 0)
-    SCRAM_THROW(
-        DomainError(description + " argument value cannot be negative."s))
-        << errinfo_value(std::to_string(value));
-
-  Interval interval = expression->interval();
-  if (IsNonNegative(interval) == false)
-    SCRAM_THROW(DomainError(description +
-                            " argument sample cannot have negative values."s))
-        << errinfo_value(ToString(interval));
-}
-
-void EnsureWithin(Expression* expression, const Interval& interval,
-                  const char* type) {
-  double arg_value = expression->value();
-  if (!Contains(interval, arg_value)) {
+std::string ToString(const Interval &interval) {
     std::stringstream ss;
-    ss << type << " argument value must be in " << interval << ".";
-    SCRAM_THROW(DomainError(ss.str()))
-        << errinfo_value(std::to_string(arg_value));
-  }
-  Interval arg_interval = expression->interval();
-  if (!boost::icl::within(arg_interval, interval)) {
-    std::stringstream ss;
-    ss << type << " argument sample domain must be in " << interval << ".";
-    SCRAM_THROW(DomainError(ss.str())) << errinfo_value(ToString(arg_interval));
-  }
+    ss << interval;
+    return ss.str();
 }
 
-}  // namespace scram::mef
+} // namespace
+
+void EnsureProbability(Expression *expression, const char *type) {
+    double value = expression->value();
+    if (value < 0 || value > 1)
+        SCRAM_THROW(DomainError("Invalid " + std::string(type) + " value")) << errinfo_value(std::to_string(value));
+
+    Interval interval = expression->interval();
+    if (IsProbability(interval) == false)
+        SCRAM_THROW(DomainError("Invalid " + std::string(type) + " sample domain"))
+            << errinfo_value(ToString(interval));
+}
+
+void EnsurePositive(Expression *expression, const char *description) {
+    using namespace std::string_literals; // NOLINT
+
+    double value = expression->value();
+    if (value <= 0)
+        SCRAM_THROW(DomainError(description + " argument value must be positive."s))
+            << errinfo_value(std::to_string(value));
+
+    Interval interval = expression->interval();
+    if (IsPositive(interval) == false)
+        SCRAM_THROW(DomainError(description + " argument sample domain must be positive."s))
+            << errinfo_value(ToString(interval));
+}
+
+void EnsureNonNegative(Expression *expression, const char *description) {
+    using namespace std::string_literals; // NOLINT
+
+    double value = expression->value();
+    if (value < 0)
+        SCRAM_THROW(DomainError(description + " argument value cannot be negative."s))
+            << errinfo_value(std::to_string(value));
+
+    Interval interval = expression->interval();
+    if (IsNonNegative(interval) == false)
+        SCRAM_THROW(DomainError(description + " argument sample cannot have negative values."s))
+            << errinfo_value(ToString(interval));
+}
+
+void EnsureWithin(Expression *expression, const Interval &interval, const char *type) {
+    double arg_value = expression->value();
+    if (!Contains(interval, arg_value)) {
+        std::stringstream ss;
+        ss << type << " argument value must be in " << interval << ".";
+        SCRAM_THROW(DomainError(ss.str())) << errinfo_value(std::to_string(arg_value));
+    }
+    Interval arg_interval = expression->interval();
+    if (!boost::icl::within(arg_interval, interval)) {
+        std::stringstream ss;
+        ss << type << " argument sample domain must be in " << interval << ".";
+        SCRAM_THROW(DomainError(ss.str())) << errinfo_value(ToString(arg_interval));
+    }
+}
+
+} // namespace scram::mef

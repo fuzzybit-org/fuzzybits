@@ -58,498 +58,474 @@ namespace scram::mef {
 /// validation and proper setup of the constructs
 /// for future use or analysis.
 class Initializer : private boost::noncopyable {
- public:
-  /// Reads input files with the structure of analysis constructs.
-  /// Initializes the analysis model from the given input files.
-  /// Puts all events into their appropriate containers in the model.
-  ///
-  /// @param[in] xml_files  The MEF XML input files, possibly containing wildcards.
-  /// @param[in] settings  Analysis settings.
-  /// @param[in] allow_extern  Allow external libraries in the input.
-  /// @param[in] extra_validator  Additional XML validator to be run
-  ///                             after the MEF validator.
-  ///
-  /// @throws IOError  Input contains duplicate files.
-  /// @throws IOError  One of the input files is not accessible.
-  /// @throws IOError             No files match the provided wildcard patterns.
-  /// @throws xml::Error          The xml files contain errors or malformed.
-  /// @throws xml::ValidityError  The xml files are not valid for schema.
-  /// @throws mef::ValidityError  The input model contains errors.
-  ///
-  /// @warning Processing external libraries from XML input is **UNSAFE**.
-  ///          It allows loading and executing arbitrary code during analysis.
-  ///          Enable this feature for trusted input files and libraries only.
-  Initializer(const std::vector<std::string>& xml_files,
-              core::Settings settings, bool allow_extern = false,
-              xml::Validator* extra_validator = nullptr);
-
-  /// @returns The model built from the input files.
-  std::unique_ptr<Model> model() && { return std::move(model_); }
-
- private:
-  /// Convenience alias for expression extractor function types.
-  using ExtractorFunction = std::unique_ptr<Expression> (*)(
-      const xml::Element::Range&, const std::string&, Initializer*);
-  /// Map of expression names and their extractor functions.
-  using ExtractorMap = std::unordered_map<std::string_view, ExtractorFunction>;
-  /// Container for late defined constructs.
-  template <class... Ts>
-  using TbdContainer =
-      std::vector<std::pair<std::variant<Ts*...>, xml::Element>>;
-  /// Container with full paths to elements.
-  ///
-  /// @tparam T  The element type.
-  template <typename T>
-  using PathTable = boost::multi_index_container<
-      T*, boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
-              boost::multi_index::const_mem_fun<Id, std::string_view,
-                                                &Id::full_path>,
-              std::hash<std::string_view>>>>;
-
-  /// @tparam T  Type of an expression.
-  /// @tparam N  The number of arguments for the expression.
-  ///
-  /// Extracts argument expressions from XML elements
-  /// and constructs the requested expression T.
-  template <class T, int N>
-  struct Extractor;
-
-  /// Expressions mapped to their extraction functions.
-  static const ExtractorMap kExpressionExtractors_;
-
-  /// Calls Extractor with an appropriate N to construct the expression.
-  ///
-  /// @tparam T  Type of an expression.
-  ///
-  /// @param[in] args  XML elements containing the arguments.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  /// @param[in,out] init  The host Initializer.
-  ///
-  /// @returns The new extracted expression.
-  template <class T>
-  static std::unique_ptr<Expression> Extract(const xml::Element::Range& args,
-                                             const std::string& base_path,
-                                             Initializer* init);
-
   public:
-  /// Expands wildcard patterns in file paths to a list of matching files.
-  ///
-  /// @param[in] xml_files  The XML input files, possibly containing wildcards.
-  ///
-  /// @throws IOError  If no files match the provided patterns.
-  ///
-  /// @return A vector of expanded file paths.
-  static std::vector<std::string> ExpandWildcards(const std::vector<std::string>& xml_files);
+    /// Reads input files with the structure of analysis constructs.
+    /// Initializes the analysis model from the given input files.
+    /// Puts all events into their appropriate containers in the model.
+    ///
+    /// @param[in] xml_files  The MEF XML input files, possibly containing wildcards.
+    /// @param[in] settings  Analysis settings.
+    /// @param[in] allow_extern  Allow external libraries in the input.
+    /// @param[in] extra_validator  Additional XML validator to be run
+    ///                             after the MEF validator.
+    ///
+    /// @throws IOError  Input contains duplicate files.
+    /// @throws IOError  One of the input files is not accessible.
+    /// @throws IOError             No files match the provided wildcard patterns.
+    /// @throws xml::Error          The xml files contain errors or malformed.
+    /// @throws xml::ValidityError  The xml files are not valid for schema.
+    /// @throws mef::ValidityError  The input model contains errors.
+    ///
+    /// @warning Processing external libraries from XML input is **UNSAFE**.
+    ///          It allows loading and executing arbitrary code during analysis.
+    ///          Enable this feature for trusted input files and libraries only.
+    Initializer(const std::vector<std::string> &xml_files, core::Settings settings, bool allow_extern = false,
+                xml::Validator *extra_validator = nullptr);
 
-  /// Converts a glob pattern to a regular expression string.
-  ///
-  /// @param[in] glob  The glob pattern to convert.
-  ///
-  /// @return A regex string equivalent to the glob pattern.
-  static std::string GlobToRegex(const std::string& glob);
-
-  /// Checks if all input files exist on the system.
-  ///
-  /// @param[in] xml_files  The XML input files.
-  ///
-  /// @throws IOError  Some files are missing.
-  static void CheckFileExistence(const std::vector<std::string>& xml_files);
-
-  /// Checks if there are duplicate input files.
-  ///
-  /// @param[in] xml_files  The XML input files.
-  ///
-  /// @pre All input files exist on the system.
-  ///
-  /// @throws DuplicateElementError  There are duplicate input files.
-  static void CheckDuplicateFiles(const std::vector<std::string>& xml_files);
+    /// @returns The model built from the input files.
+    std::unique_ptr<Model> model() && { return std::move(model_); }
 
   private:
-  /// @copybrief Initializer::Initializer
-  ///
-  /// Processes the input files, including expanding wildcards,
-  /// checking for existence and duplicates, and parsing the files.
-  ///
-  /// @param[in] xml_files  The XML input files, possibly containing wildcards.
-  ///
-  /// @throws xml::Error           If XML files are erroneous or malformed.
-  /// @throws xml::ValidityError   If XML files do not pass validation.
-  /// @throws mef::ValidityError   If the input model contains errors.
-  /// @throws IOError              If input files are missing or duplicate.
-  /// @throws IOError              If no files match the provided wildcard patterns.
-  /// @throws IllegalOperation     If loading external libraries is disallowed.
-  void ProcessInputFiles(const std::vector<std::string>& xml_files);
+    /// Convenience alias for expression extractor function types.
+    using ExtractorFunction = std::unique_ptr<Expression> (*)(const xml::Element::Range &, const std::string &,
+                                                              Initializer *);
+    /// Map of expression names and their extractor functions.
+    using ExtractorMap = std::unordered_map<std::string_view, ExtractorFunction>;
+    /// Container for late defined constructs.
+    template <class... Ts> using TbdContainer = std::vector<std::pair<std::variant<Ts *...>, xml::Element>>;
+    /// Container with full paths to elements.
+    ///
+    /// @tparam T  The element type.
+    template <typename T>
+    using PathTable = boost::multi_index_container<
+        T *,
+        boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
+            boost::multi_index::const_mem_fun<Id, std::string_view, &Id::full_path>, std::hash<std::string_view>>>>;
 
-  /// Reads one input XML file document with the structure of analysis entities.
-  /// Initializes the analysis from the given document.
-  /// Puts all events into their appropriate containers.
-  /// This function mostly registers element definitions,
-  /// but it may leave them to be defined later
-  /// because of possible undefined dependencies of those elements.
-  ///
-  /// @param[in] document  The XML DOM document from a model input file.
-  ///
-  /// @pre The document has not been passed before.
-  ///
-  /// @throws ValidityError  The input model contains errors.
-  /// @throws IllegalOperation  Loading external libraries is disallowed.
-  void ProcessInputFile(const xml::Document& document);
+    /// @tparam T  Type of an expression.
+    /// @tparam N  The number of arguments for the expression.
+    ///
+    /// Extracts argument expressions from XML elements
+    /// and constructs the requested expression T.
+    template <class T, int N> struct Extractor;
 
-  /// Processes definitions of elements
-  /// that are left to be determined later.
-  /// This late definition happens primarily due to unregistered dependencies.
-  ///
-  /// @throws ValidityError  The elements contain undefined dependencies.
-  void ProcessTbdElements();
+    /// Expressions mapped to their extraction functions.
+    static const ExtractorMap kExpressionExtractors_;
 
-  /// Registers an element into the model.
-  ///
-  /// @tparam T  The element type.
-  ///
-  /// @param[in] element  The initialized element ready to be added into models.
-  /// @param[in] xml_element  The related XML element for error messages.
-  ///
-  /// @throws ValidityError  Issues with adding the element into the model.
-  template <class T>
-  void Register(std::unique_ptr<T> element, const xml::Element& xml_element);
+    /// Calls Extractor with an appropriate N to construct the expression.
+    ///
+    /// @tparam T  Type of an expression.
+    ///
+    /// @param[in] args  XML elements containing the arguments.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    /// @param[in,out] init  The host Initializer.
+    ///
+    /// @returns The new extracted expression.
+    template <class T>
+    static std::unique_ptr<Expression> Extract(const xml::Element::Range &args, const std::string &base_path,
+                                               Initializer *init);
 
-  /// Constructs and registers an element in the model.
-  ///
-  /// @tparam T  The Element type to be specialized for.
-  ///
-  /// @param[in] xml_node  XML node defining the element.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  /// @param[in] base_role  The parent container's role.
-  ///
-  /// @returns Pointer to the registered element.
-  ///
-  /// @throws ValidityError  Issues with the new element or registration.
-  template <class T>
-  T* Register(const xml::Element& xml_node, const std::string& base_path,
-              RoleSpecifier base_role);
+  public:
+    /// Expands wildcard patterns in file paths to a list of matching files.
+    ///
+    /// @param[in] xml_files  The XML input files, possibly containing wildcards.
+    ///
+    /// @throws IOError  If no files match the provided patterns.
+    ///
+    /// @return A vector of expanded file paths.
+    static std::vector<std::string> ExpandWildcards(const std::vector<std::string> &xml_files);
 
-  /// Adds additional data to element definition
-  /// after processing all the input files.
-  ///
-  /// @tparam T  The Element type to be specialized for.
-  ///
-  /// @param[in] xml_node  XML element defining the element.
-  /// @param[in,out] element  Registered element ready to be defined.
-  ///
-  /// @throws ValidityError  Issues with the additional data.
-  template <class T>
-  void Define(const xml::Element& xml_node, T* element);
+    /// Converts a glob pattern to a regular expression string.
+    ///
+    /// @param[in] glob  The glob pattern to convert.
+    ///
+    /// @return A regex string equivalent to the glob pattern.
+    static std::string GlobToRegex(const std::string &glob);
 
-  /// Defines an event tree for the analysis.
-  ///
-  /// @param[in] et_node  XML element defining the event tree.
-  ///
-  /// @throws ValidityError  There are issues with registering and defining
-  ///                        the event tree and its data.
-  void DefineEventTree(const xml::Element& et_node);
+    /// Checks if all input files exist on the system.
+    ///
+    /// @param[in] xml_files  The XML input files.
+    ///
+    /// @throws IOError  Some files are missing.
+    static void CheckFileExistence(const std::vector<std::string> &xml_files);
 
-  /// Defines a fault tree for the analysis.
-  ///
-  /// @param[in] ft_node  XML element defining the fault tree.
-  ///
-  /// @throws ValidityError  There are issues with registering and defining
-  ///                        the fault tree and its data
-  ///                        like gates and events.
-  void DefineFaultTree(const xml::Element& ft_node);
+    /// Checks if there are duplicate input files.
+    ///
+    /// @param[in] xml_files  The XML input files.
+    ///
+    /// @pre All input files exist on the system.
+    ///
+    /// @throws DuplicateElementError  There are duplicate input files.
+    static void CheckDuplicateFiles(const std::vector<std::string> &xml_files);
 
-  /// Defines a component container.
-  ///
-  /// @param[in] component_node  XML element defining the component.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  /// @param[in] container_role  The parent container's role.
-  ///
-  /// @returns Component that is ready for registration.
-  ///
-  /// @throws ValidityError  There are issues with registering and defining
-  ///                        the component and its data
-  ///                        like gates and events.
-  std::unique_ptr<Component> DefineComponent(const xml::Element& component_node,
-                                             const std::string& base_path,
-                                             RoleSpecifier container_role);
+  private:
+    /// @copybrief Initializer::Initializer
+    ///
+    /// Processes the input files, including expanding wildcards,
+    /// checking for existence and duplicates, and parsing the files.
+    ///
+    /// @param[in] xml_files  The XML input files, possibly containing wildcards.
+    ///
+    /// @throws xml::Error           If XML files are erroneous or malformed.
+    /// @throws xml::ValidityError   If XML files do not pass validation.
+    /// @throws mef::ValidityError   If the input model contains errors.
+    /// @throws IOError              If input files are missing or duplicate.
+    /// @throws IOError              If no files match the provided wildcard patterns.
+    /// @throws IllegalOperation     If loading external libraries is disallowed.
+    void ProcessInputFiles(const std::vector<std::string> &xml_files);
 
-  /// Registers fault tree and component data
-  /// like gates, events, parameters.
-  ///
-  /// @param[in] ft_node  XML element defining the fault tree or component.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  /// @param[in,out] component  The component or fault tree container
-  ///                          that is the owner of the data.
-  ///
-  /// @throws ValidityError  There are issues with registering and defining
-  ///                        the component's data like gates and events.
-  void RegisterFaultTreeData(const xml::Element& ft_node,
-                             const std::string& base_path,
-                             Component* component);
+    /// Reads one input XML file document with the structure of analysis entities.
+    /// Initializes the analysis from the given document.
+    /// Puts all events into their appropriate containers.
+    /// This function mostly registers element definitions,
+    /// but it may leave them to be defined later
+    /// because of possible undefined dependencies of those elements.
+    ///
+    /// @param[in] document  The XML DOM document from a model input file.
+    ///
+    /// @pre The document has not been passed before.
+    ///
+    /// @throws ValidityError  The input model contains errors.
+    /// @throws IllegalOperation  Loading external libraries is disallowed.
+    void ProcessInputFile(const xml::Document &document);
 
-  /// Processes model data with definitions of events and analysis.
-  ///
-  /// @param[in] model_data  XML node with model data description.
-  void ProcessModelData(const xml::Element& model_data);
+    /// Processes definitions of elements
+    /// that are left to be determined later.
+    /// This late definition happens primarily due to unregistered dependencies.
+    ///
+    /// @throws ValidityError  The elements contain undefined dependencies.
+    void ProcessTbdElements();
 
-  /// Creates a Boolean formula from the XML elements
-  /// describing the formula with events and other nested formulas.
-  ///
-  /// @param[in] formula_node  XML element defining the formula.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  ///
-  /// @returns Boolean formula that is defined.
-  ///
-  /// @throws ValidityError  The defined formula is not valid.
-  std::unique_ptr<Formula> GetFormula(const xml::Element& formula_node,
-                                      const std::string& base_path);
+    /// Registers an element into the model.
+    ///
+    /// @tparam T  The element type.
+    ///
+    /// @param[in] element  The initialized element ready to be added into models.
+    /// @param[in] xml_element  The related XML element for error messages.
+    ///
+    /// @throws ValidityError  Issues with adding the element into the model.
+    template <class T> void Register(std::unique_ptr<T> element, const xml::Element &xml_element);
 
-  /// Processes event tree branch instructions and target from XML data.
-  ///
-  /// @param[in] xml_nodes  The XML element data of the branch.
-  /// @param[in,out] event_tree  The host event tree as a context container.
-  /// @param[out] branch  The branch to be defined with instructions and target.
-  ///
-  /// @pre All the XML elements except for the last one are instructions.
-  ///
-  /// @post All forks in the event tree get registered.
-  ///
-  /// @throws ValidityError  Errors in instruction or target definitions.
-  template <class SinglePassRange>
-  void DefineBranch(const SinglePassRange& xml_nodes, EventTree* event_tree,
-                    Branch* branch);
+    /// Constructs and registers an element in the model.
+    ///
+    /// @tparam T  The Element type to be specialized for.
+    ///
+    /// @param[in] xml_node  XML node defining the element.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    /// @param[in] base_role  The parent container's role.
+    ///
+    /// @returns Pointer to the registered element.
+    ///
+    /// @throws ValidityError  Issues with the new element or registration.
+    template <class T> T *Register(const xml::Element &xml_node, const std::string &base_path, RoleSpecifier base_role);
 
-  /// Processes the last element of the branch node as target.
-  void DefineBranchTarget(const xml::Element& target_node,
-                          EventTree* event_tree, Branch* branch);
+    /// Adds additional data to element definition
+    /// after processing all the input files.
+    ///
+    /// @tparam T  The Element type to be specialized for.
+    ///
+    /// @param[in] xml_node  XML element defining the element.
+    /// @param[in,out] element  Registered element ready to be defined.
+    ///
+    /// @throws ValidityError  Issues with the additional data.
+    template <class T> void Define(const xml::Element &xml_node, T *element);
 
-  /// Processes Instruction definitions.
-  ///
-  /// @param[in] xml_element  The XML element with instruction definitions.
-  ///
-  /// @returns The newly defined or registered instruction.
-  ///
-  /// @pre All files have been processed (element pointers are available).
-  ///
-  /// @throws ValidityError  Errors in instruction definitions.
-  Instruction* GetInstruction(const xml::Element& xml_element);
+    /// Defines an event tree for the analysis.
+    ///
+    /// @param[in] et_node  XML element defining the event tree.
+    ///
+    /// @throws ValidityError  There are issues with registering and defining
+    ///                        the event tree and its data.
+    void DefineEventTree(const xml::Element &et_node);
 
-  /// Processes Expression definitions in input file.
-  ///
-  /// @param[in] expr_element  XML expression element containing the definition.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  ///
-  /// @returns The newly defined or registered expression.
-  ///
-  /// @throws ValidityError  There are problems with getting the expression.
-  Expression* GetExpression(const xml::Element& expr_element,
-                            const std::string& base_path);
+    /// Defines a fault tree for the analysis.
+    ///
+    /// @param[in] ft_node  XML element defining the fault tree.
+    ///
+    /// @throws ValidityError  There are issues with registering and defining
+    ///                        the fault tree and its data
+    ///                        like gates and events.
+    void DefineFaultTree(const xml::Element &ft_node);
 
-  /// Processes Parameter Expression definitions in input file.
-  ///
-  /// @param[in] expr_type  The expression type name.
-  /// @param[in] expr_element  XML expression element containing the definition.
-  /// @param[in] base_path  Series of ancestor containers in the path with dots.
-  ///
-  /// @returns Parameter expression described in XML input expression node.
-  /// @returns nullptr if the expression type is not a parameter.
-  ///
-  /// @throws ValidityError  The parameter variable is not reachable.
-  Expression* GetParameter(const std::string_view& expr_type,
-                           const xml::Element& expr_element,
-                           const std::string& base_path);
+    /// Defines a component container.
+    ///
+    /// @param[in] component_node  XML element defining the component.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    /// @param[in] container_role  The parent container's role.
+    ///
+    /// @returns Component that is ready for registration.
+    ///
+    /// @throws ValidityError  There are issues with registering and defining
+    ///                        the component and its data
+    ///                        like gates and events.
+    std::unique_ptr<Component> DefineComponent(const xml::Element &component_node, const std::string &base_path,
+                                               RoleSpecifier container_role);
 
-  /// Processes common cause failure group members as defined basic events.
-  ///
-  /// @param[in] members_node  XML element containing all members.
-  /// @param[in,out] ccf_group  CCF group of the given members.
-  ///
-  /// @throws ValidityError  Members are redefined,
-  ///                        or there are other setup issues
-  ///                        with the CCF group.
-  void ProcessCcfMembers(const xml::Element& members_node, CcfGroup* ccf_group);
+    /// Registers fault tree and component data
+    /// like gates, events, parameters.
+    ///
+    /// @param[in] ft_node  XML element defining the fault tree or component.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    /// @param[in,out] component  The component or fault tree container
+    ///                          that is the owner of the data.
+    ///
+    /// @throws ValidityError  There are issues with registering and defining
+    ///                        the component's data like gates and events.
+    void RegisterFaultTreeData(const xml::Element &ft_node, const std::string &base_path, Component *component);
 
-  /// Defines factor and adds it to CCF group.
-  ///
-  /// @param[in] factor_node  XML element containing one factor.
-  /// @param[in,out] ccf_group  CCF group to be defined by the given factors.
-  ///
-  /// @throws ValidityError  There are problems with level numbers
-  ///                        or factors for specific CCF models.
-  void DefineCcfFactor(const xml::Element& factor_node, CcfGroup* ccf_group);
+    /// Processes model data with definitions of events and analysis.
+    ///
+    /// @param[in] model_data  XML node with model data description.
+    void ProcessModelData(const xml::Element &model_data);
 
-  /// Finds an entity (parameter, basic and house event, gate) from a reference.
-  /// The reference is case sensitive
-  /// and can contain an identifier, full path, or local path.
-  ///
-  /// @param[in] entity_reference  Reference string to the entity.
-  /// @param[in] base_path  The series of containers indicating the scope.
-  ///
-  /// @returns Pointer to the entity found by following the given reference.
-  ///
-  /// @throws UndefinedElement  The entity cannot be found.
-  /// @{
-  Parameter* GetParameter(std::string_view entity_reference,
-                          const std::string& base_path);
-  HouseEvent* GetHouseEvent(std::string_view entity_reference,
-                            const std::string& base_path);
-  BasicEvent* GetBasicEvent(std::string_view entity_reference,
-                            const std::string& base_path);
-  Gate* GetGate(std::string_view entity_reference,
-                const std::string& base_path);
-  Formula::ArgEvent GetEvent(std::string_view entity_reference,
-                             const std::string& base_path);
-  /// @}
+    /// Creates a Boolean formula from the XML elements
+    /// describing the formula with events and other nested formulas.
+    ///
+    /// @param[in] formula_node  XML element defining the formula.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    ///
+    /// @returns Boolean formula that is defined.
+    ///
+    /// @throws ValidityError  The defined formula is not valid.
+    std::unique_ptr<Formula> GetFormula(const xml::Element &formula_node, const std::string &base_path);
 
-  /// Generic helper function to find an entity from a reference.
-  /// The reference is case sensitive
-  /// and can contain an identifier, full path, or local path.
-  ///
-  /// @tparam P  The pointer type managing the entity.
-  /// @tparam T  The entity type.
-  ///
-  /// @param[in] entity_reference  Reference string to the entity.
-  /// @param[in] base_path  The series of containers indicating the scope.
-  /// @param[in] container  Model's lookup container for entities with IDs.
-  /// @param[in] path_container  The full path container for entities.
-  ///
-  /// @returns Pointer to the requested entity.
-  ///
-  /// @throws UndefinedElement  The entity cannot be found.
-  template <class P, class T = typename P::element_type>
-  T* GetEntity(std::string_view entity_reference, const std::string& base_path,
-               const TableRange<IdTable<P>>& container,
-               const TableRange<PathTable<T>>& path_container);
+    /// Processes event tree branch instructions and target from XML data.
+    ///
+    /// @param[in] xml_nodes  The XML element data of the branch.
+    /// @param[in,out] event_tree  The host event tree as a context container.
+    /// @param[out] branch  The branch to be defined with instructions and target.
+    ///
+    /// @pre All the XML elements except for the last one are instructions.
+    ///
+    /// @post All forks in the event tree get registered.
+    ///
+    /// @throws ValidityError  Errors in instruction or target definitions.
+    template <class SinglePassRange>
+    void DefineBranch(const SinglePassRange &xml_nodes, EventTree *event_tree, Branch *branch);
 
-  /// Defines and loads extern libraries.
-  ///
-  /// @param[in] xml_node  The XML element with the data.
-  ///
-  /// @throws ValidityError  The initialization contains validity errors.
-  void DefineExternLibraries(const xml::Element& xml_node);
+    /// Processes the last element of the branch node as target.
+    void DefineBranchTarget(const xml::Element &target_node, EventTree *event_tree, Branch *branch);
 
-  /// Defines extern function.
-  ///
-  /// @param[in] xml_element  The XML element with the data.
-  ///
-  /// @throws ValidityError  The initialization contains validity errors.
-  ///
-  /// @pre All libraries are defined.
-  void DefineExternFunction(const xml::Element& xml_element);
+    /// Processes Instruction definitions.
+    ///
+    /// @param[in] xml_element  The XML element with instruction definitions.
+    ///
+    /// @returns The newly defined or registered instruction.
+    ///
+    /// @pre All files have been processed (element pointers are available).
+    ///
+    /// @throws ValidityError  Errors in instruction definitions.
+    Instruction *GetInstruction(const xml::Element &xml_element);
 
-  /// Validates if the initialization of the analysis is successful.
-  ///
-  /// @throws CycleError  Model contains cycles.
-  /// @throws ValidityError  The initialization contains mistakes.
-  ///
-  /// @note Cyclic structures need to be broken up by other methods
-  ///       if this error condition may lead resource leaks.
-  void ValidateInitialization();
+    /// Processes Expression definitions in input file.
+    ///
+    /// @param[in] expr_element  XML expression element containing the definition.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    ///
+    /// @returns The newly defined or registered expression.
+    ///
+    /// @throws ValidityError  There are problems with getting the expression.
+    Expression *GetExpression(const xml::Element &expr_element, const std::string &base_path);
 
-  /// Checks the proper order of functional events in event tree forks.
-  ///
-  /// @param[in] branch  The event tree branch to start the check.
-  ///
-  /// @throws ValidityError  The order of forks is invalid.
-  ///
-  /// @pre All named branches are fed separately from initial states.
-  void CheckFunctionalEventOrder(const Branch& branch);
+    /// Processes Parameter Expression definitions in input file.
+    ///
+    /// @param[in] expr_type  The expression type name.
+    /// @param[in] expr_element  XML expression element containing the definition.
+    /// @param[in] base_path  Series of ancestor containers in the path with dots.
+    ///
+    /// @returns Parameter expression described in XML input expression node.
+    /// @returns nullptr if the expression type is not a parameter.
+    ///
+    /// @throws ValidityError  The parameter variable is not reachable.
+    Expression *GetParameter(const std::string_view &expr_type, const xml::Element &expr_element,
+                             const std::string &base_path);
 
-  /// Checks that link instructions are used only in event-tree sequences.
-  ///
-  /// @param[in] branch  The event tree branch to start the check.
-  ///
-  /// @throws ValidityError  The Link instruction is misused.
-  ///
-  /// @pre All named branches are fed separately from initial states.
-  void EnsureLinksOnlyInSequences(const Branch& branch);
+    /// Processes common cause failure group members as defined basic events.
+    ///
+    /// @param[in] members_node  XML element containing all members.
+    /// @param[in,out] ccf_group  CCF group of the given members.
+    ///
+    /// @throws ValidityError  Members are redefined,
+    ///                        or there are other setup issues
+    ///                        with the CCF group.
+    void ProcessCcfMembers(const xml::Element &members_node, CcfGroup *ccf_group);
 
-  /// Ensures that event-tree does not mix
-  /// collect-expression and collect-formula.
-  ///
-  /// @param[in] branch  The event tree branch to start the check.
-  ///
-  /// @throws ValidityError  The Link instruction is misused.
-  ///
-  /// @pre All named branches are fed separately from initial states.
-  void EnsureHomogeneousEventTree(const Branch& branch);
+    /// Defines factor and adds it to CCF group.
+    ///
+    /// @param[in] factor_node  XML element containing one factor.
+    /// @param[in,out] ccf_group  CCF group to be defined by the given factors.
+    ///
+    /// @throws ValidityError  There are problems with level numbers
+    ///                        or factors for specific CCF models.
+    void DefineCcfFactor(const xml::Element &factor_node, CcfGroup *ccf_group);
 
-  /// Ensures that non-declarative substitutions do not have mutual conflicts.
-  ///
-  /// @throws ValidityError  Conflicts in model substitutions.
-  ///
-  /// @pre All substitutions are fully defined and valid.
-  void EnsureNoSubstitutionConflicts();
+    /// Finds an entity (parameter, basic and house event, gate) from a reference.
+    /// The reference is case sensitive
+    /// and can contain an identifier, full path, or local path.
+    ///
+    /// @param[in] entity_reference  Reference string to the entity.
+    /// @param[in] base_path  The series of containers indicating the scope.
+    ///
+    /// @returns Pointer to the entity found by following the given reference.
+    ///
+    /// @throws UndefinedElement  The entity cannot be found.
+    /// @{
+    Parameter *GetParameter(std::string_view entity_reference, const std::string &base_path);
+    HouseEvent *GetHouseEvent(std::string_view entity_reference, const std::string &base_path);
+    BasicEvent *GetBasicEvent(std::string_view entity_reference, const std::string &base_path);
+    Gate *GetGate(std::string_view entity_reference, const std::string &base_path);
+    Formula::ArgEvent GetEvent(std::string_view entity_reference, const std::string &base_path);
+    /// @}
 
-  /// Validates expressions and anything
-  /// that is dependent on them,
-  /// such as parameters and basic events.
-  ///
-  /// @throws CycleError  Cyclic parameters are detected.
-  /// @throws ValidityError  There are problems detected with expressions.
-  void ValidateExpressions();
+    /// Generic helper function to find an entity from a reference.
+    /// The reference is case sensitive
+    /// and can contain an identifier, full path, or local path.
+    ///
+    /// @tparam P  The pointer type managing the entity.
+    /// @tparam T  The entity type.
+    ///
+    /// @param[in] entity_reference  Reference string to the entity.
+    /// @param[in] base_path  The series of containers indicating the scope.
+    /// @param[in] container  Model's lookup container for entities with IDs.
+    /// @param[in] path_container  The full path container for entities.
+    ///
+    /// @returns Pointer to the requested entity.
+    ///
+    /// @throws UndefinedElement  The entity cannot be found.
+    template <class P, class T = typename P::element_type>
+    T *GetEntity(std::string_view entity_reference, const std::string &base_path,
+                 const TableRange<IdTable<P>> &container, const TableRange<PathTable<T>> &path_container);
 
-  /// Applies the input information to set up for future analysis.
-  /// This step is crucial to get
-  /// correct fault tree structures
-  /// and basic events with correct expressions.
-  /// Meta-logical layer of analysis,
-  /// such as CCF groups and substitutions,
-  /// is applied to analysis.
-  void SetupForAnalysis();
+    /// Defines and loads extern libraries.
+    ///
+    /// @param[in] xml_node  The XML element with the data.
+    ///
+    /// @throws ValidityError  The initialization contains validity errors.
+    void DefineExternLibraries(const xml::Element &xml_node);
 
-  /// Ensures that non-declarative substitutions do not contain CCF events.
-  ///
-  /// @throws ValidityError  Hypothesis, source, or target event is in CCF.
-  ///
-  /// @pre All substitutions are fully defined and valid.
-  /// @pre All CCF groups are applied.
-  void EnsureNoCcfSubstitutions();
+    /// Defines extern function.
+    ///
+    /// @param[in] xml_element  The XML element with the data.
+    ///
+    /// @throws ValidityError  The initialization contains validity errors.
+    ///
+    /// @pre All libraries are defined.
+    void DefineExternFunction(const xml::Element &xml_element);
 
-  /// Ensures that non-declarative substitutions
-  /// are applied only to algorithms with approximations.
-  ///
-  /// @throws ValidityError  Exact analysis is requested.
-  ///
-  /// @todo Research non-declarative substitutions with exact algorithms.
-  void EnsureSubstitutionsWithApproximations();
+    /// Validates if the initialization of the analysis is successful.
+    ///
+    /// @throws CycleError  Model contains cycles.
+    /// @throws ValidityError  The initialization contains mistakes.
+    ///
+    /// @note Cyclic structures need to be broken up by other methods
+    ///       if this error condition may lead resource leaks.
+    void ValidateInitialization();
 
-  std::unique_ptr<Model> model_;  ///< Analysis model with constructs.
-  core::Settings settings_;  ///< Settings for analysis.
-  bool allow_extern_;  ///< Allow processing MEF 'extern-library'.
-  xml::Validator* extra_validator_;  ///< The optional extra XML validation.
+    /// Checks the proper order of functional events in event tree forks.
+    ///
+    /// @param[in] branch  The event tree branch to start the check.
+    ///
+    /// @throws ValidityError  The order of forks is invalid.
+    ///
+    /// @pre All named branches are fed separately from initial states.
+    void CheckFunctionalEventOrder(const Branch &branch);
 
-  /// Saved XML documents to keep elements alive.
-  std::vector<xml::Document> documents_;
+    /// Checks that link instructions are used only in event-tree sequences.
+    ///
+    /// @param[in] branch  The event tree branch to start the check.
+    ///
+    /// @throws ValidityError  The Link instruction is misused.
+    ///
+    /// @pre All named branches are fed separately from initial states.
+    void EnsureLinksOnlyInSequences(const Branch &branch);
 
-  /// Collection of elements that are defined late
-  /// because of unordered registration and definition of their dependencies.
-  ///
-  /// Parameters and Expressions rely on parameter registrations.
-  /// Basic events rely on parameter registrations.
-  /// Gates rely on gate, basic event, and house event registrations.
-  /// CCF groups rely on both parameter and basic event registrations.
-  /// Event tree branches and instructions have complex interdependencies.
-  /// Initiating events may reference their associated event trees.
-  /// Alignments depend on instructions.
-  /// Substitutions depend on basic events.
-  ///
-  /// Elements are assumed to be unique.
-  TbdContainer<Parameter, BasicEvent, Gate, CcfGroup, Sequence, EventTree,
-               InitiatingEvent, Rule, Alignment, Substitution>
-      tbd_;
+    /// Ensures that event-tree does not mix
+    /// collect-expression and collect-formula.
+    ///
+    /// @param[in] branch  The event tree branch to start the check.
+    ///
+    /// @throws ValidityError  The Link instruction is misused.
+    ///
+    /// @pre All named branches are fed separately from initial states.
+    void EnsureHomogeneousEventTree(const Branch &branch);
 
-  /// Container of defined expressions for later validation due to cycles.
-  std::vector<std::pair<Expression*, xml::Element>> expressions_;
-  /// Container for event tree links to check for cycles.
-  std::vector<Link*> links_;
+    /// Ensures that non-declarative substitutions do not have mutual conflicts.
+    ///
+    /// @throws ValidityError  Conflicts in model substitutions.
+    ///
+    /// @pre All substitutions are fully defined and valid.
+    void EnsureNoSubstitutionConflicts();
 
-  /// Containers for reference resolution with paths.
-  /// @{
-  PathTable<Gate> path_gates_;
-  PathTable<BasicEvent> path_basic_events_;
-  PathTable<HouseEvent> path_house_events_;
-  PathTable<Parameter> path_parameters_;
-  /// @}
+    /// Validates expressions and anything
+    /// that is dependent on them,
+    /// such as parameters and basic events.
+    ///
+    /// @throws CycleError  Cyclic parameters are detected.
+    /// @throws ValidityError  There are problems detected with expressions.
+    void ValidateExpressions();
+
+    /// Applies the input information to set up for future analysis.
+    /// This step is crucial to get
+    /// correct fault tree structures
+    /// and basic events with correct expressions.
+    /// Meta-logical layer of analysis,
+    /// such as CCF groups and substitutions,
+    /// is applied to analysis.
+    void SetupForAnalysis();
+
+    /// Ensures that non-declarative substitutions do not contain CCF events.
+    ///
+    /// @throws ValidityError  Hypothesis, source, or target event is in CCF.
+    ///
+    /// @pre All substitutions are fully defined and valid.
+    /// @pre All CCF groups are applied.
+    void EnsureNoCcfSubstitutions();
+
+    /// Ensures that non-declarative substitutions
+    /// are applied only to algorithms with approximations.
+    ///
+    /// @throws ValidityError  Exact analysis is requested.
+    ///
+    /// @todo Research non-declarative substitutions with exact algorithms.
+    void EnsureSubstitutionsWithApproximations();
+
+    std::unique_ptr<Model> model_;    ///< Analysis model with constructs.
+    core::Settings settings_;         ///< Settings for analysis.
+    bool allow_extern_;               ///< Allow processing MEF 'extern-library'.
+    xml::Validator *extra_validator_; ///< The optional extra XML validation.
+
+    /// Saved XML documents to keep elements alive.
+    std::vector<xml::Document> documents_;
+
+    /// Collection of elements that are defined late
+    /// because of unordered registration and definition of their dependencies.
+    ///
+    /// Parameters and Expressions rely on parameter registrations.
+    /// Basic events rely on parameter registrations.
+    /// Gates rely on gate, basic event, and house event registrations.
+    /// CCF groups rely on both parameter and basic event registrations.
+    /// Event tree branches and instructions have complex interdependencies.
+    /// Initiating events may reference their associated event trees.
+    /// Alignments depend on instructions.
+    /// Substitutions depend on basic events.
+    ///
+    /// Elements are assumed to be unique.
+    TbdContainer<Parameter, BasicEvent, Gate, CcfGroup, Sequence, EventTree, InitiatingEvent, Rule, Alignment,
+                 Substitution>
+        tbd_;
+
+    /// Container of defined expressions for later validation due to cycles.
+    std::vector<std::pair<Expression *, xml::Element>> expressions_;
+    /// Container for event tree links to check for cycles.
+    std::vector<Link *> links_;
+
+    /// Containers for reference resolution with paths.
+    /// @{
+    PathTable<Gate> path_gates_;
+    PathTable<BasicEvent> path_basic_events_;
+    PathTable<HouseEvent> path_house_events_;
+    PathTable<Parameter> path_parameters_;
+    /// @}
 };
 
-}  // namespace scram::mef
+} // namespace scram::mef

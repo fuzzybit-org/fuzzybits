@@ -21,16 +21,14 @@
 namespace scram::core::test {
 
 TEST_P(RiskAnalysisTest, AttackEventTree) {
-  const char* tree_input = "input/EventTrees/attack.xml";
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  EXPECT_EQ(1, analysis->event_tree_results().size());
-  const auto& results = sequences();
-  ASSERT_EQ(2, results.size());
-  EXPECT_EQ((std::map<std::string, double>{{"AttackSucceeds", 0.772},
-                                           {"AttackFails", 0.228}}),
-            results);
+    const char *tree_input = "input/EventTrees/attack.xml";
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    EXPECT_EQ(1, analysis->event_tree_results().size());
+    const auto &results = sequences();
+    ASSERT_EQ(2, results.size());
+    EXPECT_EQ((std::map<std::string, double>{{"AttackSucceeds", 0.772}, {"AttackFails", 0.228}}), results);
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

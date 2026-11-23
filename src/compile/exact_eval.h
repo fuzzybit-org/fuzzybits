@@ -11,8 +11,8 @@ namespace fuzzybits::compile {
 inline constexpr std::uint32_t kMaxExactEvents = 30;
 
 class ExactEvalError : public std::runtime_error {
- public:
-  using std::runtime_error::runtime_error;
+  public:
+    using std::runtime_error::runtime_error;
 };
 
 /// Exhaustive exact P(query) over independent SAMPLE events.
@@ -22,4 +22,4 @@ class ExactEvalError : public std::runtime_error {
 
 [[nodiscard]] std::uint32_t random_sample_count(const pcfb::ir::Circuit &circuit);
 
-}  // namespace fuzzybits::compile
+} // namespace fuzzybits::compile

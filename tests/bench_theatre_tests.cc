@@ -22,17 +22,16 @@ namespace scram::core::test {
 
 // Benchmark Tests for Theatre fault tree from OpenFTA.
 TEST_P(RiskAnalysisTest, Theatre) {
-  std::string tree_input = "input/Theatre/theatre.xml";
-  settings.probability_analysis(true);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  // input/Theatre/theatre.xml currently has P(Mains)=1, P(Gen)=0, P(Relay)=0.5
-  // so P(M ∧ (G ∨ R)) = 0.5 exactly (OpenFTA's 2.07e-3 figures are gone).
-  EXPECT_DOUBLE_EQ(0.5, p_total());
-  std::set<std::set<std::string>> mcs = {{"Gen_Fail", "Mains_Fail"},
-                                         {"Mains_Fail", "Relay_Fail"}};
-  EXPECT_EQ(2, products().size());
-  EXPECT_EQ(mcs, products());
+    std::string tree_input = "input/Theatre/theatre.xml";
+    settings.probability_analysis(true);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    // input/Theatre/theatre.xml currently has P(Mains)=1, P(Gen)=0, P(Relay)=0.5
+    // so P(M ∧ (G ∨ R)) = 0.5 exactly (OpenFTA's 2.07e-3 figures are gone).
+    EXPECT_DOUBLE_EQ(0.5, p_total());
+    std::set<std::set<std::string>> mcs = {{"Gen_Fail", "Mains_Fail"}, {"Mains_Fail", "Relay_Fail"}};
+    EXPECT_EQ(2, products().size());
+    EXPECT_EQ(mcs, products());
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

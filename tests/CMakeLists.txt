@@ -85,40 +85,6 @@ install(
 )
 
 # ---------------------------------------------------------------------------
-# Quarantined tests. Built and registered so `ctest -L quarantine` still runs
-# them, but excluded by default via the test presets (`ctest -LE quarantine`).
-# ---------------------------------------------------------------------------
-# Reasons (one line each):
-# - extern_function_tests.cc: looks for scram_dummy_extern at the hardcoded
-#   relative path build/lib/scram/{,lib}scram_dummy_extern, which does not
-#   match the Ninja output directory of this build.
-# - serialization_tests.cc: previously used env::install_dir()+share/scram/gui.rng
-#   (now compiled against the embedded schema, still unproven at runtime).
-# Related skips inside scram_legacy_tests (same dylib path):
-#   InitializerTest.{CorrectModelInputs extern_*, IncorrectModelInputs
-#   duplicate_extern_*, invalid_num_param/args extern_*, DefaultExternDisable}
-#   and RiskAnalysisTest.ExternFunctionProbability.
-add_executable(scram_quarantine_tests
-  extern_function_tests.cc
-  serialization_tests.cc
-)
-target_link_libraries(scram_quarantine_tests PRIVATE Catch2::Catch2WithMain ${SCRAM_TEST_LIBS} scram mc)
-target_include_directories(scram_quarantine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-add_test(NAME scram_quarantine.extern_and_serialization COMMAND scram_quarantine_tests)
-set_tests_properties(scram_quarantine.extern_and_serialization PROPERTIES
-  LABELS "quarantine"
-  WORKING_DIRECTORY "${PROJECT_SOURCE_DIR}"
-)
-
-# Dummy library for the quarantined extern-function tests (and for anyone
-# who wants to un-quarantine them by fixing the load path).
-add_library(scram_dummy_extern SHARED scram_dummy_extern.cc)
-target_compile_options(scram_dummy_extern PRIVATE $<$<CONFIG:DEBUG>:${SCRAM_CXX_FLAGS_DEBUG}>)
-if(WIN32)
-  set(CMAKE_SHARED_LIBRARY_PREFIX "")
-endif()
-
-# ---------------------------------------------------------------------------
 # Monte Carlo correctness / bit-identity / device-selection tests.
 # ---------------------------------------------------------------------------
 add_subdirectory(mc)

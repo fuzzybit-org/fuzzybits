@@ -21,85 +21,85 @@
 
 namespace {
 
-    namespace json = fuzzybits::compile::ftp::json;
+namespace json = fuzzybits::compile::ftp::json;
 
-    struct run_result final {
-        int status = -1;
-        std::string out;
-        std::string err;
-    };
+struct run_result final {
+    int status = -1;
+    std::string out;
+    std::string err;
+};
 
-    [[nodiscard]] auto quoted(std::string const &text) -> std::string {
+[[nodiscard]] auto quoted(std::string const &text) -> std::string {
 #ifdef _WIN32
-        return "\"" + text + "\"";
+    return "\"" + text + "\"";
 #else
-        return "'" + text + "'";
+    return "'" + text + "'";
 #endif
-    }
+}
 
-    [[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
-        std::ifstream input(path, std::ios::binary);
-        return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-    }
+[[nodiscard]] auto read_file(std::filesystem::path const &path) -> std::string {
+    std::ifstream input(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
+}
 
-    void write_file(std::filesystem::path const &path, std::string const &text) {
-        std::ofstream output(path, std::ios::binary);
-        output << text;
-    }
+void write_file(std::filesystem::path const &path, std::string const &text) {
+    std::ofstream output(path, std::ios::binary);
+    output << text;
+}
 
-    [[nodiscard]] auto exit_code(const int status) -> int {
+[[nodiscard]] auto exit_code(const int status) -> int {
 #ifdef _WIN32
-        return status;
+    return status;
 #else
-        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 #endif
-    }
+}
 
-    [[nodiscard]] auto run_fzb(std::string const &arguments, std::filesystem::path const &scratch) -> run_result {
-        const auto out_path = scratch / "fzb.out";
-        const auto err_path = scratch / "fzb.err";
-        const auto command = quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " +
-                             quoted(err_path.string());
+[[nodiscard]] auto run_fzb(std::string const &arguments, std::filesystem::path const &scratch) -> run_result {
+    const auto out_path = scratch / "fzb.out";
+    const auto err_path = scratch / "fzb.err";
+    const auto command =
+        quoted(FZB_PATH) + " " + arguments + " > " + quoted(out_path.string()) + " 2> " + quoted(err_path.string());
 #ifdef _WIN32
-        const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
+    const int status = std::system(("cmd /S /C \"" + command + "\"").c_str());
 #else
-        const int status = std::system(command.c_str());
+    const int status = std::system(command.c_str());
 #endif
-        return run_result{.status = exit_code(status), .out = read_file(out_path), .err = read_file(err_path)};
-    }
+    return run_result{.status = exit_code(status), .out = read_file(out_path), .err = read_file(err_path)};
+}
 
-    [[nodiscard]] auto scratch_directory(std::string const &name) -> std::filesystem::path {
-        const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-inspect-ftp-cli-" + name);
-        std::filesystem::remove_all(path);
-        std::filesystem::create_directories(path);
-        return path;
-    }
+[[nodiscard]] auto scratch_directory(std::string const &name) -> std::filesystem::path {
+    const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-inspect-ftp-cli-" + name);
+    std::filesystem::remove_all(path);
+    std::filesystem::create_directories(path);
+    return path;
+}
 
-    [[nodiscard]] auto fixtures_root() -> std::filesystem::path {
-        return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
-    }
+[[nodiscard]] auto fixtures_root() -> std::filesystem::path {
+    return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance";
+}
 
-    [[nodiscard]] auto parse_output(std::string const &text) -> json::value {
-        INFO(text);
-        auto parsed = json::parse(text);
-        REQUIRE(parsed);
-        return std::move(parsed).value();
-    }
+[[nodiscard]] auto parse_output(std::string const &text) -> json::value {
+    INFO(text);
+    auto parsed = json::parse(text);
+    REQUIRE(parsed);
+    return std::move(parsed).value();
+}
 
-    constexpr auto clean_project = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n";
-    constexpr auto warning_project = "TOP + A B\nENDTREE\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n";
-    constexpr auto error_project = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n";
+constexpr auto clean_project = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n";
+constexpr auto warning_project = "TOP + A B\nENDTREE\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n";
+constexpr auto error_project = "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n";
 
-    [[nodiscard]] auto contains_word(std::string const &text, std::string const &word) -> bool {
-        const auto is_word = [](const char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; };
-        for (auto at = text.find(word); at != std::string::npos; at = text.find(word, at + 1)) {
-            const auto end = at + word.size();
-            if ((at == 0 || !is_word(text[at - 1])) && (end == text.size() || !is_word(text[end]))) {
-                return true;
-            }
+[[nodiscard]] auto contains_word(std::string const &text, std::string const &word) -> bool {
+    const auto is_word = [](const char c) { return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_'; };
+    for (auto at = text.find(word); at != std::string::npos; at = text.find(word, at + 1)) {
+        const auto end = at + word.size();
+        if ((at == 0 || !is_word(text[at - 1])) && (end == text.size() || !is_word(text[end]))) {
+            return true;
         }
-        return false;
     }
+    return false;
+}
 
 } // namespace
 

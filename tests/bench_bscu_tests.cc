@@ -23,42 +23,41 @@ namespace scram::core::test {
 // Benchmark Tests for BSCU fault tree from XFTA.
 // This benchmark is for uncertainty analysis.
 TEST_P(RiskAnalysisTest, BSCU) {
-  std::string tree_input = "input/BSCU/BSCU.xml";
-  settings.uncertainty_analysis(true);
-  settings.num_trials(10000);
-  ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
-  ASSERT_NO_THROW(analysis->Analyze());
-  std::set<std::set<std::string>> mcs = {
-      {"SwitchStuckInIntermediatePosition"},
-      {"ValidityMonitorFailure"},
-      {"LossOfSystem1PowerSupply", "LossOfSystem2PowerSupply"},
-      {"LossOfSystem1PowerSupply", "SwitchStuckInPosition1"},
-      {"LossOfSystem1PowerSupply", "System2ElectronicFailure"},
-      {"LossOfSystem2PowerSupply", "SwitchStuckInPosition2"},
-      {"LossOfSystem2PowerSupply", "System1ElectronicFailure"},
-      {"SwitchStuckInPosition1", "System1ElectronicFailure"},
-      {"SwitchStuckInPosition2", "System2ElectronicFailure"},
-      {"System1ElectronicFailure", "System2ElectronicFailure"}};
+    std::string tree_input = "input/BSCU/BSCU.xml";
+    settings.uncertainty_analysis(true);
+    settings.num_trials(10000);
+    ASSERT_NO_THROW(ProcessInputFiles({tree_input}));
+    ASSERT_NO_THROW(analysis->Analyze());
+    std::set<std::set<std::string>> mcs = {{"SwitchStuckInIntermediatePosition"},
+                                           {"ValidityMonitorFailure"},
+                                           {"LossOfSystem1PowerSupply", "LossOfSystem2PowerSupply"},
+                                           {"LossOfSystem1PowerSupply", "SwitchStuckInPosition1"},
+                                           {"LossOfSystem1PowerSupply", "System2ElectronicFailure"},
+                                           {"LossOfSystem2PowerSupply", "SwitchStuckInPosition2"},
+                                           {"LossOfSystem2PowerSupply", "System1ElectronicFailure"},
+                                           {"SwitchStuckInPosition1", "System1ElectronicFailure"},
+                                           {"SwitchStuckInPosition2", "System2ElectronicFailure"},
+                                           {"System1ElectronicFailure", "System2ElectronicFailure"}};
 
-  EXPECT_EQ(10, products().size());
-  EXPECT_EQ(mcs, products());
+    EXPECT_EQ(10, products().size());
+    EXPECT_EQ(mcs, products());
 
-  if (settings.approximation() == Approximation::kRareEvent) {
-    EXPECT_NEAR(0.135372, p_total(), 1e-4);
-    EXPECT_NEAR(0.137, mean(), 5e-3);
-    EXPECT_NEAR(0.217, sigma(), 5e-3);
-  } else {
-    EXPECT_NEAR(0.1124087, p_total(), 1e-4);
-    // 1e4 uncertainty samples: hosted Darwin OpenMP landed at 0.111/0.177,
-    // just outside 5e-3. Exact BDD p_total still holds.
+    if (settings.approximation() == Approximation::kRareEvent) {
+        EXPECT_NEAR(0.135372, p_total(), 1e-4);
+        EXPECT_NEAR(0.137, mean(), 5e-3);
+        EXPECT_NEAR(0.217, sigma(), 5e-3);
+    } else {
+        EXPECT_NEAR(0.1124087, p_total(), 1e-4);
+        // 1e4 uncertainty samples: hosted Darwin OpenMP landed at 0.111/0.177,
+        // just outside 5e-3. Exact BDD p_total still holds.
 #ifdef __APPLE__
-    EXPECT_NEAR(0.117, mean(), 1e-2);
-    EXPECT_NEAR(0.183, sigma(), 1e-2);
+        EXPECT_NEAR(0.117, mean(), 1e-2);
+        EXPECT_NEAR(0.183, sigma(), 1e-2);
 #else
-    EXPECT_NEAR(0.117, mean(), 5e-3);
-    EXPECT_NEAR(0.183, sigma(), 5e-3);
+        EXPECT_NEAR(0.117, mean(), 5e-3);
+        EXPECT_NEAR(0.183, sigma(), 5e-3);
 #endif
-  }
+    }
 }
 
-}  // namespace scram::core::test
+} // namespace scram::core::test

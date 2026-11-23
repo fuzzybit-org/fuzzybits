@@ -36,7 +36,8 @@ ships LLVM 22). `libboost-all-dev` is deliberately not installed: on noble it
 pulls OpenMPI and Ubuntu's ROCm 5.7, whose `libhsa-runtime64.so.1` has the same
 SONAME as ROCm 7's.
 
-`cmake --preset generic` and `cmake --preset cuda-sm70` both work:
+`cmake --preset generic` and `cmake --preset cuda-sm70` both work. To verify the image by hand
+(for development builds use [`scripts/dev/ws.sh`](../scripts/dev/README.md)):
 
 ```bash
 docker run --rm --cpus=4 -m 16g \

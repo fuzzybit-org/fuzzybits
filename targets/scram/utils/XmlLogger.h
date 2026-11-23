@@ -21,8 +21,8 @@
 #pragma once
 
 #include <cstdarg>
-#include <cstdio> // vsnprintf
-#include <cstring>// strerror
+#include <cstdio>  // vsnprintf
+#include <cstring> // strerror
 
 #include <iostream>
 #include <memory>
@@ -42,42 +42,41 @@ namespace po = boost::program_options;
 
 namespace ScramCLI {
 
-    /// Callback function to redirect XML library error/warning messages to logging.
-    /// Otherwise, the messages are printed to the standard error.
-    ///
-    /// @param[in] msg  The printf-style format string.
-    /// @param[in] ...  The variadic arguments for the format string.
-    ///
-    /// @pre The library strictly follows validity conditions of printf.
-    extern "C" inline void LogXmlError(void * /*ctx*/, const char *msg, ...)  {
-        std::va_list args;
-        va_start(args, msg);
-        SCOPE_EXIT([&args] { va_end(args); });
+/// Callback function to redirect XML library error/warning messages to logging.
+/// Otherwise, the messages are printed to the standard error.
+///
+/// @param[in] msg  The printf-style format string.
+/// @param[in] ...  The variadic arguments for the format string.
+///
+/// @pre The library strictly follows validity conditions of printf.
+extern "C" inline void LogXmlError(void * /*ctx*/, const char *msg, ...) {
+    std::va_list args;
+    va_start(args, msg);
+    SCOPE_EXIT([&args] { va_end(args); });
 
-        std::va_list args_for_nchar;// Only used to determine the string length.
-        va_copy(args_for_nchar, args);
-        int nchar = std::vsnprintf(nullptr, 0, msg, args_for_nchar);
-        va_end(args_for_nchar);
-        if (nchar < 0) {
-            LOG(scram::ERROR) << "String formatting failure: " << std::strerror(errno);
-            return;
-        }
-
-        std::vector<char> buffer(nchar + /*null terminator*/ 1);
-        std::vsnprintf(buffer.data(), buffer.size(), msg, args);
-        LOG(scram::WARNING) << buffer.data();
+    std::va_list args_for_nchar; // Only used to determine the string length.
+    va_copy(args_for_nchar, args);
+    int nchar = std::vsnprintf(nullptr, 0, msg, args_for_nchar);
+    va_end(args_for_nchar);
+    if (nchar < 0) {
+        LOG(scram::ERROR) << "String formatting failure: " << std::strerror(errno);
+        return;
     }
 
-    /// Prints error information into the standard error.
-    ///
-    /// @tparam Tag  The error info tag to retrieve the error value.
-    ///
-    /// @param[in] tag_string  The string for the tag type.
-    /// @param[in] err  The error.
-    template<class Tag>
-    void PrintErrorInfo(const char *tag_string, const scram::Error &err) {
-        if (const auto *value = boost::get_error_info<Tag>(err))
-            std::cerr << tag_string << ": " << *value << "\n";
-    }
+    std::vector<char> buffer(nchar + /*null terminator*/ 1);
+    std::vsnprintf(buffer.data(), buffer.size(), msg, args);
+    LOG(scram::WARNING) << buffer.data();
+}
 
-}// namespace SCRAMCLI
+/// Prints error information into the standard error.
+///
+/// @tparam Tag  The error info tag to retrieve the error value.
+///
+/// @param[in] tag_string  The string for the tag type.
+/// @param[in] err  The error.
+template <class Tag> void PrintErrorInfo(const char *tag_string, const scram::Error &err) {
+    if (const auto *value = boost::get_error_info<Tag>(err))
+        std::cerr << tag_string << ": " << *value << "\n";
+}
+
+} // namespace ScramCLI

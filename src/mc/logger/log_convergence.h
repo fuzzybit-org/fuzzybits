@@ -28,7 +28,6 @@ csv_pairs(std::vector<std::pair<std::string, std::string>> &kv) {
     const double total_bits = find_value("total_bits");
     const double total_time = find_value("convergence_time_ms");
 
-
     kv.emplace_back("bits_per_iteration", log::csv_string(bits_per_iteration));
 
     const double total_iterations = total_bits / bits_per_iteration;
@@ -42,4 +41,4 @@ csv_pairs(std::vector<std::pair<std::string, std::string>> &kv) {
 
     return kv;
 }
-} // namespace scram::log::compressratio
+} // namespace scram::log::convergence

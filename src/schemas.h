@@ -26,12 +26,12 @@
 namespace scram::schemas {
 
 /// @returns The RelaxNG schema for input files (embedded at compile time).
-const std::string_view& get_INPUT_SCHEMA();
+const std::string_view &get_INPUT_SCHEMA();
 
 /// @returns The RelaxNG schema for project files (embedded at compile time).
-const std::string_view& get_PROJECT_SCHEMA();
+const std::string_view &get_PROJECT_SCHEMA();
 
 /// @returns The RelaxNG schema for report files (embedded at compile time).
-const std::string_view& get_REPORT_SCHEMA();
+const std::string_view &get_REPORT_SCHEMA();
 
-}  // namespace scram::schemas
+} // namespace scram::schemas
