@@ -85,7 +85,12 @@ version = "0.18.6"
 source = { directory = "../../" }
 
 [package.metadata]
-requires-dist = [{ name = "pytest", marker = "extra == 'test'", specifier = ">=7" }]
+requires-dist = [
+    { name = "numpy", marker = "extra == 'test'", specifier = ">=1.26" },
+    { name = "pyte", marker = "extra == 'test'", specifier = ">=0.8" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+    { name = "wcwidth", marker = "extra == 'test'", specifier = ">=0.2" },
+]
 provides-extras = ["cuda-sm70", "test"]
 
 [[package]]
