@@ -3,6 +3,7 @@
 #include "io/pcfb/descriptor.h"
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
+#include "portable_random.h"
 
 #include <algorithm>
 #include <chrono>
@@ -27,7 +28,7 @@ namespace {
     // order, so the writer's depth-first order differs from the id order.
     [[nodiscard]] auto layered(std::mt19937_64 &rng, const bool shuffled) -> pc::circuit {
         const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-            return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
+            return static_cast<std::uint32_t>(pcfb_test_random::uniform(rng, low, high));
         };
         struct logical final {
             pc::op_code code;
@@ -86,7 +87,7 @@ namespace {
         std::vector<std::uint32_t> storage(nodes.size());
         std::iota(storage.begin(), storage.end(), 0U);
         if (shuffled) {
-            std::ranges::shuffle(storage, rng);
+            pcfb_test_random::shuffle(std::span{storage}, rng);
         }
         std::vector<std::uint32_t> logical_at(nodes.size());
         for (std::uint32_t index = 0; index < nodes.size(); ++index) {

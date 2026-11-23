@@ -11,6 +11,7 @@
 #include "ir/pc/op_code.h"
 #include "ir/pc/probability.h"
 #include "ir/pc/target.h"
+#include "portable_random.h"
 
 #include <algorithm>
 #include <array>
@@ -225,9 +226,9 @@ namespace pcfb_writer_test {
             std::uint32_t source = 0;
         };
         const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-            return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
+            return static_cast<std::uint32_t>(pcfb_test_random::uniform(rng, low, high));
         };
-        const auto chance = [&](const double p) { return std::bernoulli_distribution(p)(rng); };
+        const auto chance = [&](const double p) { return pcfb_test_random::chance(rng, p); };
 
         const auto eventCount = uniform(1, size.max_events);
         const auto constantCount = uniform(0, 2);
@@ -243,8 +244,8 @@ namespace pcfb_writer_test {
                 node.source = uniform(0, static_cast<std::uint32_t>(probabilities.size()) - 1);
                 ++coverage.shared_probability_sources;
             } else {
-                const auto draw = std::uniform_real_distribution<double>(0.0, 1.0)(rng);
-                double p = std::uniform_real_distribution<double>(0.01, 0.99)(rng);
+                const auto draw = pcfb_test_random::unit(rng);
+                double p = pcfb_test_random::real(rng, 0.01, 0.99);
                 if (draw < 0.05) {
                     p = 0.0;
                 } else if (draw < 0.1) {
@@ -252,7 +253,7 @@ namespace pcfb_writer_test {
                 } else if (draw < 0.2) {
                     p = 0.5;
                 } else if (draw < 0.3) {
-                    p = 1.0e-6 * std::uniform_real_distribution<double>(0.0, 1.0)(rng);
+                    p = 1.0e-6 * pcfb_test_random::unit(rng);
                 }
                 coverage.extreme_probabilities += p == 0.0 || p == 1.0 ? 1 : 0;
                 node.source = static_cast<std::uint32_t>(probabilities.size());
@@ -263,7 +264,7 @@ namespace pcfb_writer_test {
         for (std::uint32_t index = 0; index < constantCount + houseCount; ++index) {
             nodes.push_back(Logical{.code = index < constantCount ? pc::op_code::constant : pc::op_code::house_event, .value = chance(0.5)});
         }
-        std::ranges::shuffle(nodes, rng);
+        pcfb_test_random::shuffle(std::span{nodes}, rng);
         const auto leafCount = static_cast<std::uint32_t>(nodes.size());
 
         constexpr std::array gateCodes{
@@ -333,7 +334,7 @@ namespace pcfb_writer_test {
         std::vector<std::uint32_t> storage(nodeCount);
         std::iota(storage.begin(), storage.end(), 0U);
         if (chance(0.75)) {
-            std::ranges::shuffle(storage, rng);
+            pcfb_test_random::shuffle(std::span{storage}, rng);
         }
         std::vector<std::uint32_t> logicalAt(nodeCount);
         for (std::uint32_t logical = 0; logical < nodeCount; ++logical) {
@@ -430,9 +431,9 @@ namespace pcfb_writer_test {
         auto result = randomCircuit(rng, coverage, size);
         INFO(diagnosticsText(result.diagnostics));
         REQUIRE(result.ok());
-        const auto chance = [&](const double p) { return std::bernoulli_distribution(p)(rng); };
+        const auto chance = [&](const double p) { return pcfb_test_random::chance(rng, p); };
         const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-            return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
+            return static_cast<std::uint32_t>(pcfb_test_random::uniform(rng, low, high));
         };
         RandomModel model{.circuit = std::move(result.output)};
         auto &options = model.options;
