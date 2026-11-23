@@ -173,8 +173,8 @@ The JSON document (`fuzzybits.read_project` returns the same content as a dict):
 | `structure` | counts below; `null` when the project has errors |
 | `conventions` | `LIMIT` (the text of the line), `ftp.negation`, `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
 
-`structure` uses the keys of `structure` in the conformance `expected.json` files, plus `house_events`,
-`complemented_edges_to_gates` and `literal_operands`:
+`structure` uses the keys of `structure` in the conformance `expected.json` files, plus `default_targets` (a top-level
+key of those files), `house_events`, `complemented_edges_to_gates` and `literal_operands`:
 
 | Key | Content |
 |---|---|
@@ -186,7 +186,7 @@ The JSON document (`fuzzybits.read_project` returns the same content as a dict):
 | `complemented_edges`, `complemented_edges_to_basic_events`, `complemented_edges_to_gates` | complemented operands, by what they reference |
 | `literal_operands` | complemented basic-event operands marked as atomic literals (`--complement-events atom`) |
 | `roots` | gates no other gate references |
-| `process_targets` | the model's targets: the `PROCESS` names, or the roots (with `io.ftp.missing-process`) |
+| `process_targets`, `default_targets` | the `PROCESS` names as declared (empty when there are none), and the model's targets: those names, or the root gates (with `io.ftp.missing-process`) |
 | `limit` | the `LIMIT` value, `null` when absent |
 | `names_not_valid_xml_ncname` | element names that are not XML NCNames |
 | `duplicate_imports` | per repeated event, its records `{file, line, chosen}` in project order; the chosen record (the one the policy kept) also has `value` |
@@ -196,12 +196,12 @@ records. `--duplicate-import` and `--complement-events` change `structure` only 
 
 `--counts-only` is for logs of models whose identifiers must not be published. No element name appears: diagnostics
 keep `id`, `severity` and `file`/`line` and drop `message` (messages quote names); `roots`, `process_targets`,
-`duplicate_imports` and `header_lines` become counts. Files are still listed. Python: `read_project(..., counts_only=True)`.
+`default_targets`, `duplicate_imports` and `header_lines` become counts. Files are still listed. Python: `read_project(..., counts_only=True)`.
 
 Diagnostic ids are the reader's `io.ftp.*` ids (see below; they match the codes in the conformance fixtures) and
-`ir.pra.*` model validation ids. `file` and `line` are the first project location in the message. Python:
-`read_project` raises `RuntimeError` when the project has errors, with the diagnostics (a list of dicts as above) in its
-`diagnostics` attribute; warnings are returned, not raised. Invalid `duplicate_import` or `complement_events` values
+`ir.pra.*` model validation ids. `file` and `line` are the source position the reader recorded for the diagnostic. Python:
+`read_project` raises `fuzzybits.FtpProjectError` (a `RuntimeError`) when the project has errors, with the diagnostics (a
+list of dicts as above) in its `diagnostics` attribute; warnings are returned, not raised. Invalid `duplicate_import` or `complement_events` values
 raise `ValueError`.
 
 ## Diagnostics

@@ -34,23 +34,36 @@ def _write(tmp_path: Path, name: str, text: str) -> Path:
     return path
 
 
-def _same(actual, expected, path: str = "structure") -> None:
+def _same(actual, expected, policy: str, path: str = "structure") -> None:
     if isinstance(expected, dict):
         assert isinstance(actual, dict), path
         for key, value in expected.items():
             assert key in actual, f"{path}.{key}"
             if path == "structure" and key == "duplicate_imports":
-                assert list(actual[key]) == list(value), path
-            elif path == "structure" and key == "process_targets" and not value:
-                continue
+                _same_duplicates(actual[key], value, policy)
             else:
-                _same(actual[key], value, f"{path}.{key}")
+                _same(actual[key], value, policy, f"{path}.{key}")
     elif isinstance(expected, list):
         assert actual == expected, path
     elif isinstance(expected, float):
         assert math.isclose(actual, expected, rel_tol=1e-12), path
     else:
         assert actual == expected, path
+
+
+def _same_duplicates(actual: dict, expected: dict, policy: str) -> None:
+    assert list(actual) == list(expected)
+    for name, records in expected.items():
+        chosen = records[0] if policy == "first" else records[-1]
+        listed = {(record["file"], record["line"]) for record in records}
+        assert len(actual[name]) == len(records), name
+        assert [item for item in actual[name] if item["chosen"]] and sum(item["chosen"] for item in actual[name]) == 1
+        for item in actual[name]:
+            place = (Path(item["file"]).name, item["line"])
+            assert place in listed, name
+            if item["chosen"]:
+                assert place == (chosen["file"], chosen["line"]), name
+                assert item["value"] == chosen["value"], name
 
 
 def _expected_ids(outcome: dict, spec: dict) -> list[str]:
@@ -72,7 +85,7 @@ def test_read_project_matches_every_conformance_fixture(fixture: Path):
     for policy, outcome in spec["policies"].items():
         expected = _expected_ids(outcome, spec)
         if outcome["results"] is None:
-            with pytest.raises(RuntimeError) as failure:
+            with pytest.raises(fuzzybits.FtpProjectError) as failure:
                 fuzzybits.read_project(files, duplicate_import=policy)
             assert _ids(failure.value.diagnostics) == expected, policy
             continue
@@ -80,7 +93,8 @@ def test_read_project_matches_every_conformance_fixture(fixture: Path):
         assert document["status"] == "ok"
         assert _ids(document["diagnostics"]) == expected, policy
         assert len(document["files"]) == len(files)
-        _same(document["structure"], spec["structure"])
+        _same(document["structure"], spec["structure"], policy)
+        assert document["structure"]["default_targets"] == spec["default_targets"]
 
 
 def test_read_project_accepts_a_directory_a_path_and_a_list():
@@ -93,8 +107,9 @@ def test_read_project_accepts_a_directory_a_path_and_a_list():
 
 def test_read_project_error_carries_the_diagnostics(tmp_path: Path):
     path = _write(tmp_path, "broken.ftp", BROKEN)
-    with pytest.raises(RuntimeError) as failure:
+    with pytest.raises(fuzzybits.FtpProjectError) as failure:
         fuzzybits.read_project(path)
+    assert isinstance(failure.value, RuntimeError)
     diagnostics = failure.value.diagnostics
     assert [item["id"] for item in diagnostics] == ["io.ftp.undefined-reference"]
     assert diagnostics[0]["severity"] == "error"

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from . import _runtime
 from ._api import (
+    FtpProjectError,
     NodeTally,
     PassResult,
     ProbabilityEstimate,
@@ -55,6 +56,7 @@ from ._runtime import (
 __version__ = "0.18.6"
 
 __all__ = [
+    "FtpProjectError",
     "NodeTally",
     "PassResult",
     "ProbabilityEstimate",

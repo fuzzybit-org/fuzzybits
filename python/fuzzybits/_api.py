@@ -650,6 +650,16 @@ def inspect(pcfb: bytes | str | os.PathLike[str]) -> dict[str, Any]:
     return dict(native.inspect_pcfb_path(os.fspath(pcfb)))
 
 
+class FtpProjectError(RuntimeError):
+    """A CAFTA FTP project has errors; :attr:`diagnostics` lists every diagnostic of the read."""
+
+    diagnostics: list[dict[str, Any]]
+
+    def __init__(self, message: str, diagnostics: Sequence[Mapping[str, Any]]) -> None:
+        super().__init__(message)
+        self.diagnostics = [dict(item) for item in diagnostics]
+
+
 def _ftp_inspect_native(
     paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     duplicate_import: str,
@@ -678,8 +688,8 @@ def read_project(
     ``paths`` are FTP files and directories (all ``*.ftp``), read as one project in sorted path
     order. The dict has ``status``, ``files``, ``diagnostics`` (``id``, ``severity``, ``file``,
     ``line``, ``message``), ``structure`` and ``conventions``. A project with errors raises
-    :class:`RuntimeError` with the diagnostics, as a list of dicts, in its ``diagnostics`` attribute;
-    warnings are in the returned dict only. ``counts_only`` leaves element names and messages out.
+    :class:`FtpProjectError` (a :class:`RuntimeError`) with the diagnostics, as a list of dicts, in its
+    ``diagnostics`` attribute; warnings are in the returned dict only. ``counts_only`` leaves element names and messages out.
     """
     document, _ = _ftp_inspect_native(paths, duplicate_import, complement_events, counts_only)
     if document["status"] != "ok":
@@ -689,9 +699,7 @@ def read_project(
             where = f" {item['file']}:{item['line']}" if item.get("file") else ""
             message = f": {item['message']}" if "message" in item else ""
             lines.append(f"  {item['id']}{where}{message}")
-        failure = RuntimeError("\n".join(lines))
-        failure.diagnostics = document["diagnostics"]  # type: ignore[attr-defined]
-        raise failure
+        raise FtpProjectError("\n".join(lines), document["diagnostics"])
     return document
 
 
