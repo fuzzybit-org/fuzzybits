@@ -340,7 +340,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 const auto fanIn = model_.operand_counts()[node];
                 const auto low = model_.cardinality_low()[node];
                 const auto high = model_.cardinality_high()[node];
-                if (low == 0 && high == fanIn) {
+                if (fanIn == 0) {
                     return addOp(node, ::pcfb::OpCode::BITWISE_ONES, {}, {}, std::nullopt, name);
                 }
                 if (!partitionOperands(node)) {
@@ -409,7 +409,6 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             }
 
             [[nodiscard]] auto emitQueries() -> bool {
-                std::size_t nonPrimary = 0;
                 std::size_t index = 0;
                 for (auto const &target : model_.targets()) {
                     const auto named = options_.target_names.find(target.id);
@@ -428,14 +427,15 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         if (quantification != options_.quantification.end() && !emitQuantification(index, kind, quantification->second)) {
                             return false;
                         }
+                        if (target.role != ir::pc::observable_role::primary) {
+                            const auto key = "compile.query." + std::to_string(index) + ".role";
+                            const auto role = target.role == ir::pc::observable_role::watch ? std::string_view{"watch"} : std::string_view{"projection_anchor"};
+                            if (!setMetadata(key, builder_.set(key, role))) {
+                                return false;
+                            }
+                        }
                         ++index;
                     }
-                    nonPrimary += target.role == ir::pc::observable_role::primary ? 0 : 1;
-                }
-                if (nonPrimary != 0) {
-                    diagnostics_.push(api::make_note("io.pcfb.target-role", std::to_string(nonPrimary) +
-                                                                                " non-primary target(s) written as ordinary queries; pcfb "
-                                                                                "core-1.1 has no observable roles"));
                 }
                 return true;
             }

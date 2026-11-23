@@ -201,7 +201,6 @@ TEST_CASE("pcfb writer maps every PC opcode", "[io][pcfb]") {
     auto written = fuzzybits::io::backend::fuzzybits::pcfb::write(model.to_handle(), {});
     INFO(diagnosticsText(written.diagnostics()));
     REQUIRE(written);
-    REQUIRE(hasCode(written.diagnostics(), "io.pcfb.target-role"));
     const auto output = std::move(written).value();
     const auto circuit = view(output);
     requireWriterInvariants(model, output, circuit);
@@ -292,9 +291,7 @@ TEST_CASE("pcfb writer lowers cardinality(low, high) by range", "[io][pcfb]") {
         REQUIRE(indices(op->inverted_inputs()) == inverted);
     };
 
-    auto const *ones = opAt(sub, output.tensor_by_node[ranges[0].node.raw()]);
-    REQUIRE(ones->opcode() == ::pcfb::OpCode::BITWISE_ONES);
-    REQUIRE(indices(ones->inputs()).empty());
+    requireKofN(opAt(sub, output.tensor_by_node[ranges[0].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 0);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[1].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 2);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[2].node.raw()]), ::pcfb::OpCode::BITWISE_ATLEAST, 4);
     requireKofN(opAt(sub, output.tensor_by_node[ranges[3].node.raw()]), ::pcfb::OpCode::BITWISE_ATMOST, 2);
