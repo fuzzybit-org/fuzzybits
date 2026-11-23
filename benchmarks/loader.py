@@ -11,9 +11,26 @@ from pathlib import Path
 from typing import Any, Mapping
 
 SCHEMA_VERSION = 1
+# v2 adds a card per model (#158) and private entries (#184). A draft has
+# ``frozen: false``; v1 has no such field and never changes.
+SCHEMA_VERSION_V2 = 2
 DATASET_ID = "v1"
+DATASET_ID_V2 = "v2"
 ALLOWED_TAGS = frozenset({"accuracy", "perf", "hard", "pwr"})
 ALLOWED_SOURCES = frozenset({"aralia", "pwr"})
+# #158 adds the card tags; ``ftp`` marks a CAFTA FTP project entry.
+V2_ALLOWED_TAGS = ALLOWED_TAGS | frozenset(
+    {"large", "rare", "non-coherent", "event-tree", "ccf", "ftp"}
+)
+V2_ALLOWED_SOURCES = ALLOWED_SOURCES | frozenset({"ftp", "synthetic", "saphire"})
+# Which modes a private entry may ask the harness for. ``hull`` is reserved
+# for #183 and rejected until then.
+PRIVATE_MODES = ("compile", "perf", "accuracy-boolean", "hull")
+PRIVATE_MODES_READY = frozenset({"compile", "perf", "accuracy-boolean"})
+# Reasons a private entry reports instead of running (never a path or a name).
+PRIVATE_SKIP_REASONS = frozenset(
+    {"no-match", "ambiguous", "no-settings", "no-reference", "hull", "error"}
+)
 TARGET_HITS = 1000
 # Below this expected-hit count a 4-sigma test has no power: 0 hits yields
 # |z| = sqrt(n p_ref) < 4. The owner's "e.g. 100" is the same order of

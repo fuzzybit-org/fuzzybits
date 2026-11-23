@@ -263,6 +263,10 @@ def run_inner(
     if inprocess and inprocess.get("mode") == "pass_shape":
         payload = {**dict(inprocess), "timeout": timeout_s}
         py = ["python3", "-c", INNER_PASS_SHAPE, json.dumps(payload, separators=(",", ":"))]
+    elif inprocess and inprocess.get("mode") == "script":
+        # A caller-supplied runner (the private dataset path, #184): the payload
+        # is one argv value, so no private path is interpolated into code.
+        py = ["python3", "-c", str(inprocess["script"]), str(inprocess["payload"])]
     elif inprocess:
         payload = {
             **dict(inprocess),
@@ -316,9 +320,10 @@ def run_inner(
     )
     combined = stdout + "\n" + stderr
     parsed: dict[str, Any] | None = None
-    # Inner JSON is the last JSON object in stdout (profilers print before/after).
+    # A caller-supplied script writes its own result: it need not carry wall_s.
+    custom = bool(inprocess and inprocess.get("mode") == "script")
     for candidate in _json_objects(stdout):
-        if isinstance(candidate, dict) and "wall_s" in candidate:
+        if isinstance(candidate, dict) and (custom or "wall_s" in candidate):
             parsed = candidate
     if parsed is None:
         return {
@@ -342,6 +347,10 @@ def run_inner(
         "docker_stderr": stderr,
         "timed_out": timed_out,
     }
+    if custom:
+        # The script's own document; its `ok` decides success, not `rc`.
+        result["document"] = parsed
+        result["ok"] = bool(parsed.get("ok")) and not timed_out
     if profiler:
         inner_text = (
             combined

@@ -8,6 +8,33 @@ from pathlib import Path
 from typing import Any
 
 from .guards import format_foreign_load
+from ..datasets.v2 import private_line as _private_line
+
+
+def private_lines(payload: Mapping[str, Any]) -> list[str]:
+    """The one publishable line per private entry and mode (#184).
+
+    Any other key in a private row is dropped here, so a caller that stored
+    details cannot leak them through a summary.
+    """
+    lines: list[str] = []
+    for row in payload.get("private") or ():
+        if not isinstance(row, Mapping):
+            continue
+        if not {"id", "mode", "verdict"} <= set(row):
+            continue
+        lines.append(_private_line(row))
+    return lines
+
+
+def redact_private(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """A copy safe to publish: private rows keep only id, mode, verdict and reason."""
+    from ..datasets.v2 import sanitize_private
+
+    clean = dict(payload)
+    if "private" in clean:
+        clean["private"] = sanitize_private(clean.get("private"))
+    return clean
 
 
 def _fmt_float(value: Any, digits: int = 6) -> str:
@@ -130,6 +157,9 @@ def summarize_run(payload: Mapping[str, Any]) -> str:
         lines += ["## Compile / PDAG", "", _md_table(
             ["model", "compile_s", "tensors", "operators", "samples", "status"], compile_rows
         ), ""]
+    private = private_lines(payload)
+    if private:
+        lines += ["## Private models", ""] + [f"- {line}" for line in private] + [""]
     return "\n".join(lines).rstrip() + "\n"
 
 

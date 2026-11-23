@@ -4,14 +4,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ..datasets.compat import patch_generic_pwr
+from ..datasets.v2 import (
+    PRIVATE_ENV,
+    PRIVATE_RESULTS_ENV,
+    Discovery,
+    PrivateEntry,
+    discover,
+    load_v2,
+    sanitize_private,
+    settings_of,
+)
 from ..loader import (
     FZB_1E8,
     Manifest,
@@ -31,6 +42,18 @@ from .guards import (
     release_lock,
     snapshot_load,
     wait_for_idle,
+)
+from .private import (
+    PrivateOutcome,
+    PrivateRunner,
+    accuracy_payload,
+    accuracy_verdict,
+    bench_payload,
+    boolean_variants,
+    compile_payload,
+    perf_payload,
+    perf_verdict,
+    write_bench,
 )
 from .stats import (
     Z_BLOCK,
@@ -357,7 +380,7 @@ def _is_local_context(context: str | None) -> bool:
     return context in {None, "", "default"}
 
 
-def _volumes(target: dict[str, Any], jit_name: str) -> list[str]:
+def _volumes(target: dict[str, Any], jit_name: str, private: str | None = None) -> list[str]:
     volumes = [
         f"{target['models_dir']}:/models:ro",
         f"{target['work_dir']}:/work",
@@ -366,6 +389,9 @@ def _volumes(target: dict[str, Any], jit_name: str) -> list[str]:
     extra = target.get("profiler_volume")
     if extra:
         volumes.append(extra)
+    if private:
+        # Read-only, and the same path the inner script is told (--private-container).
+        volumes.append(f"{private}:{PRIVATE_CONTAINER_DIR}:ro")
     return volumes
 
 
@@ -377,7 +403,8 @@ def _select_models(manifest: Manifest, args: argparse.Namespace) -> list[Model]:
     if args.ids:
         wanted_ids = set(args.ids)
         models = [m for m in models if m.id in wanted_ids]
-        missing = wanted_ids - {m.id for m in models}
+        # A private entry id is not a v1 model; it is checked when the entries run.
+        missing = wanted_ids - {m.id for m in models} - _private_ids()
         if missing:
             raise SystemExit(f"unknown model id(s): {sorted(missing)}")
     if args.mode == "accuracy":
@@ -534,6 +561,331 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+# --- private entries (#184) -------------------------------------------------
+
+
+def private_root(args: argparse.Namespace) -> Path | None:
+    """The directory to discover private models in: ``--private``, else the env."""
+    value = getattr(args, "private", None) or os.environ.get(PRIVATE_ENV)
+    return Path(value) if value else None
+
+
+def _private_ids() -> set[str]:
+    """Ids of the private v2 entries, or none when the v2 draft is unreadable."""
+    try:
+        return {entry.id for entry in load_v2(root=repo_root()).private}
+    except Exception:  # noqa: BLE001 - v1 runs must not depend on the v2 draft
+        return set()
+
+
+def _private_mount(args: argparse.Namespace) -> str | None:
+    """The host directory to mount read-only at the container's private root.
+
+    Only a container executor mounts anything; the local one (tests) reads the
+    directory in place.
+    """
+    if (getattr(args, "private_executor", "container") or "container") != "container":
+        return None
+    root = private_root(args)
+    return str(root.resolve()) if root is not None and root.is_dir() else None
+
+
+PRIVATE_CONTAINER_DIR = "/private"
+
+
+def private_modes(requested: str, entry_modes: Sequence[str]) -> list[str]:
+    """The modes to run for one entry: the requested one, or all declared ready.
+
+    ``run`` means every mode the entry declares except ``hull``, which #183 has
+    not landed yet. ``accuracy`` is the public mode name for
+    ``accuracy-boolean``.
+    """
+    if requested == "run":
+        return [mode for mode in entry_modes if mode != "hull"]
+    wanted = {"accuracy": "accuracy-boolean", "compile": "compile", "perf": "perf"}.get(
+        requested, requested
+    )
+    return [wanted] if wanted in entry_modes else []
+
+
+def _requested_mode(requested: str) -> str:
+    """The private mode name a request maps to, for a ``not-declared`` row."""
+    return {"accuracy": "accuracy-boolean"}.get(requested, requested)
+
+
+def _resolve_private(
+    manifest_v2: Any, root: Path | None
+) -> list[tuple[PrivateEntry, Discovery]]:
+    """Every private entry with its discovery result (``no-match`` when unset)."""
+    out: list[tuple[PrivateEntry, Discovery]] = []
+    for entry in manifest_v2.private:
+        found = discover(entry, root) if root is not None else Discovery(entry=entry, status="no-match")
+        out.append((entry, found))
+    return out
+
+
+def _private_runner(
+    args: argparse.Namespace,
+    *,
+    target: Mapping[str, Any],
+    image: str,
+    volumes: Sequence[str],
+    context: str | None,
+) -> PrivateRunner:
+    return PrivateRunner(
+        context=context,
+        image=image,
+        volumes=volumes,
+        root=Path(getattr(args, "private_container", None) or PRIVATE_CONTAINER_DIR),
+        env=container_env(backend="omp"),
+        executor=getattr(args, "private_executor", "container") or "container",
+    )
+
+
+def _write_private_results(
+    args: argparse.Namespace,
+    discovery: Discovery,
+    settings: Mapping[str, Any],
+    results: Mapping[str, Any],
+) -> str | None:
+    """Write the private ``.bench.json``; returns where, or None when nowhere is writable."""
+    destination = getattr(args, "private_results", None) or os.environ.get(PRIVATE_RESULTS_ENV)
+    path = Path(destination) if destination else discovery.bench_path
+    if path is None:
+        return None
+    try:
+        write_bench(path, bench_payload(settings, results))
+    except OSError:
+        return None
+    return str(path)
+
+
+def run_private(
+    args: argparse.Namespace,
+    *,
+    target: Mapping[str, Any],
+    image: str,
+    volumes: Sequence[str],
+    context: str | None,
+    entry_id: str | None = None,
+) -> list[PrivateOutcome]:
+    """Run the private entries selected by ``--mode``/``--ids``.
+
+    Every outcome's ``row`` is publishable; ``detail`` holds the numbers and
+    only ever reaches the private ``.bench.json``. Nothing here runs unless the
+    v2 draft declares at least one private entry, so a v1 run is unaffected.
+    """
+    root = repo_root()
+    try:
+        manifest_v2 = load_v2(root=root)
+    except Exception as exc:  # noqa: BLE001 - a broken v2 draft must not kill v1 runs
+        raise SystemExit(f"private entries: {exc}") from exc
+    if not manifest_v2.private:
+        return []
+    runner = _private_runner(args, target=target, image=image, volumes=volumes, context=context)
+    outcomes: list[PrivateOutcome] = []
+    local_root = private_root(args)
+    for entry, found in _resolve_private(manifest_v2, local_root):
+        if entry_id is not None and entry.id != entry_id:
+            continue
+        if args.ids and entry.id not in args.ids:
+            continue
+        modes = private_modes(args.mode, entry.modes)
+        if not modes:
+            outcomes.append(
+                PrivateOutcome(entry.id, _requested_mode(args.mode), "skipped", "not-declared")
+            )
+            continue
+        if found.status != "match" or found.directory is None or local_root is None:
+            for mode in modes:
+                outcomes.append(PrivateOutcome(entry.id, mode, "skipped", found.status))
+            continue
+        settings = settings_of(found, manifest_v2.defaults)
+        model = runner.model_path(found.directory, local_root)
+        for mode in modes:
+            if mode == "hull":
+                outcomes.append(PrivateOutcome(entry.id, mode, "skipped", "hull"))
+                continue
+            outcome = _run_private_mode(
+                mode, entry, found, settings, model, runner, args
+            )
+            outcomes.append(outcome)
+    return outcomes
+
+
+def _run_private_mode(
+    mode: str,
+    entry: PrivateEntry,
+    found: Discovery,
+    settings: Mapping[str, Any],
+    model: str,
+    runner: PrivateRunner,
+    args: argparse.Namespace,
+) -> PrivateOutcome:
+    """One entry and mode: execute, judge, record. Never prints a detail."""
+    if mode == "hull":
+        # Hull queries in the runtime are #183; until then the mode is declared
+        # in the manifest but never run.
+        return PrivateOutcome(entry.id, mode, "skipped", "hull")
+    if mode == "compile":
+        document = runner.run(compile_payload(model, settings))
+        if not document.get("ok"):
+            return PrivateOutcome(entry.id, mode, "fail", "error",
+                                  {"error": document.get("error"), "compile": document.get("compile")})
+        levels = document.get("levels") or []
+        detail = {"levels": levels, "compile": document.get("compile")}
+        results = dict(settings.get("results") or {})
+        results["compile"] = {"utc": _now(), "levels": levels}
+        _write_private_results(args, found, settings, results)
+        return PrivateOutcome(entry.id, mode, "pass", None, detail)
+
+    if mode == "perf":
+        document = runner.run(perf_payload(model, settings))
+        if not document.get("ok") and not document.get("rounds"):
+            return PrivateOutcome(entry.id, mode, "fail", "error",
+                                  {"error": document.get("error")})
+        samples = [float(row["sample_s"]) for row in document.get("rounds") or ()]
+        baseline = (found.settings.get("results") or {}).get("perf") or {}
+        verdict, reason, detail = perf_verdict(samples, baseline)
+        results = dict(settings.get("results") or {})
+        recorded = {
+            "utc": _now(),
+            "samples": samples,
+            "median_s": detail.get("median_s"),
+            "trials": (settings.get("perf") or {}).get("trials"),
+            "median_baseline_s": detail.get("baseline_median_s"),
+            "ratio": detail.get("ratio"),
+            "ratio_ci": detail.get("ratio_ci"),
+        }
+        # The baseline survives a rerun: the first run records it, and every
+        # later one keeps the recorded samples so the next can compare again.
+        recorded["baseline"] = dict(baseline) if baseline.get("samples") else {
+            "samples": samples,
+            "utc": recorded["utc"],
+        }
+        results["perf"] = recorded
+        _write_private_results(args, found, settings, results)
+        return PrivateOutcome(entry.id, mode, verdict, reason, detail)
+
+    if mode == "accuracy-boolean":
+        variants = boolean_variants(found.card)
+        # Only a variant with a reference can be judged; the rest are reported
+        # as skipped without spending a run on them.
+        judged = [variant for variant in variants if variant.get("reference")]
+        if not judged:
+            return PrivateOutcome(entry.id, mode, "skipped", "no-reference")
+        document = runner.run(accuracy_payload(model, settings, judged))
+        runs = document.get("variants") or []
+        verdict, reason, detail = accuracy_verdict(runs, judged)
+        results = dict(settings.get("results") or {})
+        results["accuracy_boolean"] = {
+            "utc": _now(),
+            "variants": detail.get("variants"),
+            "skipped": [
+                {"variant": variant["name"], "reason": "no-reference"}
+                for variant in variants
+                if not variant.get("reference")
+            ],
+        }
+        _write_private_results(args, found, settings, results)
+        return PrivateOutcome(entry.id, mode, verdict, reason, detail)
+
+    return PrivateOutcome(entry.id, mode, "skipped", "not-declared")
+
+
+def _private_verdicts(outcomes: Sequence[PrivateOutcome]) -> list[str]:
+    mapping = {"pass": VERDICT_PASS, "skipped": VERDICT_PASS, "fail": VERDICT_BLOCK}
+    return [mapping.get(outcome.verdict, VERDICT_PASS) for outcome in outcomes]
+
+
+def cmd_private(args: argparse.Namespace) -> int:
+    """Run private v2 entries only; write the publishable rows and nothing else.
+
+    This is the entry point used inside the runtime container (the engine and
+    ``fzb`` are on ``PATH`` there) and by the leak test. The results JSON keeps
+    one row per entry and mode; the details go to ``--private-results`` or the
+    model's own ``.bench.json``, and to stdout only with ``--show-details``.
+    """
+    root = repo_root()
+    try:
+        manifest_v2 = load_v2(args.v2_manifest, root=root)
+    except Exception as exc:  # noqa: BLE001 - a broken draft is a clear failure here
+        raise SystemExit(f"private: {exc}") from exc
+    runner = PrivateRunner(
+        context=None,
+        image="",
+        volumes=(),
+        root=Path(args.private_container or PRIVATE_CONTAINER_DIR),
+        env=container_env(backend="omp"),
+        executor=args.execute,
+    )
+    outcomes: list[PrivateOutcome] = []
+    local_root = private_root(args)
+    selected = _select_private(manifest_v2, args, local_root)
+    for entry, found in selected:
+        modes = private_modes(args.mode, entry.modes)
+        if not modes:
+            outcomes.append(
+                PrivateOutcome(entry.id, _requested_mode(args.mode), "skipped", "not-declared")
+            )
+            continue
+        if found.status != "match" or found.directory is None or local_root is None:
+            for mode in modes:
+                outcomes.append(PrivateOutcome(entry.id, mode, "skipped", found.status))
+            continue
+        settings = settings_of(found, manifest_v2.defaults)
+        model = (
+            runner.model_path(found.directory, local_root)
+            if args.execute == "container"
+            else str(found.directory)
+        )
+        for mode in modes:
+            outcomes.append(_run_private_mode(mode, entry, found, settings, model, runner, args))
+
+    payload = {
+        "schema_version": 1,
+        "kind": "private",
+        "dataset": manifest_v2.dataset,
+        "created_utc": _now(),
+        "verdict": combine_verdicts(_private_verdicts(outcomes)),
+        "models": [],
+    }
+    # Private rows are the only content: no context, no image, no paths.
+    if outcomes:
+        payload["private"] = sanitize_private([outcome.row for outcome in outcomes])
+    if args.out:
+        _write_json(Path(args.out), payload)
+    text = summarize(payload) if not args.out else summarize(payload)
+    if args.show_details:
+        for outcome in outcomes:
+            if outcome.detail:
+                print(json.dumps({"id": outcome.id, "mode": outcome.mode,
+                                  "detail": outcome.detail}, indent=2))
+    sys.stdout.write(text)
+    if args.md:
+        Path(args.md).write_text(text, encoding="utf-8")
+    return 0 if _exit_ok(payload["verdict"], report_only=False) else 1
+
+
+def _select_private(
+    manifest_v2: Any, args: argparse.Namespace, local_root: Path | None
+) -> list[tuple[PrivateEntry, Discovery]]:
+    entries = list(manifest_v2.private)
+    if args.ids:
+        wanted = set(args.ids)
+        unknown = wanted - {entry.id for entry in entries}
+        if unknown:
+            raise SystemExit(f"private: unknown private id(s): {sorted(unknown)}")
+        entries = [entry for entry in entries if entry.id in wanted]
+    if not entries:
+        raise SystemExit("private: the v2 manifest declares no private entry")
+    return [
+        (entry, discover(entry, local_root) if local_root is not None else Discovery(entry, "no-match"))
+        for entry in entries
+    ]
+
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     root = repo_root()
     manifest = load_manifest(args.manifest, root=root, check_files=not args.skip_validate)
@@ -560,7 +912,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     _ensure_volume(context, jit)
     host = _runtime_host(target)
     _ensure_host_dir(host, target["work_dir"])
-    volumes = _volumes(target, jit)
+    volumes = _volumes(target, jit, _private_mount(args))
     env = container_env(
         backend=backend,
         extra={"OMP_NUM_THREADS": str(target["omp_num_threads"])} if target.get("omp_num_threads") else None,
@@ -770,12 +1122,17 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
 
         load_after = snapshot_load(context, gpus=gpus, amd=amd)
+        private_outcomes = run_private(
+            args, target=target, image=image, volumes=volumes, context=context
+        )
         payload = {
             "schema_version": 1,
             "kind": "run",
             "dataset": manifest.dataset,
             "created_utc": _now(),
-            "verdict": combine_verdicts(r.get("verdict") or "pass" for r in rows),
+            "verdict": combine_verdicts(
+                [*(r.get("verdict") or "pass" for r in rows), *_private_verdicts(private_outcomes)]
+            ),
             "context": {
                 "target": args.target,
                 "image": image,
@@ -796,6 +1153,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             },
             "models": rows,
         }
+        if private_outcomes:
+            # One line per entry and mode, and nothing else (#184).
+            payload["private"] = sanitize_private([outcome.row for outcome in private_outcomes])
         if target.get("report_only"):
             payload["verdict"] = apply_report_only(
                 payload["verdict"], report_only=True
@@ -1556,6 +1916,34 @@ def _parser() -> argparse.ArgumentParser:
         p.add_argument("--commit", default=None)
         p.add_argument("--models-dir", default=None)
         p.add_argument("--work-dir", default=None)
+        add_private(p)
+
+    def add_private(p: argparse.ArgumentParser) -> None:
+        p.add_argument(
+            "--private",
+            default=None,
+            metavar="DIR",
+            help=(
+                "private fixtures directory for v2 private entries "
+                f"(default ${PRIVATE_ENV}); a v2 entry runs only when its sha256 set matches one "
+                "directory there"
+            ),
+        )
+        p.add_argument(
+            "--private-results",
+            default=None,
+            metavar="FILE",
+            help=(
+                "write private details to FILE instead of the model's .bench.json "
+                f"(default ${PRIVATE_RESULTS_ENV}). Never published"
+            ),
+        )
+        p.add_argument(
+            "--private-container",
+            default=None,
+            metavar="DIR",
+            help="where the private directory is mounted inside the runtime container (default /private)",
+        )
 
     p_run = sub.add_parser("run", help="run a dataset against one image")
     add_common(p_run)
@@ -1612,6 +2000,51 @@ def _parser() -> argparse.ArgumentParser:
     p_sum.add_argument("results")
     p_sum.add_argument("--md", default=None)
     p_sum.set_defaults(func=cmd_summarize)
+
+    p_priv = sub.add_parser(
+        "private",
+        help="run the v2 private entries (details stay in the model's .bench.json)",
+    )
+    p_priv.add_argument("--v2-manifest", default=None, help="v2 manifest (default benchmarks/datasets/v2)")
+    p_priv.add_argument(
+        "--private",
+        default=None,
+        metavar="DIR",
+        help=f"private fixtures directory (default ${PRIVATE_ENV})",
+    )
+    p_priv.add_argument(
+        "--private-results",
+        default=None,
+        metavar="FILE",
+        help=f"details file (default the model's .bench.json; env {PRIVATE_RESULTS_ENV})",
+    )
+    p_priv.add_argument(
+        "--private-container",
+        default=None,
+        metavar="DIR",
+        help="where the private directory is mounted inside the runtime container (default /private)",
+    )
+    p_priv.add_argument(
+        "--execute",
+        choices=("local", "container"),
+        default="local",
+        help="local: this interpreter (engine on PATH); container: a runtime image, as `run` does",
+    )
+    p_priv.add_argument(
+        "--mode",
+        choices=("run", "compile", "perf", "accuracy", "accuracy-boolean", "hull"),
+        default="run",
+        help="one mode, or every mode the entry declares with run",
+    )
+    p_priv.add_argument("--ids", nargs="+", default=None, help="private entry ids")
+    p_priv.add_argument("--out", default=None, help="results JSON (private rows only)")
+    p_priv.add_argument("--md", default=None, help="markdown summary")
+    p_priv.add_argument(
+        "--show-details",
+        action="store_true",
+        help="print the details to stdout (local use only; never in CI)",
+    )
+    p_priv.set_defaults(func=cmd_private)
     return parser
 
 
