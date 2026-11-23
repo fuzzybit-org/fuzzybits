@@ -17,6 +17,24 @@
 
 ### Changes
 
+- Hull queries carry their literal atoms in the `.pcfb`: a monotone-hull target with marked `-EVENT`
+  operators (`--complement-events atom`, the default) now writes `Query.literal_mode` and
+  `Query.literal_samples` (pcfb 1.2 literal-atom amendment, RFC §7.3) instead of being refused. Every
+  literal mode compiles: `--literals atom_split` (the default), `omega_l` and `negation`.
+  - `compile.ftp.hull-literals-unsupported` and `compile.pra_to_pc.hull-literals-unsupported` are gone.
+    The only remaining marked-literal error is `compile.pra_to_pc.mixed-literal` (an event with both
+    marked and unmarked complemented operands in one cone, RFC §7.1), which the FTP reader never
+    produces.
+  - The literal mode and Δ are written in the `Query` fields; `compile.query.<i>.literal_mode` stays as
+    an informative copy, and the reader takes the mode from the field (warning
+    `io.pcfb.quantification-conflict` on a disagreement). `docs/pc-pcfb.md` lists every consumer.
+  - `fzb inspect` and `fuzzybits.inspect` report a `literal_atoms` section: the mode and |Δ| per hull
+    query.
+  - New reader diagnostics: `io.pcfb.invalid-literal-fields`, `io.pcfb.unknown-literal-mode`,
+    `io.pcfb.invalid-literal-sample`, `io.pcfb.invalid-literal-mode`.
+  - The pass pipeline keeps atom-split hull targets atom-preserving near Δ; the differential test
+    `fuzzybits_io_pcfb_tests "[literals][diff]"` checks 2000 seeded circuits through the pipeline and a
+    writer → reader round trip in all three modes.
 - `fzb compile` and `fuzzybits.compile` take `--target` and `--watch` repeatedly, and
   `--target @FILE` / `--watch @FILE` read one name per line (the Python API takes a name or a
   sequence). A file that is missing, is not a regular file or lists no names is an error.

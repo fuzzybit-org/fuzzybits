@@ -1147,6 +1147,18 @@ const char *diagnostic_code_name(pcfb::Diagnostic::Code code) {
             return "ExtraSubcircuit";
         case C::InvalidFile:
             return "InvalidFile";
+        case C::UnknownQueryKind:
+            return "UnknownQueryKind";
+        case C::SchemaVersionTooOld:
+            return "SchemaVersionTooOld";
+        case C::UnknownLiteralMode:
+            return "UnknownLiteralMode";
+        case C::LiteralSampleNotSample:
+            return "LiteralSampleNotSample";
+        case C::LiteralSamplesNotAscending:
+            return "LiteralSamplesNotAscending";
+        case C::LiteralFieldsOnNonHullQuery:
+            return "LiteralFieldsOnNonHullQuery";
     }
     return "Unknown";
 }
@@ -1201,6 +1213,18 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
     std::map<std::string, int> opcode_counts;
     std::map<std::string, int> sample_sources;
     py::list query_names;
+    py::dict literal_atoms;
+    const auto literal_mode_name = [](const pcfb::LiteralMode mode) -> std::string {
+        switch (mode) {
+        case pcfb::LiteralMode::ATOM_SPLIT:
+            return "atom_split";
+        case pcfb::LiteralMode::OMEGA_L:
+            return "omega_l";
+        case pcfb::LiteralMode::NEGATION:
+            return "negation";
+        }
+        return "unknown";
+    };
 
     if (circuit.subcircuits() && circuit.subcircuits()->size() > 0) {
         const auto *sc = circuit.subcircuits()->Get(0);
@@ -1229,7 +1253,16 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
                     continue;
                 }
                 std::string name = q->name() ? q->name()->str() : "";
-                query_names.append(name.empty() ? ("t" + std::to_string(q->target())) : name);
+                const auto display = name.empty() ? ("t" + std::to_string(q->target())) : name;
+                query_names.append(display);
+                const auto literals = pcfb::read_literals(*q);
+                if (q->kind() == pcfb::QueryKind::MONOTONE_HULL_PROBABILITY &&
+                    (literals.mode != pcfb::LiteralMode::ATOM_SPLIT || !literals.samples.empty())) {
+                    py::dict row;
+                    row["mode"] = literal_mode_name(literals.mode);
+                    row["samples"] = literals.samples.size();
+                    literal_atoms[py::str(display)] = std::move(row);
+                }
             }
         }
     }
@@ -1251,6 +1284,7 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
     }
     result["sample_source"] = std::move(sources);
     result["query_names"] = std::move(query_names);
+    result["literal_atoms"] = std::move(literal_atoms);
 
     py::dict metadata;
     if (circuit.get() && circuit.get()->metadata()) {

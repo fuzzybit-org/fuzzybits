@@ -78,6 +78,19 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             bool complement;
         };
 
+        // The literal fields of one hull query: the mode, and the ir::pc basic-event nodes of the
+        // `SAMPLE` tensors in `literal_samples` (ascending, deduplicated). Every field absent reads as
+        // `ATOM_SPLIT` with no nodes, which is a file written without literal atoms.
+        struct QueryLiterals final {
+            ::pcfb::LiteralMode mode = ::pcfb::LiteralMode::ATOM_SPLIT;
+            std::vector<ir::pc::bool_node_id> nodes;
+
+            [[nodiscard]] auto empty() const noexcept -> bool {
+                return mode == ::pcfb::LiteralMode::ATOM_SPLIT && nodes.empty();
+            }
+            friend auto operator==(QueryLiterals const &, QueryLiterals const &) -> bool = default;
+        };
+
         struct NodeInfo final {
             std::uint32_t op = 0;
             std::uint32_t list_op = 0;
@@ -139,6 +152,18 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
 
         [[nodiscard]] auto note(std::string_view code, std::string message) -> api::diagnostic {
             return api::make_note(std::string(code), std::move(message));
+        }
+
+        [[nodiscard]] auto literalModeName(::pcfb::LiteralMode const mode) -> std::string_view {
+            switch (mode) {
+            case ::pcfb::LiteralMode::ATOM_SPLIT:
+                return "atom_split";
+            case ::pcfb::LiteralMode::OMEGA_L:
+                return "omega_l";
+            case ::pcfb::LiteralMode::NEGATION:
+                return "negation";
+            }
+            return "atom_split";
         }
 
         class Reader final {
@@ -523,7 +548,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             }
 
             // Consecutive queries on one tensor with one name and distinct kinds are the kinds of one
-            // target, which is how the writer lays out a target with several kinds.
+            // target, which is how the writer lays out a target with several kinds. Queries that also
+            // agree on the literal mode and the literal sample tensor set join the same target.
             [[nodiscard]] auto addTargets(ir::pc::builder &builder) -> bool {
                 std::uint32_t previousNode = kNone;
                 std::string_view previousName;
@@ -548,18 +574,35 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                                                                               ", which this reader does not implement"));
                         return false;
                     }
+                    std::optional<QueryLiterals> literals;
+                    if (!readQueryLiterals(index, kind, *query, literals)) {
+                        return false;
+                    }
                     if (query->confidence() != nullptr && query->confidence()->size() != 0) {
                         ++confidenceDropped_;
                     }
                     const auto role = roleOfQuery(index);
                     auto &kinds = targetKinds_;
+                    // The literal fields are hull-only, so a group of distinct kinds holds at most one query with
+                    // them; they never decide whether two queries are one target.
                     const bool joins = !kinds.empty() && node == previousNode && name == previousName && role == targetRoles_.back() &&
                                        std::ranges::find(kinds.back(), kind) == kinds.back().end();
                     if (!joins) {
                         (void)builder.add_target(ir::pc::bool_node_id(idOfNode_[node]), role);
                         targetRoles_.push_back(role);
                         targetNames_.emplace_back(name);
+                        targetLiterals_.emplace_back();
                         kinds.emplace_back();
+                    }
+                    if (literals) {
+                        auto &group = targetLiterals_.back();
+                        if (!group.empty() && group != *literals) {
+                            diagnostics_.push(warning(diag::quantification_conflict,
+                                                      "queries of target " + std::to_string(kinds.size() - 1) +
+                                                          " record different literal atoms; the first is kept"));
+                        } else {
+                            group = *literals;
+                        }
                     }
                     kinds.back().push_back(kind);
                     queryTarget_.push_back(static_cast<std::uint32_t>(kinds.size() - 1));
@@ -570,6 +613,63 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                     diagnostics_.push(warning(diag::confidence_ignored, std::to_string(confidenceDropped_) +
                                                                             " query(ies) request confidence levels, which are not read"));
                 }
+                return true;
+            }
+
+            // The literal fields of one query. Absent for a file written without them, which reads as the
+            // defaults: mode `atom_split` and an empty Δ. `pcfb::validate` has already rejected every
+            // malformed combination, so this only maps the mode and the sample tensors to ir::pc nodes;
+            // a mode value this reader does not implement is rejected here.
+            [[nodiscard]] auto readQueryLiterals(const std::uint32_t index, const query_kind kind, ::pcfb::Query const &query,
+                                                 std::optional<QueryLiterals> &out) -> bool {
+                const auto mode = query.literal_mode();
+                const auto *samples = query.literal_samples();
+                const auto count = samples == nullptr ? 0U : samples->size();
+                if (mode == ::pcfb::LiteralMode::ATOM_SPLIT && count == 0) {
+                    return true;
+                }
+                switch (mode) {
+                case ::pcfb::LiteralMode::ATOM_SPLIT:
+                case ::pcfb::LiteralMode::OMEGA_L:
+                case ::pcfb::LiteralMode::NEGATION:
+                    break;
+                default:
+                    diagnostics_.push(error(diag::unknown_literal_mode, "query " + std::to_string(index) + " has literal mode " +
+                                                                                std::to_string(static_cast<unsigned>(mode)) +
+                                                                                ", which this reader does not implement"));
+                    return false;
+                }
+                if (kind != query_kind::monotone_hull_probability) {
+                    diagnostics_.push(error(diag::invalid_literal_fields, "query " + std::to_string(index) +
+                                                                              " sets literal fields on a query that is not a hull query"));
+                    return false;
+                }
+                out.emplace();
+                out->mode = mode;
+                for (std::uint32_t at = 0; at < count; ++at) {
+                    const auto tensor = samples->Get(at);
+                    const auto operation = producer(tensor);
+                    if (operation == kNone) {
+                        diagnostics_.push(error(diag::invalid_literal_fields, "query " + std::to_string(index) + " lists literal sample tensor " +
+                                                                                  std::to_string(tensor) + ", which no operator produces"));
+                        return false;
+                    }
+                    if (op(operation)->opcode() != ::pcfb::OpCode::SAMPLE) {
+                        diagnostics_.push(error(diag::invalid_literal_fields, "query " + std::to_string(index) + " lists tensor " +
+                                                                                  std::to_string(tensor) +
+                                                                                  ", which is not a SAMPLE output"));
+                        return false;
+                    }
+                    const auto node = nodeOfOp_[operation];
+                    if (node == kNone) {
+                        diagnostics_.push(error(diag::invalid_literal_fields, "query " + std::to_string(index) + " lists SAMPLE tensor " +
+                                                                                  std::to_string(tensor) + ", which has no node"));
+                        return false;
+                    }
+                    out->nodes.push_back(ir::pc::bool_node_id(idOfNode_[node]));
+                }
+                std::ranges::sort(out->nodes);
+                out->nodes.erase(std::ranges::unique(out->nodes).begin(), out->nodes.end());
                 return true;
             }
 
@@ -662,6 +762,21 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                                                                                   "max_initiators_per_cutset' is not a 32-bit count and is ignored"));
                         }
                     }
+                    // The Query fields, not the metadata, are the source of truth for the mode and Δ
+                    // (docs/pc-pcfb.md). The metadata copy only fills `literal_mode` when the fields are
+                    // absent; a disagreement is reported and the field wins.
+                    auto const &literals = targetLiterals_[target];
+                    if (!literals.empty()) {
+                        const auto field_mode = literalModeName(literals.mode);
+                        if (!entry.literal_mode.empty() && entry.literal_mode != field_mode) {
+                            diagnostics_.push(warning(diag::quantification_conflict,
+                                                      "target " + std::to_string(target) + " records literal mode '" + entry.literal_mode +
+                                                          "' but its Query.literal_mode is '" + std::string(field_mode) + "'; the field is kept"));
+                        }
+                        entry.literal_mode = std::string(field_mode);
+                        entry.literal_events = literals.nodes;
+                        present = true;
+                    }
                     if (!present) {
                         continue;
                     }
@@ -670,7 +785,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         recorded[target] = 1;
                         output_.options.quantification[id] = entry;
                     } else if (auto const &kept = output_.options.quantification[id];
-                               kept.literal_mode != entry.literal_mode || kept.max_initiators_per_cutset != entry.max_initiators_per_cutset) {
+                               kept.literal_mode != entry.literal_mode || kept.max_initiators_per_cutset != entry.max_initiators_per_cutset ||
+                               kept.literal_events != entry.literal_events) {
                         diagnostics_.push(warning(diag::quantification_conflict, "queries of target " + std::to_string(target) +
                                                                                      " record different quantification; the first is kept"));
                     }
@@ -746,6 +862,7 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             std::vector<std::vector<query_kind>> targetKinds_;
             std::vector<std::uint32_t> queryTarget_;
             std::vector<ir::pc::observable_role> targetRoles_;
+            std::vector<QueryLiterals> targetLiterals_;
             std::unordered_map<std::string, std::size_t> metadataIndex_;
         };
 
@@ -758,9 +875,25 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
         }
         api::diagnostic_list diagnostics;
         for (auto const &finding : ::pcfb::validate(*file)) {
-            const auto kind = finding.code == ::pcfb::Diagnostic::Code::UnknownQueryKind || finding.code == ::pcfb::Diagnostic::Code::SchemaVersionTooOld
-                                  ? diag::unknown_query_kind
-                                  : diag::invalid_file;
+            // The literal-field codes get their own ids so a caller can tell a literal-atom problem from any other
+            // structural one; an unknown mode is distinguished from a malformed field.
+            std::string_view kind = diag::invalid_file;
+            switch (finding.code) {
+            case ::pcfb::Diagnostic::Code::UnknownQueryKind:
+            case ::pcfb::Diagnostic::Code::SchemaVersionTooOld:
+                kind = diag::unknown_query_kind;
+                break;
+            case ::pcfb::Diagnostic::Code::UnknownLiteralMode:
+                kind = diag::unknown_literal_mode;
+                break;
+            case ::pcfb::Diagnostic::Code::LiteralSampleNotSample:
+            case ::pcfb::Diagnostic::Code::LiteralSamplesNotAscending:
+            case ::pcfb::Diagnostic::Code::LiteralFieldsOnNonHullQuery:
+                kind = diag::invalid_literal_fields;
+                break;
+            default:
+                break;
+            }
             diagnostics.push(error(kind, finding.location + ": " + finding.message));
         }
         if (diagnostics.has_errors()) {

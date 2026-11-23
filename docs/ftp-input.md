@@ -108,12 +108,17 @@ A target may ask for both kinds (`"negation": "both"` in the config): two querie
 target. The runtime estimator for hull queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact`
 refuse a file with a hull query (`pcfb.unsupported-query-kind`), and `--negation boolean` is what runs today.
 
-pcfb 1.2 has no literal atoms per query yet, so a hull query reads a marked operand (`-EVENT` under
-`--complement-events atom`) as a plain complement, which is the `negation` literal mode. A hull target whose cone has
-marked operands is therefore refused in `atom_split` mode (the default) and in `omega_l` mode, with
-`compile.pra_to_pc.hull-literals-unsupported` per target and `compile.ftp.hull-literals-unsupported` naming the ways out:
-`--literals negation` (the hull of the plain complements), `--complement-events negation` (no marks) or
-`--negation boolean`. Boolean targets ignore the marks.
+A marked operand (`-EVENT` under `--complement-events atom`) travels into the file as a literal atom: the hull query
+carries `Query.literal_mode` and `Query.literal_samples` (the pcfb 1.2 literal-atom amendment,
+[`pc-pcfb.md`](pc-pcfb.md#literal-atoms-one-source-of-truth)). `--literals atom_split` (the default) is the
+atom-split hull, `--literals omega_l` fixes the marked events, and `--literals negation` reads them as plain
+complements. All three compile: nothing is refused for marked literals any more, and `fzb inspect` shows the mode
+and |Δ| per hull query. Boolean targets ignore the marks.
+
+Under `atom_split` the pass pipeline must not create or remove an inverted edge into a listed event; see
+[`ir-pc-passes.md`](ir-pc-passes.md#atom-split-hull-targets). The remaining check is
+`compile.pra_to_pc.mixed-literal`: an event with both marked and unmarked complemented operands in one cone cannot be
+represented by the per-query list and is an error (RFC §7.1). The FTP reader never produces it.
 
 `--max-initiators-per-cutset N` ANDs each target with `not atleast(N + 1; initiating events in its cone)`. Under Boolean
 semantics this deletes the assignments with more than N initiating events (a probability change), under the hull it
@@ -126,7 +131,7 @@ deletes the cut sets with more than N.
 | `general.source_format` | `cafta-ftp` |
 | `general.source_sha256` | SHA-256 of the file contents concatenated in sorted path order (32 bytes; `fzb inspect --json` prints hex) |
 | `general.model_name` | project name, else the input directory name, else the first sorted file's stem |
-| `compile.query.<i>.negation`, `.literal_mode`, `.max_initiators_per_cutset` | per query `i` in file order: `boolean` or `monotone_hull`, the literal mode, and the initiator rule when one is lowered into the target (written by the `.pcfb` writer) |
+| `compile.query.<i>.negation`, `.literal_mode`, `.max_initiators_per_cutset` | per query `i` in file order: `boolean` or `monotone_hull`, the literal mode (an informative copy of `Query.literal_mode`), and the initiator rule when one is lowered into the target (written by the `.pcfb` writer) |
 | `compile.options` | JSON of the effective settings: compilation level, reader options, initiator rule, the `ftp.limit` text, and per target (queries in file order, then watch targets) the subject kind, negation semantics, literal mode and the counts of initiating and literal events; overrides |
 
 Query names are the target names (the PROCESS target, gate or basic event name); basic-event samples carry the event
@@ -219,7 +224,6 @@ Every diagnostic has a stable id; the report and `fzb inspect` list them with se
 | `ir.pra.cycle`, `ir.pra.invalid-*`, `ir.pra.duplicate-name` | model validation errors |
 | `compile.ftp.invalid-option`, `compile.ftp.invalid-config`, `compile.ftp.invalid-json` | bad flag, config document or JSON |
 | `compile.ftp.unknown-target` | `--target` or `--watch` names nothing |
-| `compile.ftp.hull-literals-unsupported`, `compile.pra_to_pc.hull-literals-unsupported` | a hull target has marked literal operands in `atom_split` or `omega_l` mode (see above) |
 | `compile.ftp.default-negation`, `compile.ftp.default-initiator-rule` | notes: a default came from a model attribute |
 | `compile.ftp.unknown-attribute` | warning: an attribute value the driver does not know is ignored |
 | `compile.pra_to_pc.unknown-target`, `.unknown-element`, `.ambiguous-element`, `.duplicate-target`, `.duplicate-override`, `.unused-override` | target and override resolution |

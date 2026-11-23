@@ -790,19 +790,7 @@ namespace fuzzybits::compile::ftp {
 
                 auto write_options = lowering_ns::pcfb_write_options(stage->lowering);
                 if (!write_options) {
-                    // Raised per target by the lowering; one more message with the ways out.
-                    bool literals = false;
-                    for (auto const &item : write_options.diagnostics().items()) {
-                        literals = literals || item.code == "compile.pra_to_pc.hull-literals-unsupported";
-                        diagnostics.push(item);
-                    }
-                    if (literals) {
-                        diagnostics.push(api::make_error(
-                            "compile.ftp.hull-literals-unsupported",
-                            "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries literal atoms; "
-                            "use --literals negation (marked operands read as plain complements), --negation boolean, "
-                            "or --complement-events negation"));
-                    }
+                    diagnostics.append(write_options.diagnostics());
                     return fail(std::move(diagnostics));
                 }
                 diagnostics.append(write_options.diagnostics());

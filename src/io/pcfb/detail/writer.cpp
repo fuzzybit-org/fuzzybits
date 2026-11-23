@@ -61,6 +61,19 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             return ::pcfb::QueryKind::PROBABILITY;
         }
 
+        [[nodiscard]] auto pcfbLiteralMode(std::string_view const text) -> std::optional<::pcfb::LiteralMode> {
+            if (text.empty() || text == "atom_split") {
+                return ::pcfb::LiteralMode::ATOM_SPLIT;
+            }
+            if (text == "omega_l") {
+                return ::pcfb::LiteralMode::OMEGA_L;
+            }
+            if (text == "negation") {
+                return ::pcfb::LiteralMode::NEGATION;
+            }
+            return std::nullopt;
+        }
+
         [[nodiscard]] auto gateOpcode(const ir::pc::op_code code) -> ::pcfb::OpCode {
             switch (code) {
             case ir::pc::op_code::and_gate:
@@ -419,13 +432,37 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                     const std::vector<query_kind> defaulted{options_.query};
                     const auto &list = kinds == options_.target_kinds.end() ? defaulted : kinds->second;
                     const auto quantification = options_.quantification.find(target.id);
+                    const auto entry =
+                        quantification == options_.quantification.end() ? target_quantification{} : quantification->second;
+                    // The literal fields belong to a hull query and are resolved once per target: they depend on
+                    // the target's kind, not on the position. A target without a hull query writes neither field,
+                    // so a `PROBABILITY` query never carries them (pcfb spec §8 rule 8).
+                    auto literals = ::pcfb::query_literals{};
+                    if (std::ranges::find(list, query_kind::monotone_hull_probability) != list.end()) {
+                        auto const mode = pcfbLiteralMode(entry.literal_mode);
+                        if (!mode) {
+                            diagnostics_.push(api::make_error("io.pcfb.invalid-literal-mode",
+                                                              "target " + std::to_string(target.id.raw()) + " records literal mode '" +
+                                                                  entry.literal_mode +
+                                                                  "', not atom_split, omega_l or negation"));
+                            return false;
+                        }
+                        literals.mode = *mode;
+                        if (!collectLiteralSamples(entry, literals.samples)) {
+                            return false;
+                        }
+                    }
                     for (const auto kind : list) {
-                        if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name); !added) {
+                        const bool hull = kind == query_kind::monotone_hull_probability;
+                        const auto query_literals = hull ? literals : ::pcfb::query_literals{};
+                        if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name, {},
+                                                            query_literals);
+                            !added) {
                             diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected target " + std::to_string(target.id.raw()) +
                                                                                      ": " + added.error().message));
                             return false;
                         }
-                        if (quantification != options_.quantification.end() && !emitQuantification(index, kind, quantification->second)) {
+                        if (quantification != options_.quantification.end() && !emitQuantification(index, kind, entry)) {
                             return false;
                         }
                         if (target.role != ir::pc::observable_role::primary) {
@@ -438,6 +475,32 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                         ++index;
                     }
                 }
+                return true;
+            }
+
+            // The target's Δ as pcfb SAMPLE tensor indices: ascending, duplicate-free, and only nodes the
+            // written circuit still holds as basic events. A node the passes folded or dropped has no
+            // tensor, and a literal list entry without an effect is valid (pcfb spec §5.1.1).
+            [[nodiscard]] auto collectLiteralSamples(target_quantification const &entry, std::vector<std::uint32_t> &out) -> bool {
+                out.clear();
+                for (const auto node : entry.literal_events) {
+                    if (!node.valid() || node.raw() >= model_.node_count()) {
+                        diagnostics_.push(api::make_error("io.pcfb.invalid-literal-sample",
+                                                          "literal event " + idText(node) + " is not a node of the circuit"));
+                        return false;
+                    }
+                    if (model_.op_codes()[node.raw()] != ir::pc::op_code::basic_event) {
+                        diagnostics_.push(api::make_error("io.pcfb.invalid-literal-sample",
+                                                          "literal event " + nodeLabel(options_, node.raw()) + " is not a basic event"));
+                        return false;
+                    }
+                    const auto tensor = tensorByNode_[node.raw()];
+                    if (tensor != kNoTensor) {
+                        out.push_back(tensor);
+                    }
+                }
+                std::ranges::sort(out);
+                out.erase(std::unique(out.begin(), out.end()), out.end());
                 return true;
             }
 

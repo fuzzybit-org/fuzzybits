@@ -60,25 +60,35 @@ a complemented edge into such an event is its own atom $\bar v$, sampled as $\ln
 while gate negations (NOT, NAND, NOR, XNOR, complemented gate edges) stay delete terms. The hull then depends on the
 circuit over atoms, not only on its Boolean function: over atoms $\lnot(B \lor \bar B)$ is satisfiable by dropping both.
 
-The caller passes the atom events (the lowering's `complemented_events` of each target in `atom_split` mode, #181):
+The caller passes the atom events (the lowering's `literal_events` of each target in `atom_split` mode, #181):
 `pipeline_options::atom_events` by target id, or `pass_options::atoms` (target ids plus one event set) for a single
 pass. In the cone of those targets an *atom edge* is a complemented edge into one of the events. The passes preserve
 the function over atoms there, treating every listed event as an atom event in every such cone: that is sound, because
 an identity that holds for an independent variable $\bar v$ also holds at $\bar v = \lnot x_v$.
 
-- `fold_zero_probability` keeps an event that has an atom edge: its atom has $p = 1$ and stays droppable, while
-  constant TRUE cannot be dropped.
-- `propagate_constants` treats an atom edge as an operand of its own: no deduplication, $x / \lnot x$ or parity rule
-  combines it with its event, and parity never moves onto an atom edge or an atom event (an XOR becomes an XNOR
-  instead).
-- `eliminate_single_input` never turns a gate negation into an atom edge or an atom into a negation. Over atoms
-  $v$, $\bar v$, $\lnot v$ and $\lnot \bar v$ are four functions, and only $v$ and $\bar v$ are edges. So a gate that
-  would become a reference to an atom event is eliminated only if it equals $v$ or $\bar v$ (no net negation) and no
-  edge into it is complemented. A target that is an atom becomes `and(` $\bar v$ `)`, not `not(v)`.
-- `coalesce` moves edges verbatim and is unaffected.
+### Pass audit (RFC §7.5)
 
-Each rewrite left out for this reason is counted in `transform_report::skipped` and reported as note
-`pc.pass.atom-split-skipped`. The pipeline carries the atom events through each pass's node map.
+Every pass in `src/ir/pc/passes/pipeline.cpp` is audited against the atom-preserving requirement of RFC §7.5: for an
+`atom_split` target with non-empty Δ, the split circuit $\tilde g$ over atoms must be unchanged. `omega_l` and
+`negation` targets only need $g$ preserved (plus the existing `fold_unit_probability` restriction).
+
+| Pass | Class | `atom_split` status | Rule that makes it correct |
+|---|---|---|---|
+| `fold_zero_probability` | distribution | **guarded** | An event with an atom edge is kept: its atom has $p = 1$ and stays droppable, while a constant TRUE could not be dropped (Corollary 5.1, Theorem 10(g)). Δ events therefore survive. |
+| `fold_unit_probability` | distribution | **never runs on hull targets** | Refused by `pass_preserves` for `monotone_hull`; C1 skips it and notes `pc.pipeline.pass-skipped`. |
+| `propagate_constants` | function | **guarded** | An atom edge is a variable of its own (source `node_count + v`), so no deduplication, $x / \lnot x$, cardinality-pair or XOR-parity rule can combine it with its event, and parity never lands on an atom edge or an atom event. A gate whose operands contain an atom and its event is counted in `skipped` and no pair rule is applied there. |
+| `eliminate_single_input` | function | **guarded** | A gate negation must not become an atom edge and an atom must not become a negation: over atoms $v$, $\bar v$, $\lnot v$ and $\lnot \bar v$ are four functions and only $v$ and $\bar v$ are edges. A gate whose image would be an atom event is eliminated only if it equals $v$ or $\bar v$ unnegated and no edge into it is complemented; a target that is an atom becomes `and(not v)`, not `not(v)`. Each rewrite left out is counted in `skipped`. |
+| `coalesce` | function | **safe** | Moves edges verbatim and never creates, drops or re-polarises an edge, so $\tilde g$ is unchanged. |
+
+Negation normalisation and complementary-pair rules beyond the above are not separate passes in this pipeline; the
+pair rules that do exist are inside `propagate_constants`, which the atom-edge guard covers. Each guarded rewrite left
+out is counted in `transform_report::skipped` and reported as note `pc.pass.atom-split-skipped`. The pipeline carries
+the atom events through each pass's node map, and `compose_write_options` does the same for the Δ written to the file.
+
+The proof is the differential test in `src/io/pcfb/tests/literal_diff_tests.cc`: 2000 seeded `ir::pra`/pc circuits with
+marked literal operands, complements under negated gates, events with $p \in \lbrace 0, 1 \rbrace$, k-of-n gates and shared
+subtrees, each mode, compared with a brute-force evaluator of the three definitions before the pipeline, after the
+pipeline and after a writer → reader round trip. It fails on a deliberately unguarded `eliminate_single_input`.
 
 ## Reports
 

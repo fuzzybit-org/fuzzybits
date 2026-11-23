@@ -35,13 +35,21 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
     [[nodiscard]] auto to_string(query_kind kind) noexcept -> std::string_view;
 
     // What the caller asked of one target, recorded as pcfb metadata next to its queries
-    // (compile.query.<i>.*, i the position in the file's query list) so that fzb inspect and the
-    // runtime can show it. The negation semantics of a query is its kind; this adds the rest.
+    // (compile.query.<i>.*, i the position in the file's query list) and, for the literal atoms,
+    // in the `Query` fields themselves (docs/pc-pcfb.md). The negation semantics of a query is its
+    // kind; this adds the rest.
     struct target_quantification final {
         // ir::pra::literal_mode as text (atom_split, omega_l, negation); empty: not recorded.
+        // This is the caller's request; the file's own record of the mode is `Query.literal_mode`,
+        // which is the single source of truth a reader uses.
         std::string literal_mode;
         // The initiator rule already lowered into the target's logic; unset: no rule.
         std::optional<std::uint32_t> max_initiators_per_cutset;
+        // The target's Δ: PC node ids of the basic events whose marked literal operands the hull
+        // query reads per `literal_mode`. Written as `Query.literal_samples` (pcfb tensor indices of
+        // those events' SAMPLE outputs, restricted to the final cone and sorted); nodes that are not
+        // basic events of the circuit, or that the passes dropped, are not written.
+        std::vector<ir::pc::bool_node_id> literal_events;
     };
 
     // ir::pc carries no names or provenance, so everything here comes from the
@@ -108,6 +116,16 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
         inline constexpr std::string_view unsupported_opcode = "io.pcfb.unsupported-opcode";
         // The file has more tensors than a 32-bit ir::pc node id can address.
         inline constexpr std::string_view too_large = "io.pcfb.too-large";
+        // A target records a literal mode this writer does not know, or a literal event that is not a
+        // basic event of the circuit. Writer-side: no file is produced.
+        inline constexpr std::string_view invalid_literal_sample = "io.pcfb.invalid-literal-sample";
+        inline constexpr std::string_view invalid_literal_mode = "io.pcfb.invalid-literal-mode";
+        // A query's `literal_mode` / `literal_samples` that the validator rejects for a reason the reader
+        // can name, for instance an index that is not a SAMPLE output or a list that is not ascending.
+        inline constexpr std::string_view invalid_literal_fields = "io.pcfb.invalid-literal-fields";
+        // A `literal_mode` value this reader does not implement. A runtime MUST reject such a query
+        // before sampling (pcfb spec 1.2 §8), never answer it as another mode.
+        inline constexpr std::string_view unknown_literal_mode = "io.pcfb.unknown-literal-mode";
         // The read request names a format other than pcfb.
         inline constexpr std::string_view format_mismatch = "io.pcfb.format-mismatch";
         // The reconstructed ir::pc circuit failed its own sealing checks.

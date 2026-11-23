@@ -4,6 +4,7 @@
 #include "ir/pc/op_code.h"
 #include "ir/pc/passes/transform.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
@@ -50,6 +51,31 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
                 continue;
             }
             options.node_names.emplace(image.edge.source, std::move(name));
+        }
+
+        // A target's Δ travels with the target: each event's node through the composed node map, kept only
+        // when an output node still computes it as an uncomplemented basic event. A listed entry without an
+        // effect is valid (pcfb spec §5.1.1), so a dropped event is left out rather than reported.
+        for (auto &[target, entry] : options.quantification) {
+            if (entry.literal_events.empty()) {
+                continue;
+            }
+            std::vector<bool_node_id> carried;
+            carried.reserve(entry.literal_events.size());
+            for (const auto event : entry.literal_events) {
+                if (event.raw() >= passes.node_map.size()) {
+                    continue;
+                }
+                auto const &image = passes.node_map[event.raw()];
+                if (image.kind != passes::image_kind::reference || image.edge.complement ||
+                    image.edge.source.raw() >= output_ops.size() || output_ops[image.edge.source.raw()] != op_code::basic_event) {
+                    continue;
+                }
+                carried.push_back(image.edge.source);
+            }
+            std::ranges::sort(carried);
+            carried.erase(std::ranges::unique(carried).begin(), carried.end());
+            entry.literal_events = std::move(carried);
         }
         return options;
     }

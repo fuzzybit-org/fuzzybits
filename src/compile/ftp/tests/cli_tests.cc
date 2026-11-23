@@ -255,20 +255,38 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile refuses hull targets with marked literals and says how to proceed", "[compile][ftp][cli][hull]") {
+TEST_CASE("fzb compile writes hull targets with marked literals in every mode", "[compile][ftp][cli][hull]") {
     const auto scratch = scratch_directory("literals");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
     const auto out = (scratch / "m.pcfb");
-    for (const char *flags : {"", " --literals omega_l", " --negation hull"}) {
-        const auto refused = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
-        INFO(flags << "\n" << refused.err);
-        REQUIRE(refused.status != 0);
-        REQUIRE_FALSE(std::filesystem::exists(out));
-        REQUIRE(refused.err.find("compile.ftp.hull-literals-unsupported") != std::string::npos);
-        REQUIRE(refused.err.find("--literals negation") != std::string::npos);
-        REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
+    // Every mode used to be refused with compile.ftp.hull-literals-unsupported; the file now carries the
+    // literal atoms in the Query fields (pcfb 1.2 amendment, RFC 7.3), and `fzb inspect` shows them.
+    for (const char *flags : {"", " --literals omega_l", " --literals negation", " --negation hull"}) {
+        const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
+        INFO(flags << "\n" << ran.err);
+        REQUIRE(ran.status == 0);
+        REQUIRE(std::filesystem::exists(out));
+        REQUIRE(ran.err.find("hull-literals-unsupported") == std::string::npos);
+        const auto summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
+        REQUIRE(summary);
+        REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
+        const auto *atoms = summary.value().find("literal_atoms");
+        REQUIRE(atoms != nullptr);
+        REQUIRE(atoms->items.size() == 1);
+        const auto *top = atoms->items.front().find("TOP");
+        REQUIRE(top != nullptr);
+        // The default literal mode is atom_split with one marked event (-OPER). `--literals negation` records the
+        // mode and still writes Δ (the mode says the list is ignored); `--negation hull` selects the negation
+        // semantics, not the literal mode, so it keeps atom_split.
+        const auto flags_text = std::string(flags);
+        const auto negation_mode = flags_text.find("--literals negation") != std::string::npos;
+        const auto expected_mode =
+            negation_mode ? "negation" : flags_text.find("omega_l") != std::string::npos ? "omega_l" : "atom_split";
+        REQUIRE(top->find("mode")->string == expected_mode);
+        REQUIRE(top->find("samples")->integer == 1);
+        std::filesystem::remove(out);
     }
-    for (const char *flags : {" --literals negation", " --negation boolean", " --complement-events negation"}) {
+    for (const char *flags : {" --negation boolean", " --complement-events negation"}) {
         const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << ran.err);
         REQUIRE(ran.status == 0);

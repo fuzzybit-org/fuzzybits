@@ -266,22 +266,33 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
     }
 }
 
-TEST_CASE("hull targets with marked literals are refused with the ways out", "[compile][ftp][hull]") {
+TEST_CASE("hull targets with marked literals compile under every literal mode", "[compile][ftp][hull]") {
     const auto text = read_file(fixture("initiator_rule") / "model.ftp");
-    for (const char *mode : {"atom_split", "omega_l"}) {
+
+    // Every mode used to be refused with compile.ftp.hull-literals-unsupported; the file now carries the
+    // literal atoms in the Query fields instead (pcfb 1.2 amendment, RFC 7.3).
+    for (const auto &[mode, expected] : std::vector<std::pair<std::string, ::pcfb::LiteralMode>>{
+             {"atom_split", ::pcfb::LiteralMode::ATOM_SPLIT},
+             {"omega_l", ::pcfb::LiteralMode::OMEGA_L},
+             {"negation", ::pcfb::LiteralMode::NEGATION}}) {
         ftp::options options;
         options.literals = mode;
-        const auto refused = compile_text(text, options);
-        INFO(mode << "\n" << render(refused.diagnostics()));
-        REQUIRE_FALSE(refused);
-        REQUIRE(has_code(refused.diagnostics(), "compile.pra_to_pc.hull-literals-unsupported"));
-        REQUIRE(has_code(refused.diagnostics(), "compile.ftp.hull-literals-unsupported"));
-        const auto hint = std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) { return item.code == "compile.ftp.hull-literals-unsupported"; });
-        REQUIRE(hint->message.find("--literals negation") != std::string::npos);
-        REQUIRE(hint->message.find("--negation boolean") != std::string::npos);
+        const auto compiled = compile_ok(text, options);
+        const auto circuit = view(compiled.bytes);
+        REQUIRE(circuit.schema_version() == minor_2);
+        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+        REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == mode);
+        const auto *query = circuit.subcircuits()->Get(0)->queries()->Get(0);
+        const auto literals = ::pcfb::read_literals(*query);
+        REQUIRE(literals.mode == expected);
+        // `initiator_rule` has one marked literal event (-OPER), written in every mode: under `negation` the
+        // definition ignores the list, and keeping it lets `fzb inspect` show |Δ| for every mode.
+        REQUIRE(literals.samples.size() == 1);
     }
-    // The default mode is atom_split.
-    REQUIRE_FALSE(compile_text(text, {}));
+
+    // The default mode is atom_split, and it now compiles too.
+    ftp::options defaulted;
+    REQUIRE(compile_text(text, defaulted));
 
     // Marked operands read as plain complements: `negation` mode, or no marks.
     ftp::options plain;

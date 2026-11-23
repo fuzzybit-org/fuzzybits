@@ -49,17 +49,6 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
             }
             if (target.negation.monotone_hull) {
                 kinds.push_back(writer::query_kind::monotone_hull_probability);
-                // pcfb 1.2 has no literal atoms per query (literal_samples, RFC 7.3), so a hull query reads
-                // marked operands as plain complements: exactly the `negation` mode, and not what
-                // atom_split and omega_l ask for.
-                const auto literals = lowering.projection.literal_events(target);
-                if (target.literals != ir::pra::literal_mode::negation && !literals.empty()) {
-                    diagnostics.push(api::make_error(
-                        "compile.pra_to_pc.hull-literals-unsupported",
-                        "target '" + std::string(name) + "' requests monotone-hull semantics and its cone has " + std::to_string(literals.size()) +
-                            " event(s) with marked literal operands (first: '" + std::string(model->stable_name(ir::pra::domain_ref(literals.front()))) +
-                            "'); pcfb 1.2 cannot carry literal atoms yet"));
-                }
             }
             if (kinds.empty()) {
                 diagnostics.push(api::make_error("compile.pra_to_pc.invalid-artifact",
@@ -67,11 +56,21 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
             }
             options.target_names.emplace(target.pc_target, std::string(name));
             options.target_kinds.emplace(target.pc_target, std::move(kinds));
-            options.quantification.emplace(target.pc_target,
-                                           writer::target_quantification{
-                                               .literal_mode = std::string(literal_mode_name(target.literals)),
-                                               .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
-                                           });
+            // The literal mode and Δ travel in the file's own Query fields (pcfb 1.2 amendment, RFC 7.3);
+            // only a hull query reads them.
+            writer::target_quantification quantification{
+                .literal_mode = std::string(literal_mode_name(target.literals)),
+                .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
+            };
+            if (target.negation.monotone_hull) {
+                for (const auto event : lowering.projection.literal_events(target)) {
+                    const auto node = lowering.projection.node_of(ir::pra::domain_ref(event));
+                    if (node.valid()) {
+                        quantification.literal_events.push_back(node);
+                    }
+                }
+            }
+            options.quantification.emplace(target.pc_target, std::move(quantification));
         }
         for (auto const &event : lowering.projection.event_bindings()) {
             options.node_names.emplace(event.node, std::string(model->stable_name(event.element)));

@@ -222,28 +222,55 @@ TEST_CASE("pra_to_pc write options record the literal mode and omit an absent in
     CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
 }
 
-TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked literals", "[compile][pra_to_pc][pcfb]") {
+TEST_CASE("pra_to_pc write options carry the literal atoms of a hull target", "[compile][pra_to_pc][pcfb]") {
     const auto model = build_literal_model();
     const auto monotone = pra::negation_set::of(pra::negation_semantics::monotone_hull);
 
-    SECTION("an atom_split or omega_l hull target whose cone has a marked literal") {
+    SECTION("an atom_split or omega_l hull target writes its mode and Δ") {
         for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l}) {
             for (const auto negation : {monotone, pra::negation_set::both()}) {
                 lowering::quantification_config config;
                 config.targets = {{.name = "LIT", .negation = negation, .literals = mode}};
                 const auto artifact = require_lower(model, config);
-                REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
+                const auto events = artifact.projection.literal_events(artifact.projection.target_bindings()[0]);
+                REQUIRE_FALSE(events.empty());
                 auto options = lowering::pcfb_write_options(artifact);
-                REQUIRE_FALSE(options);
-                CHECK(codes(options.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
-                const auto text = render(options.diagnostics());
-                CHECK(text.find("'LIT'") != std::string::npos);
-                CHECK(text.find("'Y'") != std::string::npos);
+                INFO(render(options.diagnostics()));
+                REQUIRE(options);
+                // The Δ travels as PC node ids; the writer maps them to SAMPLE tensor indices.
+                const auto &entry = options.value().quantification.at(pc::target_id(0));
+                REQUIRE(entry.literal_events.size() == events.size());
+                auto written = writer::write(artifact.circuit.to_handle(), options.value());
+                INFO(render(written.diagnostics()));
+                REQUIRE(written);
+                auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+                REQUIRE(circuit);
+                require_valid(*circuit);
+                CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
+                const auto rows = query_summary(*circuit);
+                REQUIRE_FALSE(rows.empty());
+                CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+                const auto *queries = (*circuit)->subcircuits()->Get(0)->queries();
+                const auto *hull = queries->Get(queries->size() - 1);
+                const auto literals = ::pcfb::read_literals(*hull);
+                CHECK(literals.mode == (mode == pra::literal_mode::atom_split ? ::pcfb::LiteralMode::ATOM_SPLIT : ::pcfb::LiteralMode::OMEGA_L));
+                REQUIRE(literals.samples.size() == events.size());
+                // Ascending, and each one a SAMPLE tensor of the written circuit.
+                CHECK(std::ranges::is_sorted(literals.samples));
+                for (const auto tensor : literals.samples) {
+                    const auto *operators = (*circuit)->subcircuits()->Get(0)->operators();
+                    auto op = std::ranges::find_if(*operators, [tensor](auto const *row) { return row->output() == tensor; });
+                    REQUIRE(op != operators->end());
+                    CHECK((*op)->opcode() == ::pcfb::OpCode::SAMPLE);
+                }
+                const auto hull_prefix = "compile.query." + std::to_string(rows.size() - 1) + ".";
+                CHECK(string_meta(*circuit, hull_prefix + "negation") == "monotone_hull");
+                CHECK(string_meta(*circuit, hull_prefix + "literal_mode") == (mode == pra::literal_mode::atom_split ? "atom_split" : "omega_l"));
             }
         }
     }
 
-    SECTION("a negation-mode hull target reads marked literals as ordinary complements and is written") {
+    SECTION("a negation-mode hull target reads marked literals as ordinary complements and writes no literal fields") {
         for (const auto negation : {monotone, pra::negation_set::both()}) {
             lowering::quantification_config config;
             config.targets = {{.name = "LIT", .negation = negation, .literals = pra::literal_mode::negation}};
@@ -263,9 +290,16 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
             REQUIRE_FALSE(rows.empty());
             CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
             CHECK(rows.size() == (negation.boolean ? 2U : 1U));
-            const auto hull = "compile.query." + std::to_string(rows.size() - 1) + ".";
-            CHECK(string_meta(*circuit, hull + "negation") == "monotone_hull");
-            CHECK(string_meta(*circuit, hull + "literal_mode") == "negation");
+            const auto count = (*circuit)->subcircuits()->Get(0)->queries()->size();
+            const auto *hull = (*circuit)->subcircuits()->Get(0)->queries()->Get(count - 1);
+            // The mode is recorded and so is Δ: the mode says the list is ignored, and keeping it lets
+            // `fzb inspect` show |Δ| for every mode.
+            CHECK(hull->literal_mode() == ::pcfb::LiteralMode::NEGATION);
+            CHECK(hull->literal_samples() != nullptr);
+            CHECK(hull->literal_samples()->size() == 1);
+            const auto hull_prefix = "compile.query." + std::to_string(count - 1) + ".";
+            CHECK(string_meta(*circuit, hull_prefix + "negation") == "monotone_hull");
+            CHECK(string_meta(*circuit, hull_prefix + "literal_mode") == "negation");
         }
     }
 
