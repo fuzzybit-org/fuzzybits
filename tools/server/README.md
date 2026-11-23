@@ -91,10 +91,13 @@ The characterization tests for the stopping work (#225) are:
 | `tests/test_interrupted_run.py` | an interrupted run reports `interrupted` without changing the frames it sent |
 | `tests/test_fixed_n_equivalence.py` | `@pytest.mark.native`: a fixed-N server run against `fzb run -N`, and today's pass-geometry difference |
 
-`test_fixed_n_equivalence.py` needs the extension on `sys.path` and finds `fzb`
-via `FZB_BINARY` or `build/*/targets/fzb/fzb`; it falls back to
-`fuzzybits.run` (the same one-shot engine path) when neither exists, and says so
-in the failure message.
+`test_fixed_n_equivalence.py` needs the extension on `sys.path`. It compares
+against `fzb run -N` when the CLI is usable (found via `FZB_BINARY` or
+`build/*/targets/fzb/fzb`) and otherwise against `fuzzybits.run(trials=N)`, the
+one-shot path the CLI wraps, naming the reference it used in every failure
+message. `FZB_REFERENCE=cli` insists on the CLI and skips when it is missing or
+unusable (the CLI SIGILLs under some container runtimes). The reference result is
+checked for having actually sampled, so the comparison cannot pass vacuously.
 
 
 ## UI
