@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and/or smoke fuzzybits wheels for PYTHON_VERSIONS (default 3.12).
+# Build and/or smoke fuzzybits wheels for PYTHON_VERSIONS (default: scripts/ci/python-versions).
 # Usage: macos-wheel-versions.sh [build|smoke|all]
 # Requires uv, AdaptiveCpp prefix env (ACPP_PREFIX, LLVM_PREFIX, OMP_PREFIX).
 set -euo pipefail
@@ -9,11 +9,8 @@ root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "${root}"
 
 cmd="${1:-all}"
-read -r -a pythons <<< "${PYTHON_VERSIONS:-3.12}"
-if ((${#pythons[@]} == 0)); then
-  echo "error: PYTHON_VERSIONS is empty" >&2
-  exit 2
-fi
+# shellcheck source=scripts/ci/python-versions.sh
+. "${root}/scripts/ci/python-versions.sh"
 
 : "${GITHUB_WORKSPACE:=${root}}"
 : "${RUNNER_TEMP:=/tmp}"

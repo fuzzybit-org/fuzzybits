@@ -94,7 +94,6 @@ jobs:
     env:
       PRESET: generic
       BUILD_TESTING: "OFF"
-      PYTHON_VERSIONS: "3.12 3.13 3.14 3.15"
     steps:
       - name: Isolate Docker credentials (self-hosted)
         if: runner.environment == 'self-hosted'
@@ -200,17 +199,7 @@ jobs:
           retention-days: 14
 
       - name: Smoke each wheel (clean Ubuntu 24.04)
-        run: |
-          set -euo pipefail
-          for py in 3.12 3.13 3.14 3.15; do
-            echo "=== linux smoke CPython ${py} ==="
-            docker run --rm \
-              -v "$PWD:/src" \
-              -w /src \
-              -e "PYTHON_VERSION=${py}" \
-              ubuntu:24.04 \
-              bash scripts/ci/linux-wheel-smoke.sh
-          done
+        run: bash scripts/ci/linux-wheel-smoke-all.sh
 
       - name: pip install + pytest 3.12 (clean Ubuntu 24.04)
         run: |
@@ -227,8 +216,6 @@ jobs:
     with:
       version_override: ${{ needs.version.outputs.override }}
       wheel_only: true
-      python_versions: "3.12 3.13 3.14 3.15"
-      include_intel: true
 
   # Off unless the repository variable RELEASE_INCLUDE_WINDOWS is `true`:
   # windows.yml rebuilds LLVM on a cache miss and fails on MSVC-14.52-only

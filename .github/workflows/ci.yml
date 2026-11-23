@@ -302,7 +302,7 @@ jobs:
   python-generic:
     name: python-generic
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('{"group":"fuzzybits-ci","labels":["self-hosted","Linux","X64"]}') || 'ubuntu-24.04' }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
@@ -383,6 +383,9 @@ jobs:
       - name: ccache stats
         if: steps.login.outcome == 'success'
         run: scripts/ci/docker-toolchain-run.sh -- scripts/ci/inner-build.sh generic ccache-stats
+
+      - name: Smoke each wheel (clean Ubuntu 24.04)
+        run: bash scripts/ci/linux-wheel-smoke-all.sh
 
       - name: pip install + pytest (clean Ubuntu 24.04)
         run: |

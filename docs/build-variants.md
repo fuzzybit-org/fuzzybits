@@ -265,8 +265,10 @@ builds AdaptiveCpp with `WITH_METAL_BACKEND=OFF`.
 
 `macos-wheel` in [macos.yml](../.github/workflows/macos.yml) builds
 `cp3XX-macosx_*_arm64` wheels with scikit-build-core against the same cached
-AdaptiveCpp prefix as `macos-metal`. PR CI builds CPython 3.12 only; the
-release dry-run/tag builds 3.12–3.15 with uv-managed interpreters.
+AdaptiveCpp prefix as `macos-metal`. Every run (PR, `develop`, `ci/**` and
+`release.yml`) builds every CPython in
+[`scripts/ci/python-versions`](../scripts/ci/python-versions) with uv-managed
+interpreters; set `PYTHON_VERSIONS` to build fewer locally.
 `cmake/bundle_acpp.py` copies
 `libacpp-rt.dylib` / `libacpp-common.dylib`, `hipSYCL/librt-backend-{metal,omp}.dylib`,
 `llvm-to-{backend,host,metal}` plus the SSCP redistributable
@@ -290,8 +292,8 @@ pytest: `pytest tests/python -m "not gpu"`.
 
 ### macOS x86_64 wheel
 
-`macos-wheel-intel` (release.yml via `include_intel`, GitHub-hosted
-`macos-15-intel`) builds AdaptiveCpp from `ACPP_REF_METAL` with
+`macos-wheel-intel` (every macOS run, like `macos-wheel`; GitHub-hosted
+`macos-15-intel`, deployment target 15.0) builds AdaptiveCpp from `ACPP_REF_METAL` with
 `WITH_METAL_BACKEND=OFF`, OpenMP, and the generic SSCP host JIT
 (`libllvm-to-host`). Homebrew is Intel-prefix `/usr/local/opt/{llvm@20,libomp,lld@20}`.
 `bundle_acpp.py` requires `librt-backend-metal.dylib` only on arm64; on

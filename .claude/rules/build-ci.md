@@ -27,3 +27,7 @@ paths:
   new jobs.
 - C++ formatting is checked by `scripts/ci/clang-format.sh` (clang-format 20.1.8, `hygiene` job).
   Fix locally with `scripts/ci/clang-format.sh --fix`.
+- Wheel jobs build the same wheels on every event (PR, `develop`, `ci/**`, `release.yml`): Linux
+  (`python-generic` / `linux-wheel`), macOS arm64 (`macos-wheel`) and Intel (`macos-wheel-intel`),
+  for every CPython in `scripts/ci/python-versions`. Do not add release-only wheel jobs or
+  version lists; change `scripts/ci/python-versions` instead.

@@ -162,11 +162,8 @@ case "${cmd}" in
       curl -LsSf https://astral.sh/uv/install.sh | sh
     fi
     export PATH="${HOME}/.local/bin:${PATH}"
-    read -r -a pythons <<< "${PYTHON_VERSIONS:-3.12}"
-    if ((${#pythons[@]} == 0)); then
-      echo "error: PYTHON_VERSIONS is empty" >&2
-      exit 2
-    fi
+    # shellcheck source=scripts/ci/python-versions.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/python-versions.sh"
     echo "wheel CPython versions: ${pythons[*]}"
     uv python install "${pythons[@]}"
     mkdir -p /src/dist

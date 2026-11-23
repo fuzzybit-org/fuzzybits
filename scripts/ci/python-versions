@@ -1,0 +1,4 @@
+# CPython versions every wheel job builds: PR, develop, ci/** and release alike.
+# Read by scripts/ci/inner-build.sh, macos-wheel-versions.sh and linux-wheel-smoke-all.sh
+# when PYTHON_VERSIONS is unset or empty.
+3.12 3.13 3.14 3.15

@@ -1,7 +1,8 @@
 # GitHub-hosted macOS. Public repo: macos minutes are free. Never self-hosted.
 # Apple Silicon (macos-26): AdaptiveCpp from ACPP_REF_METAL with Metal+OpenMP.
-# Intel (macos-15-intel, release only): OpenMP + generic SSCP, no Metal.
-# PR CI builds the arm64 cp312 wheel only; release.yml passes 3.12–3.15 + Intel.
+# Intel (macos-15-intel): OpenMP + generic SSCP, no Metal.
+# Every run (PR, develop, ci/**, release.yml) builds the same wheels: arm64 and
+# Intel, for every CPython in scripts/ci/python-versions.
 # Repository variables SKIP_METAL_ARM / SKIP_METAL_INTEL = true keep jobs off
 # that runner's GPU (.github/hardware.json): Metal ctest and the Metal wheel
 # smoke are skipped; builds, CPU tests and wheels still run, so release.yml
@@ -23,13 +24,9 @@ on:
         type: boolean
         default: false
       python_versions:
-        description: Space-separated CPython versions to build wheels for.
+        description: Space-separated CPython versions (empty = scripts/ci/python-versions).
         type: string
-        default: "3.12"
-      include_intel:
-        description: Also build macosx_x86_64 wheels on macos-15-intel.
-        type: boolean
-        default: false
+        default: ""
   # release.yml builds the macOS wheels through this workflow.
   workflow_call:
     inputs:
@@ -42,13 +39,9 @@ on:
         type: boolean
         default: false
       python_versions:
-        description: Space-separated CPython versions to build wheels for.
+        description: Space-separated CPython versions (empty = scripts/ci/python-versions).
         type: string
-        default: "3.12"
-      include_intel:
-        description: Also build macosx_x86_64 wheels on macos-15-intel.
-        type: boolean
-        default: false
+        default: ""
 
 concurrency:
   group: macos-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -284,7 +277,7 @@ jobs:
           ccache -s || true
           df -h /
 
-  # Artifact-only macosx arm64 wheels. PR CI: cp312. Release: PYTHON_VERSIONS.
+  # Artifact-only macosx arm64 wheels for every CPython in scripts/ci/python-versions.
   # Not a required check; publishing is #36.
   macos-wheel:
     name: macos-wheel
@@ -300,7 +293,7 @@ jobs:
       CCACHE_COMPILERTYPE: clang
       CCACHE_NOHASHDIR: 1
       MACOSX_DEPLOYMENT_TARGET: "26.0"
-      PYTHON_VERSIONS: ${{ inputs.python_versions || '3.12' }}
+      PYTHON_VERSIONS: ${{ inputs.python_versions }}
       SMOKE_SKIP_METAL: ${{ vars.SKIP_METAL_ARM == 'true' && '1' || '0' }}
     steps:
       - name: Checkout
@@ -470,12 +463,13 @@ jobs:
           ccache -s || true
           df -h /
 
-  # Intel macOS wheels (OpenMP + generic SSCP, no Metal). Release-only:
-  # PR CI stays arm64 cp312. macos-15-intel is GitHub's x86_64 image; the
-  # 15.0 deployment target installs on Intel Macs running macOS 15+, including 26.
+  # Intel macOS wheels (OpenMP + generic SSCP, no Metal), on every run like the
+  # arm64 job: the 15.0 deployment target catches APIs that need macOS 26 in
+  # Apple libc++ (floating-point std::from_chars, #238) before a release does.
+  # macos-15-intel is GitHub's x86_64 image; wheels install on Intel Macs
+  # running macOS 15+, including 26.
   macos-wheel-intel:
     name: macos-wheel-intel
-    if: ${{ inputs.include_intel }}
     runs-on: macos-15-intel
     timeout-minutes: 180
     env:
@@ -488,7 +482,7 @@ jobs:
       CCACHE_NOHASHDIR: 1
       MACOSX_DEPLOYMENT_TARGET: "15.0"
       WITH_METAL_BACKEND: "OFF"
-      PYTHON_VERSIONS: ${{ inputs.python_versions || '3.12' }}
+      PYTHON_VERSIONS: ${{ inputs.python_versions }}
       SMOKE_SKIP_METAL: ${{ vars.SKIP_METAL_INTEL == 'true' && '1' || '0' }}
     steps:
       - name: Checkout
