@@ -32,6 +32,8 @@ target_link_libraries(${FUZZYBITS_NATIVE_MODULE}
     mc
     fuzzybits_compile
     fuzzybits_compile_ftp
+    fuzzybits_io_pcfb
+    fuzzybits_ir_pc_hull
     fuzzybits_progress_line
     fuzzybits_progress_log
     ${LIBS}

@@ -251,7 +251,34 @@ def test_session_rejects_monotone_hull_query(hull_pcfb_path: Path):
         fuzzybits.Session(hull_pcfb_path.read_bytes(), backend="omp")
 
 
-def test_exact_rejects_monotone_hull_query(hull_pcfb_path: Path):
-    for source in (hull_pcfb_path, hull_pcfb_path.read_bytes()):
-        with pytest.raises(RuntimeError, match=HULL_MESSAGE):
-            fuzzybits.exact(source)
+def test_exact_answers_monotone_hull_query(hull_pcfb_path: Path):
+    # The hull of this AND of two events (p = 0.25, 0.5) is the AND itself: 0.125.
+    assert fuzzybits.exact(hull_pcfb_path) == pytest.approx(0.125, rel=1e-12)
+    assert fuzzybits.exact(hull_pcfb_path, query="TOP_HULL") == pytest.approx(0.125, rel=1e-12)
+    assert fuzzybits.exact(hull_pcfb_path, query="TOP_HULL", kind="hull") == pytest.approx(0.125, rel=1e-12)
+    with pytest.raises(ValueError, match="no query named"):
+        fuzzybits.exact(hull_pcfb_path, query="MISSING")
+    with pytest.raises(ValueError, match="has kind hull, not probability"):
+        fuzzybits.exact(hull_pcfb_path, query="TOP_HULL", kind="probability")
+    # `run` still refuses the file before sampling.
+    with pytest.raises(RuntimeError, match=HULL_MESSAGE):
+        fuzzybits.run(hull_pcfb_path, trials=1 << 12, backend="omp")
+
+
+def test_hull_check_reports_the_sample(hull_pcfb_path: Path):
+    both = fuzzybits.hull_check(hull_pcfb_path, ["A", "B"], witness=True)
+    assert both["hit"] is True
+    assert both["lower"] is True and both["upper"] is True
+    assert both["tier"] == "bounds"
+    assert both["residual_variables"] == 0
+    assert both["witness"] == ["A", "B"]
+    assert both["query"] == {"index": 0, "name": "TOP_HULL", "kind": "hull"}
+
+    only_one = fuzzybits.hull_check(hull_pcfb_path, ["A"], witness=True)
+    assert only_one["hit"] is False
+    assert only_one["witness"] is None
+
+    # The empty set is a miss: g(empty) is FALSE for this AND.
+    assert fuzzybits.hull_check(hull_pcfb_path, [])["hit"] is False
+    with pytest.raises(ValueError, match="no basic event named"):
+        fuzzybits.hull_check(hull_pcfb_path, ["MISSING"])
