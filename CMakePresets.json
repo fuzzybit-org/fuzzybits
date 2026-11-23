@@ -187,6 +187,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "omp",
+        "FUZZYBITS_BACKEND": "omp",
         "ACPP_DEBUG_LEVEL": "0",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
@@ -205,6 +206,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "cuda",
+        "FUZZYBITS_BACKEND": "cuda",
         "ACPP_DEBUG_LEVEL": "0",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
@@ -233,6 +235,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "metal",
+        "FUZZYBITS_BACKEND": "metal",
         "ACPP_DEBUG_LEVEL": "0",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
@@ -251,6 +254,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "omp",
+        "FUZZYBITS_BACKEND": "omp",
         "ACPP_DEBUG_LEVEL": "0",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
@@ -279,6 +283,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "omp",
+        "FUZZYBITS_BACKEND": "omp",
         "ACPP_DEBUG_LEVEL": "3",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
@@ -297,6 +302,7 @@
       },
       "environment": {
         "ACPP_VISIBILITY_MASK": "omp",
+        "FUZZYBITS_BACKEND": "omp",
         "ACPP_DEBUG_LEVEL": "0",
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"

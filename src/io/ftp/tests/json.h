@@ -3,6 +3,8 @@
 // A minimal JSON reader for the conformance fixtures and model cards: objects,
 // arrays, strings (escapes other than \uXXXX), numbers, booleans and null.
 
+#include "io/charconv.h"
+
 #include <charconv>
 #include <cstddef>
 #include <map>
@@ -165,7 +167,7 @@ class json_parser final {
         }
         double number = 0.0;
         const auto begin = text_.data() + cursor_;
-        const auto [end, error] = std::from_chars(begin, text_.data() + text_.size(), number);
+        const auto [end, error] = ::fuzzybits::io::from_chars(begin, text_.data() + text_.size(), number);
         if (error != std::errc{} || end == begin) {
             return std::nullopt;
         }

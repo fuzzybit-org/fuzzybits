@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "runtime/tests/test_backend.h"
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -108,7 +109,8 @@ std::filesystem::path chinese_pcfb() {
 
 std::string run_json(const std::filesystem::path &pcfb, const std::vector<std::string> &extra) {
     const auto json = scratch("run.json");
-    std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --backend omp --json";
+    std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576" +
+                      fuzzybits::testing::backend_flag() + " --json";
     for (const auto &item : extra) {
         cmd += " " + item;
     }

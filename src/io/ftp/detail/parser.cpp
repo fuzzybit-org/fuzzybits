@@ -1,6 +1,7 @@
 #include "io/ftp/detail/model.h"
 
 #include "api/diagnostics.h"
+#include "io/charconv.h"
 
 #include <algorithm>
 #include <charconv>
@@ -123,7 +124,8 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     }
     double value = 0.0;
     const auto end = token.data() + token.size();
-    if (const auto [cursor, error] = std::from_chars(token.data(), end, value); error != std::errc{} || cursor != end) {
+    if (const auto [cursor, error] = ::fuzzybits::io::from_chars(token.data(), end, value);
+        error != std::errc{} || cursor != end) {
         return std::nullopt;
     }
     return value;

@@ -93,8 +93,11 @@ case "${cmd}" in
     ;;
   ctest-mc)
     ensure_ccache
-    echo "ctest -L mc ACPP_VISIBILITY_MASK=cuda (${preset})"
+    # The GPU jobs (sm70, sm86, sm120) test the CUDA backend: the mask hides every other device and
+    # FUZZYBITS_BACKEND makes the runtime and fzb CLI tests ask for it explicitly (test_backend.h).
+    echo "ctest -L mc ACPP_VISIBILITY_MASK=cuda FUZZYBITS_BACKEND=cuda (${preset})"
     export ACPP_VISIBILITY_MASK=cuda
+    export FUZZYBITS_BACKEND=cuda
     export ACPP_DEBUG_LEVEL="${ACPP_DEBUG_LEVEL:-0}"
     export ACPP_PERSISTENT_RUNTIME="${ACPP_PERSISTENT_RUNTIME:-1}"
     ctest --test-dir "build/${preset}" -L mc -LE quarantine --output-on-failure --no-tests=error

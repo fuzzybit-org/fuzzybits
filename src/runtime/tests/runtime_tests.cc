@@ -2,6 +2,7 @@
 #include "io/pcfb/tests/query_guard_files.h"
 #include "pdag.h"
 #include "runtime/runtime.h"
+#include "runtime/tests/test_backend.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -17,14 +18,22 @@
 
 namespace {
 
-struct OmpBackend {
+// Default the visibility mask to the test backend (FUZZYBITS_BACKEND, else omp) before AdaptiveCpp
+// starts. An explicit ACPP_VISIBILITY_MASK from the CI job wins.
+struct DefaultMask {
+    DefaultMask() {
+        const std::string &mask = fuzzybits::testing::backend();
+        if (mask.empty() || std::getenv("ACPP_VISIBILITY_MASK") != nullptr) {
+            return;
+        }
 #ifdef _WIN32
-    OmpBackend() { _putenv_s("ACPP_VISIBILITY_MASK", "omp"); }
+        _putenv_s("ACPP_VISIBILITY_MASK", mask.c_str());
 #else
-    OmpBackend() { setenv("ACPP_VISIBILITY_MASK", "omp", 0); }
+        setenv("ACPP_VISIBILITY_MASK", mask.c_str(), 0);
 #endif
+    }
 };
-const OmpBackend kOmpBackend{};
+const DefaultMask kDefaultMask{};
 
 std::string aralia(const char *name) {
     return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string();
@@ -42,7 +51,7 @@ fuzzybits::compile::Options no_kn() {
 void check_pcfb_matches_memory(const std::string &xml, std::uint64_t trials) {
     fuzzybits::runtime::RunOptions opt;
     opt.trials = trials;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
 
     auto live = fuzzybits::compile::compile_to_graph({xml}, no_kn());
@@ -270,7 +279,7 @@ TEST_CASE("run_graph with and without a sink returns bit-identical estimates", "
 
     fuzzybits::runtime::RunOptions plain;
     plain.trials = kTrials;
-    plain.backend = "omp";
+    plain.backend = fuzzybits::testing::backend();
     plain.seed = 372;
 
     auto baseline = fuzzybits::runtime::run_pcfb(compiled->bytes, plain);
@@ -322,7 +331,7 @@ TEST_CASE("a throwing progress sink stops the run and propagates", "[runtime][pr
     sink.throw_on = 0; // first snapshot
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 1 << 16;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
     opt.progress_sinks = {&sink};
     opt.progress_max_rate_hz = 0.0; // deliver every pass so the first snapshot arrives promptly
@@ -342,7 +351,7 @@ TEST_CASE("a non-sink failure inside the active run still finishes the sinks onc
     // `trials_per_pass` comes from the shaper's memory budget, not the trial count, so probing it with
     // a tiny run and then requesting two passes keeps this test independent of the device.
     const auto shape = [&] {
-        auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp");
+        auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend());
         const auto s = session.sample_shape();
         session.close();
         return s;
@@ -352,7 +361,7 @@ TEST_CASE("a non-sink failure inside the active run still finishes the sinks onc
     RecordingSink sink;
     fuzzybits::runtime::RunOptions opt;
     opt.trials = shape.trials_per_pass * 2;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
     opt.progress_sinks = {&sink};
     opt.progress_max_rate_hz = 0.0; // a first snapshot, so the loop takes the active path
@@ -387,7 +396,7 @@ TEST_CASE("a sink exception raised while a run is already unwinding is swallowed
     REQUIRE(compiled);
 
     const auto shape = [&] {
-        auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp");
+        auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend());
         const auto s = session.sample_shape();
         session.close();
         return s;
@@ -398,7 +407,7 @@ TEST_CASE("a sink exception raised while a run is already unwinding is swallowed
     sink.throw_on = 1; // the snapshot emitted from the interrupted finish()
     fuzzybits::runtime::RunOptions opt;
     opt.trials = shape.trials_per_pass * 2;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
     opt.progress_sinks = {&sink};
     opt.progress_max_rate_hz = 0.0;
@@ -476,7 +485,7 @@ TEST_CASE("fzb run refuses an invalid pcfb file", "[runtime][mc]") {
     }
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 64;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     CHECK_THROWS_AS(fuzzybits::runtime::run_pcfb(path, opt), fuzzybits::runtime::RuntimeError);
     std::filesystem::remove(path);
 }
@@ -521,7 +530,7 @@ TEST_CASE("fzb run chinese.pcfb is bit-identical to the in-memory PDAG path", "[
     constexpr std::uint64_t kTrials = 65536;
     fuzzybits::runtime::RunOptions opt;
     opt.trials = kTrials;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
 
     auto live = fuzzybits::compile::compile_to_graph({aralia("chinese.xml")}, no_kn());
@@ -554,7 +563,7 @@ TEST_CASE("Session streams the same first-pass hits as run_graph on chinese", "[
     constexpr std::uint64_t kTrialsPerPass = 65536;
     fuzzybits::runtime::RunOptions opt;
     opt.trials = kTrialsPerPass;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     opt.seed = 372;
 
     auto compiled = fuzzybits::compile::compile_files({aralia("chinese.xml")}, no_kn());
@@ -566,7 +575,8 @@ TEST_CASE("Session streams the same first-pass hits as run_graph on chinese", "[
     const auto oneshot = fuzzybits::runtime::run_pcfb(*circuit, opt);
     REQUIRE(oneshot.size() == 1);
 
-    auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp", kTrialsPerPass);
+    auto session =
+        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
     const auto first = session.step();
     REQUIRE(first.pass_index == 1);
     REQUIRE(first.trials_per_pass >= kTrialsPerPass);
@@ -580,8 +590,10 @@ TEST_CASE("Session::step(n) matches n single steps on chinese", "[runtime][mc][b
     auto compiled = fuzzybits::compile::compile_files({aralia("chinese.xml")}, no_kn());
     REQUIRE(compiled);
 
-    auto batched = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp", kTrialsPerPass);
-    auto single = fuzzybits::runtime::Session::from_bytes(compiled->bytes, "omp", kTrialsPerPass);
+    auto batched =
+        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
+    auto single =
+        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
     const auto once = batched.step(3);
     fuzzybits::runtime::PassResult last;
     for (int i = 0; i < 3; ++i) {
@@ -636,7 +648,7 @@ TEST_CASE("fzb run SmallTree.pcfb matches the exponential point-value formula |z
     REQUIRE(pcfb::validate(*circuit).empty());
     fuzzybits::runtime::RunOptions opt;
     opt.trials = kTrials;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     const auto results = fuzzybits::runtime::run_pcfb(*circuit, opt);
     REQUIRE(results.size() == 1);
     REQUIRE(results[0].n >= kTrials);
@@ -685,7 +697,7 @@ template <class Fn> void require_unsupported(Fn &&fn, const std::string &id, con
 TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime][mc][guard]") {
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 1 << 12;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     const auto tmp = std::filesystem::temp_directory_path() / "fuzzybits-guard-hull.pcfb";
     for (auto bytes : {query_guard_files::hull_only(), query_guard_files::mixed()}) {
         query_guard_files::write(tmp, bytes);
@@ -696,9 +708,12 @@ TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime
             query_guard_files::hull_name);
         require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(tmp, opt)); }, id, kind);
         require_unsupported([&] { static_cast<void>(fuzzybits::runtime::load_pcfb(tmp)); }, id, kind);
-        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, "omp")); }, id,
-                            query_guard_files::hull_name);
-        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_path(tmp, "omp")); }, id, kind);
+        require_unsupported(
+            [&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, fuzzybits::testing::backend())); },
+            id, query_guard_files::hull_name);
+        require_unsupported(
+            [&] { static_cast<void>(fuzzybits::runtime::Session::from_path(tmp, fuzzybits::testing::backend())); }, id,
+            kind);
         // Callers that hold a circuit and skip load_pcfb (the Python Session does) hit the same check.
         auto circuit = pcfb::io::from_bytes(bytes);
         REQUIRE(circuit);
@@ -713,7 +728,7 @@ TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime
 TEST_CASE("the runtime runs Boolean queries whatever the schema minor", "[runtime][mc][guard]") {
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 1 << 14;
-    opt.backend = "omp";
+    opt.backend = fuzzybits::testing::backend();
     for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2),
                        query_guard_files::boolean_with_minor(3)}) {
         const auto results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt);

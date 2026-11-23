@@ -1,6 +1,7 @@
 #include "compile/ftp/json.h"
 
 #include "api/diagnostics.h"
+#include "io/charconv.h"
 
 #include <array>
 #include <charconv>
@@ -333,7 +334,7 @@ class parser final {
             }
         }
         double number = 0.0;
-        if (const auto [pointer, status] = std::from_chars(begin, end, number);
+        if (const auto [pointer, status] = ::fuzzybits::io::from_chars(begin, end, number);
             status != std::errc{} || pointer != end || !std::isfinite(number)) {
             cursor_ = start;
             return fail("number out of range");

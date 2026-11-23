@@ -1,5 +1,6 @@
 #include "io/ftp/summary.h"
 
+#include "io/charconv.h"
 #include "ir/pra/model.h"
 
 #include <algorithm>
@@ -141,7 +142,7 @@ auto structure_of(pra::model const &model) -> structure_summary {
         if (model.text(attribute.name) == "ftp.limit") {
             const auto text = model.text(attribute.value);
             double value = 0.0;
-            if (const auto [end, status] = std::from_chars(text.data(), text.data() + text.size(), value);
+            if (const auto [end, status] = ::fuzzybits::io::from_chars(text.data(), text.data() + text.size(), value);
                 status == std::errc{} && end == text.data() + text.size()) {
                 out.limit = value;
             }
