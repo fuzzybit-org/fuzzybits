@@ -146,11 +146,14 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
             explicit Reader(::pcfb::ir::Circuit const &file) : file_(file) {}
 
             [[nodiscard]] auto run() && -> pcfb_read_result {
-                if (!decode() || !lowerStructure() || !buildNodes()) {
+                if (!decode()) {
+                    return pcfb_read_result::fail(std::move(diagnostics_));
+                }
+                readMetadata();
+                if (!lowerStructure() || !buildNodes()) {
                     return pcfb_read_result::fail(std::move(diagnostics_));
                 }
                 layout();
-                readMetadata();
                 if (!assemble()) {
                     return pcfb_read_result::fail(std::move(diagnostics_));
                 }
@@ -290,64 +293,55 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                 }
             }
 
-            // The writer reads a source used in both polarities of one operator through a shared, unnamed
-            // NOT tensor created right before the operator that first needs it. Such a tensor is a
-            // complemented edge of ir::pc when every use lists the source positively next to it.
+            // The writer lists the NOT tensors it creates to keep inputs and inverted_inputs disjoint in
+            // compile.complement_tensors; those, and only those, are complemented edges of ir::pc.
             void foldComplementTensors() {
-                std::vector<std::uint8_t> candidate(opCount_, 0);
-                for (std::uint32_t index = 0; index < opCount_; ++index) {
-                    auto const *operation = op(index);
-                    candidate[index] = operation->opcode() == ::pcfb::OpCode::BITWISE_NOT && textOf(operation->name()).empty() &&
-                                               inputsOf(operation).size() == 1 && invertedOf(operation).size() == 0 && !queried_[index] &&
-                                               fanout_[index] != 0
-                                           ? 1
-                                           : 0;
+                const auto found = metadataIndex_.find("compile.complement_tensors");
+                if (found == metadataIndex_.end()) {
+                    return;
                 }
-                std::vector<std::uint32_t> first(opCount_, kNone);
-                std::vector<std::uint32_t> seen(opCount_, kNone);
-                for (std::uint32_t consumer = 0; consumer < opCount_; ++consumer) {
-                    const auto positive = inputsOf(op(consumer));
-                    for (std::uint32_t position = 0; position < positive.size(); ++position) {
-                        seen[producer(positive[position])] = consumer;
+                auto const *packed = std::get_if<std::vector<std::byte>>(&output_.metadata[found->second].second);
+                if (packed == nullptr || packed->size() % 4 != 0) {
+                    diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' is not a list of 32-bit tensor ids and is ignored"));
+                    return;
+                }
+                std::vector<std::uint32_t> tensors;
+                for (std::size_t at = 0; at < packed->size(); at += 4) {
+                    std::uint32_t tensor = 0;
+                    for (unsigned byte = 0; byte < 4; ++byte) {
+                        tensor |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>((*packed)[at + byte])) << (8U * byte);
                     }
-                    for (std::uint32_t position = 0; position < positive.size(); ++position) {
-                        const auto used = producer(positive[position]);
-                        if (candidate[used] == 0) {
-                            continue;
-                        }
-                        first[used] = std::min(first[used], consumer);
-                        if (seen[producer(inputsOf(op(used))[0])] != consumer) {
-                            candidate[used] = 0;
-                        }
+                    if (tensor >= opOfTensor_.size() || (!tensors.empty() && tensor <= tensors.back())) {
+                        diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' lists tensor " + std::to_string(tensor) +
+                                                                              " out of range or out of order and is ignored"));
+                        return;
                     }
-                    const auto negative = invertedOf(op(consumer));
+                    tensors.push_back(tensor);
+                }
+                std::vector<std::uint8_t> invertedUse(opCount_, 0);
+                for (std::uint32_t index = 0; index < opCount_; ++index) {
+                    const auto negative = invertedOf(op(index));
                     for (std::uint32_t position = 0; position < negative.size(); ++position) {
-                        candidate[producer(negative[position])] = 0;
+                        invertedUse[producer(negative[position])] = 1;
                     }
                 }
-                // One source has at most one such tensor, created for the first operator that needs it, so a
-                // further NOT of the same source in front of an operator is a NOT gate of the circuit.
-                std::vector<std::uint32_t> eligible;
-                for (std::uint32_t index = 0; index < opCount_; ++index) {
-                    if (candidate[index] == 0 || first[index] == kNone || role_[index] != Role::node) {
+                std::vector<std::uint8_t> listed(opCount_, 0);
+                for (const auto tensor : tensors) {
+                    listed[opOfTensor_[tensor]] = 1;
+                }
+                for (const auto tensor : tensors) {
+                    const auto index = opOfTensor_[tensor];
+                    auto const *operation = op(index);
+                    const bool shaped = operation->opcode() == ::pcfb::OpCode::BITWISE_NOT && textOf(operation->name()).empty() &&
+                                        inputsOf(operation).size() == 1 && invertedOf(operation).size() == 0;
+                    const auto source = shaped ? producer(inputsOf(operation)[0]) : kNone;
+                    if (!shaped || queried_[index] != 0 || invertedUse[index] != 0 || role_[index] != Role::node || source == kNone ||
+                        listed[source] != 0 || role_[source] != Role::node) {
+                        diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' lists tensor " + std::to_string(tensor) +
+                                                                              ", which is not a NOT tensor the writer created; it is read as a NOT gate"));
                         continue;
                     }
-                    bool adjacent = true;
-                    for (auto between = index + 1; between < first[index] && adjacent; ++between) {
-                        adjacent = candidate[between] != 0 && first[between] == first[index];
-                    }
-                    if (adjacent) {
-                        eligible.push_back(index);
-                    }
-                }
-                const auto sourceOf = [&](const std::uint32_t index) { return producer(inputsOf(op(index))[0]); };
-                std::ranges::sort(eligible, [&](const std::uint32_t left, const std::uint32_t right) {
-                    return std::tuple(sourceOf(left), first[left], right) < std::tuple(sourceOf(right), first[right], left);
-                });
-                for (std::size_t at = 0; at < eligible.size(); ++at) {
-                    if (at == 0 || sourceOf(eligible[at]) != sourceOf(eligible[at - 1])) {
-                        role_[eligible[at]] = Role::complement_tensor;
-                    }
+                    role_[index] = Role::complement_tensor;
                 }
             }
 
