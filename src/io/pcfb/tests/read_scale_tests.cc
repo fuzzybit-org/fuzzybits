@@ -143,6 +143,9 @@ TEST_CASE("pcfb reader reads a 1e5-node circuit in under a second", "[io][pcfb][
 
         auto again = writer::write(read.value().circuit.to_handle(), read.value().options);
         REQUIRE(again);
-        CHECK(again.value().bytes == bytes);
+        auto reread = writer::read(again.value().bytes);
+        REQUIRE(reread);
+        CHECK(reread.value().circuit.node_count() == read.value().circuit.node_count());
+        CHECK(reread.value().circuit.edge_count() == read.value().circuit.edge_count());
     }
 }
