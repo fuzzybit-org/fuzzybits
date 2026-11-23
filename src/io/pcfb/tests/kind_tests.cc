@@ -2,9 +2,11 @@
 
 #include "support.h"
 
+#include "api/diagnostics.h"
 #include "io/descriptor.h"
 #include "io/formats.h"
 #include "io/pcfb/descriptor.h"
+#include "io/pcfb/query_select.h"
 #include "ir/pc/builder.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/edge.h"
@@ -15,9 +17,12 @@
 #include "pcfb_generated.h"
 
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <sstream>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -236,4 +241,97 @@ TEST_CASE("pcfb writer: invalid query kinds and quantification entries are diagn
     auto orphan = threeTargetNames();
     orphan.quantification = {{pc::target_id(9), writer::target_quantification{.literal_mode = "atom_split"}}};
     CHECK(hasCode(writer::write(model.to_handle(), orphan).diagnostics(), "io.pcfb.invalid-quantification"));
+}
+
+namespace {
+
+    // A read file whose query list is `queries`: (target, kind, name).
+    [[nodiscard]] auto fileWith(std::initializer_list<std::tuple<std::uint32_t, kind, std::string>> queries)
+        -> writer::read_output {
+        writer::read_output file;
+        for (auto const &[target, query_kind, name] : queries) {
+            file.queries.push_back(writer::query_ref{.target = pc::target_id(target), .kind = query_kind});
+            if (!name.empty()) {
+                file.options.target_names[pc::target_id(target)] = name;
+            }
+        }
+        return file;
+    }
+
+    [[nodiscard]] auto selectionError(fuzzybits::api::result<writer::query_selection> const &selected) -> std::string {
+        return selected.diagnostics().items().empty() ? std::string{} : selected.diagnostics().items().front().code;
+    }
+
+} // namespace
+
+TEST_CASE("pcfb query selection picks by position, name and kind", "[io][pcfb][kind][query]") {
+    const auto file = fileWith({{0, kind::probability, "TOP"},
+                                {0, kind::monotone_hull_probability, "TOP"},
+                                {1, kind::monotone_hull_probability, "SEQ"},
+                                {2, kind::probability, ""}});
+    const auto queries = writer::queries_of(file);
+    REQUIRE(queries.size() == 4);
+    CHECK(queries[3].name == "t2");
+
+    const auto select = [&](std::optional<std::string_view> name, std::optional<kind> of_kind) {
+        return writer::select_query(queries, name, of_kind);
+    };
+    SECTION("query 0 is the default") {
+        auto selected = select(std::nullopt, std::nullopt);
+        REQUIRE(selected);
+        CHECK(selected.value().index == 0);
+        CHECK(selected.value().name == "TOP");
+        CHECK(selected.value().kind == kind::probability);
+    }
+    SECTION("a name with one kind selects it") {
+        auto selected = select("SEQ", std::nullopt);
+        REQUIRE(selected);
+        CHECK(selected.value().index == 2);
+        CHECK(selected.value().kind == kind::monotone_hull_probability);
+    }
+    SECTION("a name with two kinds needs the kind") {
+        auto ambiguous = select("TOP", std::nullopt);
+        REQUIRE_FALSE(ambiguous);
+        CHECK(selectionError(ambiguous) == "io.pcfb.query-ambiguous");
+        const auto message = ambiguous.diagnostics().items().front().message;
+        CHECK(message.find("probability and hull") != std::string::npos);
+        auto hull = select("TOP", kind::monotone_hull_probability);
+        REQUIRE(hull);
+        CHECK(hull.value().index == 1);
+    }
+    SECTION("an unknown name or kind is an error") {
+        auto missing = select("NOPE", std::nullopt);
+        REQUIRE_FALSE(missing);
+        CHECK(selectionError(missing) == "io.pcfb.query-not-found");
+        CHECK(missing.diagnostics().items().front().message.find("'SEQ'") != std::string::npos);
+        auto wrong_kind = select("SEQ", kind::probability);
+        REQUIRE_FALSE(wrong_kind);
+        CHECK(wrong_kind.diagnostics().items().front().message.find("has kind hull, not probability") !=
+              std::string::npos);
+    }
+    SECTION("the hull selection takes the only hull query by default") {
+        auto only = writer::select_hull_query(
+            writer::queries_of(fileWith({{0, kind::probability, "TOP"}, {1, kind::monotone_hull_probability, "SEQ"}})),
+            std::nullopt, std::nullopt);
+        REQUIRE(only);
+        CHECK(only.value().index == 1);
+        CHECK(only.value().name == "SEQ");
+    }
+    SECTION("the hull selection refuses an ambiguous or non-hull file") {
+        auto ambiguous = writer::select_hull_query(queries, std::nullopt, std::nullopt);
+        REQUIRE_FALSE(ambiguous);
+        CHECK(selectionError(ambiguous) == "io.pcfb.query-ambiguous");
+        CHECK(ambiguous.diagnostics().items().front().message.find("2 hull queries") != std::string::npos);
+        auto boolean = writer::select_hull_query(
+            writer::queries_of(fileWith({{0, kind::probability, "TOP"}})), std::nullopt, std::nullopt);
+        REQUIRE_FALSE(boolean);
+        CHECK(selectionError(boolean) == "io.pcfb.query-not-hull");
+    }
+    SECTION("kind names round-trip") {
+        CHECK(writer::query_kind_name(kind::probability) == "probability");
+        CHECK(writer::query_kind_name(kind::monotone_hull_probability) == "hull");
+        CHECK(writer::parse_query_kind("hull") == kind::monotone_hull_probability);
+        CHECK(writer::parse_query_kind("probability") == kind::probability);
+        CHECK_FALSE(writer::parse_query_kind("negation"));
+    }
 }

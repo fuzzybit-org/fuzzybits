@@ -135,12 +135,21 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb {
 
     using metadata_value = std::variant<std::string, std::int64_t, double, std::vector<std::byte>>;
 
+    // One query of the file, by position in its query list. Several queries may share a target
+    // (one per kind) and the target's name; a query of a target written without a name has none.
+    struct query_ref final {
+        ir::pc::target_id target;
+        query_kind kind = query_kind::probability;
+    };
+
     struct read_output final {
         ir::pc::circuit circuit;
         // Everything the file records that write_options can hold; `query` stays at its default. Every
         // target has an entry in target_kinds, and names are recorded as the file has them (a basic
         // event without a SampleArgs.name has none).
         write_options options;
+        // The queries in file order; options.target_kinds has the same kinds grouped by target.
+        std::vector<query_ref> queries;
         // The node holding each tensor's value, indexed by tensor. Tensors that belong to a lowered
         // construct (the ATLEAST and ATMOST of an `AND(ATLEAST, ATMOST)` pair, a NOT tensor that only
         // stands for a complemented edge) have no node: invalid id.
