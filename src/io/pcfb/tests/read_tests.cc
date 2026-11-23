@@ -213,7 +213,21 @@ namespace {
                 break;
             }
         }
-        REQUIRE(circuit.node_count() + skipped == original.node_count());
+        // An unnamed NOT gate of the original that stands in front of its consumers like the writer's shared
+        // NOT tensor of the same source is read as a complemented edge, and then the writer's own tensor
+        // for that source is the one read as a NOT gate; such nodes have a tensor no original node has.
+        std::set<std::uint32_t> originalTensors(written.tensor_by_node.begin(), written.tensor_by_node.end());
+        std::size_t extra = 0;
+        for (std::uint32_t r = 0; r < circuit.node_count(); ++r) {
+            if (originalTensors.contains(read.tensor_by_node.at(r))) {
+                continue;
+            }
+            REQUIRE(circuit.op_codes()[r] == pc::op_code::not_gate);
+            REQUIRE(circuit.operand_counts()[r] == 1);
+            ++extra;
+        }
+        REQUIRE(extra <= skipped);
+        REQUIRE(circuit.node_count() + skipped == original.node_count() + extra);
 
         REQUIRE(circuit.targets().size() == original.targets().size());
         for (std::size_t index = 0; index < original.targets().size(); ++index) {
