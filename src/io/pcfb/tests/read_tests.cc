@@ -401,6 +401,16 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     CHECK(read.options.compile_options == "-c 2");
     CHECK(read.options.source_sha256 == digest);
     CHECK(read.options.query == kind::probability);
+    // The file's query list, in file order: target 0's two kinds, then target 1's hull, then target 2.
+    REQUIRE(read.queries.size() == 4);
+    CHECK(read.queries[0].target == pc::target_id(0));
+    CHECK(read.queries[0].kind == kind::probability);
+    CHECK(read.queries[1].target == pc::target_id(0));
+    CHECK(read.queries[1].kind == kind::monotone_hull_probability);
+    CHECK(read.queries[2].target == pc::target_id(1));
+    CHECK(read.queries[2].kind == kind::monotone_hull_probability);
+    CHECK(read.queries[3].target == pc::target_id(2));
+    CHECK(read.queries[3].kind == kind::probability);
 
     // Every metadata entry verbatim, in file order.
     auto file = ::pcfb::io::from_bytes(written.bytes);

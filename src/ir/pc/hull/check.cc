@@ -81,6 +81,10 @@ namespace fuzzybits::ir::pc::hull {
             check_options options;
             std::vector<bool_node_id> event_nodes;
             std::vector<std::uint32_t> cone_events;
+            // Per event: its mode, and whether every event in the cone is `down`
+            // (which is what makes a minimal witness minimal).
+            std::vector<event_mode> modes;
+            bool down_only = true;
             // Per atom (ordinal): the event, whether the atom samples its
             // complement, its position, leaf rule and base value.
             std::vector<std::uint32_t> events;
@@ -422,7 +426,7 @@ namespace fuzzybits::ir::pc::hull {
             }
 
             [[nodiscard]] auto decide_lane(cone const &shape, workspace &space, const std::uint32_t lane,
-                                           check_stats &stats) -> bool {
+                                           check_stats &stats, check_trace *trace) -> bool {
                 auto const &options = shape.options;
                 (void)extract(lane_view{.shape = shape, .space = space, .lane = lane}, shape.root << 1, space,
                               space.current);
@@ -448,6 +452,10 @@ namespace fuzzybits::ir::pc::hull {
                                     space.current.root, space, space.next);
                         if (value != value_unknown) {
                             ++stats.reduction;
+                            if (trace != nullptr) {
+                                trace->hit = value == value_true;
+                                trace->tier = check_tier::reduction;
+                            }
                             return value == value_true;
                         }
                         std::swap(space.current, space.next);
@@ -473,6 +481,11 @@ namespace fuzzybits::ir::pc::hull {
                     }
                     if (found) {
                         ++stats.witness;
+                        if (trace != nullptr) {
+                            trace->hit = true;
+                            trace->tier = check_tier::witness;
+                            trace->residual_variables = variables;
+                        }
                         return true;
                     }
                 }
@@ -484,18 +497,35 @@ namespace fuzzybits::ir::pc::hull {
                     const std::uint64_t chunks = variables <= 6 ? 1 : std::uint64_t{1} << (variables - 6);
                     if (size <= options.truth_table_budget / chunks) {
                         ++stats.truth_table;
-                        return truth_table_satisfiable(circuit, space.table);
+                        const auto satisfiable = truth_table_satisfiable(circuit, space.table);
+                        if (trace != nullptr) {
+                            trace->hit = satisfiable;
+                            trace->tier = check_tier::truth_table;
+                            trace->residual_variables = variables;
+                        }
+                        return satisfiable;
                     }
                 }
                 if (options.bdd_node_budget > 0 && variables <= options.bdd_max_variables) {
                     if (const auto satisfiable = space.bdd.satisfiable(circuit, options.bdd_node_budget)) {
                         ++stats.bdd;
+                        if (trace != nullptr) {
+                            trace->hit = *satisfiable;
+                            trace->tier = check_tier::bdd;
+                            trace->residual_variables = variables;
+                        }
                         return *satisfiable;
                     }
                     ++stats.bdd_budget_exceeded;
                 }
                 ++stats.search;
-                return search_satisfiable(circuit, space.sat);
+                const auto satisfiable = search_satisfiable(circuit, space.sat);
+                if (trace != nullptr) {
+                    trace->hit = satisfiable;
+                    trace->tier = check_tier::search;
+                    trace->residual_variables = variables;
+                }
+                return satisfiable;
             }
 
             void mark_dirty(workspace &space, const std::uint32_t position) noexcept {
@@ -556,9 +586,10 @@ namespace fuzzybits::ir::pc::hull {
 
             // Answers for one block of up to block_lanes lanes, written to
             // out[block * block_words + word]. The workspace starts and ends in
-            // the base state.
+            // the base state. `traces`, when set, receives one entry per lane in
+            // block order (lane 0 of the block first).
             void run_block(cone const &shape, workspace &space, lane_matrix const &lanes, const std::size_t block,
-                           std::span<std::uint64_t> out, check_stats &stats) {
+                           std::span<std::uint64_t> out, check_stats &stats, check_trace *traces) {
                 std::array<std::uint64_t, block_words> valid{};
                 for (std::size_t word = 0; word < block_words; ++word) {
                     const auto first_lane = (block * block_words + word) * 64;
@@ -612,10 +643,34 @@ namespace fuzzybits::ir::pc::hull {
                     auto result = root_true;
                     stats.lanes += static_cast<std::uint64_t>(std::popcount(valid[word]));
                     stats.bounds += static_cast<std::uint64_t>(std::popcount(root_true | root_false));
+                    if (traces != nullptr) {
+                        for (std::size_t lane = 0; lane < 64; ++lane) {
+                            const auto bit = std::uint64_t{1} << lane;
+                            if ((valid[word] & bit) == 0) {
+                                continue;
+                            }
+                            const bool open = (undecided & bit) != 0;
+                            traces[static_cast<std::size_t>(word * 64 + lane)] = check_trace{
+                                .hit = (root_true & bit) != 0,
+                                .lower = (root_true & bit) != 0,
+                                .upper = (root_true & bit) != 0 || open,
+                                .tier = check_tier::bounds,
+                            };
+                        }
+                    }
                     while (undecided != 0) {
                         const auto bit = static_cast<std::uint32_t>(std::countr_zero(undecided));
                         undecided &= undecided - 1;
-                        if (decide_lane(shape, space, static_cast<std::uint32_t>(word * 64 + bit), stats)) {
+                        const auto lane = static_cast<std::uint32_t>(word * 64 + bit);
+                        bool hit = false;
+                        if (traces != nullptr) {
+                            auto &trace = traces[lane];
+                            trace = check_trace{.lower = false, .upper = true};
+                            hit = decide_lane(shape, space, lane, stats, &trace);
+                        } else {
+                            hit = decide_lane(shape, space, lane, stats, nullptr);
+                        }
+                        if (hit) {
                             result |= std::uint64_t{1} << bit;
                         }
                     }
@@ -693,6 +748,24 @@ namespace fuzzybits::ir::pc::hull {
 
     } // namespace detail
 
+    auto to_string(const check_tier tier) noexcept -> std::string_view {
+        switch (tier) {
+        case check_tier::bounds:
+            return "bounds";
+        case check_tier::reduction:
+            return "reduction";
+        case check_tier::witness:
+            return "witness";
+        case check_tier::truth_table:
+            return "truth_table";
+        case check_tier::bdd:
+            return "bdd";
+        case check_tier::search:
+            return "search";
+        }
+        return "bounds";
+    }
+
     void check_stats::merge(check_stats const &other) noexcept {
         lanes += other.lanes;
         hits += other.hits;
@@ -733,6 +806,10 @@ namespace fuzzybits::ir::pc::hull {
             return api::result<checker>::fail(api::make_error(
                 "pc.hull.mode-count", "mode vector has " + std::to_string(modes.size()) + " entries for " +
                                           std::to_string(shape->event_nodes.size()) + " basic events"));
+        }
+        shape->modes.assign(shape->event_nodes.size(), event_mode::down);
+        if (!modes.empty()) {
+            std::ranges::copy(modes, shape->modes.begin());
         }
 
         // Cone in post-order (a topological order), by iterative depth-first
@@ -895,6 +972,8 @@ namespace fuzzybits::ir::pc::hull {
                 shape->cone_events.push_back(atom / 2);
             }
         }
+        shape->down_only = std::ranges::all_of(
+            shape->cone_events, [&](const std::uint32_t event) { return shape->modes[event] == event_mode::down; });
         shape->events.resize(atoms.size());
         shape->complemented.resize(atoms.size());
         shape->event_positions.resize(atoms.size());
@@ -955,6 +1034,12 @@ namespace fuzzybits::ir::pc::hull {
         return event < cone_->event_nodes.size() ? cone_->event_nodes[event] : bool_node_id::invalid();
     }
 
+    auto checker::event_index(const bool_node_id node) const noexcept -> std::uint32_t {
+        const auto found = std::ranges::find(cone_->event_nodes, node);
+        return found == cone_->event_nodes.end() ? std::numeric_limits<std::uint32_t>::max()
+                                                 : static_cast<std::uint32_t>(found - cone_->event_nodes.begin());
+    }
+
     auto checker::cone_events() const noexcept -> std::span<std::uint32_t const> {
         return cone_->cone_events;
     }
@@ -967,11 +1052,127 @@ namespace fuzzybits::ir::pc::hull {
         return cone_->options;
     }
 
+    auto checker::cone_is_down_only() const noexcept -> bool {
+        return cone_->down_only;
+    }
+
+    auto checker::lane(std::span<bool_node_id const> true_events) const -> api::result<std::vector<std::uint64_t>> {
+        using lane_result = api::result<std::vector<std::uint64_t>>;
+        std::vector<std::uint64_t> out((event_count() + 63) / 64, 0);
+        for (const auto node : true_events) {
+            const auto event = event_index(node);
+            if (event == std::numeric_limits<std::uint32_t>::max()) {
+                return lane_result::fail(api::make_error(
+                    "pc.hull.not-an-event", "node " + std::to_string(node.raw()) + " is not a basic event"));
+            }
+            out[event / 64] |= std::uint64_t{1} << (event % 64);
+        }
+        return lane_result::ok(std::move(out));
+    }
+
+    auto checker::check_nodes(std::span<bool_node_id const> true_events, const bool want_witness) const
+        -> api::result<hull_check_result> {
+        using check_result = api::result<hull_check_result>;
+        auto made = lane(true_events);
+        if (!made) {
+            return check_result::fail(made.diagnostics());
+        }
+        auto const &words = made.value();
+        hull_check_result out;
+        const auto traced = trace(words);
+        out.hit = traced.hit;
+        out.lower = traced.lower;
+        out.upper = traced.upper;
+        out.tier = traced.tier;
+        out.residual_variables = traced.residual_variables;
+        if (want_witness) {
+            auto found = witness(words);
+            if (!found) {
+                return check_result::fail(found.diagnostics());
+            }
+            out.witness = std::move(found).value();
+        }
+        return check_result::ok(std::move(out));
+    }
+
     auto checker::check(std::span<std::uint64_t const> sample) const -> bool {
         std::uint64_t out = 0;
         check(lane_matrix{.words = sample, .lane_count = 1, .stride = sample.size(), .layout = lane_layout::lane_major},
               std::span<std::uint64_t>{&out, 1});
         return (out & 1U) != 0;
+    }
+
+    auto checker::trace(std::span<std::uint64_t const> sample) const -> check_trace {
+        auto const &shape = *cone_;
+        auto space = detail::acquire(shape);
+        check_stats stats;
+        std::array<std::uint64_t, detail::block_words> out{};
+        check_trace slot;
+        // One lane: the block holds it alone and no other thread sees it.
+        detail::run_block(shape, *space,
+                          lane_matrix{.words = sample, .lane_count = 1, .stride = sample.size(),
+                                      .layout = lane_layout::lane_major},
+                          0, out, stats, &slot);
+        detail::release(shape, std::move(space));
+        return slot;
+    }
+
+    auto checker::witness(std::span<std::uint64_t const> sample) const
+        -> api::result<std::optional<std::vector<std::uint32_t>>> {
+        using result_type = api::result<std::optional<std::vector<std::uint32_t>>>;
+        auto const &shape = *cone_;
+        if (!shape.down_only) {
+            return result_type::fail(api::make_error(
+                "pc.hull.witness-mode",
+                "witness: minimality under single deletions holds for a monotone target only, and this checker has a "
+                "cone event whose mode is not down"));
+        }
+        std::vector<std::uint64_t> lane(sample.begin(), sample.end());
+        if (!check(lane)) {
+            return result_type::ok(std::nullopt);
+        }
+        for (const auto event : shape.cone_events) {
+            const auto word = std::size_t{event} / 64;
+            if (word >= lane.size()) {
+                continue;
+            }
+            const auto bit = std::uint64_t{1} << (event % 64);
+            if ((lane[word] & bit) == 0) {
+                continue;
+            }
+            lane[word] &= ~bit;
+            if (!check(lane)) {
+                lane[word] |= bit;
+            }
+        }
+        std::vector<std::uint32_t> kept;
+        for (const auto event : shape.cone_events) {
+            const auto word = std::size_t{event} / 64;
+            if (word < lane.size() && (lane[word] >> (event % 64) & 1U) != 0) {
+                kept.push_back(event);
+            }
+        }
+        return result_type::ok(std::move(kept));
+    }
+
+    auto hull_check(circuit const &model, const bool_node_id target, std::span<bool_node_id const> true_events,
+                    std::span<event_mode const> modes, const bool want_witness, check_options const &options)
+        -> api::result<hull_check_result> {
+        using check_result = api::result<hull_check_result>;
+        if (!model.valid()) {
+            return check_result::fail(api::make_error("pc.hull.invalid-circuit", "circuit is not sealed"));
+        }
+        for (const auto node : true_events) {
+            if (!node.valid() || node.raw() >= model.node_count()) {
+                return check_result::fail(
+                    api::make_error("pc.hull.invalid-event", "event does not name a node of the circuit"));
+            }
+        }
+        auto made = checker::make(model, target, modes, options);
+        if (!made) {
+            return check_result::fail(made.diagnostics());
+        }
+        return made.value().check_nodes(true_events, want_witness);
     }
 
     void checker::check(lane_matrix const &lanes, std::span<std::uint64_t> out, check_stats *stats) const {
@@ -1002,7 +1203,7 @@ namespace fuzzybits::ir::pc::hull {
                 check_stats local;
 #pragma omp for schedule(dynamic, 1)
                 for (std::int64_t block = 0; block < block_count; ++block) {
-                    detail::run_block(shape, *space, lanes, static_cast<std::size_t>(block), out, local);
+                    detail::run_block(shape, *space, lanes, static_cast<std::size_t>(block), out, local, nullptr);
                 }
 #pragma omp critical(fuzzybits_hull_check_stats)
                 total.merge(local);
@@ -1016,7 +1217,7 @@ namespace fuzzybits::ir::pc::hull {
 #endif
         auto space = detail::acquire(shape);
         for (std::size_t block = 0; block < blocks; ++block) {
-            detail::run_block(shape, *space, lanes, block, out, total);
+            detail::run_block(shape, *space, lanes, block, out, total, nullptr);
         }
         detail::release(shape, std::move(space));
         if (stats != nullptr) {

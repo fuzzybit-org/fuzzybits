@@ -563,6 +563,8 @@ namespace fuzzybits::io::backend::fuzzybits::pcfb::detail {
                     }
                     kinds.back().push_back(kind);
                     queryTarget_.push_back(static_cast<std::uint32_t>(kinds.size() - 1));
+                    output_.queries.push_back(query_ref{.target = ir::pc::target_id(static_cast<std::uint32_t>(kinds.size() - 1)),
+                                                        .kind = kind});
                     previousNode = node;
                     previousName = name;
                 }

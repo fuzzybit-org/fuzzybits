@@ -5,6 +5,10 @@
 #include "compile/nombrilo.h"
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
+#include "io/pcfb/descriptor.h"
+#include "io/pcfb/query_select.h"
+#include "ir/pc/hull/exact.h"
+#include "ir/pc/hull/hull.h"
 #include "runtime/progress_log.h"
 #include "version.h"
 
@@ -977,20 +981,145 @@ int inspect_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
   return ftp::inspect_exit_status(result, vm.count("strict") > 0);
 }
 
+namespace hull_cli {
+
+namespace pcfb_io = fuzzybits::io::backend::fuzzybits::pcfb;
+
+/// The first error's message of a failed api::result.
+template <typename value_type>
+auto first_error(fuzzybits::api::result<value_type> const &failed) -> std::string {
+  for (auto const &item : failed.diagnostics().items()) {
+    return item.message;
+  }
+  return "unknown error";
+}
+
+/// `--exact` / `--hull-check EVENTS`, resolved against the file's queries.
+struct hull_request {
+  std::optional<std::string> query;
+  std::optional<pcfb_io::query_kind> kind;
+};
+
+/// EVENTS of one `--hull-check` argument: a comma-separated list of event names, `@FILE` with
+/// one set per line, or the empty string for the empty set.
+struct hull_sample {
+  std::vector<std::string> names;
+};
+
+void print_usage(std::ostream &out, const po::options_description &desc) {
+  out << "Usage: fzb inspect model.pcfb [--validate] [--json] [--exact] [--query NAME [--kind probability|hull]]\n"
+         "       fzb inspect model.pcfb --hull-check EVENTS [--query NAME] [--kind hull] [--witness] [--json]\n"
+         "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
+         "[--complement-events atom|negation] [--strict] [--counts-only]\n\n"
+      << desc << std::endl;
+}
+
+/// Splits `events` into sets: `@FILE` reads one set per line (`-` is the empty set, blank lines are
+/// skipped); otherwise the argument is one set of comma-separated names, `""` the empty set.
+auto parse_event_sets(const std::string &events, std::vector<hull_sample> &sets, std::string &error) -> bool {
+  const auto trim = [](std::string_view text) {
+    const auto first = text.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string_view::npos) {
+      return std::string_view{};
+    }
+    const auto last = text.find_last_not_of(" \t\r\n\v\f");
+    return text.substr(first, last - first + 1);
+  };
+  const auto split = [&](std::string_view line, hull_sample &sample) {
+    sample.names.clear();
+    if (trim(line) == "-" || trim(line).empty()) {
+      return;
+    }
+    std::size_t begin = 0;
+    while (begin <= line.size()) {
+      const auto comma = line.find(',', begin);
+      const auto end = comma == std::string_view::npos ? line.size() : comma;
+      const auto piece = trim(line.substr(begin, end - begin));
+      if (!piece.empty()) {
+        sample.names.emplace_back(piece);
+      }
+      if (comma == std::string_view::npos) {
+        break;
+      }
+      begin = comma + 1;
+    }
+  };
+
+  if (events.empty() || events.front() != '@') {
+    hull_sample sample;
+    split(events, sample);
+    sets.push_back(std::move(sample));
+    return true;
+  }
+  const std::filesystem::path path(events.substr(1));
+  std::error_code status;
+  if (std::filesystem::exists(path, status) && !std::filesystem::is_regular_file(path, status)) {
+    error = path.string() + " is not a regular file";
+    return false;
+  }
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    error = "cannot read " + path.string();
+    return false;
+  }
+  std::string line;
+  while (std::getline(in, line)) {
+    if (trim(line).empty()) {
+      continue;
+    }
+    hull_sample sample;
+    split(line, sample);
+    sets.push_back(std::move(sample));
+  }
+  if (in.bad()) {
+    error = "cannot read " + path.string();
+    return false;
+  }
+  if (sets.empty()) {
+    error = path.string() + " lists no sets";
+    return false;
+  }
+  return true;
+}
+
+/// The sample's basic-event nodes, by the read circuit's names. A gate name or an unknown name is an
+/// error naming it.
+auto nodes_of(fuzzybits::io::backend::fuzzybits::pcfb::read_output const &file, const hull_sample &sample,
+              std::vector<fuzzybits::ir::pc::bool_node_id> &nodes, std::string &error) -> bool {
+  nodes.clear();
+  for (const auto &name : sample.names) {
+    auto node = fuzzybits::io::backend::fuzzybits::pcfb::basic_event_named(file, name);
+    if (!node) {
+      error = first_error(node);
+      return false;
+    }
+    nodes.push_back(node.value());
+  }
+  return true;
+}
+
+} // namespace hull_cli
+
 int cmd_inspect(int argc, char **argv) {
   po::options_description desc("fzb inspect options");
   desc.add_options()
       ("help,h", "display this help message")
       ("validate", "run pcfb::validate; exit non-zero on diagnostics")
       ("json", "print summary as JSON")
-      ("exact", "exhaustive exact P(query) for small models (≤ 30 events)")
+      ("exact", "exhaustive exact P(query); follows the query kind (≤ 30 events, hull ≤ 24)")
+      ("query", po::value<std::string>(), "with --exact or --hull-check: the query's name")
+      ("kind", po::value<std::string>(), "with --query: probability|hull, for a name written as both kinds")
+      ("hull-check", po::value<std::string>(),
+       "evaluate the hull check on samples: comma-separated event names, or @FILE with one set per line")
+      ("witness", "with --hull-check: print a minimal witness set for each hit")
       ("duplicate-import", po::value<std::string>(),
        "FTP: event imported more than once: error|first|last (default last)")
       ("complement-events", po::value<std::string>(),
        "FTP: -EVENT operands: atom|negation (default atom: marked literals)")
       ("strict", "FTP: exit 1 on warnings as well as errors")
       ("counts-only", "FTP: print counts without element names")
-      ("input-file", po::value<std::vector<std::string>>(), ".pcfb file, or CAFTA FTP files / a directory of *.ftp files");
+      ("input-file", po::value<std::vector<std::string>>(),
+       ".pcfb file, or CAFTA FTP files / a directory of *.ftp files");
 
   po::positional_options_description pos;
   pos.add("input-file", -1);
@@ -1004,14 +1133,52 @@ int cmd_inspect(int argc, char **argv) {
     return 1;
   }
   if (vm.count("help")) {
-    std::cout << "Usage: fzb inspect model.pcfb [--validate] [--json] [--exact]\n"
-                 "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
-                 "[--complement-events atom|negation] [--strict] [--counts-only]\n\n"
-              << desc << std::endl;
+    hull_cli::print_usage(std::cout, desc);
     return 0;
   }
+  const auto usage_error = [&desc](const std::string &message) {
+    std::cerr << "Option error: " << message << "\n\n" << desc << std::endl;
+    return 1;
+  };
+  if (vm.count("witness") && !vm.count("hull-check")) {
+    return usage_error("--witness needs --hull-check");
+  }
+  for (const char *flag : {"query", "kind", "hull-check", "witness"}) {
+    if (vm.count(flag) && !vm.count("exact") && !vm.count("hull-check")) {
+      return usage_error(std::string("--") + flag + " needs --exact or --hull-check");
+    }
+  }
+  if (vm.count("kind") && !vm.count("query")) {
+    return usage_error("--kind needs --query");
+  }
+  if (vm.count("exact") && vm.count("hull-check")) {
+    return usage_error("--exact and --hull-check cannot be combined");
+  }
+
+  hull_cli::hull_request request;
+  if (vm.count("query")) {
+    request.query = vm["query"].as<std::string>();
+  }
+  if (vm.count("kind")) {
+    const auto text = vm["kind"].as<std::string>();
+    request.kind = hull_cli::pcfb_io::parse_query_kind(text);
+    if (!request.kind) {
+      return usage_error("--kind takes probability or hull, not '" + text + "'");
+    }
+  }
+
+  std::vector<hull_cli::hull_sample> samples;
+  if (vm.count("hull-check")) {
+    std::string problem;
+    if (!hull_cli::parse_event_sets(vm["hull-check"].as<std::string>(), samples, problem)) {
+      std::cerr << "fzb inspect --hull-check: " << problem << std::endl;
+      return 1;
+    }
+  }
+
   if (!vm.count("input-file")) {
-    std::cerr << "fzb inspect: missing .pcfb file\n\n" << desc << std::endl;
+    std::cerr << "fzb inspect: missing .pcfb file\n\n"
+              << desc << std::endl;
     return 1;
   }
 
@@ -1059,20 +1226,121 @@ int cmd_inspect(int argc, char **argv) {
   }
 
   const auto summary = summarise(*circuit);
-  if (vm.count("json")) {
+  if (vm.count("json") && !vm.count("hull-check")) {
     print_json(summary, std::cout);
-  } else {
+  } else if (!vm.count("hull-check")) {
     print_text(summary, std::cout);
   }
 
-  if (vm.count("exact")) {
-    try {
-      const double p = fuzzybits::compile::exact_probability(*circuit);
-      std::cout << std::setprecision(16) << std::scientific << "exact_probability  " << p << std::endl;
-    } catch (const fuzzybits::compile::ExactEvalError &ex) {
-      std::cerr << "fzb inspect --exact: " << ex.what() << std::endl;
+  if (!vm.count("exact") && !vm.count("hull-check")) {
+    return rc;
+  }
+
+  auto read = hull_cli::pcfb_io::read(path);
+  if (!read) {
+    std::cerr << "fzb inspect: " << hull_cli::first_error(read) << std::endl;
+    return 1;
+  }
+  auto const &file = read.value();
+  const auto queries = hull_cli::pcfb_io::queries_of(file);
+
+  if (vm.count("hull-check")) {
+    auto selected = hull_cli::pcfb_io::select_hull_query(queries, request.query, request.kind);
+    if (!selected) {
+      std::cerr << "fzb inspect --hull-check: " << hull_cli::first_error(selected) << std::endl;
       return 1;
     }
+    auto const &query = selected.value();
+    auto made = fuzzybits::ir::pc::hull::checker::make(file.circuit, file.circuit.targets()[query.target.raw()].node);
+    if (!made) {
+      std::cerr << "fzb inspect --hull-check: " << hull_cli::first_error(made) << std::endl;
+      return 1;
+    }
+    auto const &check = made.value();
+    std::vector<fuzzybits::ir::pc::bool_node_id> nodes;
+    std::vector<std::string> witness_names;
+    bool json_first = true;
+    if (vm.count("json")) {
+      std::cout << "[";
+    }
+    for (const auto &sample : samples) {
+      std::string problem;
+      if (!hull_cli::nodes_of(file, sample, nodes, problem)) {
+        std::cerr << "fzb inspect --hull-check: " << problem << std::endl;
+        return 1;
+      }
+      auto checked = check.check_nodes(nodes, vm.count("witness") > 0);
+      if (!checked) {
+        std::cerr << "fzb inspect --hull-check: " << hull_cli::first_error(checked) << std::endl;
+        return 1;
+      }
+      const auto &result = checked.value();
+      const auto &witness = result.witness;
+      if (vm.count("json")) {
+        std::cout << (json_first ? "\n" : ",\n");
+        json_first = false;
+        std::cout << "  {\"hit\": " << (result.hit ? "true" : "false") << ", \"lower\": "
+                  << (result.lower ? "true" : "false") << ", \"upper\": " << (result.upper ? "true" : "false")
+                  << ", \"tier\": \"" << fuzzybits::ir::pc::hull::to_string(result.tier)
+                  << "\", \"residual_variables\": "
+                  << result.residual_variables << ", \"witness\": ";
+        if (!witness) {
+          std::cout << "null";
+        } else {
+          std::cout << "[";
+          for (std::size_t index = 0; index < witness->size(); ++index) {
+            const auto name = hull_cli::pcfb_io::node_name(file, check.event_node((*witness)[index]));
+            std::cout << (index == 0 ? "" : ", ") << "\"" << json_escape(name) << "\"";
+          }
+          std::cout << "]";
+        }
+        std::cout << ", \"query\": {\"index\": " << query.index << ", \"name\": \"" << json_escape(query.name)
+                  << "\", \"kind\": \"" << hull_cli::pcfb_io::query_kind_name(query.kind) << "\"}}";
+        continue;
+      }
+      std::cout << "hull_check  hit=" << (result.hit ? 1 : 0) << "  L=" << (result.lower ? 1 : 0)
+                << "  U=" << (result.upper ? 1 : 0) << "  tier=" << fuzzybits::ir::pc::hull::to_string(result.tier)
+                << "  residual=" << result.residual_variables << "\n";
+      if (witness) {
+        witness_names.clear();
+        for (const auto event : *witness) {
+          witness_names.push_back(hull_cli::pcfb_io::node_name(file, check.event_node(event)));
+        }
+        std::cout << "witness";
+        for (std::size_t index = 0; index < witness_names.size(); ++index) {
+          std::cout << (index == 0 ? "  " : ",") << witness_names[index];
+        }
+        std::cout << "\n";
+      }
+    }
+    if (vm.count("json")) {
+      std::cout << (json_first ? "]\n" : "\n]\n");
+    }
+    return rc;
+  }
+
+  auto selected = hull_cli::pcfb_io::select_query(queries, request.query, request.kind);
+  if (!selected) {
+    std::cerr << "fzb inspect --exact: " << hull_cli::first_error(selected) << std::endl;
+    return 1;
+  }
+  auto const &query = selected.value();
+  if (query.kind == hull_cli::pcfb_io::query_kind::monotone_hull_probability) {
+    const auto target = file.circuit.targets()[query.target.raw()].node;
+    auto exact = fuzzybits::ir::pc::hull::exact_hull_probability(file.circuit, target);
+    if (!exact) {
+      std::cerr << "fzb inspect --exact: " << hull_cli::first_error(exact) << std::endl;
+      return 1;
+    }
+    std::cout << std::setprecision(16) << std::scientific << "exact_hull_probability  " << exact.value() << std::endl;
+    return rc;
+  }
+  try {
+    const double p = fuzzybits::compile::exact_boolean_probability(*circuit, query.index);
+    std::cout << std::setprecision(16) << std::scientific << "exact_probability  " << p << std::endl;
+  } catch (const fuzzybits::compile::ExactEvalError &ex) {
+    std::cerr << "fzb inspect --exact: " << ex.what() << std::endl;
+    return 1;
   }
   return rc;
 }

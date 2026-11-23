@@ -122,6 +122,10 @@ double exact_probability(const pcfb::ir::Circuit &circuit, std::uint32_t query_i
   if (auto rejected = fuzzybits::io::pcfb_guard::reject_unimplemented_queries(circuit)) {
     throw ExactEvalError("exact evaluator: [" + rejected->id + "] " + rejected->message);
   }
+  return exact_boolean_probability(circuit, query_index);
+}
+
+double exact_boolean_probability(const pcfb::ir::Circuit &circuit, std::uint32_t query_index) {
   std::vector<RandomEvent> events;
   std::vector<std::int8_t> constant;
   collect_events(circuit, &events, &constant);

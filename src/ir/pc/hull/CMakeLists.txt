@@ -1,6 +1,7 @@
 # Exact per-sample monotone-hull check (#178). Host-only, SYCL-free.
 add_library(fuzzybits_ir_pc_hull STATIC
   check.cc
+  exact.cc
   detail/bdd.cc
   detail/residual.cc
   detail/sat.cc

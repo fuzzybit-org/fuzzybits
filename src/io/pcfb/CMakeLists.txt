@@ -4,6 +4,7 @@
 add_library(fuzzybits_io_pcfb STATIC
   write.cpp
   read.cpp
+  query_select.cc
   detail/order.cpp
   detail/writer.cpp
   detail/reader.cpp

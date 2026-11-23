@@ -7,8 +7,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 // Exact per-sample monotone-hull check (docs/rfc/monotone-hull-queries.md §6).
 //
@@ -98,6 +101,45 @@ namespace fuzzybits::ir::pc::hull {
         struct cone;
     } // namespace detail
 
+    // The tier that decided a lane, in the order `decide_lane` tries them.
+    enum class check_tier : std::uint8_t {
+        bounds,
+        reduction,
+        witness,
+        truth_table,
+        bdd,
+        search,
+    };
+
+    [[nodiscard]] auto to_string(check_tier tier) noexcept -> std::string_view;
+
+    // How one lane was decided. `lower` and `upper` are the three-valued bounds
+    // of RFC §4.4 (false and true where the bound pass left the target open), so
+    // lower <= hit <= upper. `residual_variables` is the number of free events
+    // the residual had when an exact tier decided the lane: 0 when the bounds or
+    // the reduction decided it, and the variable count when a witness decided it.
+    struct check_trace final {
+        bool hit = false;
+        bool lower = false;
+        bool upper = false;
+        check_tier tier = check_tier::bounds;
+        std::uint32_t residual_variables = 0;
+    };
+
+    // One lane's hull check: the decision of `checker::check`, its tier and, when
+    // asked for, a minimal witness.
+    struct hull_check_result final {
+        bool hit = false;
+        bool lower = false;
+        bool upper = false;
+        check_tier tier = check_tier::bounds;
+        std::uint32_t residual_variables = 0;
+        // Event numbers (as `checker::event_node`) of a minimal witness, ascending;
+        // set iff the sample is a hit and a witness was asked for. Empty means the
+        // empty set is a witness.
+        std::optional<std::vector<std::uint32_t>> witness;
+    };
+
     // Per-target preparation (cone, topological order, fan-out lists, event
     // polarities, base values) shared by all lanes. Immutable after `make`;
     // `check` may be called concurrently from any number of threads.
@@ -110,13 +152,43 @@ namespace fuzzybits::ir::pc::hull {
         // and callers (#183) gather lanes in this order.
         [[nodiscard]] auto event_count() const noexcept -> std::uint32_t;
         [[nodiscard]] auto event_node(std::uint32_t event) const noexcept -> bool_node_id;
+        // The lane bit of a basic-event node (its ordinal in node-id order), or
+        // invalid when the node is not a basic event.
+        [[nodiscard]] auto event_index(bool_node_id node) const noexcept -> std::uint32_t;
         // Events in the target's cone, ascending; other lane bits are ignored.
         [[nodiscard]] auto cone_events() const noexcept -> std::span<std::uint32_t const>;
         [[nodiscard]] auto cone_size() const noexcept -> std::uint32_t;
         [[nodiscard]] auto options() const noexcept -> check_options const &;
+        // Whether every event of the cone is `down`, which is what makes a minimal
+        // witness minimal.
+        [[nodiscard]] auto cone_is_down_only() const noexcept -> bool;
+
+        // Lane words of a sample given as basic-event node ids; other nodes are
+        // `pc.hull.not-an-event`. Events outside the cone set an ignored bit.
+        [[nodiscard]] auto lane(std::span<bool_node_id const> true_events) const
+            -> api::result<std::vector<std::uint64_t>>;
+
+        // One lane given as basic-event node ids: `trace` of the lane, plus the
+        // minimal witness when `want_witness` and the lane is a hit.
+        [[nodiscard]] auto check_nodes(std::span<bool_node_id const> true_events, bool want_witness = false) const
+            -> api::result<hull_check_result>;
 
         // One lane: bit e of `sample` is x_e.
         [[nodiscard]] auto check(std::span<std::uint64_t const> sample) const -> bool;
+
+        // The same decision as `check`, with the tier that made it and the bounds.
+        [[nodiscard]] auto trace(std::span<std::uint64_t const> sample) const -> check_trace;
+
+        // One lane with every mode `down`: a minimal subset of the sample's true
+        // cone events on which the check is still true, in ascending lane-bit
+        // order. `nullopt` is no hit; an empty vector is a hit whose witness is
+        // the empty set (g(∅) is TRUE).
+        //
+        // Greedy deletion in ascending event order; for a monotone target
+        // minimality under single deletions implies minimality. Only `down`
+        // guarantees that, so another mode is refused.
+        [[nodiscard]] auto witness(std::span<std::uint64_t const> sample) const
+            -> api::result<std::optional<std::vector<std::uint32_t>>>;
 
         // Bit l of `out` (at least ceil(lane_count / 64) words) receives the
         // answer for lane l; bits past lane_count are cleared.
@@ -127,5 +199,11 @@ namespace fuzzybits::ir::pc::hull {
 
         std::shared_ptr<detail::cone const> cone_;
     };
+
+    // `true_events` are basic-event node ids; other nodes are an error. Events
+    // outside the target's cone are ignored. A witness needs every event `down`.
+    [[nodiscard]] auto hull_check(circuit const &model, bool_node_id target, std::span<bool_node_id const> true_events,
+                                  std::span<event_mode const> modes = {}, bool want_witness = false,
+                                  check_options const &options = {}) -> api::result<hull_check_result>;
 
 } // namespace fuzzybits::ir::pc::hull

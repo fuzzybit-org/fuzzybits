@@ -6,7 +6,7 @@ import json
 import os
 import sys
 import warnings
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -703,16 +703,88 @@ def read_project(
     return document
 
 
-def exact(pcfb: bytes | str | os.PathLike[str], query_index: int = 0) -> float:
-    """Exhaustive exact P(query) for small models (≤ 30 random SAMPLE events).
+def exact(
+    pcfb: bytes | str | os.PathLike[str],
+    query_index: int = 0,
+    *,
+    query: str | None = None,
+    kind: str | None = None,
+) -> float:
+    """Exhaustive exact value of one query, following the query kind.
 
-    Same as ``fzb inspect --exact``. Raises if the circuit has too many events or a query
-    kind other than ``PROBABILITY`` (see :func:`run`).
+    Same as ``fzb inspect --exact``. A ``PROBABILITY`` query is the exact probability of the
+    target function (≤ 30 random SAMPLE events); a ``MONOTONE_HULL_PROBABILITY`` query is the exact
+    plain monotone hull ↑g of the circuit as written, ∃ y ≤ x : g(y) (≤ 24 events with a probability
+    above 0), which is what ``fzb compile`` writes for an atom-split, ω_L or negation hull query.
+
+    ``query`` selects by name instead of ``query_index`` (the two are mutually exclusive); ``kind``
+    (``"probability"`` or ``"hull"``) picks one of the two queries a target may have. Raises
+    :class:`ValueError` when the query is missing, ambiguous or too large.
     """
+    if query is not None and query_index != 0:
+        raise ValueError("exact() takes query or query_index, not both")
+    if kind is not None and kind not in ("probability", "hull"):
+        raise ValueError(f"exact(): kind is 'probability' or 'hull', not {kind!r}")
+    if kind is not None and query is None:
+        raise ValueError("exact(): kind needs query")
     native = _runtime.native()
     if isinstance(pcfb, (bytes, bytearray, memoryview)):
+        if query is not None or kind is not None:
+            raise ValueError("exact(): query and kind need a file path, not bytes")
         return float(native.exact_pcfb_bytes(bytes(pcfb), int(query_index)))
-    return float(native.exact_pcfb_path(os.fspath(pcfb), int(query_index)))
+    try:
+        return float(native.exact_any_pcfb_path(os.fspath(pcfb), int(query_index), query, kind))
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def hull_check(
+    pcfb: bytes | str | os.PathLike[str],
+    true_events: Iterable[str],
+    *,
+    query: str | int | None = None,
+    kind: str | None = None,
+    witness: bool = False,
+) -> dict[str, Any]:
+    """One hull check of a sample against a ``MONOTONE_HULL_PROBABILITY`` query.
+
+    Same as one line of ``fzb inspect --hull-check --json``. ``true_events`` are the sample's true
+    basic events, by the ``.pcfb`` names; events outside the query's cone are ignored. ``query`` is
+    a query name or an index (default: the file's only hull query). The dict has ``hit``, ``lower``
+    and ``upper`` (the RFC 4.4 bounds, so ``lower <= hit <= upper``), ``tier``, ``residual_variables``,
+    ``witness`` (with ``witness=True``: a minimal set of the sample's true cone events, in ascending
+    event order, or ``None`` for no hit) and ``query`` (``index``, ``name``, ``kind``).
+
+    Raises :class:`ValueError` for a name that is not a basic event, a query that is not a hull
+    query, an ambiguous query and an unwritable file.
+    """
+    if isinstance(query, int) and kind is not None:
+        raise ValueError("hull_check(): kind needs a query name, not an index")
+    if kind is not None and kind not in ("probability", "hull"):
+        raise ValueError(f"hull_check(): kind is 'probability' or 'hull', not {kind!r}")
+    if isinstance(pcfb, (bytes, bytearray, memoryview)):
+        raise ValueError("hull_check() needs a file path")
+    names = [str(name) for name in true_events]
+    try:
+        if isinstance(query, int):
+            names_of_query = _query_names(os.fspath(pcfb))
+            if query < 0 or query >= len(names_of_query):
+                raise ValueError(f"hull_check(): the file has no query {query}")
+            payload = _runtime.native().hull_check_pcfb_path(
+                os.fspath(pcfb), names, names_of_query[query], None, bool(witness)
+            )
+        else:
+            payload = _runtime.native().hull_check_pcfb_path(
+                os.fspath(pcfb), names, query, kind, bool(witness)
+            )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
+    return dict(payload)
+
+
+def _query_names(path: str) -> list[str]:
+    """The query names of a file in file order, as `fzb inspect` lists them."""
+    return [str(name) for name in _runtime.native().inspect_pcfb_path(path)["query_names"]]
 
 
 @dataclass(frozen=True)
@@ -996,6 +1068,7 @@ __all__ = [
     "compile",
     "compile_file",
     "exact",
+    "hull_check",
     "inspect",
     "list_devices",
     "nombrilo_to_pcfb",

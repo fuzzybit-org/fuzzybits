@@ -190,7 +190,7 @@ TEST_CASE("fzb run estimates a written pcfb within 4 standard errors of the exac
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb inspect --exact refuses monotone-hull queries but still summarises them", "[io][pcfb][cli][guard]") {
+TEST_CASE("fzb inspect --exact follows the query kind and leaves Boolean output unchanged", "[io][pcfb][cli][guard]") {
     const auto scratch = scratchDirectory("guard-exact");
     const auto hull = scratch / "hull.pcfb";
     const auto mixed = scratch / "mixed.pcfb";
@@ -199,24 +199,51 @@ TEST_CASE("fzb inspect --exact refuses monotone-hull queries but still summarise
     query_guard_files::write(mixed, query_guard_files::mixed());
     query_guard_files::write(boolean, query_guard_files::boolean_only());
 
-    for (auto const &path : {hull, mixed}) {
-        const auto refused = runFzb("inspect " + quoted(path.string()) + " --validate --exact", scratch);
-        INFO(refused.out << refused.err);
-        CHECK(refused.status != 0);
-        CHECK(refused.err.find("validate: ok") != std::string::npos);
-        CHECK(refused.err.find("pcfb.unsupported-query-kind") != std::string::npos);
-        CHECK(refused.err.find(query_guard_files::hull_name) != std::string::npos);
-        CHECK(refused.out.find("exact_probability") == std::string::npos);
-    }
+    // The golden Bytes of a Boolean answer: `exact_probability`, 16 significant digits, and the
+    // same summary before it, whatever else the file holds.
+    const auto expected_boolean = [&](std::filesystem::path const &path) {
+        const auto output = runFzb("inspect " + quoted(path.string()) + " --exact", scratch);
+        INFO(output.out << output.err);
+        REQUIRE(output.status == 0);
+        const auto line = output.out.substr(output.out.rfind("exact_probability"));
+        CHECK(line == "exact_probability  1.2500000000000000e-01\n");
+        CHECK(output.out.find("exact_hull_probability") == std::string::npos);
+        CHECK(output.err.find("validate:") == std::string::npos);
+        return output.out;
+    };
+    const auto golden = expected_boolean(boolean);
+    // Query 0 of the mixed file is the Boolean one, so it prints the same line; the
+    // summary in front of it differs (two queries instead of one).
+    const auto tail = [](std::string const &text) {
+        const auto start = text.rfind("\nexact_probability");
+        return start == std::string::npos ? text : text.substr(start + 1);
+    };
+    CHECK(tail(expected_boolean(mixed)) == tail(golden));
 
+    // A hull query is answered instead, by the subset-OR transform. This AND of two events has
+    // ↑g = g, so the value equals the Boolean one.
+    for (auto const &path : {hull, mixed}) {
+        const auto answered = runFzb("inspect " + quoted(path.string()) + " --validate --exact --query " +
+                                         query_guard_files::hull_name + " --kind hull",
+                                     scratch);
+        INFO(answered.out << answered.err);
+        REQUIRE(answered.status == 0);
+        CHECK(answered.err.find("validate: ok") != std::string::npos);
+        CHECK(answered.out.find("exact_probability") == std::string::npos);
+        CHECK(std::abs(numberAfter(answered.out, "exact_hull_probability") - 0.125) < 1.0e-12);
+    }
+    // A hull file has one hull query, so it is the default even when the file also has a
+    // Boolean query named differently.
+    const auto by_default = runFzb("inspect " + quoted(hull.string()) + " --exact", scratch);
+    INFO(by_default.out << by_default.err);
+    REQUIRE(by_default.status == 0);
+    CHECK(std::abs(numberAfter(by_default.out, "exact_hull_probability") - 0.125) < 1.0e-12);
+
+    // The summary is still printed for a hull file, with or without a query to evaluate.
     const auto summary = runFzb("inspect " + quoted(hull.string()), scratch);
     INFO(summary.out << summary.err);
     CHECK(summary.status == 0);
 
-    const auto accepted = runFzb("inspect " + quoted(boolean.string()) + " --exact", scratch);
-    INFO(accepted.out << accepted.err);
-    REQUIRE(accepted.status == 0);
-    CHECK(std::abs(numberAfter(accepted.out, "exact_probability") - 0.125) < 1.0e-12);
     std::filesystem::remove_all(scratch);
 }
 
@@ -274,9 +301,192 @@ TEST_CASE("fzb inspect validates a written mixed-kind file and lists the recorde
     CHECK(inspected.out.find("compile.query.1.negation  monotone_hull") != std::string::npos);
     CHECK(inspected.out.find("compile.query.1.max_initiators_per_cutset  1") != std::string::npos);
 
-    // The runtime and the exact evaluator refuse the hull query instead of answering it as a probability.
+    // The evaluator follows the kind: query 0 is the Boolean AND, query 1 its hull.
     const auto exact = runFzb("inspect " + quoted(path.string()) + " --exact", scratch);
-    CHECK(exact.status != 0);
-    CHECK(exact.err.find("pcfb.unsupported-query-kind") != std::string::npos);
+    INFO(exact.out << exact.err);
+    REQUIRE(exact.status == 0);
+    CHECK(std::abs(numberAfter(exact.out, "exact_probability") - 0.125) < 1.0e-12);
+    const auto hull = runFzb("inspect " + quoted(path.string()) + " --exact --query TOP --kind hull", scratch);
+    INFO(hull.out << hull.err);
+    REQUIRE(hull.status == 0);
+    CHECK(std::abs(numberAfter(hull.out, "exact_hull_probability") - 0.125) < 1.0e-12);
+    // The name alone is ambiguous: the target is written as two kinds.
+    const auto ambiguous = runFzb("inspect " + quoted(path.string()) + " --exact --query TOP", scratch);
+    CHECK(ambiguous.status != 0);
+    CHECK(ambiguous.err.find("probability and hull") != std::string::npos);
+    std::filesystem::remove_all(scratch);
+}
+TEST_CASE("fzb inspect --hull-check evaluates named samples of a hull query", "[io][pcfb][cli][hull]") {
+    // g = A AND XOR(B, NOT C). x = {A} satisfies it with B and C low, so the bounds decide
+    // that lane; x = {A, C} is a hit only with y_C = 0, which the bounds cannot see, so a
+    // later tier decides it. D is outside the target's cone.
+    pc::builder builder;
+    const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
+    const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
+    const auto c = builder.add_basic_event(builder.add_literal_probability(0.3));
+    const auto d = builder.add_basic_event(builder.add_literal_probability(0.4));
+    const auto not_c = builder.add_not(edge{.source = c});
+    const auto parity = builder.add_gate(pc::op_code::xor_gate, {edge{.source = b}, edge{.source = not_c}});
+    const auto g = builder.add_and({edge{.source = a}, edge{.source = parity}});
+    (void)builder.add_target(g);
+    const auto plain = builder.add_and({edge{.source = a}, edge{.source = d}});
+    (void)builder.add_target(plain);
+    auto sealed = std::move(builder).seal();
+    REQUIRE(sealed.ok());
+
+    writer::write_options options;
+    options.target_names = {{pc::target_id(0), "TOP_HULL"}, {pc::target_id(1), "PLAIN"}};
+    options.target_kinds = {{pc::target_id(0), {writer::query_kind::monotone_hull_probability}}};
+    options.node_names = {{a, "A"}, {b, "B"}, {c, "C"}, {d, "D"}, {not_c, "NOT_C"}, {parity, "PARITY"}, {g, "TOP"}};
+    const auto written = writer::write(sealed.output.to_handle(), options);
+    INFO(diagnosticsText(written.diagnostics()));
+    REQUIRE(written);
+    const auto scratch = scratchDirectory("hull-check");
+    const auto path = scratch / "hull.pcfb";
+    writeFile(path, written.value().bytes);
+
+    SECTION("one set per argument") {
+        // x = {A}: A satisfies the OR and C is false, so g holds outright.
+        const auto decided = runFzb("inspect " + quoted(path.string()) + " --hull-check A --witness", scratch);
+        INFO(decided.out << decided.err);
+        REQUIRE(decided.status == 0);
+        CHECK(decided.out.find("hull_check  hit=1  L=1  U=1  tier=bounds  residual=0") != std::string::npos);
+        CHECK(decided.out.find("witness  A\n") != std::string::npos);
+        // x = {A, C}: A satisfies the OR, but the deletion may be dropped (y_C = 0),
+        // so the bounds leave the lane open and a later tier decides it.
+        const auto open = runFzb("inspect " + quoted(path.string()) + " --hull-check A,C --witness", scratch);
+        INFO(open.out << open.err);
+        REQUIRE(open.status == 0);
+        CHECK(open.out.find("hull_check  hit=1  L=0  U=1") != std::string::npos);
+        CHECK(open.out.find("tier=bounds") == std::string::npos);
+        // The witness is {A}: C is true in the sample but need not be for the hit.
+        CHECK(open.out.find("witness  A\n") != std::string::npos);
+        // x = {C} is a miss: the OR has no true event to work with.
+        const auto only_c = runFzb("inspect " + quoted(path.string()) + " --hull-check C", scratch);
+        INFO(only_c.out << only_c.err);
+        REQUIRE(only_c.status == 0);
+        CHECK(only_c.out.find("hit=0") != std::string::npos);
+        const auto miss = runFzb("inspect " + quoted(path.string()) + " --hull-check D", scratch);
+        INFO(miss.out << miss.err);
+        REQUIRE(miss.status == 0);
+        CHECK(miss.out.find("hit=0") != std::string::npos);
+        CHECK(miss.out.find("witness") == std::string::npos);
+    }
+    SECTION("events outside the cone are ignored") {
+        const auto with_d = runFzb("inspect " + quoted(path.string()) + " --hull-check A,D --witness", scratch);
+        const auto without_d = runFzb("inspect " + quoted(path.string()) + " --hull-check A --witness", scratch);
+        INFO(with_d.out << with_d.err);
+        REQUIRE(with_d.status == 0);
+        REQUIRE(without_d.status == 0);
+        CHECK(with_d.out == without_d.out);
+    }
+    SECTION("the empty set is a miss, and a hit only when g(empty) is TRUE") {
+        const auto empty = runFzb("inspect " + quoted(path.string()) + " --hull-check ''", scratch);
+        INFO(empty.out << empty.err);
+        REQUIRE(empty.status == 0);
+        CHECK(empty.out.find("hit=0") != std::string::npos);
+    }
+    SECTION("a file of sets, with `-` for the empty set and blank lines skipped") {
+        const auto sets = scratch / "sets.txt";
+        {
+            std::ofstream out(sets, std::ios::binary);
+            out << "A,B\n\n-\nD\nC\n";
+            REQUIRE(out);
+        }
+        const auto listed = runFzb("inspect " + quoted(path.string()) + " --hull-check @" + quoted(sets.string()) +
+                                       " --witness --json",
+                                   scratch);
+        INFO(listed.out << listed.err);
+        REQUIRE(listed.status == 0);
+        CHECK(listed.out.find("\"hit\": true") != std::string::npos);
+        CHECK(listed.out.find("\"hit\": false, \"lower\": false, \"upper\": false") != std::string::npos);
+        CHECK(listed.out.find("\"witness\": [\"A\"]") != std::string::npos);
+        CHECK(listed.out.find("\"query\": {\"index\": 0, \"name\": \"TOP_HULL\", \"kind\": \"hull\"}") !=
+              std::string::npos);
+        // The JSON is an array of four objects, one per set.
+        CHECK(listed.out.find("\"hit\":") != std::string::npos);
+        CHECK(listed.out.rfind("\"hit\":") != listed.out.find("\"hit\":"));
+        CHECK(listed.out.find("\"residual_variables\": 0, \"witness\": null") != std::string::npos);
+    }
+    SECTION("an empty file of sets is an error") {
+        const auto sets = scratch / "empty.txt";
+        {
+            std::ofstream out(sets, std::ios::binary);
+            out << "\n\n";
+            REQUIRE(out);
+        }
+        const auto listed =
+            runFzb("inspect " + quoted(path.string()) + " --hull-check @" + quoted(sets.string()), scratch);
+        CHECK(listed.status != 0);
+        CHECK(listed.err.find("lists no sets") != std::string::npos);
+    }
+    SECTION("an unknown name or a gate name is an error naming it") {
+        const auto unknown = runFzb("inspect " + quoted(path.string()) + " --hull-check NOPE", scratch);
+        CHECK(unknown.status != 0);
+        CHECK(unknown.err.find("'NOPE'") != std::string::npos);
+        const auto gate = runFzb("inspect " + quoted(path.string()) + " --hull-check PARITY", scratch);
+        CHECK(gate.status != 0);
+        CHECK(gate.err.find("'PARITY' is not a basic event") != std::string::npos);
+    }
+    SECTION("a Boolean query is refused") {
+        const auto plain_only = runFzb("inspect " + quoted(path.string()) + " --hull-check A --query PLAIN", scratch);
+        CHECK(plain_only.status != 0);
+        CHECK(plain_only.err.find("not hull") != std::string::npos);
+    }
+    SECTION("the only hull query is the default") {
+        const auto defaulted = runFzb("inspect " + quoted(path.string()) + " --hull-check A", scratch);
+        const auto named = runFzb("inspect " + quoted(path.string()) + " --hull-check A --query TOP_HULL", scratch);
+        REQUIRE(defaulted.status == 0);
+        REQUIRE(named.status == 0);
+        CHECK(defaulted.out == named.out);
+    }
+    SECTION("event names map to lane bits even when a gate precedes the events") {
+        // A gate is node 0, so the read circuit's node ids and event ordinals differ;
+        // a wrong mapping would decide a different lane.
+        pc::builder builder;
+        const auto seed = builder.add_basic_event(builder.add_literal_probability(0.5));
+        const auto early = builder.add_or({edge{.source = seed}});
+        const auto a = builder.add_basic_event(builder.add_literal_probability(0.5));
+        const auto b = builder.add_basic_event(builder.add_literal_probability(0.5));
+        const auto g = builder.add_and({edge{.source = early}, edge{.source = a}, edge{.source = b}});
+        (void)builder.add_target(g);
+        auto sealed = std::move(builder).seal();
+        REQUIRE(sealed.ok());
+        writer::write_options named_options;
+        named_options.target_names = {{pc::target_id(0), "G"}};
+        named_options.target_kinds = {{pc::target_id(0), {writer::query_kind::monotone_hull_probability}}};
+        named_options.node_names = {{seed, "SEED"}, {a, "A"}, {b, "B"}, {early, "EARLY"}, {g, "GATE"}};
+        const auto written = writer::write(sealed.output.to_handle(), named_options);
+        INFO(diagnosticsText(written.diagnostics()));
+        REQUIRE(written);
+        const auto gate_first = scratch / "gate-first.pcfb";
+        writeFile(gate_first, written.value().bytes);
+
+        const auto all = runFzb("inspect " + quoted(gate_first.string()) + " --hull-check SEED,A,B --json", scratch);
+        INFO(all.out << all.err);
+        REQUIRE(all.status == 0);
+        CHECK(all.out.find("\"hit\": true, \"lower\": true, \"upper\": true") != std::string::npos);
+        // Without SEED the early OR is false, so the target is a miss.
+        const auto later = runFzb("inspect " + quoted(gate_first.string()) + " --hull-check A,B --json", scratch);
+        INFO(later.out << later.err);
+        REQUIRE(later.status == 0);
+        CHECK(later.out.find("\"hit\": false") != std::string::npos);
+    }
+    SECTION("--json without --hull-check still prints the summary") {
+        const auto summary = runFzb("inspect " + quoted(path.string()) + " --json", scratch);
+        INFO(summary.out << summary.err);
+        REQUIRE(summary.status == 0);
+        CHECK(summary.out.find("\"schema_version\": 65538") != std::string::npos);
+    }
+    SECTION("nonsensical combinations are usage errors") {
+        for (const auto &arguments :
+             {std::string("--witness --exact"), std::string("--hull-check A --exact"), std::string("--kind hull"),
+              std::string("--hull-check A --kind hull"), std::string("--query TOP_HULL")}) {
+            const auto refused = runFzb("inspect " + quoted(path.string()) + " " + arguments, scratch);
+            INFO(arguments << ": " << refused.err);
+            CHECK(refused.status != 0);
+            CHECK(refused.err.find("Option error:") != std::string::npos);
+        }
+    }
     std::filesystem::remove_all(scratch);
 }

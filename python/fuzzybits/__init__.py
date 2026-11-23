@@ -6,7 +6,8 @@ Public surface:
 - :func:`init`
 - :func:`list_devices`
 - :func:`probability`
-- :func:`compile` / :func:`compile_file` / :func:`inspect` / :func:`exact` / :func:`run`
+- :func:`compile` / :func:`compile_file` / :func:`inspect` / :func:`exact` / :func:`hull_check` /
+  :func:`run`
 - :func:`read_project` (CAFTA FTP diagnostics, structure and conventions, without compiling)
 - :func:`nombrilo_to_pcfb` / :func:`pcfb_to_nombrilo`
 - :class:`Session` (streaming per-pass popcounts over a ``.pcfb``)
@@ -32,6 +33,7 @@ from ._api import (
     compile,
     compile_file,
     exact,
+    hull_check,
     inspect,
     list_devices,
     nombrilo_to_pcfb,
@@ -76,6 +78,7 @@ __all__ = [
     "has_cuda_device",
     "has_hip_device",
     "has_sm70_device",
+    "hull_check",
     "init",
     "inspect",
     "list_devices",

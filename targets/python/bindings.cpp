@@ -14,6 +14,10 @@
 #include "compile/sha256.h"
 #include "cli/progress_line.h"
 #include "initializer.h"
+#include "io/pcfb/descriptor.h"
+#include "io/pcfb/query_select.h"
+#include "ir/pc/hull/exact.h"
+#include "ir/pc/hull/hull.h"
 #include "mc/core/direct_eval.h"
 #include "mc/queue/layer_manager.h"
 #include "mc/stats/tally_node_map.h"
@@ -1810,6 +1814,120 @@ double exact_pcfb_path(const std::string &path, std::uint32_t query_index) {
     return fuzzybits::compile::exact_probability(*circuit, query_index);
 }
 
+namespace hull_api {
+
+    using read_output = fuzzybits::io::backend::fuzzybits::pcfb::read_output;
+
+    [[nodiscard]] std::string first_error(const fuzzybits::api::diagnostic_list &diagnostics) {
+        for (auto const &item : diagnostics.items()) {
+            return item.message;
+        }
+        return "unknown error";
+    }
+
+    [[nodiscard]] py::dict check_to_py(const fuzzybits::ir::pc::hull::hull_check_result &result,
+                                       const std::optional<std::vector<std::string>> &witness_names,
+                                       const fuzzybits::io::backend::fuzzybits::pcfb::query_selection &query) {
+        py::dict out;
+        out["hit"] = result.hit;
+        out["lower"] = result.lower;
+        out["upper"] = result.upper;
+        out["tier"] = std::string(fuzzybits::ir::pc::hull::to_string(result.tier));
+        out["residual_variables"] = result.residual_variables;
+        if (!witness_names) {
+            out["witness"] = py::none();
+        } else {
+            py::list names;
+            for (auto const &name : *witness_names) {
+                names.append(name);
+            }
+            out["witness"] = std::move(names);
+        }
+        py::dict selected;
+        selected["index"] = query.index;
+        selected["name"] = query.name;
+        selected["kind"] = std::string(fuzzybits::io::backend::fuzzybits::pcfb::query_kind_name(query.kind));
+        out["query"] = std::move(selected);
+        return out;
+    }
+
+} // namespace hull_api
+
+// `fuzzybits.exact`: P(query) for either kind, chosen by name or by position.
+double exact_any_pcfb_path(const std::string &path, std::uint32_t query_index, const std::optional<std::string> &query,
+                           const std::optional<std::string> &kind) {
+    auto read = fuzzybits::io::backend::fuzzybits::pcfb::read(std::filesystem::path(path));
+    if (!read) {
+        throw std::runtime_error("exact: " + hull_api::first_error(read.diagnostics()));
+    }
+    auto const &file = read.value();
+    auto selected = fuzzybits::io::backend::fuzzybits::pcfb::select_query(
+        fuzzybits::io::backend::fuzzybits::pcfb::queries_of(file),
+        query ? std::optional<std::string_view>{*query} : std::nullopt,
+        kind ? fuzzybits::io::backend::fuzzybits::pcfb::parse_query_kind(*kind) : std::nullopt);
+    if (!selected) {
+        throw std::runtime_error("exact: " + hull_api::first_error(selected.diagnostics()));
+    }
+    const auto index = query || kind ? selected.value().index : query_index;
+    if (index >= file.queries.size()) {
+        throw std::runtime_error("exact: the file has no query " + std::to_string(index));
+    }
+    const auto &entry = file.queries[index];
+    if (entry.kind != fuzzybits::io::backend::fuzzybits::pcfb::query_kind::monotone_hull_probability) {
+        return exact_pcfb_path(path, index);
+    }
+    auto exact =
+        fuzzybits::ir::pc::hull::exact_hull_probability(file.circuit, file.circuit.targets()[entry.target.raw()].node);
+    if (!exact) {
+        throw std::runtime_error("exact: " + hull_api::first_error(exact.diagnostics()));
+    }
+    return exact.value();
+}
+
+// `fuzzybits.hull_check`: one sample, one query, optionally a minimal witness.
+py::dict hull_check_pcfb_path(const std::string &path, const std::vector<std::string> &true_events,
+                              const std::optional<std::string> &query, const std::optional<std::string> &kind,
+                              const bool witness) {
+    auto read = fuzzybits::io::backend::fuzzybits::pcfb::read(std::filesystem::path(path));
+    if (!read) {
+        throw std::runtime_error("hull_check: " + hull_api::first_error(read.diagnostics()));
+    }
+    auto const &file = read.value();
+    auto selected = fuzzybits::io::backend::fuzzybits::pcfb::select_hull_query(
+        fuzzybits::io::backend::fuzzybits::pcfb::queries_of(file),
+        query ? std::optional<std::string_view>{*query} : std::nullopt,
+        kind ? fuzzybits::io::backend::fuzzybits::pcfb::parse_query_kind(*kind) : std::nullopt);
+    if (!selected) {
+        throw std::runtime_error("hull_check: " + hull_api::first_error(selected.diagnostics()));
+    }
+    std::vector<fuzzybits::ir::pc::bool_node_id> nodes;
+    for (auto const &name : true_events) {
+        auto node = fuzzybits::io::backend::fuzzybits::pcfb::basic_event_named(file, name);
+        if (!node) {
+            throw std::runtime_error("hull_check: " + hull_api::first_error(node.diagnostics()));
+        }
+        nodes.push_back(node.value());
+    }
+    const auto target = file.circuit.targets()[selected.value().target.raw()].node;
+    auto made = fuzzybits::ir::pc::hull::checker::make(file.circuit, target);
+    if (!made) {
+        throw std::runtime_error("hull_check: " + hull_api::first_error(made.diagnostics()));
+    }
+    auto checked = made.value().check_nodes(nodes, witness);
+    if (!checked) {
+        throw std::runtime_error("hull_check: " + hull_api::first_error(checked.diagnostics()));
+    }
+    std::optional<std::vector<std::string>> witness_names;
+    if (checked.value().witness) {
+        witness_names.emplace();
+        for (const auto event : *checked.value().witness) {
+            witness_names->push_back(
+                fuzzybits::io::backend::fuzzybits::pcfb::node_name(file, made.value().event_node(event)));
+        }
+    }
+    return hull_api::check_to_py(checked.value(), witness_names, selected.value());
+}
+
 py::list query_results_to_py(const std::vector<fuzzybits::runtime::QueryResult> &results) {
     py::list out;
     for (const auto &r : results) {
@@ -2382,6 +2500,37 @@ Exhaustive exact P(query) for a small in-memory `.pcfb` (≤ 30 random SAMPLE ev
         py::arg("query_index") = 0,
         R"pbdoc(
 Exhaustive exact P(query) for a small `.pcfb` file (≤ 30 random SAMPLE events).
+)pbdoc");
+
+    m.def(
+        "exact_any_pcfb_path",
+        &exact_any_pcfb_path,
+        py::arg("path"),
+        py::arg("query_index") = 0,
+        py::arg("query") = py::none(),
+        py::arg("kind") = py::none(),
+        R"pbdoc(
+Exhaustive exact value of a query of either kind, chosen by name (`query`, with optional `kind`) or position.
+
+`PROBABILITY` queries use the Boolean enumerator (≤ 30 random events); `MONOTONE_HULL_PROBABILITY`
+queries use the subset-OR transform (≤ 24 events with a probability above 0). The hull value is
+the plain monotone hull of the circuit as written: ∃ y ≤ x : g(y).
+)pbdoc");
+
+    m.def(
+        "hull_check_pcfb_path",
+        &hull_check_pcfb_path,
+        py::arg("path"),
+        py::arg("true_events"),
+        py::arg("query") = py::none(),
+        py::arg("kind") = py::none(),
+        py::arg("witness") = false,
+        R"pbdoc(
+One hull check: the sample whose true events are `true_events` (basic-event names), on a hull query.
+
+The dict has `hit`, `lower` and `upper` (the RFC 4.4 bounds, so `lower <= hit <= upper`), `tier`
+(which decision tier decided it), `residual_variables`, `witness` (a minimal set of the sample's
+true cone events, or null) and `query` (`index`, `name`, `kind`).
 )pbdoc");
 
     m.def(

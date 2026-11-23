@@ -105,8 +105,10 @@ solver that deletes cut sets with a complemented gate (`ftp.negation = delete_te
 reading (`--negation hull`), which differs from the Boolean one. **Hull is the default for FTP input.** A hull target is
 written as a `MONOTONE_HULL_PROBABILITY` query (pcfb 1.2, schema minor 2); a file with Boolean queries only stays at minor 1.
 A target may ask for both kinds (`"negation": "both"` in the config): two queries on one tensor, both named after the
-target. The runtime estimator for hull queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact`
-refuse a file with a hull query (`pcfb.unsupported-query-kind`), and `--negation boolean` is what runs today.
+target. `fzb inspect --exact` and `fuzzybits.exact` evaluate a hull query exactly (the plain monotone hull of the
+circuit as written, by the subset-OR transform) instead of refusing the file; the Monte Carlo estimator for hull
+queries is #183, so until then `fzb run`, `fuzzybits.run` and `fuzzybits.Session` refuse a file with a hull query
+(`pcfb.unsupported-query-kind`), and `--negation boolean` is what runs.
 
 pcfb 1.2 has no literal atoms per query yet, so a hull query reads a marked operand (`-EVENT` under
 `--complement-events atom`) as a plain complement, which is the `negation` literal mode. A hull target whose cone has
