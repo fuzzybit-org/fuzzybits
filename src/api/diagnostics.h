@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <string>
 #include <utility>
@@ -20,6 +21,9 @@ namespace fuzzybits::api {
         diagnostic_severity severity = diagnostic_severity::note;
         std::string code;
         std::string message;
+        // Project source position; empty and 0 when the diagnostic has none.
+        std::string file;
+        std::uint32_t line = 0;
     };
 
     class diagnostic_list final {

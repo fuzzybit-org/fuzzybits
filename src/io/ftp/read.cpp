@@ -76,7 +76,10 @@ namespace fuzzybits::io::backend::fuzzybits::ftp {
                 std::ifstream input(path, std::ios::binary);
                 if (!input) {
                     return api::result<std::vector<source_text>>::fail(
-                        api::make_error("io.ftp.open-failed", "failed to open FTP input file '" + path.generic_string() + "'"));
+                        api::diagnostic{.severity = api::diagnostic_severity::error,
+                                        .code = "io.ftp.open-failed",
+                                        .message = "failed to open FTP input file '" + path.generic_string() + "'",
+                                        .file = path.generic_string()});
                 }
                 std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
                 sources.push_back(source_text{.path = path.generic_string(), .text = std::move(text)});
