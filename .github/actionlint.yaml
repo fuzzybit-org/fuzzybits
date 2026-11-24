@@ -26,3 +26,4 @@ config-variables:
   - SKIP_GFX1012
   - SKIP_METAL_ARM
   - SKIP_METAL_INTEL
+  - ROADMAP_HEALTH_ISSUE
