@@ -151,6 +151,8 @@ runs:
 
         # AdaptiveCpp uses GNU __atomic_* builtins (clang-cl, not MSVC cl).
         # LLVM 19 clang-cl cannot parse the VS 2025 STL; LLVM 20 can.
+        # DIA SDK off: it needs ATL (atlbase.h), which the image installs only for its
+        # default toolset, not for 14.44. Only llvm-pdbutil uses it.
         $env:PATH = "$env:LLVM_PATH\bin;$env:PATH"
         $env:CC = 'clang-cl'
         $env:CXX = 'clang-cl'
@@ -182,6 +184,7 @@ runs:
           -DLLVM_INCLUDE_BENCHMARKS=OFF `
           -DLLVM_ENABLE_BINDINGS=OFF `
           -DLLVM_TOOL_BUGPOINT_BUILD=OFF `
+          -DLLVM_ENABLE_DIA_SDK=OFF `
           -DOPENMP_ENABLE_LIBOMPTARGET=OFF `
           -DWITH_OPENCL_BACKEND=OFF `
           -DWITH_ROCM_BACKEND=OFF `
