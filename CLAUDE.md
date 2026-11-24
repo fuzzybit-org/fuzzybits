@@ -71,6 +71,8 @@ Use `scripts/dev/ws.sh` for every build and test (details: `scripts/dev/README.m
   `SPDX-License-Identifier: GPL-3.0-or-later`: mostly top-level `src/`, `src/ext`,
   `src/expression` and `targets/scram`. Check with `python3 scripts/ci/scram_provenance.py`.
 - **Private fixtures.** Pass them only when the task asks for them (`ws.sh ... --private=<dir>`).
+  They are the `update = none` submodule `extern/private-fixtures`; never fetch it in CI or change
+  its `update = none`.
   Report aggregates only: never identifiers, names or values.
 - **Docs.** `docs/architecture.md` predates the rename and is partly out of date. When it disagrees
   with the code or a newer doc, trust the code and say so.

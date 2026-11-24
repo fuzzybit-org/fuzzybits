@@ -124,19 +124,48 @@ in_ws() {
   dk exec "$@" "${cname}" bash -c "if command -v flock >/dev/null; then exec flock -w 7200 /tmp/fzb-ws.lock bash -c \"\$0\"; else exec bash -c \"\$0\"; fi" "${script}"
 }
 
+# Paths of the submodules with `update = none` in .gitmodules: the private repositories
+# (extern/private-fixtures, extern/pra-solver-images). A workspace gets them only through --private.
+private_submodules() {
+  local wt="$1" key value
+  [[ -f "${wt}/.gitmodules" ]] || return 0
+  git -C "${wt}" config -f .gitmodules --get-regexp '^submodule\..*\.update$' 2>/dev/null |
+    while read -r key value; do
+      [[ "${value}" == none ]] || continue
+      git -C "${wt}" config -f .gitmodules --get "${key%.update}.path" || true
+    done
+}
+
+# Copies NUL-separated paths from stdin to stdout, dropping those that are, or are inside, an argument.
+drop_paths() {
+  local f p
+  while IFS= read -r -d '' f; do
+    for p in "$@"; do
+      [[ "${f}" == "${p}" || "${f}" == "${p}/"* ]] && continue 2
+    done
+    printf '%s\0' "${f}"
+  done
+}
+
 do_sync() {
-  local name="$1" wt="$2" wipe="$3" cname
+  local name="$1" wt="$2" wipe="$3" cname p
   cname="$(container_of "${name}")"
   git -C "${wt}" rev-parse --show-toplevel >/dev/null 2>&1 || die "${wt} is not a git checkout"
   case "${wipe}" in
     clean) in_ws "${cname}" 'mkdir -p /src && cd /src && find . -mindepth 1 -maxdepth 1 ! -name build ! -name .cache -exec rm -rf {} +' ;;
     fresh) in_ws "${cname}" 'rm -rf /src && mkdir -p /src' ;;
   esac
+  # git ls-files lists a submodule as its directory, and tar would copy a populated one whole.
+  local skip=()
+  while IFS= read -r p; do
+    [[ -n "${p}" ]] && skip+=("${p}")
+  done < <(private_submodules "${wt}")
   local tar_flags=(--null -T - -cf -)
   if tar --version 2>/dev/null | grep -q bsdtar; then
     tar_flags=(--no-mac-metadata --no-xattrs "${tar_flags[@]}")
   fi
-  (cd "${wt}" && git ls-files -co --exclude-standard -z | tar "${tar_flags[@]}" 2>/dev/null) |
+  (cd "${wt}" && git ls-files -co --exclude-standard -z | drop_paths ${skip[@]+"${skip[@]}"} |
+    tar "${tar_flags[@]}" 2>/dev/null) |
     in_ws "${cname}" 'mkdir -p /src && tar -C /src -xf -' -i
 }
 
@@ -144,7 +173,8 @@ copy_private() {
   local cname="$1" dir="$2"
   [[ -d "${dir}" ]] || die "private fixtures directory not found: ${dir}"
   in_ws "${cname}" 'rm -rf /private && mkdir -m 700 /private'
-  local tar_flags=(-cf - .)
+  # The fixtures may be a git checkout (the extern/private-fixtures submodule): never copy its .git.
+  local tar_flags=(--exclude=.git -cf - .)
   if tar --version 2>/dev/null | grep -q bsdtar; then
     tar_flags=(--no-mac-metadata --no-xattrs "${tar_flags[@]}")
   fi

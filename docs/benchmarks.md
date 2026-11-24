@@ -752,6 +752,9 @@ FUZZYBITS_PRIVATE_FIXTURES_DIR=/path/to/private-fixtures \
   pytest tests/python/test_reference_estimators.py -m private -s
 ```
 
+The fixtures are the private submodule `extern/private-fixtures` (see CONTRIBUTING.md, "Private fixtures"). CI
+never fetches it.
+
 ## Published history and the Benchmarks tab
 
 [#123](https://github.com/fuzzybit-org/fuzzybits/issues/123) publishes

@@ -73,3 +73,30 @@ left are formatting, and each replayed commit is reformatted. Run step 2 without
 Some tests and benchmarks use private models (`--private` in `ws.sh`,
 `FUZZYBITS_PRIVATE_FIXTURES_DIR`). Never print, commit or paste their identifiers or values. Report
 aggregates only.
+
+The private repositories are submodules marked `update = none` in `.gitmodules`:
+
+| Path | Repository |
+|---|---|
+| `extern/private-fixtures` | the private models and their cards |
+| `extern/pra-solver-images` | wine images for the licensed vendor solvers |
+
+- Each has `update = none` in `.gitmodules`, so `git submodule update --init --recursive` and CI checkouts skip
+  them.
+- With ssh access to the repositories, fetch one explicitly:
+
+  ```bash
+  git submodule update --init --checkout extern/private-fixtures
+  ```
+
+- `ws.sh` never syncs them into a workspace; pass `--private=extern/private-fixtures` instead.
+- `scripts/ci/private-submodules.sh` (the `hygiene` job) checks:
+  - every other submodule is readable anonymously, so a new private one cannot be added without
+    `update = none`;
+  - no private submodule is populated in CI;
+  - the job token cannot read any of them;
+  - on GitHub-hosted runners, where fork pull requests run, the runner cannot read them over ssh, https or
+    `gh`;
+  - on self-hosted runners, whose accounts are trusted and may read them, the job-started hook that keeps other
+    people's jobs off the host is configured
+    ([ci-toolchain.md](docs/ci-toolchain.md#self-hosted-runner-job-guard)).
