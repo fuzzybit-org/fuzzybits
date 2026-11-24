@@ -21,18 +21,18 @@
 namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
 namespace {
 
+// Spaces, tabs, CR and every other control byte (NUL, form feed, the DOS end-of-file
+// mark 0x1A, DEL) separate tokens.
 [[nodiscard]] constexpr auto isBlank(const char character) noexcept -> bool {
-    return character == ' ' || character == '\t' || character == '\r' || character == '\f' || character == '\v';
+    const auto byte = static_cast<unsigned char>(character);
+    return byte <= 0x20 || byte == 0x7F;
 }
 
 [[nodiscard]] constexpr auto isDigit(const char character) noexcept -> bool {
     return character >= '0' && character <= '9';
 }
 
-[[nodiscard]] constexpr auto isNameCharacter(const char character) noexcept -> bool {
-    return isDigit(character) || (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
-           character == '_' || character == '/' || character == '-';
-}
+constexpr std::string_view kUtf8ByteOrderMark = "\xEF\xBB\xBF";
 
 [[nodiscard]] auto trim(std::string_view text) noexcept -> std::string_view {
     while (!text.empty() && isBlank(text.front())) {
@@ -61,9 +61,12 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     }
 }
 
-// EVENT_ID of the grammar; a leading '-' is reserved for complemented references.
+// EVENT_ID of the grammar: any token (no blank, no ';', which starts a comment), except
+// that a leading '-' is reserved for complemented references and a lone '+' or '*' is
+// a gate operator.
 [[nodiscard]] auto isName(const std::string_view token) noexcept -> bool {
-    return !token.empty() && token.front() != kFtpComplementToken && std::ranges::all_of(token, isNameCharacter);
+    return !token.empty() && token.front() != kFtpComplementToken && token != "+" && token != "*" &&
+           token.find(kFtpCommentToken) == std::string_view::npos;
 }
 
 [[nodiscard]] auto isReference(std::string_view token) noexcept -> bool {
@@ -81,7 +84,13 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     return token == "+" || token == "*" || isDigits(token);
 }
 
-// NUMBER of the grammar: [+-]?[0-9]+('.'[0-9]+)?([Ee][+-]?[0-9]+)?
+[[nodiscard]] constexpr auto isExponentMark(const char character) noexcept -> bool {
+    return character == 'E' || character == 'e' || character == 'D' || character == 'd';
+}
+
+// NUMBER of the grammar: [+-]? ([0-9]+ ('.' [0-9]*)? | '.' [0-9]+) ([EeDd] [+-]? [0-9]+)?
+// `1.`, `.5`, `1.E-3` and the Fortran exponent `1.0D-03` are numbers; `.`, `5E`, `0x1`,
+// `inf` and `nan` are not.
 [[nodiscard]] auto isNumber(std::string_view token) noexcept -> bool {
     const auto digits = [&token] {
         std::size_t count = 0;
@@ -94,16 +103,15 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     if (!token.empty() && (token.front() == '+' || token.front() == '-')) {
         token.remove_prefix(1);
     }
-    if (digits() == 0) {
-        return false;
-    }
+    auto mantissa = digits();
     if (!token.empty() && token.front() == '.') {
         token.remove_prefix(1);
-        if (digits() == 0) {
-            return false;
-        }
+        mantissa += digits();
     }
-    if (!token.empty() && (token.front() == 'E' || token.front() == 'e')) {
+    if (mantissa == 0) {
+        return false;
+    }
+    if (!token.empty() && isExponentMark(token.front())) {
         token.remove_prefix(1);
         if (!token.empty() && (token.front() == '+' || token.front() == '-')) {
             token.remove_prefix(1);
@@ -115,17 +123,50 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     return token.empty();
 }
 
-[[nodiscard]] auto parseNumber(std::string_view token) noexcept -> std::optional<double> {
+// For a NUMBER that is out of the double range: true when its magnitude is below 1
+// (it rounds to zero), false when it overflows. Decimal order of the first non-zero
+// digit plus the exponent, both clamped.
+[[nodiscard]] auto underflows(const std::string_view number) noexcept -> bool {
+    const auto mark = number.find_first_of("Ee");
+    const auto mantissa = number.substr(0, mark);
+    long exponent = 0;
+    if (mark != std::string_view::npos) {
+        auto digits = number.substr(mark + 1);
+        const auto negative = !digits.empty() && digits.front() == '-';
+        if (!digits.empty() && (digits.front() == '-' || digits.front() == '+')) {
+            digits.remove_prefix(1);
+        }
+        for (const auto character : digits) {
+            exponent = std::min(exponent * 10 + (character - '0'), 100000L);
+        }
+        exponent = negative ? -exponent : exponent;
+    }
+    const auto point = std::min(mantissa.find('.'), mantissa.size());
+    const auto first = mantissa.find_first_of("123456789");
+    if (first == std::string_view::npos) {
+        return true;
+    }
+    const auto order = first < point ? static_cast<long>(point - first) - 1 : -static_cast<long>(first - point);
+    return order + exponent < 0;
+}
+
+[[nodiscard]] auto parseNumber(std::string_view token) -> std::optional<double> {
     if (!isNumber(token)) {
         return std::nullopt;
     }
     if (token.front() == '+') {
         token.remove_prefix(1);
     }
+    // from_chars reads `e` exponents only.
+    std::string text(token);
+    std::ranges::replace_if(text, [](const char character) { return character == 'D' || character == 'd'; }, 'E');
     double value = 0.0;
-    const auto end = token.data() + token.size();
-    if (const auto [cursor, error] = ::fuzzybits::io::from_chars(token.data(), end, value);
-        error != std::errc{} || cursor != end) {
+    const auto end = text.data() + text.size();
+    const auto [cursor, error] = ::fuzzybits::io::from_chars(text.data(), end, value);
+    if (error == std::errc::result_out_of_range && cursor == end && underflows(text)) {
+        return 0.0; // a value too small for a double, such as 1E-400, is 0
+    }
+    if (error != std::errc{} || cursor != end) {
         return std::nullopt;
     }
     return value;
@@ -138,6 +179,10 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
         return std::nullopt;
     }
     return value;
+}
+
+[[nodiscard]] auto isInitiatorFlag(const std::string_view token) noexcept -> bool {
+    return equal_ignoring_case(token, kFtpInitiatorFlag);
 }
 
 // `value name` outside an IMPORT section; the value cannot be a name.
@@ -185,7 +230,8 @@ class Parser final {
         afterTree_ = false;
 
         std::uint32_t lineNumber = 0;
-        for (std::size_t cursor = 0; cursor < text.size();) {
+        const std::size_t start = text.starts_with(kUtf8ByteOrderMark) ? kUtf8ByteOrderMark.size() : 0;
+        for (std::size_t cursor = start; cursor < text.size();) {
             auto end = text.find('\n', cursor);
             if (end == std::string_view::npos) {
                 end = text.size();
@@ -205,6 +251,7 @@ class Parser final {
         checkValues();
         checkGates();
         checkReferences();
+        checkSpellings();
         selectTargets();
     }
 
@@ -213,6 +260,15 @@ class Parser final {
         none,
         process,
         import,
+    };
+
+    enum class Keyword : std::uint8_t {
+        none,
+        endtree,
+        process,
+        import,
+        limit,
+        maxsize,
     };
 
     static constexpr std::uint32_t kNoGate = std::numeric_limits<std::uint32_t>::max();
@@ -236,20 +292,26 @@ class Parser final {
         project_.diagnostics.push(std::move(item));
     }
 
+    // A line is a header (`*` first), a keyword line, a PROCESS or IMPORT continuation, a
+    // gate line (`NAME op ...`) or a continuation of the open gate's operands; indentation
+    // does not decide between the last two. `;` starts a comment except in header lines.
     void parseLine(const std::string_view line, const Location location) {
-        tokenize(line, tokens_);
-        if (tokens_.empty()) {
+        const auto first = std::ranges::find_if_not(line, isBlank);
+        if (first == line.end()) {
             return;
         }
-        const auto head = tokens_[0];
-        if (head.front() == kFtpHeaderPrefix) {
+        if (*first == kFtpHeaderPrefix) {
             project_.headers.push_back(trim(line));
             section_ = Section::none;
             return;
         }
-        if (head == kFtpEndTreeToken || head == kFtpProcessToken || head == kFtpImportToken || head == kFtpLimitToken) {
-            if (treeStart_ && head != kFtpEndTreeToken) {
-                missingEndtree(*treeStart_, "the " + std::string(head) + " line at " + where(location));
+        tokenize(line.substr(0, line.find(kFtpCommentToken)), tokens_);
+        if (tokens_.empty()) {
+            return;
+        }
+        if (const auto head = keywordOf(tokens_[0]); head != Keyword::none) {
+            if (treeStart_ && head != Keyword::endtree) {
+                missingEndtree(*treeStart_, "the " + upper(tokens_[0]) + " line at " + where(location));
             }
             treeStart_.reset();
             openGate_ = kNoGate;
@@ -258,10 +320,10 @@ class Parser final {
             return;
         }
 
-        const auto indented = isBlank(line.front());
         if (section_ == Section::process) {
+            // `0.1 A` is a name pair too, but read as a misplaced import record.
             const auto names = std::ranges::all_of(tokens_, isName);
-            if (names && !(tokens_.size() > 1 && isOperator(tokens_[1]))) {
+            if (names && !isGateLine() && !isStrayRecord(tokens_)) {
                 for (const auto token : tokens_) {
                     project_.process.push_back(NamedLocation{.name = token, .location = location});
                 }
@@ -273,7 +335,7 @@ class Parser final {
             if (importRecord(location)) {
                 return;
             }
-            if (indented || tokens_.size() < 2 || !isOperator(tokens_[1])) {
+            if (!isGateLine()) {
                 error("io.ftp.invalid-line", where(location) + ": expected 'value name [flags]' in the IMPORT section",
                       location);
                 return;
@@ -287,27 +349,74 @@ class Parser final {
                   location);
             return;
         }
-        if (indented) {
-            if (openGate_ == kNoGate) {
-                error("io.ftp.invalid-line", where(location) + ": continuation line without an open gate", location);
-                return;
-            }
-            auto &gate = openGate_ == kDiscardedGate ? discarded_ : project_.definitions[openGate_];
-            appendOperands(gate, 0, location);
+        if (isGateLine()) {
+            gateLine(location);
             return;
         }
-        gateLine(location);
+        if (openGate_ == kNoGate) {
+            error("io.ftp.invalid-line",
+                  where(location) + (isBlank(line.front()) ? ": continuation line without an open gate"
+                                                           : ": expected 'NAME (+|*|k) operands...'"),
+                  location);
+            return;
+        }
+        auto &gate = openGate_ == kDiscardedGate ? discarded_ : project_.definitions[openGate_];
+        appendOperands(gate, 0, location);
     }
 
-    [[nodiscard]] auto keyword(const std::string_view head, const Location location) -> Section {
-        if (head == kFtpEndTreeToken || head == kFtpImportToken) {
-            if (tokens_.size() > 1) {
-                error("io.ftp.invalid-line", where(location) + ": unexpected tokens after " + std::string(head),
-                      location);
-            }
-            return head == kFtpImportToken ? Section::import : Section::none;
+    [[nodiscard]] auto isGateLine() const noexcept -> bool {
+        return tokens_.size() >= 2 && isName(tokens_[0]) && isOperator(tokens_[1]);
+    }
+
+    // Keywords in any case. MAXSIZE is a keyword only outside a tree section, so a gate
+    // may still be called MAXSIZE.
+    [[nodiscard]] auto keywordOf(const std::string_view head) const noexcept -> Keyword {
+        if (equal_ignoring_case(head, kFtpEndTreeToken)) {
+            return Keyword::endtree;
         }
-        if (head == kFtpProcessToken) {
+        if (equal_ignoring_case(head, kFtpProcessToken)) {
+            return Keyword::process;
+        }
+        if (equal_ignoring_case(head, kFtpImportToken)) {
+            return Keyword::import;
+        }
+        if (equal_ignoring_case(head, kFtpLimitToken)) {
+            return Keyword::limit;
+        }
+        if (!treeStart_ && equal_ignoring_case(head, kFtpMaxSizeToken)) {
+            return Keyword::maxsize;
+        }
+        return Keyword::none;
+    }
+
+    [[nodiscard]] static auto upper(const std::string_view text) -> std::string {
+        std::string out(text);
+        std::ranges::transform(out, out.begin(), ascii_upper);
+        return out;
+    }
+
+    void ignoreTokens(const std::size_t first, const Location location) {
+        if (tokens_.size() <= first) {
+            return;
+        }
+        std::string ignored;
+        for (auto index = first; index < tokens_.size(); ++index) {
+            ignored += ignored.empty() ? "" : " ";
+            ignored += tokens_[index];
+        }
+        warning("io.ftp.ignored-tokens",
+                where(location) + ": '" + ignored + "' after " + upper(tokens_[0]) + " is not read", location);
+    }
+
+    [[nodiscard]] auto keyword(const Keyword head, const Location location) -> Section {
+        switch (head) {
+        case Keyword::endtree:
+            ignoreTokens(1, location);
+            return Section::none;
+        case Keyword::import:
+            ignoreTokens(1, location);
+            return Section::import;
+        case Keyword::process:
             for (std::size_t index = 1; index < tokens_.size(); ++index) {
                 if (isName(tokens_[index])) {
                     project_.process.push_back(NamedLocation{.name = tokens_[index], .location = location});
@@ -317,12 +426,25 @@ class Parser final {
                 }
             }
             return Section::process;
+        case Keyword::limit:
+            limitLine(location);
+            return Section::none;
+        case Keyword::maxsize:
+            maxSizeLine(location);
+            return Section::none;
+        case Keyword::none:
+            break;
         }
-        const auto value = tokens_.size() == 2 ? parseNumber(tokens_[1]) : std::nullopt;
+        return Section::none;
+    }
+
+    void limitLine(const Location location) {
+        const auto value = tokens_.size() >= 2 ? parseNumber(tokens_[1]) : std::nullopt;
         if (!value) {
             error("io.ftp.invalid-limit", where(location) + ": expected 'LIMIT value'", location);
-            return Section::none;
+            return;
         }
+        ignoreTokens(2, location);
         if (project_.limit && *project_.limit != *value) {
             warning("io.ftp.duplicate-limit",
                     where(location) + ": LIMIT " + std::string(tokens_[1]) + " replaces LIMIT " +
@@ -331,7 +453,27 @@ class Parser final {
         }
         project_.limit = *value;
         project_.limitText = tokens_[1];
-        return Section::none;
+    }
+
+    // MAXSIZE n: the largest cut-set order a cut-set solver keeps (0: no limit). Recorded
+    // as metadata, like LIMIT; nothing in this reader truncates.
+    void maxSizeLine(const Location location) {
+        const auto value =
+            tokens_.size() >= 2 && isDigits(tokens_[1]) ? parseThreshold(tokens_[1]) : std::optional<std::uint32_t>{};
+        if (!value) {
+            error("io.ftp.invalid-maxsize", where(location) + ": expected 'MAXSIZE n' with an integer n >= 0",
+                  location);
+            return;
+        }
+        ignoreTokens(2, location);
+        if (project_.maxSize && *project_.maxSize != *value) {
+            warning("io.ftp.duplicate-maxsize",
+                    where(location) + ": MAXSIZE " + std::string(tokens_[1]) + " replaces MAXSIZE " +
+                        std::string(project_.maxSizeText),
+                    location);
+        }
+        project_.maxSize = *value;
+        project_.maxSizeText = tokens_[1];
     }
 
     [[nodiscard]] auto importRecord(const Location location) -> bool {
@@ -344,8 +486,12 @@ class Parser final {
         } else {
             record.value = std::numeric_limits<double>::infinity();
         }
+        if (record.value == kFtpMinusOneValue) {
+            record.value = 1.0;
+            record.minusOne = true;
+        }
         for (std::size_t index = 2; index < tokens_.size(); ++index) {
-            if (tokens_[index] == kFtpInitiatorFlag) {
+            if (isInitiatorFlag(tokens_[index])) {
                 record.initiator = true;
             } else {
                 record.flags.push_back(tokens_[index]);
@@ -356,11 +502,6 @@ class Parser final {
     }
 
     void gateLine(const Location location) {
-        if (tokens_.size() < 2 || !isName(tokens_[0]) || !isOperator(tokens_[1])) {
-            openGate_ = kNoGate;
-            error("io.ftp.invalid-line", where(location) + ": expected 'NAME (+|*|k) operands...'", location);
-            return;
-        }
         Definition definition{.name = tokens_[0], .location = location};
         if (tokens_[1] == "+") {
             definition.kind = DefinitionKind::or_gate;
@@ -431,7 +572,7 @@ class Parser final {
     }
 
     void collectEvents() {
-        std::unordered_set<std::string_view> reported;
+        NameSet reported;
         project_.events.reserve(project_.imports.size());
         project_.eventByName.reserve(project_.imports.size());
         for (std::uint32_t index = 0; index < project_.imports.size(); ++index) {
@@ -440,7 +581,7 @@ class Parser final {
                 gate != project_.definitionByName.end()) {
                 if (reported.insert(record.name).second) {
                     error("io.ftp.gate-imported",
-                          quoted(record.name) + " is both a gate (" +
+                          quoted(project_.definitions[gate->second].name) + " is both a gate (" +
                               where(project_.definitions[gate->second].location) + ") and an imported event (" +
                               where(record.location) + ")",
                           project_.definitions[gate->second].location);
@@ -502,6 +643,12 @@ class Parser final {
         for (auto &event : project_.events) {
             for (const auto index : event.records) {
                 auto const &record = project_.imports[index];
+                if (record.minusOne) {
+                    warning("io.ftp.minus-one-value",
+                            where(record.location) + ": value " + std::string(record.valueText) + " of " +
+                                quoted(record.name) + " is read as probability 1",
+                            record.location);
+                }
                 if (!std::isfinite(record.value) || record.value < 0.0 || (record.value > 1.0 && !event.initiator)) {
                     error("io.ftp.invalid-probability",
                           where(record.location) + ": value " + std::string(record.valueText) + " of " +
@@ -542,7 +689,7 @@ class Parser final {
     }
 
     void checkReferences() {
-        std::unordered_set<std::string_view> reported;
+        NameSet reported;
         for (auto const &gate : project_.definitions) {
             for (auto const &operand : gate.operands) {
                 if (project_.definitionByName.contains(operand.name) || project_.eventByName.contains(operand.name) ||
@@ -557,19 +704,61 @@ class Parser final {
         }
     }
 
+    // Names are case-insensitive. One warning per element written in more than one way,
+    // at the first other spelling in project order (definitions and their operands, then
+    // import records, then PROCESS names).
+    void checkSpellings() {
+        NameSet reported;
+        const auto check = [&](const std::string_view written, const Location at) {
+            std::string_view name;
+            Location declared;
+            if (const auto gate = project_.definitionByName.find(written); gate != project_.definitionByName.end()) {
+                name = project_.definitions[gate->second].name;
+                declared = project_.definitions[gate->second].location;
+            } else if (const auto event = project_.eventByName.find(written); event != project_.eventByName.end()) {
+                name = project_.events[event->second].name;
+                declared = project_.imports[project_.events[event->second].records.front()].location;
+            } else {
+                return;
+            }
+            if (written == name || !reported.insert(name).second) {
+                return;
+            }
+            warning("io.ftp.name-case",
+                    where(at) + ": " + quoted(written) + " is read as " + quoted(name) + " (" + where(declared) +
+                        "); names do not distinguish upper and lower case",
+                    at);
+        };
+        for (auto const &gate : project_.definitions) {
+            for (auto const &operand : gate.operands) {
+                check(operand.name, gate.location);
+            }
+        }
+        for (auto const &record : project_.imports) {
+            check(record.name, record.location);
+        }
+        for (auto const &[name, location] : project_.process) {
+            check(name, location);
+        }
+    }
+
     void selectTargets() {
         if (!project_.process.empty()) {
-            std::unordered_set<std::string_view> seen;
+            NameSet seen;
             for (auto const &[name, location] : project_.process) {
                 if (!seen.insert(name).second) {
                     continue;
                 }
                 if (const auto gate = project_.definitionByName.find(name); gate != project_.definitionByName.end()) {
-                    project_.targets.push_back(
-                        Target{.name = name, .index = gate->second, .gate = true, .location = location});
+                    project_.targets.push_back(Target{.name = project_.definitions[gate->second].name,
+                                                      .index = gate->second,
+                                                      .gate = true,
+                                                      .location = location});
                 } else if (const auto event = project_.eventByName.find(name); event != project_.eventByName.end()) {
-                    project_.targets.push_back(
-                        Target{.name = name, .index = event->second, .gate = false, .location = location});
+                    project_.targets.push_back(Target{.name = project_.events[event->second].name,
+                                                      .index = event->second,
+                                                      .gate = false,
+                                                      .location = location});
                 } else {
                     error("io.ftp.undefined-process-target",
                           where(location) + ": PROCESS target " + quoted(name) +
@@ -581,7 +770,7 @@ class Parser final {
         }
 
         project_.implicitTargets = true;
-        std::unordered_set<std::string_view> referenced;
+        NameSet referenced;
         for (auto const &gate : project_.definitions) {
             for (auto const &operand : gate.operands) {
                 referenced.insert(operand.name);

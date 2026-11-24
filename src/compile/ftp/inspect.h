@@ -39,6 +39,8 @@ struct inspected_diagnostic final {
 struct conventions_summary final {
     // The text of the `LIMIT` line as read.
     std::optional<std::string> limit;
+    // The value of the `MAXSIZE` line as read.
+    std::optional<std::string> maxsize;
     std::optional<std::string> negation;
     std::optional<std::string> max_initiators_per_cutset;
     std::vector<std::string> header_lines;

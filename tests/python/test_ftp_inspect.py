@@ -126,10 +126,11 @@ def test_read_project_warnings_are_returned_not_raised(tmp_path: Path):
 
 
 def test_read_project_conventions_and_structure(tmp_path: Path):
-    text = "**CHAR32\n**DBNAME: sample\nTOP * G -B -H\nG + A B\nH + A B\nENDTREE\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\nLIMIT 1.0E-09\n"
+    text = "**CHAR32\n**DBNAME: sample\nTOP * G -B -H\nG + A B\nH + A B\nENDTREE\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\nLIMIT 1.0E-09\nMAXSIZE 3\n"
     document = fuzzybits.read_project(_write(tmp_path, "s.ftp", text))
     assert document["conventions"] == {
         "LIMIT": "1.0E-09",
+        "MAXSIZE": "3",
         "ftp.negation": "delete_term",
         "ftp.max_initiators_per_cutset": "1",
         "header_lines": ["**CHAR32", "**DBNAME: sample"],

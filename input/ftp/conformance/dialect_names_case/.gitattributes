@@ -1,0 +1,2 @@
+# Stored byte for byte: model.ftp has CRLF line endings on purpose.
+*.ftp -text

@@ -430,9 +430,9 @@ TEST_CASE("FTP structural errors have stable diagnostics", "[io][ftp][project]")
         {"TOP x A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "m.ftp:1"},
         {"TOP 99999999999 A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "out of range"},
         {"  A B\nTOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "without an open gate"},
-        {"TOP + A $B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "'$B'"},
-        {"TOP + A\nENDTREE now\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "after ENDTREE"},
-        {"TOP + A\nENDTREE\nPROCESS TOP $X\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "'$X'"},
+        {"TOP + A --B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "'--B'"},
+        {"TOP + A\nENDTREE\nPROCESS TOP -X\nIMPORT\n  1.0E-01 A\n", "io.ftp.invalid-line", "'-X'"},
+        {"TOP + A\nENDTREE\nPROCESS TOP $X\nIMPORT\n  1.0E-01 A\n", "io.ftp.undefined-process-target", "'$X'"},
         {"TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  0x1 B\n", "io.ftp.invalid-line", "IMPORT section"},
         {"TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\nLIMIT x\n", "io.ftp.invalid-limit", "m.ftp:6"},
     };

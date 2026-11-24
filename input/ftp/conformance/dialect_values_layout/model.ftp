@@ -1,0 +1,20 @@
+* exported tree: lower-case keywords, comments, unindented continuations
+TOP + F1 F2 ; initiator branch, flag branch
+  G4
+F1 * IE-1 X1 X3
+F2 * X2 C
+G4 2 B1 B2
+B3
+endtree trailing words
+process TOP
+import
+  .5 B1
+  5.E-1 B2
+  1.0D-01 B3
+  2.E-1 C
+  1.E-02 IE-1 I
+  -1.000000E+00 X1
+  -1 X2
+  -1.0 X3 ; flag
+limit 1.E-12
+maxsize 3
