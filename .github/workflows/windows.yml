@@ -163,7 +163,7 @@ jobs:
             @(
               '## ctest (windows-omp)',
               "ctest exited $code after ${secs}s. Failures are reported, not hidden; the job is allowed to fail unless WINDOWS_CI_STRICT is true (#76).",
-              'Known remaining (#108): scram_legacy BSCU mean/sigma; scram-cli ACCESS_VIOLATION (0xC0000005) in mc.cli.* and mc.fzb_cli_identity.*. Stacks: the Crash diagnostics step.'
+              'Crash stacks: the Crash diagnostics step, and the windows-omp-crash-dumps artifact when a test crashed (#108).'
             ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
             throw "ctest failed ($code)"
           }

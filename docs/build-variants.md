@@ -337,11 +337,8 @@ FetchContent TUs. CI therefore picks the newest of toolset 14.51 or 14.4x (VS 20
 that vswhere lists, and falls back to the default toolset plus the hatch only
 when neither is installed. The AdaptiveCpp+LLVM install cache is keyed on that
 toolset.
-Native `ctest --preset windows-generic`
-still has known failures (#108): BSCU mean/sigma in `scram_legacy_tests`, and
-`scram-cli` ACCESS_VIOLATION in `mc.cli.*` and `mc.fzb_cli_identity.*`. They
-fail `windows-omp` visibly instead of being hidden by a step-level
-`continue-on-error`.
+Test failures fail `windows-omp` visibly instead of being hidden by a
+step-level `continue-on-error`. Open Windows problems are tracked in #108.
 
 `windows-omp` builds `windows-generic-debuginfo`: the same `-O3` code with
 CodeView debug info, so crash stacks have symbols. `/DEBUG` makes the linker
