@@ -34,18 +34,55 @@ Mixing FTP and non-FTP inputs is an error. MEF and nombrilo inputs are unchanged
 
 | FTP construct | Meaning in `ir::pra` |
 |---|---|
-| `NAME + ops`, `NAME * ops`, `NAME k ops` (indented lines continue) | OR, AND and k-out-of-n gates, with file and line |
+| `NAME + ops`, `NAME * ops`, `NAME k ops` (other lines continue the open gate) | OR, AND and k-out-of-n gates, with file and line |
 | `-name` operand | complemented operand; on a basic event also marked `literal` (`--complement-events atom`, default); on a gate always a negation |
 | `ENDTREE` | closes the tree section, which comes first in each file |
-| `IMPORT` records `value name [flags]` | basic events with literal probabilities |
+| `IMPORT` records `value name [flags]` | basic events with literal probabilities; the value `-1` is probability 1 (a warning) |
 | `I` flag | initiating event; a value above 1 is a frequency and is used as a probability only up to 1, with a warning |
 | `PROCESS names` | primary targets; without `PROCESS`, the root gates (a warning) |
 | `LIMIT x` | recorded in the metadata only; never a truncation in this path |
+| `MAXSIZE n` (outside a tree section) | the cut-set order limit, recorded like `LIMIT` (`ftp.maxsize`); never applied |
 | `**CHAR32`, `**FTITLE:`, `*XEQ` and other `*` lines | project attributes, not interpreted |
+| `;` | a comment to the end of the line, except in `*` lines |
 
 An event imported twice is resolved by `--duplicate-import last|first` (a warning that names every record) or rejected
 (`error`); an `I` on any record is kept. A name that is neither a gate nor imported is an error, never an implicit
 probability of 1. Unknown import flags are kept with a warning.
+
+### Grammar
+
+The reader takes files as projects write them; `src/io/ftp/tests/grammar_tests.cc` and the `dialect_*` conformance
+fixtures check each rule.
+
+- **Lines and tokens.** A line ends at LF; a CR before it, spaces, tabs and every other control byte (NUL, form
+  feed, the end-of-file mark 0x1A) separate tokens, so CRLF files read as LF files and a file with CR-only line
+  endings is one line. A UTF-8 byte-order mark at the start of a file is skipped.
+- **Comments.** `;` starts a comment that runs to the end of the line, on every line but the `*` header lines
+  (`**DBNAME: C:\a;b.rr` keeps its text).
+- **Keywords** (`ENDTREE`, `PROCESS`, `IMPORT`, `LIMIT`, `MAXSIZE`) and the `I` flag are read in any letter case.
+  `MAXSIZE` is a keyword only outside a tree section, so a gate may be called `MAXSIZE`. Tokens after `ENDTREE`,
+  `IMPORT`, `LIMIT x` or `MAXSIZE n` are not read (`io.ftp.ignored-tokens`).
+- **Names** are any token except a lone `+` or `*`; they may start with a digit and hold any punctuation (`%IE`,
+  `G~1`, `SYS.A`, `PUMP#1`, `V(2)`, `$V1`) and bytes above 127. A leading `-` on an operand complements it, so a
+  defined name cannot start with `-`; a `*` at the start of a line makes it a header line, so a gate name cannot
+  start with `*`; and a gate cannot be named `ENDTREE`, `PROCESS`, `IMPORT` or `LIMIT` in any case (such names may
+  still be events).
+- **Letter case.** Names are compared without regard to ASCII case: `g1`, `G1` and `PROCESS g1` name one gate. An
+  element keeps the spelling of its gate line, or of its first import record for an event; every other spelling
+  is read as that one, with one `io.ftp.name-case` warning per element. Bytes above 127 compare exactly. Two
+  definitions that differ only in case are a duplicate gate (`io.ftp.duplicate-gate`), and a gate imported under
+  another case is `io.ftp.gate-imported`.
+- **Gate lines and continuations.** A line `NAME op ...` (op `+`, `*` or an integer k) defines a gate wherever it
+  starts. Any other line in the tree section continues the operand list of the open gate, indented or not.
+- **Values** are `[+-]? (d+ ('.' d*)? | '.' d+) ([EeDd] [+-]? d+)?`: `1.`, `.5`, `1.E-02` and `1.0D-01` are
+  values; `.`, `5E`, `0,5`, `0x1`, `inf` and `nan` are not. A value too small for a double (`1E-400`) is 0. The value
+  exactly `-1` (`-1`, `-1.0`, `-1.000000E+00`) marks an event at probability 1: it is read as 1 with
+  `io.ftp.minus-one-value`. Any other negative value, and a value above 1 on an event without the `I` flag, is
+  `io.ftp.invalid-probability`.
+
+Still errors, by choice: a name that is neither a gate nor imported (never an implicit probability of 1), a second
+definition of a gate, an empty gate, k above the operand count, `+A` written for `+ A`, and a value above 1 on an
+event without the `I` flag. Each of these is a mistake that would otherwise change the model without a trace.
 
 ## Options
 
@@ -171,7 +208,7 @@ The JSON document (`fuzzybits.read_project` returns the same content as a dict):
 | `files` | the files read, in project order (directories expanded, sorted) |
 | `diagnostics` | `{id, severity, file, line, message}`; severity is `error`, `warning` or `note`; `file` and `line` are `null` when the diagnostic names no location |
 | `structure` | counts below; `null` when the project has errors |
-| `conventions` | `LIMIT` (the text of the line), `ftp.negation`, `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
+| `conventions` | `LIMIT` (the text of the value), `MAXSIZE` (the text of the value), `ftp.negation`, `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
 
 `structure` uses the keys of `structure` in the conformance `expected.json` files, plus `default_targets` (a top-level
 key of those files), `house_events`, `complemented_edges_to_gates` and `literal_operands`:
@@ -211,10 +248,11 @@ Every diagnostic has a stable id; the report and `fzb inspect` list them with se
 | Id | Meaning |
 |---|---|
 | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate`, `io.ftp.invalid-line`, `io.ftp.invalid-gate`, `io.ftp.duplicate-gate` | grammar errors, with `file:line` |
-| `io.ftp.import-without-header`, `io.ftp.invalid-probability`, `io.ftp.invalid-limit` | `IMPORT` and `LIMIT` errors |
+| `io.ftp.import-without-header`, `io.ftp.invalid-probability`, `io.ftp.invalid-limit`, `io.ftp.invalid-maxsize` | `IMPORT`, `LIMIT` and `MAXSIZE` errors |
 | `io.ftp.undefined-reference`, `io.ftp.undefined-process-target`, `io.ftp.gate-imported` | a name has no definition, or is both a gate and an imported event |
 | `io.ftp.duplicate-import` | warning (error under `--duplicate-import error`), naming every record |
-| `io.ftp.initiator-frequency`, `io.ftp.unknown-import-flag`, `io.ftp.duplicate-limit`, `io.ftp.missing-process` | warnings |
+| `io.ftp.initiator-frequency`, `io.ftp.unknown-import-flag`, `io.ftp.duplicate-limit`, `io.ftp.duplicate-maxsize`, `io.ftp.missing-process` | warnings |
+| `io.ftp.name-case`, `io.ftp.minus-one-value`, `io.ftp.ignored-tokens` | warnings: a name written in another letter case, a value `-1` read as 1, tokens after a keyword not read ([Grammar](#grammar)) |
 | `io.ftp.no-targets`, `io.ftp.no-files`, `io.ftp.open-failed`, `io.ftp.invalid-option` | project and option errors |
 | `ir.pra.cycle`, `ir.pra.invalid-*`, `ir.pra.duplicate-name` | model validation errors |
 | `compile.ftp.invalid-option`, `compile.ftp.invalid-config`, `compile.ftp.invalid-json` | bad flag, config document or JSON |

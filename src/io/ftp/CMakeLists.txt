@@ -22,7 +22,7 @@ if(BUILD_TESTING)
   fuzzybits_ensure_catch2()
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_ftp_tests
-    SOURCES tests/write_tests.cc tests/project_tests.cc tests/conformance_tests.cc
+    SOURCES tests/write_tests.cc tests/project_tests.cc tests/conformance_tests.cc tests/grammar_tests.cc
     LINK_LIBRARIES fuzzybits_io_ftp fuzzybits_ir_pra fuzzybits_compile_ftp
   )
 endif()

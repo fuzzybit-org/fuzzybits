@@ -1,0 +1,231 @@
+{
+  "schema_version": 2,
+  "description": "Values, comments and layout as exported projects write them: -1 for a flag event at probability 1, values written 1.E-02, .5, 5.E-1 and 1.0D-01, ';' comments, a '*' comment line, continuation lines with and without indentation, MAXSIZE, tokens after ENDTREE, lower-case keywords.",
+  "covers": [
+    "value -1 read as probability 1 (minus-one-value warnings)",
+    "decimal forms 1.E-02, .5, 5.E-1 and the D exponent",
+    "';' comments",
+    "unindented continuation line",
+    "MAXSIZE recorded, not applied",
+    "tokens after ENDTREE ignored (ignored-tokens warning)",
+    "lower-case keywords"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 4,
+    "gates_by_kind": {
+      "or": 1,
+      "and": 2,
+      "atleast": 1
+    },
+    "atleast_k_of_n": {
+      "2/3": 1
+    },
+    "edges": 11,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 2,
+    "basic_events": 8,
+    "import_lines": 8,
+    "complemented_edges": 0,
+    "complemented_edges_to_basic_events": 0,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 1,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 3,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 0,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "ignored-tokens",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X1",
+          "locations": [
+            [
+              "model.ftp",
+              16
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X2",
+          "locations": [
+            [
+              "model.ftp",
+              17
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X3",
+          "locations": [
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.44560000000000005,
+          "hull": 0.44560000000000005,
+          "hull_omega": 0.44560000000000005,
+          "hull_positive": 0.44560000000000005,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 8
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "ignored-tokens",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X1",
+          "locations": [
+            [
+              "model.ftp",
+              16
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X2",
+          "locations": [
+            [
+              "model.ftp",
+              17
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X3",
+          "locations": [
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.44560000000000005,
+          "hull": 0.44560000000000005,
+          "hull_omega": 0.44560000000000005,
+          "hull_positive": 0.44560000000000005,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 8
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "ignored-tokens",
+          "name": null,
+          "locations": [
+            [
+              "model.ftp",
+              8
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X1",
+          "locations": [
+            [
+              "model.ftp",
+              16
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X2",
+          "locations": [
+            [
+              "model.ftp",
+              17
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "minus-one-value",
+          "name": "X3",
+          "locations": [
+            [
+              "model.ftp",
+              18
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.44560000000000005,
+          "hull": 0.44560000000000005,
+          "hull_omega": 0.44560000000000005,
+          "hull_positive": 0.44560000000000005,
+          "complemented_events": [],
+          "complement_under_negation": [],
+          "variables": 8
+        }
+      }
+    }
+  }
+}

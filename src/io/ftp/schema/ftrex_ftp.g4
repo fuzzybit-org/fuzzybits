@@ -5,9 +5,18 @@
  * The ftrex_ftp grammar is designed to parse files that consist of multiple sections,
  * including tree definitions, process commands, import commands, and metadata.
  * Each section is defined with specific rules that dictate the expected format and content.
+ *
+ * This is a sketch of the format. The reader in src/io/ftp/detail/parser.cpp is the reference, and
+ * docs/ftp-input.md ("Grammar") states the rules a context-free grammar leaves out: a line `NAME op ...` starts a
+ * gate and any other tree line continues the open one, names are compared without regard to ASCII case, MAXSIZE
+ * is a keyword only outside a tree section, and the value -1 is probability 1.
  */
 
 grammar ftrex_ftp;
+
+options {
+    caseInsensitive = true; // keywords and the initiator flag in any letter case
+}
 
 /**
  * @brief Represents the entire file content.
@@ -29,6 +38,7 @@ section
     | processSection
     | importSection
     | limitSection
+    | maxsizeSection
     | metaArgs
     ;
 
@@ -78,6 +88,15 @@ importSection
  */
 limitSection
     : 'LIMIT' NUMBER EOL
+    ;
+
+/**
+ * @brief Defines a cut-set order limit starting with 'MAXSIZE' (outside a tree section).
+ *
+ * The value is a non-negative integer; 0 means no limit. It is recorded, not applied.
+ */
+maxsizeSection
+    : 'MAXSIZE' NON_NEG_INTEGER EOL
     ;
 
 /**
@@ -197,7 +216,7 @@ NON_NEG_INTEGER
 /**
  * @brief Defines the initiator tag used in event definitions within the import commands.
  *
- * The INITIATOR_TAG is represented by 'I', specifying this event to be an initiating event.
+ * The INITIATOR_TAG is represented by 'I' (in either case), specifying this event to be an initiating event.
  */
 INITIATOR_TAG
     : 'I'
@@ -206,36 +225,45 @@ INITIATOR_TAG
 /**
  * @brief Defines the format for a number.
  *
- * A number can be an integer or a floating-point number, optionally preceded by a sign and optionally followed by an
- * exponent.
+ * A number is an integer or a decimal number, with or without digits on either side of the point (`1.`, `.5`),
+ * optionally preceded by a sign and optionally followed by an E or D (Fortran) exponent.
  */
 NUMBER
-    : ('+'|'-')?[0-9]+ ('.' [0-9]+)? ([Ee] [+-]? [0-9]+)?
+    : ('+'|'-')? ([0-9]+ ('.' [0-9]*)? | '.' [0-9]+) ([ED] [+-]? [0-9]+)?
     ;
 
 /**
  * @brief Defines the format for an event identifier.
  *
- * An EVENT_ID consists of alphanumeric characters, underscores, slashes, or dashes.
+ * An EVENT_ID is any run of non-blank bytes without ';': letters, digits and punctuation such as '%', '~', '.',
+ * '#', '$', '(' and ')'. A leading '-' on a reference complements it; a lone '+' or '*' is a gate type.
  */
 EVENT_ID
-    : [A-Za-z0-9_/\-]+
+    : ~[\u0000-\u0020\u007F;]+
+    ;
+
+/**
+ * @brief Represents a comment: ';' to the end of the line (header lines keep their ';').
+ */
+COMMENT
+    : ';' ~[\r\n]* -> skip
     ;
 
 /**
  * @brief Represents an end of line.
  *
- * An EOL can be a carriage return, a line feed, or both.
+ * A line ends at a line feed, with or without a carriage return before it; a lone carriage return is whitespace.
  */
 EOL
-    : [\r\n]+
+    : ('\r'? '\n')+
     ;
 
 /**
  * @brief Represents whitespace.
  *
- * Whitespace includes spaces and tabs and is skipped in the lexical analysis.
+ * Whitespace is every control byte but LF (space, tab, a CR before LF, form feed, NUL, 0x1A) and DEL; it is
+ * skipped in the lexical analysis.
  */
 WS
-    : [ \t]+ -> skip
+    : [\u0000-\u0009\u000B-\u0020\u007F]+ -> skip
     ;

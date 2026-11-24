@@ -67,6 +67,8 @@ from benchmarks.reference.ftp import AND, ATLEAST, OR, POLICIES, Gate, Import, L
 FIXTURE_NAMES = [
     "complement_under_negation",
     "delete_term_flags",
+    "dialect_names_case",
+    "dialect_values_layout",
     "header_limit",
     "imports_tags_duplicates",
     "initiator_rule",
@@ -802,6 +804,91 @@ def test_parser_crlf_matches_lf(tmp_path):
     lf = parse_project([_write(tmp_path, text, "lf.ftp")])
     crlf = parse_project([_write(tmp_path, text, "crlf.ftp", "\r\n")])
     assert structure_counts(lf) == structure_counts(crlf)
+
+
+_PERCENT_TILDE = """T + G~1 B-%IE
+G~1 * %IE A
+B-%IE * %IE -%IE2
+ENDTREE
+PROCESS T
+IMPORT
+0.1 %IE I
+0.2 %IE2 I
+0.5 A
+"""
+
+
+def _all_probabilities(project, target: str) -> list[float]:
+    probs, _ = project.probabilities()
+    out = []
+    for rule in (None, 1):
+        out.append(exact_probability(project, target, probs, "boolean", max_initiators=rule)["probability"])
+        for literals in ("split", "omega", "positive"):
+            out.append(exact_probability(project, target, probs, "hull", None, literals, rule)["probability"])
+    return out
+
+
+def test_parser_percent_and_tilde_names(tmp_path):
+    """#240: '%' and '~' are name characters; the values are those of the model with them renamed away."""
+    p = parse_project([_write(tmp_path, _PERCENT_TILDE, "m.ftp", "\r\n")])
+    assert p.diagnostics == []
+    assert p.gates["B-%IE"].children == [("%IE", False), ("%IE2", True)]
+    assert p.initiators() == {"%IE", "%IE2"}
+    probs, _ = p.probabilities()
+    assert exact_probability(p, "T", probs, "boolean")["probability"] == pytest.approx(0.09, rel=1e-12)
+    renamed = parse_project([_write(tmp_path, _PERCENT_TILDE.replace("%", "P_").replace("~", "_"), "r.ftp")])
+    assert _all_probabilities(p, "T") == pytest.approx(_all_probabilities(renamed, "T"), rel=1e-12)
+
+
+def test_parser_dialect_of_exported_files(tmp_path):
+    """Lower-case keywords and flag, other-case names, ';' comments, layout, value forms, -1 and MAXSIZE."""
+    p = parse_project([_write(tmp_path, """\xef\xbb\xbf; comment line
+top + a G1 ; tail
+  g2
+G1 * B $C
+g2 2 a B
+.D
+endtree now
+process TOP
+import
+  .5 A
+  5.E-1 b i
+  1.0D-01 $C
+  -1 .D
+limit 1.E-12 x
+maxsize 2
+""")])
+    warnings = sorted((d.code, d.name) for d in p.diagnostics if d.severity == "warning")
+    assert [d for d in p.diagnostics if d.severity == "error"] == []
+    assert warnings == [("ignored-tokens", None), ("ignored-tokens", None), ("minus-one-value", ".D"),
+                        ("name-case", "A"), ("name-case", "b"), ("name-case", "top")]
+    # A gate is named as its gate line spells it, an event as its first import record does.
+    assert list(p.gates) == ["top", "G1", "g2"]
+    assert p.gates["top"].children == [("A", False), ("G1", False), ("g2", False)]
+    assert p.gates["G1"].children == [("b", False), ("$C", False)]
+    assert p.gates["g2"].k == 2 and p.gates["g2"].children == [("A", False), ("b", False), (".D", False)]
+    assert p.process == ["top"] and p.default_targets() == ["top"]
+    assert [(i.name, i.value, i.initiator) for i in p.imports] == [
+        ("A", 0.5, False), ("b", 0.5, True), ("$C", 0.1, False), (".D", 1.0, False)]
+    assert p.limit == 1e-12 and p.maxsize == 2
+
+
+@pytest.mark.parametrize(
+    "text,codes",
+    [
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n-0.5 A\n", {"invalid-probability"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n-1.000001 A\n", {"invalid-probability"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\nMAXSIZE 1.5\n", {"invalid-maxsize"}),
+        ("G + A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\nLIMIT\n", {"invalid-limit"}),
+        ("G + A B\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n5E B\n", {"invalid-line", "undefined-reference"}),
+        ("G + A\ng * A\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n", {"duplicate-gate"}),
+        ("G + A\n  + B\nENDTREE\nPROCESS G\nIMPORT\n0.1 A\n0.2 B\n", {"invalid-line"}),
+        ("G + A\rENDTREE\rPROCESS G\rIMPORT\r0.1 A\r", {"missing-endtree", "undefined-reference"}),
+    ],
+)
+def test_parser_dialect_errors(tmp_path, text, codes):
+    p = parse_project([_write(tmp_path, text)])
+    assert {d.code for d in p.diagnostics if d.severity == "error"} == codes
 
 
 @pytest.mark.parametrize(

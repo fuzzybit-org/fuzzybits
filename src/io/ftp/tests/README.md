@@ -5,6 +5,10 @@
   and the exact Boolean probability of every listed target must match `expected.json`.
 - `project_tests.cc`: the `ir::pra` model (gates, events, initiators, targets, attributes, source
   locations), multi-file projects, one negative case per `io.ftp.*` diagnostic, and a 1e5-gate chain.
+- `grammar_tests.cc`: the line grammar as projects write it (#240): the name alphabet (`%`, `~` and other
+  punctuation, checked against a renamed copy of the model), ASCII case in names, keywords and the `I` flag,
+  `;` comments, gate lines versus continuations, value forms, the value `-1`, `MAXSIZE`, ignored tokens,
+  control bytes and the byte-order mark ([docs/ftp-input.md](../../../../docs/ftp-input.md#grammar)).
 - `write_tests.cc`: the `ir::pc` to FTP writer. Public fixtures live in `tests/testdata/` and
   `input/ftp/synthetic/`; each is read, lowered (`src/compile/ftp/tests/support.h`), written and re-read to a
   stable checksum.

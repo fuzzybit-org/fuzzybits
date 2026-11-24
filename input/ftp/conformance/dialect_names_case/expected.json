@@ -1,0 +1,284 @@
+{
+  "schema_version": 2,
+  "description": "Names as exported projects write them: '%' prefixes on initiating events and the gates built from them, '~', '.', '#', '$', '(', ')', '[' and ']' inside names, the same names in other letter case, lower- and mixed-case keywords and initiator flag, CRLF line endings.",
+  "covers": [
+    "'%' and '~' in names (#240)",
+    "punctuation in names",
+    "names compared without regard to ASCII case (name-case warnings)",
+    "complemented event under an initiator",
+    "keywords and the I flag in any case",
+    "CRLF line endings"
+  ],
+  "files": [
+    "model.ftp"
+  ],
+  "default_targets": [
+    "TOP"
+  ],
+  "structure": {
+    "gates": 4,
+    "gates_by_kind": {
+      "or": 1,
+      "and": 2,
+      "atleast": 1
+    },
+    "atleast_k_of_n": {
+      "2/3": 1
+    },
+    "edges": 10,
+    "single_input_gates": 0,
+    "max_fan_in": 3,
+    "depth": 2,
+    "basic_events": 6,
+    "import_lines": 6,
+    "complemented_edges": 1,
+    "complemented_edges_to_basic_events": 1,
+    "roots": [
+      "TOP"
+    ],
+    "process_targets": [
+      "TOP"
+    ],
+    "limit": 1e-12,
+    "initiator_tagged_events": 1,
+    "initiator_tagged_events_with_p_1": 0,
+    "events_p_eq_1": 0,
+    "events_p_eq_0": 0,
+    "events_0_lt_p_lt_2^-32": 0,
+    "names_not_valid_xml_ncname": 8,
+    "duplicate_imports": {}
+  },
+  "policies": {
+    "error": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "sys.a",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ],
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "PUMP#1",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ],
+            [
+              "model.ftp",
+              11
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "V[3]",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ],
+            [
+              "model.ftp",
+              14
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "TOP",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ],
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.5546875,
+          "hull": 0.5546875,
+          "hull_omega": 0.5546875,
+          "hull_positive": 0.5625,
+          "complemented_events": [
+            "%IE2"
+          ],
+          "complement_under_negation": [],
+          "variables": 6
+        }
+      }
+    },
+    "first": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "sys.a",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ],
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "PUMP#1",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ],
+            [
+              "model.ftp",
+              11
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "V[3]",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ],
+            [
+              "model.ftp",
+              14
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "TOP",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ],
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.5546875,
+          "hull": 0.5546875,
+          "hull_omega": 0.5546875,
+          "hull_positive": 0.5625,
+          "complemented_events": [
+            "%IE2"
+          ],
+          "complement_under_negation": [],
+          "variables": 6
+        }
+      }
+    },
+    "last": {
+      "diagnostics": [
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "sys.a",
+          "locations": [
+            [
+              "model.ftp",
+              2
+            ],
+            [
+              "model.ftp",
+              5
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "PUMP#1",
+          "locations": [
+            [
+              "model.ftp",
+              3
+            ],
+            [
+              "model.ftp",
+              11
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "V[3]",
+          "locations": [
+            [
+              "model.ftp",
+              5
+            ],
+            [
+              "model.ftp",
+              14
+            ]
+          ]
+        },
+        {
+          "severity": "warning",
+          "code": "name-case",
+          "name": "TOP",
+          "locations": [
+            [
+              "model.ftp",
+              7
+            ],
+            [
+              "model.ftp",
+              2
+            ]
+          ]
+        }
+      ],
+      "results": {
+        "TOP": {
+          "boolean": 0.5546875,
+          "hull": 0.5546875,
+          "hull_omega": 0.5546875,
+          "hull_positive": 0.5625,
+          "complemented_events": [
+            "%IE2"
+          ],
+          "complement_under_negation": [],
+          "variables": 6
+        }
+      }
+    }
+  }
+}

@@ -506,9 +506,12 @@ lazily for this reason); `test_independence_from_fuzzybits` enforces both
 the loaded modules and the import statements. It has its own minimal FTP
 parser (`benchmarks/reference/ftp.py`). That parser is **reference-only, not
 the product reader**: it follows `src/io/ftp/schema/ftrex_ftp.g4` and the
-conventions the grammar leaves implicit (indented continuation lines, a
-leading `-` complements a reference, `PROCESS` may continue on the next line,
-`*` lines are headers), and it reports diagnostics instead of guessing.
+conventions the grammar leaves implicit (a line that is not `NAME op ...`
+continues the open gate, a leading `-` complements a reference, `PROCESS` may
+continue on the next line, `*` lines are headers, `;` starts a comment, names
+and keywords ignore ASCII case; the full list is
+[FTP input: Grammar](ftp-input.md#grammar)), and it reports diagnostics instead
+of guessing.
 
 ### FTP grammar checks
 
@@ -676,6 +679,8 @@ exact `boolean`, `hull` (atom-split, the default), `hull_omega` and
 | `delete_term_flags` | DEL = two p = 1 flags; variants `DEL=0`, `FLAG-A=0` | SEQ | 0 (variants 0.00802) | 0.0107 | same as hull |
 | `k_of_n_continuation` | k = 1, k = n, 1 < k < n, single-input gates, 564-character continuation line | TOP | 0.6372981032253088 | same | same |
 | `names_special` | names starting with digits, containing `/` or `--`, complemented event | 1-TOP | 0.507 | 0.507 | 0.51 |
+| `dialect_names_case` | `%`, `~` and other punctuation in names, names in another letter case, keywords and `I` flag in any case, CRLF | TOP | 0.5546875 | same | 0.5625 |
+| `dialect_values_layout` | value `-1` as 1, values `.5`, `5.E-1`, `1.0D-01`, `;` comments, unindented continuation, `MAXSIZE`, tokens after `ENDTREE` | TOP | 0.4456 | same | same |
 
 | `complement_under_negation` | target | Boolean | split | omega | plain hull |
 |---|---|---|---|---|---|
