@@ -1,0 +1,50 @@
+# Roadmap health (docs/planning.md): drift, focus, triage, WIP, surfaces, RFCs,
+# trackers, lab time boxes, stale PRs and branches, over the last 7 days.
+#
+# Runs daily so drift shows within a day; the maintainer reads it weekly, and at
+# once when it comments. With the repository variable ROADMAP_HEALTH_ISSUE set
+# to a pinned issue number, the report replaces that issue's body and a comment
+# is posted only when a new kind of alarm appears. Without it, the report is the
+# job summary only.
+name: roadmap-health
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: Window in days
+        default: "7"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: roadmap-health
+  cancel-in-progress: false
+
+jobs:
+  health:
+    name: health
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Fetch branch heads (branch hygiene)
+        run: git fetch --no-tags --depth=1 origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: ${{ inputs.days || '7' }}
+          ISSUE: ${{ vars.ROADMAP_HEALTH_ISSUE }}
+        run: |
+          args=(--days "${DAYS}")
+          if [[ -n "${ISSUE}" ]]; then args+=(--post-issue "${ISSUE}"); fi
+          python3 scripts/ci/roadmap_health.py "${args[@]}"

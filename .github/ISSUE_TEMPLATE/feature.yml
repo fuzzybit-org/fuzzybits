@@ -1,0 +1,62 @@
+name: Feature or change
+description: Product work in a roadmap milestone. Untested ideas go to the lab template.
+labels: ["status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Product work serves a milestone in [ROADMAP.md](https://github.com/fuzzybit-org/fuzzybits/blob/develop/ROADMAP.md).
+        The maintainer sets the milestone on triage (docs/planning.md §3). Work starts once the issue is `status:ready`.
+  - type: dropdown
+    id: goal
+    attributes:
+      label: Primary goal
+      options: [correct, spine, speed, reach, ship, usable, evidence]
+    validations:
+      required: true
+  - type: input
+    id: milestone
+    attributes:
+      label: Proposed milestone
+      placeholder: "Correct by default"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing today, for whom, with evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal and rejected alternatives
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: Measurable: a command, a test, a number. "Works" is not a criterion.
+    validations:
+      required: true
+  - type: checkboxes
+    id: surfaces
+    attributes:
+      label: Surfaces this would change
+      description: Each needs `surface-approved` on its PR (docs/planning.md §4.3, §5).
+      options:
+        - label: a user-visible default
+        - label: fzb CLI or Python API
+        - label: .pcfb pin, schema version or query kind (needs an accepted RFC)
+        - label: a new dependency or toolchain pin
+        - label: a new directory or subsystem
+        - label: none of these
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this issue will not do, and where that goes instead.
+    validations:
+      required: true

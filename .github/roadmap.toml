@@ -1,0 +1,418 @@
+# Machine-readable roadmap: read by scripts/ci/scope_check.py (every PR) and
+# scripts/ci/roadmap_health.py (weekly). Policy: docs/planning.md. Prose: ROADMAP.md.
+#
+# Changing this file is a `governance` surface change: it needs `surface-approved`.
+# The scope check runs the base commit's copy of this file and of scope_check.py, so
+# a PR's edits here apply to the PRs after it, never to itself.
+
+[policy]
+mode = "warn"                    # warn: report only; enforce: blocking findings fail the check
+max_now = 2                      # milestones with status "now" at once
+max_lab = 2                      # lab experiments in progress at once
+wip_per_milestone = 3            # issues labelled status:in-progress per milestone (override: milestone.wip)
+max_areas = 3                    # product areas per PR before a multi-area warning
+size_warn = 800                  # counted changed lines: warning
+size_limit = 2000                # counted changed lines: needs size-exception
+trivial_max_lines = 50           # `trivial` label: no issue needed up to this size
+lab_days = 14                    # lab issue without update: past its time box
+stale_pr_days = 7
+stale_branch_days = 14
+always_allowed_areas = ["docs", "changelog", "tests"]
+lab_areas = ["lab"]
+interrupt_labels = ["wrong-answer", "security", "release-blocker"]
+exempt_authors = ["dependabot[bot]", "app/dependabot"]
+exempt_labels = ["release"]
+subsystem_roots = ["src", "src/ir", "src/ir/pc", "src/io", "src/compile", "tools", "targets", "python", "benchmarks", "scripts"]
+subsystem_depth = 1
+subsystem_ignore = ["tests", "detail", "schema", "fixtures", "testdata"]
+size_exempt_paths = [
+  "**/*.lock", "**/package-lock.json", "uv.lock",
+  "input/**", "generated/**", "**/fixtures/**", "**/testdata/**",
+  "benchmarks/datasets/**", "tools/server/webui/public/**",
+  "**/*.pcfb", "**/*.ftp", "**/*.xml", "**/*.csv",
+]
+
+[policy.labels]
+"scope-exception" = "scope-exception"
+"size-exception" = "size-exception"
+"surface-approved" = "surface-approved"
+"trivial" = "trivial"
+"status:in-progress" = "status:in-progress"
+
+[policy.health]
+min_focus = 0.7                  # share of merged PRs serving `now` or the interrupt lane
+max_no_issue = 0
+triage_days = 2
+max_p90_lines = 1500
+max_stale_prs = 3
+max_dead_branches = 10
+tracker_foreign_children = 3
+
+# --------------------------------------------------------------------------- areas
+# First match wins: specific areas come before the general ones. Colocated tests
+# belong to their area.
+
+[[area]]
+name = "lab"
+paths = ["lab/**"]
+
+[[area]]
+name = "changelog"
+paths = ["CHANGELOG.md"]
+
+[[area]]
+name = "docs"
+paths = ["docs/**", "*.md", "**/*.md", "NOTICE", "LICENSE"]
+
+[[area]]
+name = "hull"
+frozen = true
+note = "monotone-hull queries: frozen pending RFC acceptance, see ROADMAP.md (lab: hull)"
+paths = ["src/ir/pc/hull/**", "benchmarks/reference/hull.py"]
+
+[[area]]
+name = "exact-kc"
+frozen = true
+note = "exact engines, BDD/SAT/decision diagrams: lab until a product milestone needs them"
+paths = ["src/kc/**", "src/dd/**", "src/sat/**", "src/compile/exact_eval.*"]
+
+[[area]]
+name = "scram-legacy"
+note = "SCRAM-derived GPL code: shrink only (scripts/ci/scram_provenance.py)"
+paths = [
+  "src/*.cc", "src/*.h", "src/*.h.in", "src/expression/**", "src/ext/**",
+  "targets/scram/**", "tests/*.cc", "tests/*.h", "tests/input/**", "share/**",
+]
+
+[[area]]
+name = "ir-pra"
+paths = ["src/ir/pra/**"]
+
+[[area]]
+name = "passes"
+paths = ["src/ir/pc/passes/**"]
+
+[[area]]
+name = "ir-pc"
+paths = ["src/ir/**"]
+
+[[area]]
+name = "io-ftp"
+paths = ["src/io/ftp/**", "src/compile/ftp/**", "input/ftp/**", "benchmarks/reference/ftp.py"]
+
+[[area]]
+name = "io-pcfb"
+paths = ["src/io/pcfb/**", "src/compile/pcfb_writer.*"]
+
+[[area]]
+name = "io-other"
+paths = ["src/io/aiger/**", "src/compile/nombrilo.*"]
+
+[[area]]
+name = "compile"
+paths = ["src/compile/**", "src/io/**", "src/api/**"]
+
+[[area]]
+name = "runtime"
+paths = ["src/mc/**", "src/runtime/**", "tests/mc/**"]
+
+[[area]]
+name = "cli"
+paths = ["targets/fzb/**", "src/cli/**"]
+
+[[area]]
+name = "python"
+paths = ["python/**", "targets/python/**", "tests/python/**", "pyproject.toml", "uv.lock", "requirements-tests.txt"]
+
+[[area]]
+name = "webui"
+paths = ["tools/server/webui/**"]
+
+[[area]]
+name = "server"
+paths = ["tools/server/**"]
+
+[[area]]
+name = "bench"
+paths = ["benchmarks/**", "scripts/ci/bench*", ".github/workflows/bench*.yml"]
+
+[[area]]
+name = "datasets"
+paths = ["input/**", ".gitmodules"]
+
+[[area]]
+name = "governance"
+paths = [".github/roadmap.toml", ".github/ISSUE_TEMPLATE/**", ".github/pull_request_template.md",
+         "scripts/ci/scope_check.py", "scripts/ci/roadmap_*.py", ".github/workflows/scope.yml",
+         ".github/workflows/roadmap-health.yml"]
+
+[[area]]
+name = "ci"
+paths = [".github/**", "scripts/ci/**", "scripts/release.sh"]
+
+[[area]]
+name = "build"
+paths = ["CMakeLists.txt", "CMakePresets.json", "cmake/**", "toolchain.env", "docker/**", "Dockerfile*",
+         "docker-compose*.yml", "src/CMakeLists.txt", ".dockerignore", ".env"]
+
+[[area]]
+name = "dev"
+paths = ["scripts/dev/**", "scripts/analysis/**", ".claude/**", ".clang-*", ".gitignore", ".git-blame-ignore-revs", ".idea/**"]
+
+[[area]]
+name = "tests"
+paths = ["tests/**", "**/tests/**"]
+
+# --------------------------------------------------------------------------- surfaces
+# A surface is something users, packagers or agents depend on. Changing one needs
+# `surface-approved`; most also need a CHANGELOG.md entry.
+
+[[surface]]
+name = "cli"
+note = "fzb CLI (subcommands, options, help, exit codes)"
+paths = ["targets/fzb/**", "python/fuzzybits/_cli.py"]
+
+[[surface]]
+name = "python-api"
+note = "public Python API (exports, or a top-level def/class in _api.py)"
+paths = ["python/fuzzybits/__init__.py"]
+line_paths = ["python/fuzzybits/_api.py"]
+added_line = ["^(?:def|class|async def) [A-Za-z]"]
+
+[[surface]]
+name = "server-api"
+note = "server HTTP routes and configuration"
+paths = ["tools/server/src/fuzzybits_server/config.py"]
+line_paths = ["tools/server/src/fuzzybits_server/**/*.py"]
+added_line = ["@(?:app|router)\\.(?:get|post|put|delete|patch|websocket)\\("]
+
+[[surface]]
+name = "format"
+note = ".pcfb pin, schema version or query kinds"
+paths = []
+line_paths = ["toolchain.env", "cmake/FuzzybitsPcfb.cmake", "src/io/pcfb/**", "src/compile/pcfb_writer.*"]
+added_line = ["^PCFB_GIT_TAG=", "GIT_TAG", "schema_version", "QueryKind", "query_kind"]
+
+[[surface]]
+name = "default"
+note = "a user-visible default (declared in the PR template)"
+paths = []
+body = ["(?im)^\\s*-\\s*\\[x\\]\\s*changes a (?:user-visible )?default"]
+
+[[surface]]
+name = "dependency"
+note = "new or changed third-party dependency or toolchain pin"
+changelog = false
+paths = ["tools/server/webui/package.json"]
+line_paths = ["toolchain.env", "CMakeLists.txt", "cmake/*.cmake", "pyproject.toml", "tools/server/pyproject.toml",
+              "docker/*Dockerfile*", "Dockerfile*"]
+added_line = ["^[A-Z0-9_]+(?:VERSION|REF|COMMIT|TAG|SHA256|URL|REPO|IMAGE)=", "FetchContent_Declare", "GIT_TAG",
+              "^\\s*\"[A-Za-z0-9_.-]+\\s*[<>=~!]", "^FROM ", "apt-get install", "brew install", "pip install"]
+
+[[surface]]
+name = "ci-security"
+note = "runner, permission, trigger or secret change in workflows (self-hosted exposure, #250)"
+changelog = false
+paths = ["scripts/ci/check-self-hosted-reachability.py"]
+line_paths = [".github/workflows/**", ".github/actions/**"]
+added_line = ["runs-on", "permissions", "pull_request_target", "workflow_run", "secrets\\.", "self-hosted",
+              "GITHUB_TOKEN", "id-token", "contents: write", "packages: write"]
+
+[[surface]]
+name = "governance"
+note = "roadmap, planning rules, templates and agent rules"
+changelog = false
+paths = [".github/roadmap.toml", "docs/planning.md", "CONTRIBUTING.md", "CLAUDE.md", ".claude/settings.json",
+         ".claude/hooks/**", ".claude/rules/**", ".github/ISSUE_TEMPLATE/**", ".github/pull_request_template.md",
+         "scripts/ci/scope_check.py", "scripts/ci/roadmap_*.py", ".github/workflows/scope.yml",
+         ".github/workflows/roadmap-health.yml"]
+
+# --------------------------------------------------------------------------- milestones
+# status: now | next | later | lab | icebox | done. `areas` lists what a PR for
+# an issue in the milestone may change ("*": anything not frozen). `exit` is the
+# command or measurement that closes the milestone.
+# A milestone without `number` does not exist on GitHub yet and is matched by title
+# until it does; add the number once it is created.
+
+[[milestone]]
+number = 17
+key = "correct"
+title = "Correct by default"
+status = "now"
+rank = 1
+wip = 3
+areas = ["io-ftp", "io-pcfb", "io-other", "compile", "ir-pra", "ir-pc", "passes", "runtime", "cli", "python",
+         "server", "bench", "datasets", "ci", "scram-legacy"]
+exit = "no open `wrong-answer` issue; default loop green: every corpus model either runs to |z| ≤ 4 with default options or is refused at compile with a listed diagnostic"
+
+[[milestone]]
+number = 15
+key = "spine"
+title = "Spine: one SCRAM-free pipeline, then MIT"
+status = "now"
+rank = 2
+history = [{from = "2026-11-20", status = "now"}]
+wip = 3
+areas = ["ir-pra", "ir-pc", "passes", "io-pcfb", "io-other", "compile", "runtime", "scram-legacy", "cli", "python",
+         "server", "build", "ci", "bench", "datasets"]
+exit = "E1: no GPL-3.0 file in the link closure of fzb, the wheel and the server; OpenPSA runs through ir::pra with tallies bit-identical to the SCRAM path. E2: provenance report at 0, MIT everywhere"
+
+[[milestone]]
+number = 18
+key = "speed"
+title = "Speed: measured engine wins"
+status = "next"
+rank = 3
+areas = ["runtime", "passes", "compile", "bench", "build", "ci", "cli"]
+exit = "bench gate on Aralia v1 (V100S, RTX 3070): geomean pass time ≥ 1.5× faster than v0.18.7 with every accuracy model at |z| ≤ 4; an A/B result in every engine PR"
+
+[[milestone]]
+number = 19
+key = "ftp-plant"
+title = "FTP plant models"
+status = "next"
+rank = 4
+areas = ["io-ftp", "ir-pra", "compile", "passes", "io-pcfb", "cli", "python", "bench", "datasets"]
+exit = "public FTP corpus compiles and runs by default as probability queries; initiator values reported as frequencies with a declared unit; hull queries only if the hull RFC is accepted"
+
+[[milestone]]
+number = 20
+key = "ship"
+title = "Ship: install, operate, secure"
+status = "next"
+rank = 5
+areas = ["ci", "build", "python", "server", "webui", "dev", "cli", "governance", "datasets"]
+exit = "#250 closed (no PR-triggered job reaches a self-hosted group); clean-machine pip and image smoke green on Linux, macOS and Windows at release; PR CI p50 ≤ 30 min"
+
+[[milestone]]
+number = 21
+key = "run"
+title = "Run control and reporting"
+status = "next"
+rank = 6
+areas = ["runtime", "cli", "python", "server", "webui"]
+exit = "fzb run and the server stop on a stated precision through one controller, with measured interval coverage; counts invariant to step size"
+
+[[milestone]]
+number = 16
+key = "evidence"
+title = "Evidence: benchmark program"
+status = "next"
+rank = 7
+areas = ["bench", "datasets", "ci", "dev"]
+exit = "manifest v2 with reference kind, uncertainty and provenance for every public model; cross-tool results page published with raw logs"
+
+[[milestone]]
+number = 13
+key = "converters"
+title = "Converters + train"
+status = "later"
+rank = 8
+areas = ["io-other", "io-ftp", "ir-pra", "compile", "cli", "python", "datasets"]
+exit = "one EBR-II back-fit reproduced with fuzzybits as the forward model"
+
+[[milestone]]
+number = 22
+key = "lab"
+title = "Lab"
+status = "lab"
+rank = 9
+wip = 2
+areas = ["lab"]
+exit = "each experiment graduates, is extended once, or is archived with findings, within its time box"
+
+[[milestone]]
+number = 14
+key = "icebox"
+title = "Icebox"
+status = "icebox"
+rank = 10
+areas = []
+exit = "none: ideas wait here; starting one needs a lab charter or a product issue"
+
+[[milestone]]
+number = 12
+key = "phase2"
+title = "Phase 2 — measured wins"
+status = "done"
+history = [{from = "2026-11-18", status = "now"}, {from = "2026-11-24", status = "done"}]
+areas = ["*"]
+exit = "superseded by Correct, Speed, Ship and Run; closed issues kept as history"
+
+[[milestone]]
+number = 11
+key = "phase1"
+title = "Phase 1 — spine"
+status = "done"
+history = [{from = "2026-11-18", status = "now"}, {from = "2026-11-20", status = "done"}]
+areas = ["*"]
+
+[[milestone]]
+number = 10
+key = "phase0"
+title = "Phase 0 — stop the bleeding"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 1
+key = "2025-1"
+title = "2025 milestone 1"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 2
+key = "2025-2"
+title = "2025 milestone 2"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 3
+key = "2025-3"
+title = "2025 milestone 3"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 4
+key = "2025-4"
+title = "2025 milestone 4"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 5
+key = "2025-5"
+title = "2025 milestone 5"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 6
+key = "2025-6"
+title = "2025 milestone 6"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 7
+key = "2025-7"
+title = "2025 milestone 7"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 8
+key = "2025-8"
+title = "2025 milestone 8"
+status = "done"
+areas = ["*"]
+
+[[milestone]]
+number = 9
+key = "2025-9"
+title = "2025 milestone 9"
+status = "done"
+areas = ["*"]

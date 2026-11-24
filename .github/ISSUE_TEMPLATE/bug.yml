@@ -1,0 +1,44 @@
+name: Bug
+description: Something fuzzybits does wrong, crashes on, or refuses wrongly.
+labels: ["bug", "status:triage"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: A wrong answer with no diagnostic is the most severe; the maintainer adds `wrong-answer` on triage.
+      options:
+        - Wrong result, no diagnostic
+        - Crash, hang or refusal of valid input
+        - Wrong or missing diagnostic
+        - Build, CI or packaging
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Commands, input (public models only; never paste private model names or values) and output.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      description: The correct result or behaviour, and how you know (reference value, spec, other tool).
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance
+      description: The test that will prove it fixed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and backend
+      placeholder: fuzzybits 0.18.7, omp / cuda sm_70 / metal / hip

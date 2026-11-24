@@ -1,0 +1,49 @@
+name: Lab experiment
+description: Try an idea without committing develop to it (lab/<topic>/, time-boxed).
+labels: ["status:triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Rules: [docs/planning.md §6](https://github.com/fuzzybit-org/fuzzybits/blob/develop/docs/planning.md#6-the-lab).
+        Lab code lives in `lab/<topic>/`, never changes core files, defaults or formats, and ends by graduating,
+        one extension, or archiving. At most two experiments run at once.
+  - type: input
+    id: topic
+    attributes:
+      label: Topic (directory and label lab:<topic>)
+      placeholder: hull
+    validations:
+      required: true
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: One sentence that can turn out false.
+    validations:
+      required: true
+  - type: textarea
+    id: measurement
+    attributes:
+      label: Measurement
+      description: What is measured, on which data, with which command.
+    validations:
+      required: true
+  - type: textarea
+    id: kill
+    attributes:
+      label: Kill criterion
+    validations:
+      required: true
+  - type: input
+    id: timebox
+    attributes:
+      label: Time box (at most 2 weeks)
+      placeholder: YYYY-MM-DD
+    validations:
+      required: true
+  - type: textarea
+    id: core
+    attributes:
+      label: Core changes it would need
+      description: Each becomes its own product issue, judged on product terms, or waits for graduation.

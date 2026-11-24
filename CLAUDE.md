@@ -59,6 +59,38 @@ Use `scripts/dev/ws.sh` for every build and test (details: `scripts/dev/README.m
 - A local hook formats each C++ file you edit with LLVM 20's clang-format, when it is installed.
   Before you push, run `scripts/ci/clang-format.sh`; CI fails on any difference.
 
+## Scope rules for agents
+
+Full rules: `docs/planning.md` (§8 is for agents). The roadmap is `ROADMAP.md` and
+`.github/roadmap.toml`.
+
+- **Starting work.**
+  - Work only on an issue the user names that is `status:ready` in a `now` milestone, or on a lab
+    charter.
+  - If the issue is in a `next`, `later` or `icebox` milestone, or has no milestone, say so and
+    ask before starting.
+- **Stay inside the issue.**
+  - Do not change areas its milestone does not list, or frozen areas (`hull`, `exact-kc`).
+  - Do not add a directory under `src/`, `tools/`, `targets/` or `python/`.
+  - Do not change a surface (default, CLI or API, `.pcfb`, dependency, workflow, governance)
+    unless the issue says to. Check with `python3 scripts/ci/scope_check.py --pr <N>`.
+- **Scope that grows.** Stop at the issue's boundary, file one triage issue for the rest, and tell
+  the user. Do not widen the PR.
+- **Filing issues.**
+  - Use `status:triage` and no milestone, at most 3 per session without asking.
+  - Never put a private model's identifier in a title, branch name, commit message or log.
+- **Never:**
+  - merge a PR, or push to `develop`;
+  - apply `status:ready`, `scope-exception`, `size-exception`, `surface-approved`,
+    `wrong-answer`, `security` or `release-blocker`;
+  - create labels or milestones;
+  - edit `.github/roadmap.toml`, `docs/planning.md`, this file or `.claude/` unless the user asks
+    in this session.
+
+  `.claude/hooks/scope-guard.sh` blocks these commands.
+- **RFCs.** Code for a `proposed` RFC goes in `lab/<topic>/`, never in core paths.
+- **Benchmarks.** A benchmark finding never justifies a core change by itself. File a triage issue.
+
 ## Working rules
 
 - **Run outputs.** Never write them into the repository root or `input/`. `fzb`/`scram-cli` runs
@@ -71,6 +103,8 @@ Use `scripts/dev/ws.sh` for every build and test (details: `scripts/dev/README.m
   `SPDX-License-Identifier: GPL-3.0-or-later`: mostly top-level `src/`, `src/ext`,
   `src/expression` and `targets/scram`. Check with `python3 scripts/ci/scram_provenance.py`.
 - **Private fixtures.** Pass them only when the task asks for them (`ws.sh ... --private=<dir>`).
+  They are the `update = none` submodule `extern/private-fixtures`; never fetch it in CI or change
+  its `update = none`.
   Report aggregates only: never identifiers, names or values.
 - **Docs.** `docs/architecture.md` predates the rename and is partly out of date. When it disagrees
   with the code or a newer doc, trust the code and say so.

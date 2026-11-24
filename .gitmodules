@@ -4,3 +4,13 @@
 [submodule "input/generic-pwr-model"]
 	path = input/generic-pwr-model
 	url = https://github.com/openpra-org/generic-pwr-model.git
+[submodule "extern/private-fixtures"]
+	path = extern/private-fixtures
+	url = git@github.com:fuzzybit-org/private-fixtures.git
+	branch = main
+	update = none
+[submodule "extern/pra-solver-images"]
+	path = extern/pra-solver-images
+	url = git@github.com:fuzzybit-org/pra-solver-images.git
+	branch = main
+	update = none

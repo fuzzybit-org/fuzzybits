@@ -3,14 +3,46 @@
 Issues and pull requests: https://github.com/fuzzybit-org/fuzzybits. These conventions apply to
 people and to coding agents alike; agents also read [CLAUDE.md](CLAUDE.md).
 
+## Planning and scope
+
+Work follows [ROADMAP.md](ROADMAP.md). The rules are in [docs/planning.md](docs/planning.md); the
+hard ones:
+
+- **Starting work.** Work starts from an issue marked `status:ready` in a `now` milestone, or from
+  a lab charter. New issues are `status:triage` until the maintainer sets their milestone.
+- **One PR, one issue, one concern.** Name the issue with `Closes #N` or `Part of #N`. A fix does
+  not carry a feature, a pin bump or a refactor.
+- **Scope check.** The `scope` check compares each PR with `.github/roadmap.toml`:
+  - the milestone's status and areas, including frozen areas and new directories;
+  - size: 800 counted lines is the review budget, 2000 needs `size-exception`;
+  - surfaces: defaults, CLI and API, `.pcfb`, dependencies, workflows, governance. These need
+    `surface-approved` and, for user-visible ones, a CHANGELOG entry.
+- **Who applies labels.** The maintainer applies the exception and approval labels.
+- **Defaults** change only in a PR of their own. Whatever `fzb compile` writes by default,
+  `fzb run` accepts.
+- **RFCs.** Code for an RFC that is still `proposed` lives in [`lab/`](lab/README.md), not in
+  core ([docs/rfc/README.md](docs/rfc/README.md)).
+- **Benchmarks** measure. A product change they suggest becomes a triage issue.
+
 ## Branches and pull requests
 
 - Branch from `develop` as `<type>/<short-name>` (for example `feat/pcfb-reader`,
   `chore/dev-workspaces`). Pull requests target `develop`.
+- **Experiments** use `lab/<topic>` branches or `lab/<topic>/` directories. Never merge them into
+  core paths.
 - Rebase on `origin/develop` before review. Never rebase commits that others have pulled.
-- Every commit compiles and passes its tests.
-- PR description sections: **Summary**, **Changes** (by file or area), **Decisions** (the
-  trade-offs and alternatives rejected), **Tests** (the exact commands you ran and their results).
+- Every commit compiles and passes its tests. Split work over the review budget into a stack of
+  PRs.
+- PR description sections, as in [the template](.github/pull_request_template.md):
+  - **Summary**;
+  - **Changes**, by file or area;
+  - **Decisions**: the trade-offs and alternatives rejected;
+  - **Tests**: the exact commands you ran and their results;
+  - **Scope**.
+- **Merging.**
+  - Squash only, and delete the branch.
+  - No direct pushes to `develop`.
+  - The maintainer merges after reading the diff.
 
 ## Commit messages
 
@@ -73,3 +105,30 @@ left are formatting, and each replayed commit is reformatted. Run step 2 without
 Some tests and benchmarks use private models (`--private` in `ws.sh`,
 `FUZZYBITS_PRIVATE_FIXTURES_DIR`). Never print, commit or paste their identifiers or values. Report
 aggregates only.
+
+The private repositories are submodules marked `update = none` in `.gitmodules`:
+
+| Path | Repository |
+|---|---|
+| `extern/private-fixtures` | the private models and their cards |
+| `extern/pra-solver-images` | wine images for the licensed vendor solvers |
+
+- Each has `update = none` in `.gitmodules`, so `git submodule update --init --recursive` and CI checkouts skip
+  them.
+- With ssh access to the repositories, fetch one explicitly:
+
+  ```bash
+  git submodule update --init --checkout extern/private-fixtures
+  ```
+
+- `ws.sh` never syncs them into a workspace; pass `--private=extern/private-fixtures` instead.
+- `scripts/ci/private-submodules.sh` (the `hygiene` job) checks:
+  - every other submodule is readable anonymously, so a new private one cannot be added without
+    `update = none`;
+  - no private submodule is populated in CI;
+  - the job token cannot read any of them;
+  - on GitHub-hosted runners, where fork pull requests run, the runner cannot read them over ssh, https or
+    `gh`;
+  - on self-hosted runners, whose accounts are trusted and may read them, the job-started hook that keeps other
+    people's jobs off the host is configured
+    ([ci-toolchain.md](docs/ci-toolchain.md#self-hosted-runner-job-guard)).
