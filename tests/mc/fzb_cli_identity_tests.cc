@@ -149,10 +149,13 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
         << json_path.string() << "'";
 #endif
     REQUIRE(run_cmd(fzb.str()) == 0);
-    std::ifstream js(json_path);
-    REQUIRE(js);
     std::ostringstream body;
-    body << js.rdbuf();
+    {
+        // Closed before remove_all below: Windows does not delete a file that is still open.
+        std::ifstream js(json_path);
+        REQUIRE(js);
+        body << js.rdbuf();
+    }
     const auto from_fzb = parse_fzb_json(body.str());
 
     INFO("requested=" << requested << " scram hits=" << from_scram.hits << " n=" << from_scram.n

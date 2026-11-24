@@ -128,6 +128,19 @@
       }
     },
     {
+      "name": "windows-generic-debuginfo",
+      "displayName": "windows-generic with CodeView debug info",
+      "description": "windows-generic (same -O3 code) plus CodeView debug info and PDBs, so crash dumps and debugger stacks in windows-omp have symbols. /DEBUG keeps unreferenced functions, so binaries are larger. Not used for wheels. See docs/build-variants.md.",
+      "inherits": "windows-generic",
+      "cacheVariables": {
+        "CMAKE_POLICY_DEFAULT_CMP0141": "NEW",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded",
+        "CMAKE_EXE_LINKER_FLAGS": "-Xlinker /DEBUG",
+        "CMAKE_SHARED_LINKER_FLAGS": "-Xlinker /DEBUG",
+        "CMAKE_MODULE_LINKER_FLAGS": "-Xlinker /DEBUG"
+      }
+    },
+    {
       "name": "debug",
       "displayName": "debug (generic, Debug)",
       "description": "Developer preset: generic SSCP, Debug, native -march, AdaptiveCpp debug level 4.",
@@ -171,6 +184,10 @@
     {
       "name": "windows-generic",
       "configurePreset": "windows-generic"
+    },
+    {
+      "name": "windows-generic-debuginfo",
+      "configurePreset": "windows-generic-debuginfo"
     }
   ],
   "testPresets": [
@@ -307,6 +324,11 @@
         "ACPP_PERSISTENT_RUNTIME": "1",
         "CTEST_NO_TESTS_ACTION": "ignore"
       }
+    },
+    {
+      "name": "windows-generic-debuginfo",
+      "inherits": "windows-generic",
+      "configurePreset": "windows-generic-debuginfo"
     }
   ],
   "workflowPresets": [

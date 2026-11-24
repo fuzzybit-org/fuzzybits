@@ -42,6 +42,7 @@ invoked directly.
 |---|---|---|---|---|---|
 | `generic` | `generic` | `malloc` | Release | ON | `OPTIMIZE_FOR_NATIVE=OFF` |
 | `windows-generic` | `generic` | `malloc` | Release | ON | Windows-only; clang targeting the MSVC ABI; same cache as `generic` |
+| `windows-generic-debuginfo` | `generic` | `malloc` | Release | ON | `windows-generic` plus CodeView debug info and PDBs (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded`, `/DEBUG`); what `windows-omp` builds and tests |
 | `cuda-sm70` | `cuda:sm_70` | `malloc` | Release | ON | `ACPP_USE_ACCELERATED_CPU=off`, `ACPP_STDPAR=off`, `ACPP_EXTRA_COMPILE_OPTIONS=--cuda-include-ptx=sm_70`; Linux-only |
 | `cuda-sm86` | `cuda:sm_86` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_86` |
 | `cuda-sm120` | `cuda:sm_120` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_120` |
@@ -337,10 +338,29 @@ FetchContent TUs. CI therefore picks the newest of toolset 14.51 or 14.4x (VS 20
 that vswhere lists, and falls back to the default toolset plus the hatch only
 when neither is installed. The AdaptiveCpp+LLVM install cache is keyed on that
 toolset.
-Native `ctest --preset windows-generic`
-still has known failures (CLI `std::system` ACCESS_VIOLATION, aiger corpus
-diagnostic, BSCU mean/sigma). They now fail `windows-omp` visibly instead of
-being hidden by a step-level `continue-on-error`.
+Test failures fail `windows-omp` visibly instead of being hidden by a
+step-level `continue-on-error`. Open Windows problems are tracked in #108.
+
+`windows-omp` builds `windows-generic-debuginfo`: the same `-O3` code with
+CodeView debug info, so crash stacks have symbols. `/DEBUG` makes the linker
+keep unreferenced functions, so its binaries are larger than the wheels'. Both
+jobs turn on Windows Error Reporting local dumps before their tests
+([`scripts/ci/windows-crash-dumps.ps1`](../scripts/ci/windows-crash-dumps.ps1)).
+When a job fails, its *Crash diagnostics* step:
+
+- prints the exception and faulting stack of every dump with `cdb`;
+- in `windows-omp`, re-runs each failed ctest test under `cdb` with child
+  processes debugged (`-o`), so crashes in `scram-cli` or `fzb` spawned through
+  `std::system` are caught even when WER writes no dump for them.
+
+- in `windows-wheel`, lists AdaptiveCpp's JIT kernel cache in the checkout and
+  runs `fzb run` on `chinese.pcfb` there under `cdb`, with the first smoke
+  venv's console script: the command whose crash fails `test_cli.py` and
+  `test_progress_log.py`, in the directory pytest runs it from.
+
+The dumps are uploaded as an artifact with `windows-omp`'s PDBs and binaries.
+Wheel modules carry no PDBs, so `windows-wheel` stacks show fuzzybits frames as
+export plus offset.
 
 ```powershell
 # Host compiler: LLVM 20 clang-cl (MSVC ABI + GNU __atomic_* builtins).

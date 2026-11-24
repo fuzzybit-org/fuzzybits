@@ -48,14 +48,16 @@ TEST_P(RiskAnalysisTest, BSCU) {
         EXPECT_NEAR(0.217, sigma(), 5e-3);
     } else {
         EXPECT_NEAR(0.1124087, p_total(), 1e-4);
-        // 1e4 uncertainty samples: hosted Darwin OpenMP landed at 0.111/0.177,
-        // just outside 5e-3. Exact BDD p_total still holds.
-#ifdef __APPLE__
-        EXPECT_NEAR(0.117, mean(), 1e-2);
-        EXPECT_NEAR(0.183, sigma(), 1e-2);
-#else
+        // 1e4 uncertainty samples. The reference comes from libstdc++: the standard specifies
+        // the engines but not the distribution algorithms, so libc++ (Darwin: 0.111/0.177) and
+        // the MSVC STL (Windows: 0.111/0.177) draw other samples from the same seed and land just
+        // outside 5e-3. Exact BDD p_total above still holds on all three.
+#ifdef __GLIBCXX__
         EXPECT_NEAR(0.117, mean(), 5e-3);
         EXPECT_NEAR(0.183, sigma(), 5e-3);
+#else
+        EXPECT_NEAR(0.117, mean(), 1e-2);
+        EXPECT_NEAR(0.183, sigma(), 1e-2);
 #endif
     }
 }

@@ -71,6 +71,8 @@ jobs:
     env:
       ACPP_PREFIX: ${{ github.workspace }}/.cache/acpp-prefix
       SCCACHE_GHA_ENABLED: "true"
+      # windows-generic plus CodeView debug info, so crash stacks have symbols.
+      FZB_PRESET: windows-generic-debuginfo
     steps:
       # The runner sets core.autocrlf=true. Benchmark manifests and test fixtures hash the
       # committed LF bytes, including those in submodules, so check out without conversion.
@@ -89,7 +91,7 @@ jobs:
         with:
           cache-name: windows-omp
 
-      - name: Configure and build fuzzybits (windows-generic preset)
+      - name: Configure and build fuzzybits (windows-generic-debuginfo preset)
         id: product
         shell: pwsh
         run: |
@@ -102,7 +104,7 @@ jobs:
           $env:CFLAGS = '-D_ALLOW_COMPILER_VERSION_MISMATCH -DNOMINMAX'
           $env:CXXFLAGS = $env:CFLAGS
           $env:AdaptiveCpp_DIR = Join-Path $env:ACPP_PREFIX 'lib\cmake\AdaptiveCpp'
-          cmake --preset windows-generic `
+          cmake --preset $env:FZB_PRESET `
             -DCMAKE_PREFIX_PATH="$env:ACPP_PREFIX" `
             -DAdaptiveCpp_DIR="$env:AdaptiveCpp_DIR" `
             -DCMAKE_C_COMPILER="$clang" `
@@ -111,7 +113,7 @@ jobs:
             -DBUILD_PYTHON_BINDINGS=ON `
             -DMALLOC_TYPE=malloc
           if ($LASTEXITCODE -ne 0) { throw "cmake configure failed ($LASTEXITCODE)" }
-          cmake --build --preset windows-generic
+          cmake --build --preset $env:FZB_PRESET
           if ($LASTEXITCODE -ne 0) { throw "cmake --build failed ($LASTEXITCODE)" }
           $secs = [int]((Get-Date) - $start).TotalSeconds
           "fuzzybits_build_seconds=$secs" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -120,7 +122,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $build = Join-Path $env:GITHUB_WORKSPACE 'build\windows-generic'
+          $build = Join-Path $env:GITHUB_WORKSPACE "build\$env:FZB_PRESET"
           $libxml = Join-Path $build '_deps\libxml2-build'
           $env:PATH = "$env:ACPP_PREFIX\bin;$libxml;$build\src;$env:PATH"
           $bin = Get-ChildItem -Path $build -Recurse -Filter fzb.exe |
@@ -133,6 +135,13 @@ jobs:
           & $bin.FullName --help
           if ($LASTEXITCODE -ne 0) { throw "fzb --help exited $LASTEXITCODE" }
 
+      - name: Enable crash dumps
+        shell: pwsh
+        run: |
+          $dumps = Join-Path $env:RUNNER_TEMP 'crash-dumps'
+          "FZB_CRASH_DUMPS=$dumps" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          pwsh -NoProfile -File scripts/ci/windows-crash-dumps.ps1 enable -DumpDir $dumps
+
       - name: ctest CPU (OpenMP, quarantine excluded)
         timeout-minutes: 20
         env:
@@ -142,11 +151,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $build = Join-Path $env:GITHUB_WORKSPACE 'build\windows-generic'
+          $build = Join-Path $env:GITHUB_WORKSPACE "build\$env:FZB_PRESET"
           $libxml = Join-Path $build '_deps\libxml2-build'
           $env:PATH = "$env:ACPP_PREFIX\bin;$libxml;$build\src;$env:PATH"
           $start = Get-Date
-          ctest --preset windows-generic --output-on-failure --no-tests=error
+          ctest --preset $env:FZB_PRESET --output-on-failure --no-tests=error
           $code = $LASTEXITCODE
           $secs = [int]((Get-Date) - $start).TotalSeconds
           "cpu_ctest_seconds=$secs" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
@@ -154,10 +163,42 @@ jobs:
             @(
               '## ctest (windows-omp)',
               "ctest exited $code after ${secs}s. Failures are reported, not hidden; the job is allowed to fail unless WINDOWS_CI_STRICT is true (#76).",
-              'Known remaining: aiger corpus diagnostic; scram_legacy BSCU mean/sigma; mc.cli.* ACCESS_VIOLATION (0xC0000005) under std::system; fzb_cli_identity scram IOError on temp paths.'
+              'Crash stacks: the Crash diagnostics step, and the windows-omp-crash-dumps artifact when a test crashed (#108).'
             ) | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
             throw "ctest failed ($code)"
           }
+
+      # Diagnostics only: prints stacks and exits 0, so the failed step above stays the result.
+      - name: Crash diagnostics
+        id: dumps
+        if: failure() && env.FZB_CRASH_DUMPS != ''
+        timeout-minutes: 30
+        env:
+          ACPP_VISIBILITY_MASK: omp
+          FUZZYBITS_BACKEND: omp
+          ACPP_DEBUG_LEVEL: "0"
+          ACPP_PERSISTENT_RUNTIME: "1"
+        shell: pwsh
+        run: |
+          $build = Join-Path $env:GITHUB_WORKSPACE "build\$env:FZB_PRESET"
+          $libxml = Join-Path $build '_deps\libxml2-build'
+          $env:PATH = "$env:ACPP_PREFIX\bin;$libxml;$build\src;$env:PATH"
+          # In this pwsh, not pwsh -File: -SearchRoot takes an array, which -File passes as strings.
+          & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
+            -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $build, $env:ACPP_PREFIX -BuildDir $build
+
+      - name: Upload crash dumps and symbols
+        if: failure() && steps.dumps.outputs.count != '' && steps.dumps.outputs.count != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-omp-crash-dumps
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ env.FZB_CRASH_DUMPS }}
+            build/${{ env.FZB_PRESET }}/**/*.pdb
+            build/${{ env.FZB_PRESET }}/**/*.exe
+            build/${{ env.FZB_PRESET }}/**/*.dll
 
       - name: Record timings
         if: always()
@@ -257,11 +298,73 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Enable crash dumps
+        if: always() && steps.wheel.outcome != 'skipped' && hashFiles('dist/fuzzybits-*.whl') != ''
+        shell: pwsh
+        run: |
+          $dumps = Join-Path $env:RUNNER_TEMP 'crash-dumps'
+          "FZB_CRASH_DUMPS=$dumps" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          pwsh -NoProfile -File scripts/ci/windows-crash-dumps.ps1 enable -DumpDir $dumps
+
       - name: Smoke tests (clean venv per version)
         if: always() && steps.wheel.outcome != 'skipped' && hashFiles('dist/fuzzybits-*.whl') != ''
         timeout-minutes: 60
         shell: pwsh
         run: pwsh -NoProfile -File scripts/ci/windows-wheel-versions.ps1 smoke
+
+      # Diagnostics only: prints stacks and exits 0. The wheels carry no PDBs, so frames in
+      # fuzzybits modules show as export+offset; windows-omp has the symbolised build.
+      - name: Crash diagnostics
+        id: dumps
+        if: failure() && env.FZB_CRASH_DUMPS != ''
+        timeout-minutes: 20
+        env:
+          ACPP_VISIBILITY_MASK: omp
+          FUZZYBITS_BACKEND: omp
+        shell: pwsh
+        run: |
+          # The smoke's failing `fzb run` (test_cli.py), with the first smoke venv's console
+          # script. Its compile works, so the .pcfb comes from it too.
+          $venv = Get-ChildItem -Path $env:RUNNER_TEMP -Directory -Filter 'fb-smoke-cp*' |
+            Sort-Object Name | Select-Object -First 1
+          $run = @()
+          if ($venv) {
+            $fzb = Join-Path $venv.FullName 'Scripts\fzb.exe'
+            $work = Join-Path $env:RUNNER_TEMP 'fzb-run-repro'
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            $pcfb = Join-Path $work 'chinese.pcfb'
+            & $fzb compile (Join-Path $env:GITHUB_WORKSPACE 'input\Aralia\chinese.xml') -o $pcfb
+            if ($LASTEXITCODE -eq 0) {
+              $run = @($fzb, 'run', $pcfb, '--trials', '1e6', '--backend', 'omp', '--json')
+            } else {
+              Write-Host "::warning::fzb compile exited $LASTEXITCODE; not re-running fzb run under cdb"
+            }
+          }
+          # pytest runs fzb from the checkout, where AdaptiveCpp keeps its JIT kernel cache
+          # (.acpp\apps\global\jit-cache) from the smoke runs. A run in a fresh directory did not
+          # crash (#108), so run there, and list the cache it will load.
+          $cache = Join-Path $env:GITHUB_WORKSPACE '.acpp'
+          if (Test-Path $cache) {
+            Write-Host "===== AdaptiveCpp cache under $cache"
+            Get-ChildItem -Path $cache -Recurse -File |
+              Select-Object @{ n = 'File'; e = { $_.FullName.Substring($cache.Length + 1) } }, Length, LastWriteTime |
+              Format-Table -AutoSize | Out-String -Width 220 | Write-Host
+          } else {
+            Write-Host "===== no AdaptiveCpp cache under $cache"
+          }
+          # In this pwsh, not pwsh -File: -SearchRoot and -Run take arrays, which -File passes as strings.
+          & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
+            -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $env:RUNNER_TEMP, (Join-Path $env:APPDATA 'uv\python') `
+            -Run $run -RunWorkDir $env:GITHUB_WORKSPACE
+
+      - name: Upload crash dumps
+        if: failure() && steps.dumps.outputs.count != '' && steps.dumps.outputs.count != '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: windows-wheel-crash-dumps
+          retention-days: 7
+          if-no-files-found: ignore
+          path: ${{ env.FZB_CRASH_DUMPS }}
 
       - name: Record timings
         if: always()
