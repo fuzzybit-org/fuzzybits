@@ -22,7 +22,7 @@ Alarms at the top list every threshold crossed (policy.health). Data comes from 
 (live) or from dumps (`--prs`, `--issues`, `--milestones`) for a backtest.
 
 Usage:
-  roadmap_health.py [--days 7 | --since 2026-11-18 --until 2026-11-25] [--post-issue N]
+  roadmap_health.py [--days 7 | --since YYYY-MM-DD --until YYYY-MM-DD] [--post-issue N]
   roadmap_health.py --prs prs.json --issues issues.json --milestones milestones.json --since ... --until ...
 """
 from __future__ import annotations

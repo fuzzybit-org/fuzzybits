@@ -11,27 +11,18 @@ These rules apply to people and coding agents alike. Agents have extra rules in 
 
 ## Why
 
-Between 2026-11-21 and 2026-11-23 a side line merged into `develop` in about 30 hours: about 38k lines from 19
-PRs, none of them reviewed, each merged 13 to 208 minutes after it was opened. It started from a private benchmark
-model (#185). It brought in:
+Scope grows into `develop` through paths that no single PR shows:
 
-- a new IR;
-- a new query kind, from an RFC still marked *proposed*;
-- a `.pcfb` minor version;
-- three new compile options;
-- a hull default for every FTP input, which `fzb run` refused.
+- **Trackers.** A tracking issue lists children in other milestones and schedules work there.
+- **Research.** An experiment changes core contracts (IR fields, pass semantics, format kinds) before anyone
+  decided it should ship.
+- **RFCs.** Code lands that implements an RFC still under discussion.
+- **Defaults.** A default changes inside a feature PR, and nothing checks that the runtime accepts what the
+  compiler now writes.
+- **Formats.** A format version moves ahead of the runtime that reads it.
+- **Volume.** PRs merge faster than they can be read, so none of the above is noticed until users hit it.
 
-The default shipped in v0.18.7. It was found 29 hours after it merged (#244). Meanwhile the milestone in progress,
-Phase 2, had none of its engine items finished.
-
-No rule was broken, because no rule covered:
-
-- whether a benchmark tracker may drive product changes;
-- whether a proposed RFC may be implemented on `develop`;
-- whether a default may change in passing;
-- whether a format version may move before the runtime supports the new kind.
-
-This document writes those rules down. Each rule names how it is enforced and how a breach is detected.
+Each rule below closes one of these paths. Each names how it is enforced and how a breach is detected (§7).
 
 ## 1. Goals, ranked
 
@@ -86,9 +77,9 @@ Either way, the same PR updates `roadmap.toml` and ROADMAP.md.
 ### 2.3 The milestone is the tracker
 
 A tracking issue may list only issues of its own milestone. A dependency on another milestone is written on the
-child as "Blocked by #N", never as a row in a tracker. A tracker that reaches into other milestones is how one
-benchmark issue (#185) scheduled work in four milestones. The health report flags any tracker with three or more
-children outside its milestone.
+child as "Blocked by #N", never as a row in a tracker. A tracker that reaches into other milestones schedules
+work that no milestone owns. The health report flags any tracker with three or more children outside its
+milestone.
 
 ### 2.4 Interrupt lane
 
@@ -130,7 +121,7 @@ without a milestone, with their age.
 
 - A PR may change only the areas its milestone lists, plus `docs`, `changelog` and `tests`.
 - A **frozen** area is code that stays in place but takes no new work. Changing it needs `scope-exception`, even
-  for an interrupt. Today the frozen areas are `hull` and `exact-kc`.
+  for an interrupt. `roadmap.toml` marks them `frozen = true`.
 - A new directory under a subsystem root (`src/*`, `src/ir/*`, `src/ir/pc/*`, `src/io/*`, `src/compile/*`,
   `tools/*`, ...) is a new subsystem and needs `scope-exception`. Directories under `lab/` are exempt.
 
@@ -165,15 +156,15 @@ PR can be read in one.
 ### 4.5 Merging
 
 - **Merge commits:** squash only. Branches are deleted on merge.
-- **Direct pushes:** none to `develop`, including by admins. All 16 direct pushes between 11-18 and 11-23 bypassed
-  every check.
+- **Direct pushes:** none to `develop`, including by admins. A direct push skips every check, including this
+  one.
 - **Who merges:** the maintainer. Agents never merge (§8).
 - **Before merging:**
   - the required checks are green, and the scope check reports nothing blocking;
   - bench checks that ran have passed or have been explained in the PR;
   - the description's **Tests** section lists what was run.
-- **Read the diff first.** "Merged within minutes of opening" was the norm (median 21 min). The scope check cannot
-  replace reading the diff.
+- **Read the diff first.** The scope check finds where a PR goes, not whether its content is right. That
+  needs a reader.
 
 ## 5. Defaults, formats, RFCs and benchmarks
 
@@ -207,7 +198,8 @@ The health report lists merged PRs that cite a `proposed` RFC by file name or by
 
 - An Evidence issue may not list product issues as its children.
 - A benchmark finding that needs a product change becomes a triage issue, judged on product terms.
-- "No dataset shim" (#185) is a product decision, and is made in triage, not in a benchmark tracker.
+- Whether a benchmark model must go through the product readers ("no dataset shim") is a product decision. It is
+  made in triage, not in a benchmark tracker.
 
 ## 6. The lab
 
@@ -290,15 +282,13 @@ it weekly, and the same day it comments. Every alarm ends in one of three ways:
 - the work stops;
 - an exception label is applied, with a reason.
 
-**Backtest.** The rules were run over the history, with `roadmap.toml`'s milestones set to the plan of 2026-11-18.
+**Backtest.** Both scripts run offline on `gh` dumps, against any `roadmap.toml`:
 
-- The scope check flags the first hull PR (#188, the RFC) and the FTP reader (#194) as `scope.not-active` on
-  11-21.
-- The health report for 11-21 alone reports 20 % focus, an RFC implemented while proposed, and the #185 tracker
-  reaching into five milestones.
-- That is three days before #244.
-- Reproduce with `scope_check.py --backtest-prs` and `roadmap_health.py --prs` on `gh` dumps (usage in each
-  script's docstring).
+- `scope_check.py --backtest-prs prs.json --backtest-issues issues.json --milestones milestones.json --patches DIR --git`;
+- `roadmap_health.py --prs ... --issues ... --milestones ... --since YYYY-MM-DD --until YYYY-MM-DD`.
+
+Running them against a roadmap that models an earlier plan shows when drift would have been reported. Usage and
+dump formats are in each script's docstring. Use this to check a rule change before merging it.
 
 ## 8. Coding agents
 
@@ -309,7 +299,7 @@ Agents follow everything above, plus:
    - Do not move issues between milestones.
 2. **Filing issues.**
    - File with `status:triage` and no milestone.
-   - File at most **3** per session without asking. The hull line began as 12 issues filed in 17 seconds.
+   - File at most **3** per session without asking. A burst of agent-filed issues is a plan nobody reviewed.
    - Never put a private model's identifier in a title, branch name, commit or log.
 3. **Labels and milestones.**
    - Never apply `status:ready`, `scope-exception`, `size-exception`, `surface-approved` or an interrupt label.
@@ -322,15 +312,14 @@ Agents follow everything above, plus:
 `.claude/settings.json` denies `gh pr merge`. `.claude/hooks/scope-guard.sh` blocks the label, milestone and push
 commands above. Both apply only to Claude Code sessions in this repository.
 
-**Identity.** Agents push and open PRs with the maintainer's account today. GitHub therefore cannot tell their
-labels or PRs from the maintainer's, and required reviews would block every PR, because an author cannot approve
-their own. A separate identity for agents (a machine user or a GitHub App without admin rights) makes two things
-possible:
+**Identity.** While agents push and open PRs with the maintainer's account, GitHub cannot tell their labels or
+PRs from the maintainer's. Required reviews would then block every PR, because an author cannot approve their own.
+A separate identity for agents (a machine user or a GitHub App without admin rights) makes two things possible:
 
 - required reviews (one approval from the maintainer);
 - label gates that verify who applied the label.
 
-Until then, the approval labels rest on the agent rules and the local hook.
+Without it, the approval labels rest on the agent rules and the local hook.
 
 ## 9. Limits
 
@@ -338,12 +327,12 @@ Until then, the approval labels rest on the agent rules and the local hook.
   Areas catch new places, not new meanings.
 - **Line-based surfaces are heuristics** on added lines: a removed option or a changed default value is not seen.
   The `default` surface relies on the PR template, so honesty is still required.
-- **The labels come from the same account as the agents** until §8's identity change.
+- **The labels may come from the same account as the agents** (§8, Identity).
 - **An exception label is a bypass.** The health report counts them, but nothing limits them.
 - **Merge latency is not enforced.** GitHub has no minimum-age rule. Required reviews from a second identity are
   the real fix.
-- **The backtest is approximate.** It uses today's issue milestones and bodies, not their history; trackers are
-  judged on today's bodies.
+- **The backtest is approximate.** It uses issue milestones and bodies as they are when the dump is taken, not as
+  they were when each PR merged.
 
 ## 10. Changing this policy
 

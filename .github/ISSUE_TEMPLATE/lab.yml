@@ -39,7 +39,7 @@ body:
     id: timebox
     attributes:
       label: Time box (at most 2 weeks)
-      placeholder: 2026-12-08
+      placeholder: YYYY-MM-DD
     validations:
       required: true
   - type: textarea

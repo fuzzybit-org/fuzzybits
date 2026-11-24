@@ -32,7 +32,7 @@ Every input fuzzybits accepts gets a correct estimate or a refusal before sampli
 - #247: the compile-level check, for Boolean targets.
 - #30: verify, then close.
 - To file:
-  - refuse OpenPSA models with event trees until #148 lands (silent today, #92);
+  - refuse OpenPSA models with event trees until #148 lands, instead of dropping their sequences (#92);
   - the default-loop CI job.
 
 ### 2. Spine: one SCRAM-free pipeline, then MIT
@@ -93,10 +93,11 @@ The OpenPSA path (SCRAM PDAG) and the FTP path (`ir::pra`) become one pipeline.
 
 At most two experiments at a time, with a charter and a time box ([lab/README.md](lab/README.md)).
 
-- **Hull queries (`lab:hull`): frozen, pending review.** The monotone-hull line (#174 and its successors) merged
-  into `develop` while its RFC was `proposed`.
-  - Its code stays and keeps building. The `hull` area is frozen: new work needs `scope-exception`.
-  - #244 makes probability the FTP default.
+- **Hull queries (`lab:hull`): frozen, pending review.** The RFC
+  ([monotone-hull-queries.md](docs/rfc/monotone-hull-queries.md), #174) is `proposed`, and part of it is
+  implemented on `develop`.
+  - That code stays and keeps building. The `hull` area is frozen: new work needs `scope-exception`.
+  - Probability is the FTP default and hull is opt-in (#244).
   - At the review, choose one:
     1. **Accept the RFC.** Hull becomes part of *FTP plant models*, and #183 and #202 move there.
     2. **Move the code to `lab/hull`** in one mechanical PR.
@@ -119,5 +120,5 @@ Starting any of these needs a lab charter or a product issue.
 
 - Phase 0 "stop the bleeding" https://github.com/fuzzybit-org/fuzzybits/milestone/10
 - Phase 1 "spine" https://github.com/fuzzybit-org/fuzzybits/milestone/11
-- Phase 2 "measured wins" https://github.com/fuzzybit-org/fuzzybits/milestone/12: superseded on 2026-11-24 by
-  Correct, Speed, Ship and Run. Its closed issues remain there.
+- Phase 2 "measured wins" https://github.com/fuzzybit-org/fuzzybits/milestone/12: superseded by Correct, Speed,
+  Ship and Run. Its closed issues remain there.

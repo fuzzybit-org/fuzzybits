@@ -32,4 +32,4 @@ The health report reads the `Status:` line and the issue numbers on the `Issue:`
 
 | RFC | Status | Notes |
 |---|---|---|
-| [monotone-hull-queries.md](monotone-hull-queries.md) | proposed | implemented in part on `develop` before acceptance; frozen pending review (ROADMAP.md, Lab) |
+| [monotone-hull-queries.md](monotone-hull-queries.md) | proposed | partly implemented on `develop`; frozen until accepted or withdrawn (ROADMAP.md, Lab) |

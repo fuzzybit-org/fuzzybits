@@ -337,7 +337,7 @@ title = "Phase 2 — measured wins"
 status = "done"
 history = [{from = "2026-11-18", status = "now"}, {from = "2026-11-24", status = "done"}]
 areas = ["*"]
-exit = "superseded on 2026-11-24 by Correct, Speed, Ship and Run; closed issues kept as history"
+exit = "superseded by Correct, Speed, Ship and Run; closed issues kept as history"
 
 [[milestone]]
 number = 11
