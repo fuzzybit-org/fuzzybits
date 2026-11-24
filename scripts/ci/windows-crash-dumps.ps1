@@ -10,6 +10,8 @@
 #          corruption (c0000374) or unhandled C++ exception, writing a minidump to DIR as well.
 #          Step 2 covers crashes that WER does not dump: a process that inherits
 #          SEM_NOGPFAULTERRORBOX (as children of a test driver may) never reaches WER.
+#       3. With -Run EXE ARG...: run that command under cdb the same way (in -RunWorkDir), for
+#          crashes outside ctest, such as a wheel's fzb console script.
 #       Writes count=<dumps in DIR> to GITHUB_OUTPUT.
 #
 # -SearchRoot directories are scanned for *.pdb (symbol path) and for *.exe/*.dll/*.pyd (image
@@ -27,6 +29,8 @@ param(
     [string]$DumpDir,
     [string[]]$SearchRoot = @(),
     [string]$BuildDir = '',
+    [string[]]$Run = @(),
+    [string]$RunWorkDir = '',
     [int]$MaxDumps = 8,
     [int]$MaxTests = 12,
     [int]$TimeoutSeconds = 180
@@ -142,12 +146,40 @@ function Invoke-Diagnose {
     if ($cdb -and $BuildDir) {
         Invoke-Rerun $cdb $symbolPath
     }
+    if ($cdb -and $Run.Count -gt 0) {
+        $workdir = if ($RunWorkDir) { $RunWorkDir } else { (Get-Location).Path }
+        Invoke-UnderCdb $cdb $symbolPath ([IO.Path]::GetFileNameWithoutExtension($Run[0])) $Run $workdir
+    }
 
     $count = @(Get-ChildItem -Path $DumpDir -Filter *.dmp -File -ErrorAction SilentlyContinue).Count
     Write-Host "===== $count dump(s) in $DumpDir after diagnosis"
     if ($env:GITHUB_OUTPUT) {
         "count=$count" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
     }
+}
+
+function Invoke-UnderCdb([string]$Cdb, [string]$SymbolPath, [string]$Name, [string[]]$CommandLine, [string]$WorkDir) {
+    # Children (cmd.exe, scram-cli, the python.exe behind a console script) are debugged too
+    # (-o). Only second-chance access violations stop: the OpenMP and SYCL runtimes may raise
+    # and handle first-chance ones. .exr shows a fail-fast's subcode in Parameter[0] (2: stack
+    # cookie, 7: abort). The dump name is fixed per command; /u appends date, time and pid.
+    # Forward slashes: cdb reads backslashes inside a quoted command string as escapes.
+    $dump = (Join-Path $DumpDir (($Name -replace '[^A-Za-z0-9_.-]', '_') + '.dmp')) -replace '\\', '/'
+    $stop = ".lastevent;.exr -1;kn 64;.dump /u $dump;q"
+    $commands = Write-CommandFile @(
+        'sxn ibp'
+        'sxn cpr'
+        'sxn epr'
+        "sxd -c2 `".echo ===== second-chance access violation;$stop`" av"
+        "sxe -c `".echo ===== fail-fast (c0000409);$stop`" -c2 `".echo ===== fail-fast (c0000409);$stop`" c0000409"
+        "sxe -c `".echo ===== heap corruption (c0000374);$stop`" -c2 `".echo ===== heap corruption (c0000374);$stop`" c0000374"
+        "sxd -c2 `".echo ===== unhandled C++ exception;$stop`" eh"
+        'g'
+        '.echo ===== exited without a crash'
+        'q'
+    )
+    Write-Host "===== $Name under cdb: $($CommandLine -join ' ') (in $WorkDir)"
+    Invoke-Cdb $Cdb (@('-o', '-lines', '-y', $SymbolPath, '-cf', $commands) + $CommandLine) $WorkDir
 }
 
 function Invoke-Rerun([string]$Cdb, [string]$SymbolPath) {
@@ -167,9 +199,6 @@ function Invoke-Rerun([string]$Cdb, [string]$SymbolPath) {
     $tests = @{}
     foreach ($t in ($listing | ConvertFrom-Json).tests) { $tests[$t.name] = $t }
 
-    # Children (cmd.exe, scram-cli, fzb) are debugged too (-o). Only second-chance access
-    # violations stop: the OpenMP and SYCL runtimes may raise and handle first-chance ones.
-    # The dump name is fixed per test; /u appends the date, time and process id.
     foreach ($name in $failed | Select-Object -First $MaxTests) {
         $test = $tests[$name]
         if (-not $test -or -not $test.command) {
@@ -189,23 +218,7 @@ function Invoke-Rerun([string]$Cdb, [string]$SymbolPath) {
             $saved[$k] = [Environment]::GetEnvironmentVariable($k)
             [Environment]::SetEnvironmentVariable($k, $v)
         }
-        # Forward slashes: cdb reads backslashes inside a quoted command string as escapes.
-        $dump = (Join-Path $DumpDir (($name -replace '[^A-Za-z0-9_.-]', '_') + '.dmp')) -replace '\\', '/'
-        $stop = ".lastevent;kn 64;.dump /u $dump;q"
-        $commands = Write-CommandFile @(
-            'sxn ibp'
-            'sxn cpr'
-            'sxn epr'
-            "sxd -c2 `".echo ===== second-chance access violation;$stop`" av"
-            "sxe -c `".echo ===== fail-fast (c0000409);$stop`" -c2 `".echo ===== fail-fast (c0000409);$stop`" c0000409"
-            "sxe -c `".echo ===== heap corruption (c0000374);$stop`" -c2 `".echo ===== heap corruption (c0000374);$stop`" c0000374"
-            "sxd -c2 `".echo ===== unhandled C++ exception;$stop`" eh"
-            'g'
-            '.echo ===== exited without a crash'
-            'q'
-        )
-        Write-Host "===== $name under cdb: $($test.command -join ' ') (in $workdir)"
-        Invoke-Cdb $Cdb (@('-o', '-lines', '-y', $SymbolPath, '-cf', $commands) + @($test.command)) $workdir
+        Invoke-UnderCdb $Cdb $SymbolPath $name @($test.command) $workdir
         foreach ($k in $saved.Keys) { [Environment]::SetEnvironmentVariable($k, $saved[$k]) }
     }
 }

@@ -318,11 +318,32 @@ jobs:
         id: dumps
         if: failure() && env.FZB_CRASH_DUMPS != ''
         timeout-minutes: 20
+        env:
+          ACPP_VISIBILITY_MASK: omp
+          FUZZYBITS_BACKEND: omp
         shell: pwsh
         run: |
-          # In this pwsh, not pwsh -File: -SearchRoot takes an array, which -File passes as strings.
+          # The smoke's failing `fzb run` (test_cli.py), with the first smoke venv's console
+          # script. Its compile works, so the .pcfb comes from it too.
+          $venv = Get-ChildItem -Path $env:RUNNER_TEMP -Directory -Filter 'fb-smoke-cp*' |
+            Sort-Object Name | Select-Object -First 1
+          $run = @()
+          if ($venv) {
+            $fzb = Join-Path $venv.FullName 'Scripts\fzb.exe'
+            $work = Join-Path $env:RUNNER_TEMP 'fzb-run-repro'
+            New-Item -ItemType Directory -Force -Path $work | Out-Null
+            $pcfb = Join-Path $work 'chinese.pcfb'
+            & $fzb compile (Join-Path $env:GITHUB_WORKSPACE 'input\Aralia\chinese.xml') -o $pcfb
+            if ($LASTEXITCODE -eq 0) {
+              $run = @($fzb, 'run', $pcfb, '--trials', '1e6', '--backend', 'omp', '--json')
+            } else {
+              Write-Host "::warning::fzb compile exited $LASTEXITCODE; not re-running fzb run under cdb"
+            }
+          }
+          # In this pwsh, not pwsh -File: -SearchRoot and -Run take arrays, which -File passes as strings.
           & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
-            -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $env:RUNNER_TEMP, (Join-Path $env:APPDATA 'uv\python')
+            -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $env:RUNNER_TEMP, (Join-Path $env:APPDATA 'uv\python') `
+            -Run $run -RunWorkDir $env:RUNNER_TEMP
 
       - name: Upload crash dumps
         if: failure() && steps.dumps.outputs.count != '' && steps.dumps.outputs.count != '0'
