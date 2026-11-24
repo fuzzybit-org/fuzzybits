@@ -1,6 +1,6 @@
 # Windows toolchain for fuzzybits CI: MSVC dev prompt, LLVM 20 clang-cl, Python 3.12,
 # sccache, CUDA 12.8 toolkit, Ninja and AdaptiveCpp built into LLVM (CUDA + OpenMP
-# SSCP, cached on ACPP_REF_WINDOWS/LLVM_REF_WINDOWS/CUDA/ImageOS). Shared by the
+# SSCP, cached on ACPP_REF_WINDOWS/LLVM_REF_WINDOWS/CUDA/ImageOS/toolset/patches). Shared by the
 # windows-omp and windows-wheel jobs in .github/workflows/windows.yml. The caller
 # checks out the repository first and sets ACPP_PREFIX.
 name: Windows toolchain
@@ -119,7 +119,7 @@ runs:
       id: acpp-cache
       with:
         path: ${{ env.ACPP_PREFIX }}
-        key: acpp-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ACPP_REF_WINDOWS }}-${{ env.LLVM_REF_WINDOWS }}-cuda${{ env.CUDA_VERSION }}-llvm${{ env.LLVM_VERSION }}-clangcl20-x86-64-msvc${{ steps.msvc.outputs.toolset }}
+        key: acpp-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ACPP_REF_WINDOWS }}-${{ env.LLVM_REF_WINDOWS }}-cuda${{ env.CUDA_VERSION }}-llvm${{ env.LLVM_VERSION }}-clangcl20-x86-64-msvc${{ steps.msvc.outputs.toolset }}-patches-${{ hashFiles('.github/actions/windows-toolchain/patches/*.patch') }}
 
     - name: Build AdaptiveCpp into LLVM (CUDA + OpenMP SSCP)
       id: acpp-build
@@ -148,6 +148,17 @@ runs:
         git -C (Join-Path $tmp 'AdaptiveCpp') checkout --detach FETCH_HEAD
         $got = git -C (Join-Path $tmp 'AdaptiveCpp') rev-parse HEAD
         if ($got -ne $env:ACPP_REF_WINDOWS) { throw "AdaptiveCpp HEAD $got != $env:ACPP_REF_WINDOWS" }
+        # Local fixes on top of ACPP_REF_WINDOWS, in name order. Each patch says why and when to
+        # drop it. The install cache key includes their hash.
+        $patches = @(Get-ChildItem -Path (Join-Path $env:GITHUB_ACTION_PATH 'patches') -Filter '*.patch' -File |
+          Sort-Object Name)
+        foreach ($patch in $patches) {
+          git -C (Join-Path $tmp 'AdaptiveCpp') apply --check $patch.FullName
+          if ($LASTEXITCODE -ne 0) { throw "AdaptiveCpp patch $($patch.Name) does not apply to $env:ACPP_REF_WINDOWS" }
+          git -C (Join-Path $tmp 'AdaptiveCpp') apply $patch.FullName
+          if ($LASTEXITCODE -ne 0) { throw "git apply $($patch.Name) failed ($LASTEXITCODE)" }
+          Write-Host "applied AdaptiveCpp patch $($patch.Name)"
+        }
 
         # AdaptiveCpp uses GNU __atomic_* builtins (clang-cl, not MSVC cl).
         # LLVM 19 clang-cl cannot parse the VS 2025 STL; LLVM 20 can.

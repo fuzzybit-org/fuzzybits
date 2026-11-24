@@ -337,7 +337,13 @@ required), and even with the hatch below, AdaptiveCpp's `std::filesystem` config
 FetchContent TUs. CI therefore picks the newest of toolset 14.51 or 14.4x (VS 2022, Clang 19+)
 that vswhere lists, and falls back to the default toolset plus the hatch only
 when neither is installed. The AdaptiveCpp+LLVM install cache is keyed on that
-toolset.
+toolset and on the local AdaptiveCpp patches in
+[`.github/actions/windows-toolchain/patches`](../.github/actions/windows-toolchain/patches),
+which the action applies to `ACPP_REF_WINDOWS` in name order before the build.
+`0001-kernel-library-per-process.patch` stops two processes that share a
+working directory, whose kernel cache AdaptiveCpp places under
+`current_path()/.acpp` on Windows, from terminating on each other's OpenMP
+kernel libraries (#108). Each patch says when to drop it.
 Test failures fail `windows-omp` visibly instead of being hidden by a
 step-level `continue-on-error`. Open Windows problems are tracked in #108.
 
