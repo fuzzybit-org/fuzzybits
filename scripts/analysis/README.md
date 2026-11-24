@@ -323,3 +323,10 @@ Two consequences:
 Where the real terminal is CJK, pass `--env LC_ALL=ja_JP.UTF-8` (or whichever
 CJK locale is installed on both the emitter and the capture host) so that both
 sides agree on ambiguous widths.
+
+## `ftp-reference/` — exact reference values for FTP models
+
+Tools that quantify a CAFTA FTP model without fuzzybits' compiler: `ftp2mef.py` (FTP to OpenPSA MEF for MEF-only
+tools), `ftp_cudd.py` and `ftp_cudd.c` (the exact Boolean probability from a CUDD BDD, evaluated in rational
+arithmetic) and `ftp_cudd_check.py` (a BDD dump against direct evaluation of the tree). See
+[`ftp-reference/README.md`](ftp-reference/README.md).
