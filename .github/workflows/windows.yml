@@ -328,15 +328,18 @@ jobs:
           ACPP_DEBUG_LEVEL: "2"
         shell: pwsh
         run: |
-          # One failing smoke test, from the checkout as the smoke runs it, with the first smoke
-          # venv: once as is (does it crash outside the full suite?), then under cdb -o, which
-          # follows pytest -> fzb.exe -> python.exe.
+          # The failing smoke test after test_api.py, from the checkout as the smoke runs it, with
+          # the first smoke venv: once as is, then under cdb -o, which follows pytest -> fzb.exe ->
+          # python.exe. Alone it passes, with and without cdb (#108). test_api.py is the only
+          # earlier module that runs kernels in the pytest process, whose persistent runtime keeps
+          # its JIT kernel DLLs loaded while the fzb child uses the same kernel cache.
           $venv = Get-ChildItem -Path $env:RUNNER_TEMP -Directory -Filter 'fb-smoke-cp*' |
             Sort-Object Name | Select-Object -First 1
           $run = @()
           if ($venv) {
             $py = Join-Path $venv.FullName 'Scripts\python.exe'
-            $run = @($py, '-m', 'pytest', 'tests/python/test_cli.py::test_fzb_compile_inspect_run_chinese',
+            $run = @($py, '-m', 'pytest', 'tests/python/test_api.py',
+              'tests/python/test_cli.py::test_fzb_compile_inspect_run_chinese',
               '-q', '-o', 'pythonpath=', '-p', 'no:cacheprovider')
             Write-Host "===== without a debugger: $($run -join ' ')"
             & $run[0] $run[1..($run.Count - 1)] 2>&1 | Out-Host
