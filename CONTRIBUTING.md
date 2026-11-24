@@ -74,7 +74,7 @@ Some tests and benchmarks use private models (`--private` in `ws.sh`,
 `FUZZYBITS_PRIVATE_FIXTURES_DIR`). Never print, commit or paste their identifiers or values. Report
 aggregates only.
 
-The private repositories are submodules under `extern/`:
+The private repositories are submodules marked `update = none` in `.gitmodules`:
 
 | Path | Repository |
 |---|---|
@@ -90,5 +90,13 @@ The private repositories are submodules under `extern/`:
   ```
 
 - `ws.sh` never syncs them into a workspace; pass `--private=extern/private-fixtures` instead.
-- CI checks with `scripts/ci/private-submodules.sh` that every submodule under `extern/` has `update = none`, is
-  not populated, and cannot be read from the runner.
+- `scripts/ci/private-submodules.sh` (the `hygiene` job) checks:
+  - every other submodule is readable anonymously, so a new private one cannot be added without
+    `update = none`;
+  - no private submodule is populated in CI;
+  - the job token cannot read any of them;
+  - on GitHub-hosted runners, where fork pull requests run, the runner cannot read them over ssh, https or
+    `gh`;
+  - on self-hosted runners, whose accounts are trusted and may read them, the job-started hook that keeps other
+    people's jobs off the host is configured
+    ([ci-toolchain.md](docs/ci-toolchain.md#self-hosted-runner-job-guard)).

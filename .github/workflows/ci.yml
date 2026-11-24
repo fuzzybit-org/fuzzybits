@@ -94,7 +94,7 @@ jobs:
       - name: Tracked non-LFS files must be ≤ 5 MiB
         run: bash scripts/ci/check-tracked-file-sizes.sh
 
-      # extern/ holds private repositories: CI must neither fetch them nor be able to read them.
+      # Private submodules (update = none) are never fetched, and no one else's job may reach them.
       - name: Private submodules stay out of CI
         env:
           GITHUB_TOKEN: ${{ github.token }}

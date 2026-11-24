@@ -124,8 +124,8 @@ in_ws() {
   dk exec "$@" "${cname}" bash -c "if command -v flock >/dev/null; then exec flock -w 7200 /tmp/fzb-ws.lock bash -c \"\$0\"; else exec bash -c \"\$0\"; fi" "${script}"
 }
 
-# Paths of the submodules with `update = none` in .gitmodules. These are the private repositories
-# under extern/; a workspace gets them only through --private.
+# Paths of the submodules with `update = none` in .gitmodules: the private repositories
+# (extern/private-fixtures, extern/pra-solver-images). A workspace gets them only through --private.
 private_submodules() {
   local wt="$1" key value
   [[ -f "${wt}/.gitmodules" ]] || return 0

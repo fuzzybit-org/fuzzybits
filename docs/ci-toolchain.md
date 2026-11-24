@@ -199,6 +199,41 @@ scripts back the local harness (`scripts/dev/macos-dev.sh`; see
 [build-variants.md](build-variants.md#macos-local-development)). The Metal
 device-code audit is tracked on [#30](https://github.com/fuzzybit-org/fuzzybits/issues/30).
 
+## Self-hosted runner job guard
+
+The self-hosted runners run as an account that can read the private submodules and holds licence secrets, so only
+the maintainer's jobs may run on them. Workflow files cannot enforce this. A fork pull request runs its own copy of
+the workflows, so it can rewrite `runs-on`, and anyone with write access can push a branch that does the same. The
+`runs-on` expressions that send fork and Dependabot PRs to `ubuntu-24.04` are routing only.
+
+[`scripts/ci/runner-job-started.sh`](../scripts/ci/runner-job-started.sh) is a runner
+[job-started hook](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/running-scripts-before-or-after-a-job).
+It runs on the host before the first step and fails the job unless all of these hold:
+
+- the actor and the triggering actor (who re-ran it) are in `FZB_RUNNER_ALLOWED_ACTORS`;
+- the repository matches `FZB_RUNNER_ALLOWED_REPOS`;
+- the event is not `pull_request_target` or `workflow_run`;
+- a pull request's head is the base repository.
+
+It fails closed when the allowlist is missing.
+
+Install it on every self-hosted runner host:
+
+1. Copy the script outside the runner directories, owned by root, with mode 0755.
+2. Append these lines to each runner's `.env`:
+
+   ```text
+   ACTIONS_RUNNER_HOOK_JOB_STARTED=<path to the copy>
+   FZB_RUNNER_ALLOWED_ACTORS=<maintainer login>
+   FZB_RUNNER_ALLOWED_REPOS=fuzzybit-org/*
+   ```
+
+3. Make each `.env` root-owned, mode 0644, so a job cannot remove the hook.
+4. Restart the runner services (`sudo systemctl restart actions.runner.<org>.<runner>.service`).
+
+A rejected job fails in "Set up runner" with `runner job guard: job rejected …`. Once a host is configured, the
+`hygiene` step `Private submodules stay out of CI` fails on any self-hosted runner that lacks the hook.
+
 ## GPU device mapping (xerxes / shelly)
 
 xerxes exposes **two** physical GPUs to Docker. Runners do not isolate

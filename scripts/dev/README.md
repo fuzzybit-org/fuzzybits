@@ -88,7 +88,7 @@ so private tests and cards run (#38). The copy is replaced on every such command
 container. Never print, commit or paste private identifiers or values; report aggregates only.
 
 - **What the sync copies.** The `/src` sync leaves out every submodule with `update = none` in `.gitmodules`.
-  These are the private repositories under `extern/`, so a populated `extern/private-fixtures` reaches a workspace
+  These are the private repositories, so a populated `extern/private-fixtures` reaches a workspace
   only through `--private=extern/private-fixtures`.
 - **What `--private` copies.** It never copies a `.git` directory or file.
 
