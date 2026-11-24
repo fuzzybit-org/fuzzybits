@@ -47,23 +47,29 @@ runs:
         $msvc = Join-Path $vs 'VC\Tools\MSVC'
         $vers = @(Get-ChildItem $msvc -Directory | ForEach-Object { $_.Name })
         $vers | ForEach-Object { Write-Host "MSVC $_" }
-        $v1451 = $vers | Where-Object { $_ -like '14.51*' } | Select-Object -First 1
-        if ($v1451) {
-          'toolset=14.51' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "prefer toolset 14.51 ($v1451) for LLVM 20"
+        # LLVM 20 clang-cl needs an STL that accepts Clang 20: 14.51 (VS 2026) or
+        # 14.4x (VS 2022, Clang 19+). The 14.52 STL requires Clang 22 and fails even
+        # with _ALLOW_COMPILER_VERSION_MISMATCH (e.g. <filesystem> does not compile),
+        # and hosted windows-2025 images swap 14.51 for 14.52 without notice.
+        $ok = @($vers | Where-Object { $_ -like '14.51.*' -or $_ -like '14.4?.*' } |
+          Sort-Object { [version]$_ } -Descending)
+        if ($ok.Count -gt 0) {
+          $ts = ($ok[0] -split '\.')[0..1] -join '.'
+          "toolset=$ts" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "toolset $ts ($($ok[0])) for LLVM 20"
         } else {
           'toolset=default' | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "14.51 missing; default toolset + _ALLOW_COMPILER_VERSION_MISMATCH"
+          Write-Host "::warning::no MSVC 14.51 or 14.4x toolset; default toolset + _ALLOW_COMPILER_VERSION_MISMATCH"
         }
 
-    - name: MSVC developer command prompt (14.51)
-      if: steps.msvc.outputs.toolset == '14.51'
+    - name: MSVC developer command prompt (pinned toolset)
+      if: steps.msvc.outputs.toolset != 'default'
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
       with:
-        toolset: "14.51"
+        toolset: ${{ steps.msvc.outputs.toolset }}
 
     - name: MSVC developer command prompt (default)
-      if: steps.msvc.outputs.toolset != '14.51'
+      if: steps.msvc.outputs.toolset == 'default'
       uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
     - name: Bootstrap LLVM 20 (clang-cl)
@@ -113,7 +119,7 @@ runs:
       id: acpp-cache
       with:
         path: ${{ env.ACPP_PREFIX }}
-        key: acpp-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ACPP_REF_WINDOWS }}-${{ env.LLVM_REF_WINDOWS }}-cuda${{ env.CUDA_VERSION }}-llvm${{ env.LLVM_VERSION }}-clangcl20-x86-64
+        key: acpp-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ACPP_REF_WINDOWS }}-${{ env.LLVM_REF_WINDOWS }}-cuda${{ env.CUDA_VERSION }}-llvm${{ env.LLVM_VERSION }}-clangcl20-x86-64-msvc${{ steps.msvc.outputs.toolset }}
 
     - name: Build AdaptiveCpp into LLVM (CUDA + OpenMP SSCP)
       id: acpp-build
@@ -184,7 +190,11 @@ runs:
           -DACPP_COMPILER_FEATURE_PROFILE=full `
           -DACPP_HOST_FORCE_MCPU_TARGET=x86-64 `
           -DCUDA_TOOLKIT_ROOT_DIR="$cuda"
-        if ($LASTEXITCODE -ne 0) { throw "cmake configure failed ($LASTEXITCODE)" }
+        if ($LASTEXITCODE -ne 0) {
+          $log = Join-Path $build 'CMakeFiles\CMakeConfigureLog.yaml'
+          if (Test-Path $log) { Get-Content $log -Tail 200 }
+          throw "cmake configure failed ($LASTEXITCODE)"
+        }
         cmake --build $build --target install
         if ($LASTEXITCODE -ne 0) { throw "ninja install failed ($LASTEXITCODE)" }
         Remove-Item -Recurse -Force $tmp
