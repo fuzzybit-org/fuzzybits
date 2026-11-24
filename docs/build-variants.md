@@ -353,10 +353,10 @@ When a job fails, its *Crash diagnostics* step:
   processes debugged (`-o`), so crashes in `scram-cli` or `fzb` spawned through
   `std::system` are caught even when WER writes no dump for them.
 
-- in `windows-wheel`, lists AdaptiveCpp's JIT kernel cache in the checkout and
-  runs `fzb run` on `chinese.pcfb` there under `cdb`, with the first smoke
-  venv's console script: the command whose crash fails `test_cli.py` and
-  `test_progress_log.py`, in the directory pytest runs it from.
+- in `windows-wheel`, re-runs `test_cli.py::test_fzb_compile_inspect_run_chinese`
+  with the first smoke venv, from the checkout and with the smoke's pytest
+  environment: once as is, then under `cdb -o`, which follows the `fzb`
+  console script's child processes.
 
 The dumps are uploaded as an artifact with `windows-omp`'s PDBs and binaries.
 Wheel modules carry no PDBs, so `windows-wheel` stacks show fuzzybits frames as
