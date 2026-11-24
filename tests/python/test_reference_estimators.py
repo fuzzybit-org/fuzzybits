@@ -832,7 +832,9 @@ def test_parser_percent_and_tilde_names(tmp_path):
     """#240: '%' and '~' are name characters; the values are those of the model with them renamed away."""
     p = parse_project([_write(tmp_path, _PERCENT_TILDE, "m.ftp", "\r\n")])
     assert p.diagnostics == []
+    assert p.gates["T"].children == [("G~1", False), ("B-%IE", False)]
     assert p.gates["B-%IE"].children == [("%IE", False), ("%IE2", True)]
+    assert [(i.name, i.initiator) for i in p.imports] == [("%IE", True), ("%IE2", True), ("A", False)]
     assert p.initiators() == {"%IE", "%IE2"}
     probs, _ = p.probabilities()
     assert exact_probability(p, "T", probs, "boolean")["probability"] == pytest.approx(0.09, rel=1e-12)
