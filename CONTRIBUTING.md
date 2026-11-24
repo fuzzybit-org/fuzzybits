@@ -40,14 +40,22 @@ hard ones:
   - **Tests**: the exact commands you ran and their results;
   - **Scope**.
 - **Merging.**
-  - Squash only, and delete the branch.
+  - Squash only; the branch is deleted on merge. `develop` requires linear history, and a branch must
+    be up to date with `develop` before it merges.
   - No direct pushes to `develop`.
   - The maintainer merges after reading the diff.
+  - Two exceptions, both through a PR:
+    - **History import** from another repository: a merge commit. The maintainer enables merge
+      commits for that PR only, labels it `history-import`, and disables them again after the merge.
+    - **Mechanical reformat or rename:** a PR of its own, so its squash commit is only that change. A
+      follow-up PR adds the commit to [`.git-blame-ignore-revs`](.git-blame-ignore-revs).
 
 ## Commit messages
 
 [Conventional Commits](https://www.conventionalcommits.org): `<type>(<scope>): <summary> (#<issue>)`.
-The squash merge appends the PR number, e.g. `feat(io): .pcfb reader to ir::pc (#219) (#231)`.
+The squash commit's subject is the PR title with the PR number appended, e.g.
+`feat(io): .pcfb reader to ir::pc (#219) (#231)`, so the PR title follows this format. Its body is the
+PR's commit messages.
 
 - Types in use: `feat`, `fix`, `docs`, `build`, `ci`, `chore`, `bench`, `refactor`, `test`.
 - Scopes are the area touched: `io`, `ir`, `compile`, `cli`, `runtime`, `hip`, `bench`, `dev`,

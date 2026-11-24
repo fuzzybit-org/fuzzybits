@@ -155,7 +155,19 @@ PR can be read in one.
 
 ### 4.5 Merging
 
-- **Merge commits:** squash only. Branches are deleted on merge.
+- **Method:** squash only. Each commit on `develop` is then a state CI tested, and its subject is the PR title
+  plus `(#PR)`. Branches are deleted on merge.
+  - Rebase merges would land commits CI never tested on their own, without the PR number.
+  - Merge commits would land WIP commits and make `--first-parent` necessary everywhere.
+- **Linear history:** required on `develop` by the `linear-history` ruleset. Only the repository admin can
+  bypass it, and only through a PR.
+- **Up to date:** a branch must contain the latest `develop` before it merges (required checks are `strict`),
+  so the checks run on what will land.
+- **Exceptions**, both through a PR:
+  - a history import from another repository merges as a merge commit, labelled `history-import`, with merge
+    commits enabled for that PR only;
+  - a mechanical reformat or rename is a PR of its own, so a follow-up can add its squash commit to
+    `.git-blame-ignore-revs`.
 - **Direct pushes:** none to `develop`, including by admins. A direct push skips every check, including this
   one.
 - **Who merges:** the maintainer. Agents never merge (§8).
