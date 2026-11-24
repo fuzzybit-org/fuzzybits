@@ -92,7 +92,7 @@ function Invoke-Cdb([string]$Cdb, [string[]]$Arguments, [string]$WorkingDirector
     }
     # Module-load and symbol-search chatter is noise here; the stacks are what matter.
     Get-Content $out, $err |
-        Where-Object { $_ -notmatch '^(ModLoad:|SYMSRV:|DBGHELP:|\*\*\*|Symbol search path is|Executable search path is|Microsoft \(R\) Windows Debugger|Copyright \(c\) Microsoft)' } |
+        Where-Object { $_ -notmatch '^(ModLoad:|SYMSRV:|DBGHELP:|NatVis script|\*\*\*|Symbol search path is|Executable search path is|Microsoft \(R\) Windows Debugger|Copyright \(c\) Microsoft)' } |
         Out-Host
     Remove-Item $out, $err, $in -ErrorAction SilentlyContinue
 }
@@ -189,7 +189,8 @@ function Invoke-Rerun([string]$Cdb, [string]$SymbolPath) {
             $saved[$k] = [Environment]::GetEnvironmentVariable($k)
             [Environment]::SetEnvironmentVariable($k, $v)
         }
-        $dump = Join-Path $DumpDir (($name -replace '[^A-Za-z0-9_.-]', '_') + '.dmp')
+        # Forward slashes: cdb reads backslashes inside a quoted command string as escapes.
+        $dump = (Join-Path $DumpDir (($name -replace '[^A-Za-z0-9_.-]', '_') + '.dmp')) -replace '\\', '/'
         $stop = ".lastevent;kn 64;.dump /u $dump;q"
         $commands = Write-CommandFile @(
             'sxn ibp'
