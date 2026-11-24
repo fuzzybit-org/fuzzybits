@@ -17,6 +17,8 @@
 
 ### Changes
 
+- The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`
+  output piped or redirected to a cp1252 stream raised `UnicodeEncodeError`.
 - AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks
   cuda, then hip, then omp) in the `generic` wheel and images. Needs the ROCm 7 user space and
   access to `/dev/kfd` and a render node (#228).
@@ -26,5 +28,3 @@
 - OpenPSA/MEF and nombrilo input take one target; several targets, a repeated name, and
   `--watch` on nombrilo input are errors instead of being ignored.
 - FTP projects accept `--no-ccf` (and the deprecated `--ccf`) as no-ops.
-- The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`
-  output piped or redirected to a cp1252 stream raised `UnicodeEncodeError`.
