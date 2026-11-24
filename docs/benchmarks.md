@@ -339,7 +339,7 @@ mbp-1 is the only `amd-gpu` runner.
 Require **`bench-summary`** only. It fails when accuracy fails, when images
 fail, or when the screen flagged twice and `bench-perf-isolated` did not
 pass. Requiring the GPU jobs themselves would block on report-only noise. Do
-not require `windows-generic` (#108).
+not require `windows-omp` or `windows-wheel` (#108).
 
 ### A/A noise (nightly-generic, identical images)
 

@@ -96,6 +96,17 @@ def test_fzb_help_and_version():
     assert "unknown command" in unknown.stderr
 
 
+def test_fzb_help_on_non_utf8_stdout():
+    # Windows pipes default to cp1252, which has no "→"; --help used to raise
+    # UnicodeEncodeError there. PYTHONIOENCODING reproduces it on any platform.
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "cp1252"
+    env["PYTHONUTF8"] = "0"
+    proc = subprocess.run([str(_fzb()), "--help"], env=env, capture_output=True, check=False)
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    assert "→ .pcfb" in proc.stdout.decode("utf-8")
+
+
 def test_fzb_compile_inspect_run_chinese(chinese_xml: Path, tmp_path: Path):
     pcfb = tmp_path / "c.pcfb"
     compiled = _run_fzb("compile", str(chinese_xml), "-o", str(pcfb), cwd=tmp_path)

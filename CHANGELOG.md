@@ -25,6 +25,8 @@
 
 ### Changes
 
+- The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`
+  output piped or redirected to a cp1252 stream raised `UnicodeEncodeError`.
 - AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks
   cuda, then hip, then omp) in the `generic` wheel and images. Needs the ROCm 7 user space and
   access to `/dev/kfd` and a render node (#228).

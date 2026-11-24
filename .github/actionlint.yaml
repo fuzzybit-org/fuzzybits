@@ -18,6 +18,7 @@ self-hosted-runner:
 config-variables:
   - PYPI_MAX_FILE_MB
   - RELEASE_INCLUDE_WINDOWS
+  - WINDOWS_CI_STRICT
   - SKIP_SM70
   - SKIP_SM75
   - SKIP_SM86

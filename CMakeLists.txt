@@ -359,6 +359,15 @@ if(WIN32 AND DEFINED boost_SOURCE_DIR)
   include_directories(${_fb_boost_lib_inc})
   unset(_fb_boost_lib_inc)
 endif()
+if(WIN32)
+  # Boost headers auto-link (#pragma comment(lib)) under clang-cl, asking for
+  # b2-style names (libboost_filesystem-clangw20-...) that Boost's CMake build
+  # does not produce. Each Boost::<lib> target sets BOOST_<LIB>_NO_LIB, but only
+  # for its direct consumers: a TU that reaches boost/filesystem.hpp through
+  # scram headers (scram links Boost PRIVATE) still auto-links and fails.
+  # Libraries are always linked through the Boost:: targets, so turn it off.
+  add_compile_definitions(BOOST_ALL_NO_LIB)
+endif()
 
 list(APPEND LIBS
     Boost::program_options

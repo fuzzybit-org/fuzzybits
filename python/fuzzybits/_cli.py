@@ -724,7 +724,28 @@ def cmd_run(argv: Sequence[str]) -> int:
     return 0
 
 
+def _utf8_stdio() -> None:
+    """Write UTF-8 to stdout/stderr whatever the locale says.
+
+    Usage text and ``--json`` output contain non-ASCII (``→``, ``≤``, model names). Windows
+    pipes and redirects default to the ANSI code page (cp1252), which cannot encode them, so
+    ``fzb --help | more`` raised UnicodeEncodeError. Python 3.15 makes UTF-8 the default
+    (PEP 686); this does the same for 3.12-3.14. Interactive Windows consoles already report
+    UTF-8 and are left alone. The stream's error handler is kept.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "").replace("_", "")
+        if reconfigure is None or encoding == "utf8":
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors=getattr(stream, "errors", None) or "strict")
+        except (OSError, ValueError):
+            pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    _utf8_stdio()
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
         _print_root_usage(sys.stderr)

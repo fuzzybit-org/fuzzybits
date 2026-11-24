@@ -317,7 +317,7 @@ std::vector<std::pair<double, double>> ProbabilityAnalyzer<mc::DirectEval>::Calc
     return p_time;
 }
 
-inline ProbabilityAnalyzer<mc::DirectEval>::~ProbabilityAnalyzer() = default;
+ProbabilityAnalyzer<mc::DirectEval>::~ProbabilityAnalyzer() = default;
 
 // Helper: collect indices of PDAG gates that have an origin pointer.
 static void FillIndicesWithMefOrigin(Pdag *graph, std::unordered_set<int> *out) {
