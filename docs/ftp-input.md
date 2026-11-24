@@ -21,8 +21,8 @@ Sources: `src/io/ftp` (reader, ids `io.ftp.*`), `src/compile/pra_to_pc` (lowerin
 
 ```text
 fzb compile model.ftp -o model.pcfb
-fzb compile top.ftp systems.ftp imports.ftp --negation boolean
-fzb compile project_dir/ --literals negation
+fzb compile top.ftp systems.ftp imports.ftp --target SEQ-1
+fzb compile project_dir/ --negation hull --literals negation
 ```
 
 A file is FTP when it ends in `.ftp` (any case), or is text (no NUL byte, not XML) with a line `ENDTREE`; a directory is
@@ -94,7 +94,7 @@ event without the `I` flag. Each of these is a mistake that would otherwise chan
 | `--override NAME=0\|1` (repeatable) | the gate, basic event or house event becomes a constant; its operands leave the cone | none |
 | `--duplicate-import error\|first\|last` | duplicate `IMPORT` records | `last` |
 | `--complement-events atom\|negation` | `atom`: `-EVENT` is a marked literal; `negation`: an ordinary complement | `atom` |
-| `--negation boolean\|hull` | Boolean complement, or cut-set deletion through the monotone hull | `hull` (the reader records `ftp.negation = delete_term`) |
+| `--negation boolean\|hull\|both` | the query type of every target: the probability (complements are negations), the monotone hull (complements are delete terms) or both | `boolean` |
 | `--max-initiators-per-cutset N\|none` | every target is ANDed with the delete term of more than N initiating events in its cone | `1` (the reader records `ftp.max_initiators_per_cutset = 1`) |
 | `--literals atom_split\|omega_l\|negation` | how hull targets read marked literals | `atom_split` |
 | `-c 0\|1` | `0`: no passes; `1`: `ir::pc` passes (constant folding of literal 0 and, for Boolean targets, 1; propagation; single-input elimination; coalescing) | `1` |
@@ -103,8 +103,8 @@ event without the `I` flag. Each of these is a mistake that would otherwise chan
 | `-o FILE` | output path | `<model name>.pcfb` |
 | `--no-progress`, `--quiet`, `--progress-log FILE` | as for MEF input | |
 
-Precedence, highest first: command-line flags, the `--config` document, the model attributes the reader records
-(`ftp.negation`, `ftp.max_initiators_per_cutset`), the built-in default. `--target` and `--watch` replace the document's
+Precedence, highest first: command-line flags, the `--config` document, the model attribute the reader records
+(`ftp.max_initiators_per_cutset`), the built-in default. The query type (`negation`) is never read from the model. `--target` and `--watch` replace the document's
 lists; `--negation` and `--literals` replace every per-target choice in it; `--override` replaces an entry of the same
 name. `LIMIT` is never an option: it goes to the metadata only. The text summary prints counts (files, gates, events,
 circuit nodes and edges before and after the passes, warnings and notes); warnings print up to ten, the report has all.
@@ -136,21 +136,27 @@ object of `name: true|false|1|0` or an array of `{name, value, kind}`. TOML is n
 
 ## Negation semantics and the `.pcfb` writer
 
-`--negation boolean` reads every complement as logical negation: the query is the exact probability of the target
-function, and the result of `fzb run` and `fzb inspect --exact` is that probability. FTP models are written for a
-solver that deletes cut sets with a complemented gate (`ftp.negation = delete_term`); that is the monotone-hull
-reading (`--negation hull`), which differs from the Boolean one. **Hull is the default for FTP input.** A hull target is
-written as a `MONOTONE_HULL_PROBABILITY` query (pcfb 1.2, schema minor 2); a file with Boolean queries only stays at minor 1.
-A target may ask for both kinds (`"negation": "both"` in the config): two queries on one tensor, both named after the
-target. The runtime estimator for hull queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact`
-refuse a file with a hull query (`pcfb.unsupported-query-kind`), and `--negation boolean` is what runs today.
+The query type is requested, never read from the model or derived from a target's cone. **Every target is a
+probability query by default** (`--negation boolean`): every complement is a logical negation, and `fzb run` and
+`fzb inspect --exact` give the probability of the target function. It is a valid query for every FTP file, with or
+without complements.
+
+`--negation hull` asks for the monotone hull instead: complements are delete terms, the reading of cut-set tools that
+remove the cut sets containing a cut set of a complemented gate ([RFC](rfc/monotone-hull-queries.md)). It is a
+different quantity wherever the target's cone has a complement. A hull target is written as a
+`MONOTONE_HULL_PROBABILITY` query (pcfb 1.2, schema minor 2); a file with probability queries only stays at minor 1. A
+target may ask for both kinds (`--negation both`, or `"negation": "both"` in the config): two queries on one tensor,
+both named after the target. The compiler adapts to the query type: it skips the passes that do not preserve a hull
+(`fold_unit_probability`) and guards the atom-split literals ([passes](ir-pc-passes.md)). The runtime estimator for hull
+queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact` refuse a file with a hull query
+(`pcfb.unsupported-query-kind`).
 
 pcfb 1.2 has no literal atoms per query yet, so a hull query reads a marked operand (`-EVENT` under
 `--complement-events atom`) as a plain complement, which is the `negation` literal mode. A hull target whose cone has
 marked operands is therefore refused in `atom_split` mode (the default) and in `omega_l` mode, with
-`compile.pra_to_pc.hull-literals-unsupported` per target and `compile.ftp.hull-literals-unsupported` naming the ways out:
-`--literals negation` (the hull of the plain complements), `--complement-events negation` (no marks) or
-`--negation boolean`. Boolean targets ignore the marks.
+`compile.pra_to_pc.hull-literals-unsupported` per target and `compile.ftp.hull-literals-unsupported`, which names the
+alternatives. Each is a different query: `--negation boolean` (the probability, the default), or the plain hull with
+`--literals negation` or `--complement-events negation`. Probability targets ignore the marks.
 
 `--max-initiators-per-cutset N` ANDs each target with `not atleast(N + 1; initiating events in its cone)`. Under Boolean
 semantics this deletes the assignments with more than N initiating events (a probability change), under the hull it
@@ -208,7 +214,7 @@ The JSON document (`fuzzybits.read_project` returns the same content as a dict):
 | `files` | the files read, in project order (directories expanded, sorted) |
 | `diagnostics` | `{id, severity, file, line, message}`; severity is `error`, `warning` or `note`; `file` and `line` are `null` when the diagnostic names no location |
 | `structure` | counts below; `null` when the project has errors |
-| `conventions` | `LIMIT` (the text of the value), `MAXSIZE` (the text of the value), `ftp.negation`, `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
+| `conventions` | `LIMIT` (the text of the value), `MAXSIZE` (the text of the value), `ftp.max_initiators_per_cutset` (model attributes the reader records; `null` when absent) and `header_lines` (the `*` lines, as read) |
 
 `structure` uses the keys of `structure` in the conformance `expected.json` files, plus `default_targets` (a top-level
 key of those files), `house_events`, `complemented_edges_to_gates` and `literal_operands`:
@@ -258,7 +264,7 @@ Every diagnostic has a stable id; the report and `fzb inspect` list them with se
 | `compile.ftp.invalid-option`, `compile.ftp.invalid-config`, `compile.ftp.invalid-json` | bad flag, config document or JSON |
 | `compile.ftp.unknown-target` | `--target` or `--watch` names nothing |
 | `compile.ftp.hull-literals-unsupported`, `compile.pra_to_pc.hull-literals-unsupported` | a hull target has marked literal operands in `atom_split` or `omega_l` mode (see above) |
-| `compile.ftp.default-negation`, `compile.ftp.default-initiator-rule` | notes: a default came from a model attribute |
+| `compile.ftp.default-initiator-rule` | note: the initiator rule came from the model attribute |
 | `compile.ftp.unknown-attribute` | warning: an attribute value the driver does not know is ignored |
 | `compile.pra_to_pc.unknown-target`, `.unknown-element`, `.ambiguous-element`, `.duplicate-target`, `.duplicate-override`, `.unused-override` | target and override resolution |
 | `compile.pra_to_pc.frequency-as-probability`, `.frequency-out-of-range` | an initiator frequency used as a probability (at most 1, warning) or rejected |

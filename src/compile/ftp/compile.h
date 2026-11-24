@@ -25,8 +25,8 @@ struct override_spec final {
 };
 
 // Settings of one compile. Unset values take, in this order, the `config`
-// document, the model attributes the reader records (`ftp.negation`,
-// `ftp.max_initiators_per_cutset`) and the built-in default. Flags override
+// document, the model attribute the reader records
+// (`ftp.max_initiators_per_cutset`) and the built-in default. Flags override
 // the document: `targets` and `watch` replace its lists, `negation` and
 // `literals` replace every per-target choice in it, `overrides` replace its
 // entries of the same name.
@@ -41,8 +41,8 @@ struct options final {
     std::optional<std::string> duplicate_import;
     // atom | negation (default atom).
     std::optional<std::string> complement_events;
-    // boolean | hull (default: hull when the model records
-    // ftp.negation = delete_term, else boolean).
+    // boolean | hull | both: the query type of every target (default
+    // boolean, the probability query). Never read from the model.
     std::optional<std::string> negation;
     // Outer unset: from the document or the model attribute. Inner unset: no
     // rule (`none`).

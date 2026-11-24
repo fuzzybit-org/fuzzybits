@@ -83,8 +83,9 @@ both $B$ and `-B` (a mutually exclusive event check); list no consensus cut sets
 events in cut sets; and delete cut sets with two or more initiating events (`I`-tagged in `IMPORT`; probability-1
 initiator flags count). Their quantification configuration declares the initiator rule per engine (on for the engine
 used here, off for others). The atom-split hull of §3 reproduces the tools' cut sets on every fixture and every probe
-(§8.8–§8.11, Theorem 10). The FTP reader therefore marks every `-EVENT` as a literal and records the conventions
-`ftp.negation = delete_term` and `ftp.max_initiators_per_cutset = 1` as model attributes (§7.1).
+(§8.8–§8.11, Theorem 10). The FTP reader therefore marks every `-EVENT` as a literal and records the convention
+`ftp.max_initiators_per_cutset = 1` as a model attribute (§7.1). Hull queries are requested, never implied by the
+reader (#244).
 
 ## 2. Setting and notation
 
@@ -543,9 +544,9 @@ Remarks:
 - Under Boolean semantics a probability-1 initiator flag makes the rule remove every world in which another initiator
   occurs; under the hull it removes only the cut sets that contain both (§8.10).
 - The vendor configuration declares the rule per quantification engine (§1), so it is a config option, not a
-  model property. For FTP models the reader records it, with delete-term semantics, as inert model attributes
-  (`ftp.max_initiators_per_cutset = 1`, `ftp.negation = delete_term`; #199), which the compile driver (#182) turns
-  into quantification-config defaults; neither `ir::pra` nor the lowering reads them.
+  model property. For FTP models the reader records it as an inert model attribute
+  (`ftp.max_initiators_per_cutset = 1`; #199), which the compile driver (#182) turns into a quantification-config
+  default; neither `ir::pra` nor the lowering reads it.
 
 ### 4.9 The atom-split hull
 
@@ -838,9 +839,11 @@ modes and list $K_h$ and $\operatorname{MC}_L(g)$ (#190).
   the delete term of §4.8 over the initiator-tagged events in the target's cone. #185's canonical target is
   `monotone_hull`, `atom_split`, `max_initiators_per_cutset: 1`.
 - Source conventions reach the config through the reader, not through `ir::pra` semantics (#199): the FTP reader
-  records `ftp.negation = delete_term` (hull queries are the intended semantics) and `ftp.max_initiators_per_cutset = 1`
-  (reader option to disable) as inert model attributes, next to `LIMIT`, and the compile driver (#182) maps them to
-  config defaults.
+  records `ftp.max_initiators_per_cutset = 1` (reader option to disable) as an inert model attribute, next to `LIMIT`,
+  and the compile driver (#182) maps it to a config default.
+- The query type is not a source convention (#244). Every target is a probability query unless the request asks for
+  the hull, whatever the model and the target's cone; the compiler then chooses passes by query type (§7.5). An
+  earlier revision had the FTP reader record `ftp.negation = delete_term` and made the hull the FTP default.
 - Overrides `element := TRUE | FALSE` produce constants under both semantics; a basic event with literal $p = 1$ stays
   an event. The lowering is function-preserving (#181) and must keep this distinction: house events and overrides
   become constants or `house_event` nodes, basic events with $p \in \lbrace 0, 1 \rbrace$ stay `basic_event` nodes.

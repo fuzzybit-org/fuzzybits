@@ -221,14 +221,15 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][cli][hull]") {
+TEST_CASE("fzb compile writes probability queries for FTP input unless hull is requested",
+          "[compile][ftp][cli][hull]") {
     const auto scratch = scratch_directory("hull");
     const auto out = scratch / "m.pcfb";
-    // No complemented event: no marked literals, so the default hull target can be written.
     const auto model = scratch / "m.ftp";
     std::ofstream(model)
         << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
+    // The default: a minor-1 file with one probability query, which the exact evaluator reads.
     const auto ran =
         run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch);
     INFO(ran.err);
@@ -237,20 +238,22 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     REQUIRE(inspected.status == 0);
     auto summary = json::parse(inspected.out);
     REQUIRE(summary);
+    REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
+    require_close(exact_of(out, scratch), 0.314);
+
+    // --negation hull: a minor-2 file with the hull query and its metadata.
+    const auto hull = run_fzb(
+        "compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()), scratch);
+    INFO(hull.err);
+    REQUIRE(hull.status == 0);
+    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --validate --json", scratch).out);
+    REQUIRE(summary);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
     auto const *metadata = summary.value().find("metadata");
     REQUIRE(metadata->find("compile.query.0.negation")->string == "monotone_hull");
     REQUIRE(metadata->find("compile.query.0.literal_mode")->string == "atom_split");
     REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset")->string == "1");
-
-    // --negation boolean: a minor-1 file, which the exact evaluator still reads.
-    const auto boolean = run_fzb(
-        "compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch);
-    REQUIRE(boolean.status == 0);
-    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
-    REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
-    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
-    require_close(exact_of(out, scratch), 0.314);
 
     // Both kinds on one target: two queries with the target's name.
     const auto config = scratch / "both.json";
@@ -273,7 +276,7 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
     const auto scratch = scratch_directory("literals");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
     const auto out = (scratch / "m.pcfb");
-    for (const char *flags : {"", " --literals omega_l", " --negation hull"}) {
+    for (const char *flags : {" --negation hull", " --negation hull --literals omega_l"}) {
         const auto refused = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << refused.err);
         REQUIRE(refused.status != 0);
@@ -282,7 +285,8 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
         REQUIRE(refused.err.find("--literals negation") != std::string::npos);
         REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
     }
-    for (const char *flags : {" --literals negation", " --negation boolean", " --complement-events negation"}) {
+    for (const char *flags : {"", " --negation boolean", " --negation hull --literals negation",
+                              " --negation hull --complement-events negation"}) {
         const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << ran.err);
         REQUIRE(ran.status == 0);
@@ -298,9 +302,9 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     const auto out = scratch / "m.pcfb";
     std::ofstream(model)
         << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
-    REQUIRE(
-        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
-        0);
+    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()),
+                    scratch)
+                .status == 0);
     const auto run =
         run_fzb("run " + quoted(out.string()) + " --trials 1024" + fuzzybits::testing::backend_flag(), scratch);
     INFO(run.err);
@@ -309,11 +313,10 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     REQUIRE(run.err.find("MONOTONE_HULL_PROBABILITY") != std::string::npos);
     REQUIRE(run.out.find("estimate") == std::string::npos);
 
-    // The same model as a Boolean file runs.
+    // The same model compiled with the default probability query runs.
     REQUIRE(
-        run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()),
-                scratch)
-            .status == 0);
+        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
+        0);
     const auto boolean = run_fzb(
         "run " + quoted(out.string()) + " --trials 65536" + fuzzybits::testing::backend_flag() + " --json", scratch);
     INFO(boolean.err);

@@ -235,7 +235,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
         usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
         "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
         "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--no-ccf] "
-        "[--negation boolean|hull] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
+        "[--negation boolean|hull|both] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
         "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
@@ -289,7 +289,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
     parser.add_argument(
         "--negation",
-        help="FTP: boolean|hull (default hull when the model records ftp.negation = delete_term)",
+        help="FTP: query type of every target: boolean (the probability, default), hull or both",
     )
     parser.add_argument(
         "--max-initiators-per-cutset",

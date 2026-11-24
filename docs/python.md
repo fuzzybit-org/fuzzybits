@@ -189,7 +189,7 @@ to override.
 ```bash
 fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [--no-ccf] [--target NAME|@FILE] [--watch NAME|@FILE]... [-o model.pcfb]
 fzb compile model.safetensors [--target NAME|@FILE] [--weights FILE] [-o model.pcfb]
-fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--negation boolean] [--override NAME=0|1]... [--config FILE] [--report FILE]
+fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--negation boolean|hull|both] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]
