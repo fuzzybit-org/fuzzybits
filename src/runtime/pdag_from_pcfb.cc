@@ -18,6 +18,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace fuzzybits::runtime {
@@ -732,15 +733,13 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
             rq.node = binding.gate;
             rq.node_index = binding.gate->index();
         } else if (binding.variable) {
-            if (qi == 0) {
-                auto wrap = make_gate(graph, scram::core::kNull);
-                wrap->AddArg(binding.variable, false);
-                rq.node = wrap;
-                rq.node_index = wrap->index();
-            } else {
-                rq.node = binding.variable;
-                rq.node_index = binding.variable->index();
-            }
+            // Every query on a basic event gets a pass-through gate: the root must be a gate, and the tally
+            // builder only knows gate nodes, so a later query on a bare SAMPLE (for example a conditioned
+            // initiator query that the passes reduced to one event) failed with "unknown event".
+            auto wrap = make_gate(graph, scram::core::kNull);
+            wrap->AddArg(binding.variable, false);
+            rq.node = wrap;
+            rq.node_index = wrap->index();
         } else if (binding.is_constant) {
             auto wrap = make_gate(graph, scram::core::kNull);
             add_arg(graph, wrap, binding, false);
@@ -758,6 +757,41 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
     auto root_gate = std::dynamic_pointer_cast<scram::core::Gate>(out.queries.front().node);
     if (!root_gate) {
         throw RuntimeError("pdag_from_circuit: query node is not a gate");
+    }
+    // The engine evaluates and tallies only what the root reaches. A query outside the first query's cone
+    // (several FTP targets, or one conditioned query per initiating event) failed with "unknown event".
+    // Then an OR over every distinct query gate becomes the root, so all of them are reachable; each query
+    // is still tallied on its own node, and the OR itself is not a query.
+    std::vector<std::shared_ptr<scram::core::Gate>> query_gates;
+    for (const auto &query : out.queries) {
+        auto gate = std::dynamic_pointer_cast<scram::core::Gate>(query.node);
+        if (!gate) {
+            throw RuntimeError("pdag_from_circuit: query node is not a gate");
+        }
+        if (std::ranges::none_of(query_gates, [&gate](auto const &seen) { return seen->index() == gate->index(); })) {
+            query_gates.push_back(std::move(gate));
+        }
+    }
+    // Files whose queries all lie in the first query's cone (MEF --watch on an inner gate) keep that root.
+    std::unordered_set<int> reachable;
+    std::vector<std::shared_ptr<scram::core::Gate>> stack{root_gate};
+    while (!stack.empty()) {
+        auto gate = std::move(stack.back());
+        stack.pop_back();
+        if (!reachable.insert(gate->index()).second) {
+            continue;
+        }
+        for (auto const &arg : gate->args<scram::core::Gate>()) {
+            stack.push_back(arg.second);
+        }
+    }
+    const bool all_reachable =
+        std::ranges::all_of(query_gates, [&reachable](auto const &gate) { return reachable.contains(gate->index()); });
+    if (!all_reachable) {
+        root_gate = make_gate(graph, scram::core::kOr);
+        for (auto const &gate : query_gates) {
+            root_gate->AddArg(gate, false);
+        }
     }
     graph->root(root_gate);
     if (out.meta.target.empty() && !out.queries.empty()) {

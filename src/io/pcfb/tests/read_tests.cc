@@ -241,6 +241,15 @@ void requireEqual(writer::read_output const &left, writer::read_output const &ri
     REQUIRE(left.options.node_names == right.options.node_names);
     REQUIRE(left.options.target_names == right.options.target_names);
     REQUIRE(left.options.target_kinds == right.options.target_kinds);
+    REQUIRE(left.options.query_groups.size() == right.options.query_groups.size());
+    for (std::size_t group = 0; group < left.options.query_groups.size(); ++group) {
+        auto const &x = left.options.query_groups[group];
+        auto const &y = right.options.query_groups[group];
+        REQUIRE(x.name == y.name);
+        REQUIRE(x.unit == y.unit);
+        REQUIRE(x.kind == y.kind);
+        REQUIRE(x.terms == y.terms);
+    }
     REQUIRE(left.options.model_name == right.options.model_name);
     REQUIRE(left.options.source_format == right.options.source_format);
     REQUIRE(left.options.compile_options == right.options.compile_options);
@@ -545,6 +554,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
         boolean.negation = "boolean";
         variants.push_back({"boolean", boolean});
         ftp::options hull;
+        hull.negation = "hull";
         hull.complement_events = "negation";
         variants.push_back({"hull", hull});
         ftp::options both;
@@ -552,13 +562,19 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
         both.config = R"({"negation": "both"})";
         variants.push_back({"both", both});
         ftp::options literals;
+        literals.negation = "hull";
         literals.literals = "negation";
         variants.push_back({"hull with atoms as negation", literals});
+        // Initiating-event frequencies: one conditioned query per initiator and a query group per target.
+        ftp::options frequency;
+        frequency.initiator_unit = "per-year";
+        variants.push_back({"frequency", frequency});
     }
 
     std::size_t compiled = 0;
     std::size_t hullFiles = 0;
     std::size_t twoKindTargets = 0;
+    std::size_t groupFiles = 0;
     std::size_t roundTrips = 0;
     for (auto const &directory : directories) {
         std::vector<std::filesystem::path> files;
@@ -584,6 +600,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
             requireStable(read);
             ++roundTrips;
             hullFiles += read.schema_version == 0x00010002U ? 1 : 0;
+            groupFiles += read.options.query_groups.empty() ? 0 : 1;
             for (auto const &[target, kinds] : read.options.target_kinds) {
                 twoKindTargets += kinds.size() > 1 ? 1 : 0;
             }
@@ -595,6 +612,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
     CHECK(roundTrips == compiled);
     CHECK(hullFiles > 0);
     CHECK(twoKindTargets > 0);
+    CHECK(groupFiles > 0);
 }
 
 TEST_CASE("pcfb reader: tracked .pcfb files read to a fixed point or are rejected with a documented id",

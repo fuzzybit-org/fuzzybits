@@ -200,12 +200,6 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     return out;
 }
 
-[[nodiscard]] auto formatValue(const double value) -> std::string {
-    std::ostringstream out;
-    out << value;
-    return out.str();
-}
-
 [[nodiscard]] auto policyName(const duplicate_import_policy policy) -> std::string_view {
     switch (policy) {
     case duplicate_import_policy::last:
@@ -662,14 +656,9 @@ class Parser final {
                             record.location);
                 }
             }
-            if (event.initiator && std::isfinite(event.value) && event.value > 1.0) {
-                event.frequency = true;
-                warning("io.ftp.initiator-frequency",
-                        "initiating event " + quoted(event.name) + " at " +
-                            where(project_.imports[event.records.front()].location) + " has value " +
-                            formatValue(event.value) + " > 1; it is kept as a frequency, not a probability",
-                        project_.imports[event.records.front()].location);
-            }
+            // An `I` value is an initiating-event frequency whatever its magnitude (#243); the compile request
+            // decides whether it is quantified as one (--initiator-values).
+            event.frequency = event.initiator;
         }
     }
 

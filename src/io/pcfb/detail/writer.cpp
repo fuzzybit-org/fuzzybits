@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <optional>
 #include <span>
 #include <string>
@@ -221,6 +222,38 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
             diagnostics.push(api::make_error("io.pcfb.invalid-quantification",
                                              "quantification metadata is given for target " + idText(entry.first) +
                                                  ", which is not in the circuit"));
+        }
+    }
+    const auto hasKind = [&](ir::pc::target_id target, query_kind kind) {
+        const auto found = options.target_kinds.find(target);
+        return found == options.target_kinds.end() ? kind == options.query
+                                                   : std::ranges::find(found->second, kind) != found->second.end();
+    };
+    for (auto const &group : options.query_groups) {
+        const auto label = "query group '" + group.name + "'";
+        if (group.terms.empty()) {
+            diagnostics.push(api::make_error("io.pcfb.invalid-query-group", label + " has no terms"));
+        }
+        std::vector<ir::pc::target_id> seen;
+        for (auto const &[target, weight] : group.terms) {
+            if (!isTarget(target)) {
+                diagnostics.push(
+                    api::make_error("io.pcfb.invalid-query-group",
+                                    label + " names target " + idText(target) + ", which is not in the circuit"));
+            } else if (!hasKind(target, group.kind)) {
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group",
+                                                 label + " names target " + idText(target) + ", which has no " +
+                                                     std::string(to_string(group.kind)) + " query"));
+            }
+            if (std::ranges::find(seen, target) != seen.end()) {
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group",
+                                                 label + " names target " + idText(target) + " twice"));
+            }
+            seen.push_back(target);
+            if (!std::isfinite(weight) || weight < 0.0) {
+                diagnostics.push(
+                    api::make_error("io.pcfb.invalid-query-group", label + " has a negative or non-finite weight"));
+            }
         }
     }
     return diagnostics;
@@ -446,6 +479,7 @@ class Emitter final {
             const auto &list = kinds == options_.target_kinds.end() ? defaulted : kinds->second;
             const auto quantification = options_.quantification.find(target.id);
             for (const auto kind : list) {
+                queryIndex_[{target.id.raw(), static_cast<std::uint8_t>(kind)}] = static_cast<std::uint32_t>(index);
                 if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name);
                     !added) {
                     diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected target " +
@@ -469,6 +503,23 @@ class Emitter final {
                 ++index;
             }
         }
+        return emitQueryGroups();
+    }
+
+    [[nodiscard]] auto emitQueryGroups() -> bool {
+        std::vector<::pcfb::query_term> terms;
+        for (auto const &group : options_.query_groups) {
+            terms.clear();
+            for (auto const &[target, weight] : group.terms) {
+                terms.push_back(::pcfb::query_term{
+                    .query = queryIndex_.at({target.raw(), static_cast<std::uint8_t>(group.kind)}), .weight = weight});
+            }
+            if (auto added = builder_.add_query_group(group.name, group.unit, terms); !added) {
+                diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected query group '" +
+                                                                         group.name + "': " + added.error().message));
+                return false;
+            }
+        }
         return true;
     }
 
@@ -486,6 +537,14 @@ class Emitter final {
             ok = setMetadata(prefix + "max_initiators_per_cutset",
                              builder_.set(prefix + "max_initiators_per_cutset",
                                           static_cast<std::int64_t>(*entry.max_initiators_per_cutset)));
+        }
+        if (ok && !entry.initiator.empty()) {
+            ok = setMetadata(prefix + "initiator",
+                             builder_.set(prefix + "initiator", std::string_view{entry.initiator}));
+        }
+        if (ok && entry.initiator_frequency) {
+            ok = setMetadata(prefix + "initiator_frequency",
+                             builder_.set(prefix + "initiator_frequency", *entry.initiator_frequency));
         }
         return ok;
     }
@@ -539,6 +598,8 @@ class Emitter final {
     ir::pc::circuit const &model_;
     write_options const &options_;
     ::pcfb::builder builder_;
+    // Query index by (PC target id, query_kind), for query groups.
+    std::map<std::pair<std::uint32_t, std::uint8_t>, std::uint32_t> queryIndex_;
     api::diagnostic_list diagnostics_;
     std::vector<std::uint32_t> tensorByNode_;
     std::vector<std::uint32_t> eventIdByNode_;

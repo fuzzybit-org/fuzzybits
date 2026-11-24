@@ -164,6 +164,103 @@ class QueryResult:
 
 
 @dataclass(frozen=True)
+class GroupResult:
+    """One query group of a ``.pcfb``, for example a target's initiating-event frequency.
+
+    ``estimate`` is ``sum(weight * value)`` over the group's queries, in ``unit``. ``ci_low`` and
+    ``ci_high`` sum the weighted interval bounds of the terms: conservative whatever the
+    correlation of the term estimates (pcfb spec §5.4). With an exposure period ``exposure`` holds
+    ``(probability, ci_low, ci_high)`` of at least one occurrence in the period,
+    ``1 - exp(-F * period)``; otherwise ``None``.
+    """
+
+    name: str
+    unit: str
+    terms: tuple[tuple[int, float], ...]
+    estimate: float
+    ci_low: float
+    ci_high: float
+    exposure: tuple[float, float, float] | None = None
+
+
+class RunResults(list):
+    """The per-query results of :func:`run` (a ``list`` of :class:`QueryResult`), plus ``groups``:
+    one :class:`GroupResult` per query group of the file."""
+
+    groups: list[GroupResult]
+
+    def __init__(self, results: Sequence[QueryResult], groups: Sequence[GroupResult] = ()) -> None:
+        super().__init__(results)
+        self.groups = list(groups)
+
+
+def _duration_hours(exposure: str) -> float:
+    """``"1y"``, ``"0.5mo"``, ``"720h"``: a positive number and ``y|mo|wk|d|h``, in hours."""
+    for unit in _runtime.native().frequency_units():
+        suffix = str(unit["duration"])
+        if exposure.endswith(suffix) and len(exposure) > len(suffix):
+            try:
+                value = float(exposure[: -len(suffix)])
+            except ValueError:
+                break
+            if value > 0 and value != float("inf"):
+                return value * float(unit["hours"])
+            break
+    raise ValueError(f"exposure must be a positive number followed by y, mo, wk, d or h (e.g. '1y'), not {exposure!r}")
+
+
+def _groups(
+    pcfb_blob: bytes, value_of: Callable[[int], tuple[float, float, float]], exposure: str | None
+) -> list[GroupResult]:
+    import math
+
+    hours = _duration_hours(exposure) if exposure is not None else None
+    units = {str(u["unit"]): float(u["hours"]) for u in _runtime.native().frequency_units()}
+    rows = _runtime.native().query_groups_pcfb(pcfb_blob)
+    if hours is not None and not rows:
+        raise ValueError("exposure: the file has no frequency groups (compile with initiator_values='frequency')")
+    out = []
+    for row in rows:
+        terms = tuple((int(q), float(w)) for q, w in row["terms"])
+        estimate = low = high = 0.0
+        for query, weight in terms:
+            value, lo, hi = value_of(query)
+            estimate += weight * value
+            low += weight * lo
+            high += weight * hi
+        exposure_value = None
+        if hours is not None:
+            unit = str(row["unit"])
+            if unit not in units:
+                raise ValueError(f"exposure: group {row['name']!r} has unit {unit!r}, which cannot be converted")
+            scale = hours / units[unit]
+            exposure_value = tuple(-math.expm1(-x * scale) for x in (estimate, low, high))
+        out.append(
+            GroupResult(
+                name=str(row["name"]),
+                unit=str(row["unit"]),
+                terms=terms,
+                estimate=estimate,
+                ci_low=low,
+                ci_high=high,
+                exposure=exposure_value,
+            )
+        )
+    return out
+
+
+def exact_groups(pcfb: bytes | str | os.PathLike[str], *, exposure: str | None = None) -> list[GroupResult]:
+    """Exact value of every query group (small models, as :func:`exact`), like ``fzb inspect --exact``."""
+    blob = _pcfb_bytes(pcfb)
+
+    def value_of(query: int) -> tuple[float, float, float]:
+        value = exact(blob, query)
+        return value, value, value
+
+    return _groups(blob, value_of, exposure)
+
+
+@dataclass(frozen=True)
 class NodeTally:
     """Cumulative tally counters for one PDAG node after a device pass."""
 
@@ -304,6 +401,8 @@ _FTP_ONLY = (
     "complement_events",
     "negation",
     "literals",
+    "initiator_values",
+    "initiator_unit",
     "config",
 )
 
@@ -350,6 +449,8 @@ def _compile_ftp(
     negation: str | None,
     max_initiators_per_cutset: Any,
     literals: str | None,
+    initiator_values: str | None,
+    initiator_unit: str | None,
     config: Any,
     report: bool,
     on_progress: Callable[[ProgressSnapshot], None] | None,
@@ -377,6 +478,8 @@ def _compile_ftp(
         ("complement_events", complement_events),
         ("negation", negation),
         ("literals", literals),
+        ("initiator_values", initiator_values),
+        ("initiator_unit", initiator_unit),
     ):
         if value is not None:
             opts[key] = str(value)
@@ -421,6 +524,8 @@ def compile(  # noqa: A001 - public API name
     negation: str | None = None,
     max_initiators_per_cutset: int | str | None = _UNSET,
     literals: str | None = None,
+    initiator_values: str | None = None,
+    initiator_unit: str | None = None,
     config: Mapping[str, Any] | str | os.PathLike[str] | None = None,
     report: bool = False,
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
@@ -469,17 +574,30 @@ def compile(  # noqa: A001 - public API name
         FTP reader options: ``"error" | "first" | "last"`` (default ``"last"``)
         and ``"atom" | "negation"`` (default ``"atom"``).
     negation:
-        FTP: ``"boolean"`` or ``"hull"``. The default is hull when the model
-        records ``ftp.negation = delete_term`` (always, for FTP input). Hull
-        queries are written (pcfb 1.2) but not sampled yet: ``run`` refuses
-        them, so pass ``"boolean"`` to run the model. A hull target with
-        marked literals needs ``literals="negation"`` (or ``"boolean"``).
+        FTP: the query type of every target: ``"boolean"`` (the probability,
+        default), ``"hull"`` (the monotone hull: complements read as delete
+        terms) or ``"both"``. The type is requested, never read from the model.
+        Hull queries are written (pcfb 1.2) but not sampled yet: ``run``
+        refuses them. A hull target with marked literals is refused unless
+        ``literals="negation"``.
     max_initiators_per_cutset:
         FTP: at most this many initiating events per cut set; ``None`` or
         ``"none"`` for no rule. Default: the model's
-        ``ftp.max_initiators_per_cutset`` attribute.
+        ``ftp.max_initiators_per_cutset`` attribute. Only with
+        ``initiator_values="probability"``.
     literals:
         FTP hull targets: ``"atom_split"`` (default), ``"omega_l"`` or ``"negation"``.
+    initiator_values:
+        FTP: ``"frequency"`` (default) or ``"probability"``. With frequencies every ``I`` value is
+        an initiating-event frequency: a target whose cone holds initiating events becomes one
+        query per initiator (that initiator TRUE, the others FALSE), and the file's query group
+        for the target is its frequency, ``sum_i f_i * P(target | I_i)`` (see :func:`run`). A
+        target that may hold without any initiating event is an error (mixed units).
+        ``"probability"`` reads values up to 1 as probabilities and rejects values above 1.
+    initiator_unit:
+        FTP: the unit of every ``I`` value, ``"per-year"``, ``"per-month"``, ``"per-week"``,
+        ``"per-day"`` or ``"per-hour"``; ``"per-year"`` by default with frequencies, rejected with
+        ``initiator_values="probability"``.
     config:
         FTP: a quantification config (mapping, JSON text or a path to a JSON
         file); the other arguments override it.
@@ -522,6 +640,8 @@ def compile(  # noqa: A001 - public API name
         "complement_events": complement_events,
         "negation": negation,
         "literals": literals,
+        "initiator_values": initiator_values,
+        "initiator_unit": initiator_unit,
         "config": config,
     }
     if max_initiators_per_cutset is not _UNSET:
@@ -538,6 +658,8 @@ def compile(  # noqa: A001 - public API name
             negation=negation,
             max_initiators_per_cutset=max_initiators_per_cutset,
             literals=literals,
+            initiator_values=initiator_values,
+            initiator_unit=initiator_unit,
             config=config,
             report=report,
             on_progress=on_progress,
@@ -813,9 +935,15 @@ def run(
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
     progress: bool | None = None,
     progress_log: str | os.PathLike[str] | None = None,
+    exposure: str | None = None,
     **options: Any,
-) -> list[QueryResult]:
+) -> RunResults:
     """One-shot Monte Carlo of a compiled ``.pcfb``. Same numbers as ``fzb run``.
+
+    Returns a list of :class:`QueryResult`, one per query, whose ``groups`` attribute holds one
+    :class:`GroupResult` per query group of the file (for example a target's initiating-event
+    frequency). ``exposure`` (``"1y"``, ``"1mo"``, ...) adds the probability of at least one
+    occurrence over that period to every group; it is checked before sampling.
 
     Only ``PROBABILITY`` queries are answered: a file with any other query kind (for example
     ``MONOTONE_HULL_PROBABILITY``) raises :class:`RuntimeError` before sampling, naming the query
@@ -849,16 +977,19 @@ def run(
     if n <= 0:
         raise ValueError("run() requires a positive trial count")
     native = _runtime.native()
+    blob = _pcfb_bytes(pcfb)
+    if exposure is not None:
+        _groups(blob, lambda query: (0.0, 0.0, 0.0), exposure)  # fail before sampling
     _flush_progress_streams()
     rows = native.run_pcfb(
-        _pcfb_bytes(pcfb),
+        blob,
         n,
         _mask_backend(backend),
         _progress_callback(on_progress),
         progress=progress,
         progress_log=_progress_log_path(progress_log),
     )
-    return [
+    results = [
         QueryResult(
             name=str(row["name"]),
             estimate=float(row["estimate"]),
@@ -869,6 +1000,12 @@ def run(
         )
         for row in rows
     ]
+
+    def value_of(query: int) -> tuple[float, float, float]:
+        result = results[query]
+        return result.estimate, result.ci_low, result.ci_high
+
+    return RunResults(results, _groups(blob, value_of, exposure))
 
 
 def _pass_from_native(payload: Mapping[str, Any]) -> PassResult:

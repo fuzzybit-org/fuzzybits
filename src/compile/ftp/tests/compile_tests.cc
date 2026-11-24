@@ -63,9 +63,25 @@ constexpr auto simple =
     return out;
 }
 
+// The conformance fixtures tag probabilities with I, so the tests that check their values read
+// initiating-event values as probabilities (#243).
 [[nodiscard]] auto boolean_options() -> ftp::options {
     ftp::options options;
     options.negation = "boolean";
+    options.initiator_values = "probability";
+    return options;
+}
+
+[[nodiscard]] auto hull_options() -> ftp::options {
+    ftp::options options;
+    options.negation = "hull";
+    options.initiator_values = "probability";
+    return options;
+}
+
+[[nodiscard]] auto frequency_options() -> ftp::options {
+    ftp::options options;
+    options.initiator_unit = "per-year";
     return options;
 }
 
@@ -200,12 +216,36 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
 constexpr auto minor_1 = 0x00010001U;
 constexpr auto minor_2 = 0x00010002U;
 
-TEST_CASE("FTP input defaults to hull queries with their metadata", "[compile][ftp][hull]") {
-    // `simple` has no complemented event, so no marked literals.
+TEST_CASE("FTP input defaults to probability queries", "[compile][ftp]") {
+    // The query type is requested, never read from the model: the default is the probability.
     const auto compiled = compile_ok(simple, {});
     const auto circuit = view(compiled.bytes);
-    REQUIRE(circuit.schema_version() == minor_2);
+    REQUIRE(circuit.schema_version() == minor_1);
     REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP"});
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
+    REQUIRE(string_meta(circuit, "compile.query.0.negation") == "boolean");
+    REQUIRE(compiled.targets[0].boolean);
+    REQUIRE_FALSE(compiled.targets[0].monotone_hull);
+    const auto result = compile_text(simple, {});
+    REQUIRE_FALSE(has_code(result.diagnostics(), "compile.ftp.default-negation"));
+    REQUIRE_FALSE(has_code(result.diagnostics(), "pc.pipeline.pass-skipped"));
+    REQUIRE(std::abs(exact(compiled) - 0.314) <= 1e-12);
+    const auto recorded = json::parse(*string_meta(circuit, "compile.options"));
+    REQUIRE(recorded);
+    REQUIRE(recorded.value().find("targets")->items[0].find("negation")->string == "boolean");
+
+    // Complemented events and gates change nothing about the default: every query is a probability query, here
+    // one per initiating event of TOP's cone.
+    const auto marked = compile_ok(read_file(fixture("initiator_rule") / "model.ftp"), frequency_options());
+    REQUIRE(query_kinds(view(marked.bytes)) == std::vector<::pcfb::QueryKind>(3, ::pcfb::QueryKind::PROBABILITY));
+}
+
+TEST_CASE("a hull query is written only when requested, with its metadata", "[compile][ftp][hull]") {
+    // `simple` has no complemented event, so no marked literals: the requested hull is written as asked,
+    // although its value equals the probability.
+    const auto compiled = compile_ok(simple, hull_options());
+    const auto circuit = view(compiled.bytes);
+    REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.negation") == "monotone_hull");
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "atom_split");
@@ -214,16 +254,18 @@ TEST_CASE("FTP input defaults to hull queries with their metadata", "[compile][f
     REQUIRE(rule->value_as_IntValue()->value() == 1);
     REQUIRE(compiled.targets[0].monotone_hull);
     REQUIRE_FALSE(compiled.targets[0].boolean);
-    const auto result = compile_text(simple, {});
-    REQUIRE(has_code(result.diagnostics(), "compile.ftp.default-negation"));
-    REQUIRE(has_code(result.diagnostics(), "pc.pipeline.pass-skipped"));
+    REQUIRE(has_code(compile_text(simple, hull_options()).diagnostics(), "pc.pipeline.pass-skipped"));
     // The runtime refuses hull queries until #183, the exact evaluator included.
     REQUIRE_THROWS_AS(exact(compiled), fuzzybits::compile::ExactEvalError);
-    // Without literals the hull of a coherent tree is its probability: the Boolean file of the same model.
-    REQUIRE(std::abs(exact(compile_ok(simple, boolean_options())) - 0.314) <= 1e-12);
-    const auto recorded = json::parse(*string_meta(circuit, "compile.options"));
-    REQUIRE(recorded);
-    REQUIRE(recorded.value().find("targets")->items[0].find("negation")->string == "hull");
+
+    // The config document requests it too; a flag overrides the document.
+    ftp::options document;
+    document.config = R"({"negation": "hull"})";
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
+            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    document.negation = "boolean";
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
+            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
 }
 
 TEST_CASE("--negation boolean writes minor-1 Boolean files", "[compile][ftp][hull]") {
@@ -238,6 +280,7 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
     const auto text = "TOP + W1 W2\nW1 * U1\nU1 + A B\nW2 * C ONE\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  "
                       "2.0E-01 B\n  3.0E-01 C\n  1.0E+00 ONE\n";
     ftp::options options;
+    options.initiator_values = "probability";
     options.max_initiators_per_cutset = std::optional<std::uint32_t>{};
     options.config =
         R"({"targets": [{"name": "TOP", "negation": "both"}, {"name": "W1", "negation": "hull"}, {"name": "U1", "negation": "boolean"}]})";
@@ -277,7 +320,7 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
 TEST_CASE("hull targets with marked literals are refused with the ways out", "[compile][ftp][hull]") {
     const auto text = read_file(fixture("initiator_rule") / "model.ftp");
     for (const char *mode : {"atom_split", "omega_l"}) {
-        ftp::options options;
+        auto options = hull_options();
         options.literals = mode;
         const auto refused = compile_text(text, options);
         INFO(mode << "\n" << render(refused.diagnostics()));
@@ -290,18 +333,20 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
         REQUIRE(hint->message.find("--literals negation") != std::string::npos);
         REQUIRE(hint->message.find("--negation boolean") != std::string::npos);
     }
-    // The default mode is atom_split.
-    REQUIRE_FALSE(compile_text(text, {}));
+    // The default literal mode of a requested hull is atom_split.
+    REQUIRE_FALSE(compile_text(text, hull_options()));
+    // The default query is the probability, which marks do not affect.
+    REQUIRE(compile_text(text, frequency_options()));
 
     // Marked operands read as plain complements: `negation` mode, or no marks.
-    ftp::options plain;
+    auto plain = hull_options();
     plain.literals = "negation";
     const auto negation = compile_ok(text, plain);
     const auto circuit = view(negation.bytes);
     REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "negation");
-    ftp::options unmarked;
+    auto unmarked = hull_options();
     unmarked.complement_events = "negation";
     REQUIRE(compile_text(text, unmarked));
 
@@ -344,6 +389,7 @@ TEST_CASE("flags override the config document, which overrides the model default
     ftp::options file_only;
     file_only.config = R"({
         "negation": "boolean",
+        "initiator_values": "probability",
         "max_initiators_per_cutset": null,
         "compilation_level": 0,
         "targets": [{"name": "SEQ-3"}, "TOP"],
@@ -620,4 +666,155 @@ TEST_CASE("override flags parse as NAME=0 or NAME=1", "[compile][ftp]") {
         INFO(bad);
         REQUIRE_FALSE(ftp::parse_override(bad));
     }
+}
+
+namespace {
+
+[[nodiscard]] auto as_double(json::value const *value) -> double {
+    REQUIRE(value != nullptr);
+    return value->kind == json::value::kind_type::integer ? static_cast<double>(value->integer) : value->number;
+}
+
+[[nodiscard]] auto frequency_fixture(std::string_view name) -> std::filesystem::path {
+    return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "frequency" / name;
+}
+
+// F(T) of a compiled file: the weighted sum of the exact values of its first group's queries.
+[[nodiscard]] auto group_value(ftp::compiled const &compiled) -> double {
+    const auto circuit = view(compiled.bytes);
+    auto const *groups = circuit->subcircuits()->Get(0)->query_groups();
+    REQUIRE(groups != nullptr);
+    double sum = 0.0;
+    for (auto const *term : *groups->Get(0)->terms()) {
+        sum += term->weight() * fuzzybits::compile::exact_probability(circuit, term->query());
+    }
+    return sum;
+}
+
+} // namespace
+
+TEST_CASE("initiating-event values are frequencies: one conditioned query per initiator, grouped (#243)",
+          "[compile][ftp][frequency]") {
+    auto const parsed = json::parse(read_file(frequency_fixture("expected.json")));
+    REQUIRE(parsed);
+    auto const &models = *parsed.value().find("models");
+    for (std::size_t index = 0; index < models.keys.size(); ++index) {
+        auto const &name = models.keys[index];
+        auto const &model = models.items[index];
+        INFO(name);
+        const auto text = read_file(frequency_fixture(name + ".ftp"));
+        const auto result = compile_text(text, frequency_options());
+        if (auto const *error = model.find("error")) {
+            REQUIRE_FALSE(result);
+            REQUIRE(has_code(result.diagnostics(), error->string));
+            continue;
+        }
+        INFO(render(result.diagnostics()));
+        REQUIRE(result);
+        auto const &compiled = result.value();
+        auto const &terms = *model.find("terms");
+        const auto circuit = view(compiled.bytes);
+        REQUIRE(circuit.schema_version() == minor_2);
+        auto const *queries = circuit->subcircuits()->Get(0)->queries();
+        REQUIRE(queries->size() == terms.keys.size());
+        auto const *groups = circuit->subcircuits()->Get(0)->query_groups();
+        REQUIRE(groups != nullptr);
+        REQUIRE(groups->size() == 1);
+        auto const *group = groups->Get(0);
+        REQUIRE(group->name()->str() == "TOP");
+        REQUIRE(group->unit()->str() == "per-year");
+        REQUIRE(group->terms()->size() == terms.keys.size());
+        for (std::uint32_t query = 0; query < queries->size(); ++query) {
+            auto const *term = group->terms()->Get(query);
+            REQUIRE(term->query() == query);
+            const auto prefix = "compile.query." + std::to_string(query) + ".";
+            const auto initiator = string_meta(circuit, (prefix + "initiator").c_str());
+            REQUIRE(initiator);
+            REQUIRE(queries->Get(query)->name()->str() == "TOP|" + *initiator);
+            REQUIRE(queries->Get(query)->kind() == ::pcfb::QueryKind::PROBABILITY);
+            REQUIRE(term->weight() == as_double(terms.find(*initiator)));
+            REQUIRE(compiled.targets[query].initiator == *initiator);
+        }
+        REQUIRE(std::abs(group_value(compiled) - as_double(model.find("frequency"))) <= 1e-12);
+        REQUIRE(compiled.lowering.conditioned_targets == terms.keys.size());
+        REQUIRE_FALSE(has_code(result.diagnostics(), "compile.ftp.default-initiator-rule"));
+    }
+}
+
+TEST_CASE("frequencies default to per year; probabilities keep today's reading", "[compile][ftp][frequency]") {
+    const auto f1 = read_file(frequency_fixture("F1.ftp"));
+    const auto f6 = read_file(frequency_fixture("F6.ftp"));
+
+    // No unit: per year, in the file's group and in the report.
+    const auto unitless = compile_ok(f1, {});
+    REQUIRE(std::abs(group_value(unitless) - 0.596) <= 1e-12);
+    REQUIRE(view(unitless.bytes)->subcircuits()->Get(0)->query_groups()->Get(0)->unit()->str() == "per-year");
+    REQUIRE(unitless.lowering.initiator_unit == "per-year");
+
+    // A model without initiating events needs no unit.
+    REQUIRE(compile_text(simple, {}));
+
+    // Probabilities: a value above 1 is rejected, values up to 1 are read as probabilities (F6 without the rule
+    // is 0.0556, the value #243 reports for that reading).
+    auto probability = boolean_options();
+    REQUIRE(has_code(compile_text(f1, probability).diagnostics(), "compile.pra_to_pc.frequency-out-of-range"));
+    probability.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+    REQUIRE(std::abs(exact(compile_ok(f6, probability)) - 0.0556) <= 1e-12);
+
+    // The initiator rule and the unit each belong to one reading; `none` (no rule) agrees with frequencies.
+    auto rule = frequency_options();
+    rule.max_initiators_per_cutset = std::optional<std::uint32_t>{1};
+    REQUIRE(has_code(compile_text(f1, rule).diagnostics(), "compile.ftp.invalid-option"));
+    rule.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+    REQUIRE(std::abs(group_value(compile_ok(f1, rule)) - 0.596) <= 1e-12);
+    auto unit = boolean_options();
+    unit.initiator_unit = "per-year";
+    REQUIRE(has_code(compile_text(f6, unit).diagnostics(), "compile.ftp.invalid-option"));
+    for (auto const &[values, units] :
+         {std::pair<const char *, const char *>{"frequencies", "per-year"}, {"frequency", "per-fortnight"}}) {
+        ftp::options bad;
+        bad.initiator_values = values;
+        bad.initiator_unit = units;
+        REQUIRE(has_code(compile_text(f1, bad).diagnostics(), "compile.ftp.invalid-option"));
+    }
+
+    // The config document sets both; a flag overrides the document.
+    ftp::options document;
+    document.config = R"({"initiator_values": "frequency", "initiator_unit": "per-day"})";
+    const auto by_document = compile_ok(f6, document);
+    REQUIRE(std::abs(group_value(by_document) - 0.066) <= 1e-12);
+    REQUIRE(view(by_document.bytes)->subcircuits()->Get(0)->query_groups()->Get(0)->unit()->str() == "per-day");
+    // The flag wins: probabilities, so the document's rule is allowed (F6 without the rule is 0.0556).
+    document.initiator_values = "probability";
+    document.config = R"({"initiator_values": "frequency", "max_initiators_per_cutset": null})";
+    const auto by_flag = compile_ok(f6, document);
+    REQUIRE(std::abs(exact(by_flag) - 0.0556) <= 1e-12);
+    REQUIRE(view(by_flag.bytes)->subcircuits()->Get(0)->query_groups() == nullptr);
+    // Frequencies from the document with a rule (a count) from the document is an error; `null` is no rule.
+    document.initiator_values.reset();
+    const auto no_rule = compile_ok(f6, document);
+    REQUIRE(std::abs(group_value(no_rule) - 0.066) <= 1e-12);
+    REQUIRE(view(no_rule.bytes)->subcircuits()->Get(0)->query_groups()->Get(0)->unit()->str() == "per-year");
+    document.config =
+        R"({"initiator_values": "frequency", "initiator_unit": "per-year", "max_initiators_per_cutset": 1})";
+    REQUIRE(has_code(compile_text(f6, document).diagnostics(), "compile.ftp.invalid-option"));
+    document.config = R"({"initiator_unit": "per-fortnight"})";
+    document.initiator_values.reset();
+    REQUIRE(has_code(compile_text(f6, document).diagnostics(), "compile.ftp.invalid-config"));
+}
+
+TEST_CASE("a frequency target asking for both kinds gets one group per kind", "[compile][ftp][frequency][hull]") {
+    auto options = frequency_options();
+    options.negation = "both";
+    const auto compiled = compile_ok(read_file(frequency_fixture("F4.ftp")), options);
+    const auto circuit = view(compiled.bytes);
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{
+                                        ::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                        ::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    auto const *groups = circuit->subcircuits()->Get(0)->query_groups();
+    REQUIRE(groups->size() == 2);
+    REQUIRE(groups->Get(0)->terms()->Get(0)->query() == 0);
+    REQUIRE(groups->Get(0)->terms()->Get(1)->query() == 2);
+    REQUIRE(groups->Get(1)->terms()->Get(0)->query() == 1);
+    REQUIRE(groups->Get(1)->terms()->Get(1)->query() == 3);
 }

@@ -31,6 +31,7 @@ from .circuit import (
     ONLY_POS,
     Circuit,
     build_circuit,
+    cone_events,
     event_modes,
     hull_record,
     literal_sets,
@@ -160,6 +161,44 @@ def exact_probability(
         variables=len(tt.names),
     )
     return out
+
+
+def exact_frequency(
+    project: Project,
+    target: str,
+    probs: Mapping[str, float],
+    semantics: str = "boolean",
+    overrides: Mapping[str, int | bool] | None = None,
+    literals: str = "split",
+) -> dict:
+    """Initiating-event frequency of ``target`` (#243): the values of the initiating events (``I``
+    imports) in its cone are frequencies f_i, and
+
+        F(T) = sum_i f_i * P(T | I_i = TRUE, I_j = FALSE for every other initiating event j of the cone)
+
+    with each conditioned target evaluated exactly (the initiating events as constants, through
+    ``overrides``; under ``hull`` the hull of each conditioned target). Raises :class:`ModelError` when
+    the cone holds no initiating event, or when ``T`` can hold with every initiating event FALSE: its
+    value would mix a probability with a frequency."""
+    over = dict(overrides or {})
+    initiators = sorted(set(cone_events(project, target, over)) & project.initiators() - set(over))
+    if not initiators:
+        raise ModelError(f"target {target!r} has no initiating event in its cone")
+    without = exact_probability(project, target, probs, semantics, {**over, **{i: 0 for i in initiators}}, literals)
+    if without["probability"] > 0.0:
+        raise ModelError(f"target {target!r} can hold with every initiating event FALSE: mixed units")
+    terms = []
+    for initiator in initiators:
+        condition = {**over, **{i: int(i == initiator) for i in initiators}}
+        value = exact_probability(project, target, probs, semantics, condition, literals)["probability"]
+        terms.append({"initiator": initiator, "frequency": float(probs[initiator]), "probability": value})
+    return {
+        "target": target,
+        "semantics": semantics,
+        "method": "enumeration",
+        "frequency": math.fsum(term["frequency"] * term["probability"] for term in terms),
+        "terms": terms,
+    }
 
 
 def exact_cut_sets(

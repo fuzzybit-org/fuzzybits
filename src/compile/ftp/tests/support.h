@@ -28,6 +28,8 @@ using lowering = fuzzybits::compile::backend::fuzzybits::pra_to_pc::pra_pc_lower
     -> ftp::options {
     ftp::options options;
     options.negation = "boolean";
+    // The conformance fixtures tag probabilities with I (#243 keeps them meaningful this way).
+    options.initiator_values = "probability";
     options.max_initiators_per_cutset = std::optional<std::uint32_t>{};
     options.duplicate_import = std::move(duplicate_import);
     options.targets = std::move(targets);

@@ -4,24 +4,21 @@
 #
 # Host-only (no AdaptiveCpp / no GPU):
 #   docker --context xerxes build -f Dockerfile.fzb \
-#     --build-context pcfb=/path/to/pcfb \
 #     --target verify -t fzb-compile:verify .
 #
 # Default MC-on (AdaptiveCpp generic SSCP, no GPU needed):
 #   docker --context xerxes build -f Dockerfile.fzb \
 #     --build-arg BASE_IMAGE=fuzzybits-acpp:full \
 #     --build-arg FUZZYBITS_WITH_MC=ON \
-#     --build-context pcfb=/path/to/pcfb \
 #     --target verify -t fzb-compile:verify-mc .
 #
-# pcfb is public, so FetchContent of the pinned tag works anonymously.
-# FUZZYBITS_PCFB_SOURCE_DIR / --build-context pcfb=… remains for local and
-# offline builds. Do not bake GitHub credentials into the image.
+# pcfb comes from the extern/pcfb submodule in the build context (run
+# `git submodule update --init extern/pcfb` first). Do not bake GitHub
+# credentials into the image.
 
 ARG BASE_IMAGE=mcscram:llvm-clang
 FROM ${BASE_IMAGE} AS build
 
-COPY --from=pcfb . /deps/pcfb
 COPY . /app
 WORKDIR /app
 
@@ -33,7 +30,6 @@ ENV CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
 
 RUN set -eu; \
     extra="-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} \
-           -DFUZZYBITS_PCFB_SOURCE_DIR=/deps/pcfb \
            -DFUZZYBITS_WITH_MC=${FUZZYBITS_WITH_MC} \
            -DBUILD_PYTHON_BINDINGS=OFF \
            -DOPTIMIZE_FOR_NATIVE=OFF \
