@@ -340,10 +340,22 @@ jobs:
               Write-Host "::warning::fzb compile exited $LASTEXITCODE; not re-running fzb run under cdb"
             }
           }
+          # pytest runs fzb from the checkout, where AdaptiveCpp keeps its JIT kernel cache
+          # (.acpp\apps\global\jit-cache) from the smoke runs. A run in a fresh directory did not
+          # crash (#108), so run there, and list the cache it will load.
+          $cache = Join-Path $env:GITHUB_WORKSPACE '.acpp'
+          if (Test-Path $cache) {
+            Write-Host "===== AdaptiveCpp cache under $cache"
+            Get-ChildItem -Path $cache -Recurse -File |
+              Select-Object @{ n = 'File'; e = { $_.FullName.Substring($cache.Length + 1) } }, Length, LastWriteTime |
+              Format-Table -AutoSize | Out-String -Width 220 | Write-Host
+          } else {
+            Write-Host "===== no AdaptiveCpp cache under $cache"
+          }
           # In this pwsh, not pwsh -File: -SearchRoot and -Run take arrays, which -File passes as strings.
           & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
             -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $env:RUNNER_TEMP, (Join-Path $env:APPDATA 'uv\python') `
-            -Run $run -RunWorkDir $env:RUNNER_TEMP
+            -Run $run -RunWorkDir $env:GITHUB_WORKSPACE
 
       - name: Upload crash dumps
         if: failure() && steps.dumps.outputs.count != '' && steps.dumps.outputs.count != '0'
