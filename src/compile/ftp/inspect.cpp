@@ -68,7 +68,6 @@ void collect(inspection &out, io::read_result const &read) {
     auto &conventions = out.conventions;
     conventions.limit = attribute_text(*model, "ftp.limit");
     conventions.maxsize = attribute_text(*model, "ftp.maxsize");
-    conventions.negation = attribute_text(*model, "ftp.negation");
     conventions.max_initiators_per_cutset = attribute_text(*model, "ftp.max_initiators_per_cutset");
     for (auto const &attribute : model->project_attributes()) {
         if (model->text(attribute.name) == "ftp.header") {
@@ -229,7 +228,6 @@ auto inspection_json(inspection const &result, const bool counts_only) -> json::
     auto conventions = json::value::make_object();
     conventions.set("LIMIT", optional_string(result.conventions.limit));
     conventions.set("MAXSIZE", optional_string(result.conventions.maxsize));
-    conventions.set("ftp.negation", optional_string(result.conventions.negation));
     conventions.set("ftp.max_initiators_per_cutset", optional_string(result.conventions.max_initiators_per_cutset));
     conventions.set("header_lines", names_json(result.conventions.header_lines, counts_only));
     root.set("conventions", std::move(conventions));
@@ -311,7 +309,6 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
     auto const &c = result.conventions;
     put_line(out, "  LIMIT: " + c.limit.value_or("-"));
     put_line(out, "  MAXSIZE: " + c.maxsize.value_or("-"));
-    put_line(out, "  ftp.negation: " + c.negation.value_or("-"));
     put_line(out, "  ftp.max_initiators_per_cutset: " + c.max_initiators_per_cutset.value_or("-"));
     put_line(out, "  header_lines: " + std::to_string(c.header_lines.size()));
     if (!counts_only) {

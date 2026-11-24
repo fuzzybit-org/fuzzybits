@@ -40,8 +40,6 @@ namespace prog = runtime::progress;
 using clock = std::chrono::steady_clock;
 
 constexpr std::string_view source_format = "cafta-ftp";
-constexpr std::string_view negation_attribute = "ftp.negation";
-constexpr std::string_view negation_delete_term = "delete_term";
 constexpr std::string_view max_initiators_attribute = "ftp.max_initiators_per_cutset";
 constexpr std::string_view limit_attribute = "ftp.limit";
 
@@ -495,7 +493,7 @@ struct lowered_stage final {
         }
     }
     if (settings.negation && !parse_negation(*settings.negation)) {
-        diagnostics.push(option_error("negation must be boolean or hull, not " + in_quotes(*settings.negation)));
+        diagnostics.push(option_error("negation must be boolean, hull or both, not " + in_quotes(*settings.negation)));
     }
     if (settings.literals && !parse_literals(*settings.literals)) {
         diagnostics.push(
@@ -558,28 +556,12 @@ struct lowered_stage final {
         return std::nullopt;
     }
 
-    // Attribute defaults sit below the document and the flags.
-    bool negation_from_attribute = false;
+    // The query type is requested, never read from the model: every target is a
+    // probability query unless the flags or the document ask for the hull.
     if (settings.negation) {
         merged.negation = *parse_negation(*settings.negation);
-    } else if (document.negation) {
-        merged.negation = *document.negation;
-    } else if (const auto attribute = attribute_value(*model, negation_attribute);
-               attribute && *attribute == negation_delete_term) {
-        merged.negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
-        negation_from_attribute = true;
     } else {
-        if (attribute) {
-            diagnostics.push(api::make_warning("compile.ftp.unknown-attribute",
-                                               "model attribute ftp.negation has the unknown value " +
-                                                   in_quotes(*attribute) + "; using boolean negation"));
-        }
-        merged.negation = pra::negation_set::of(pra::negation_semantics::boolean);
-    }
-    if (negation_from_attribute) {
-        diagnostics.push(api::make_note("compile.ftp.default-negation",
-                                        "negation defaults to hull: the model records ftp.negation = delete_term "
-                                        "(--negation boolean selects Boolean complements)"));
+        merged.negation = document.negation.value_or(pra::negation_set::of(pra::negation_semantics::boolean));
     }
     merged.literals = settings.literals ? *parse_literals(*settings.literals)
                                         : document.literals.value_or(pra::literal_mode::atom_split);
@@ -822,9 +804,8 @@ struct lowered_stage final {
                 diagnostics.push(api::make_error(
                     "compile.ftp.hull-literals-unsupported",
                     "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries "
-                    "literal atoms; "
-                    "use --literals negation (marked operands read as plain complements), --negation boolean, "
-                    "or --complement-events negation"));
+                    "literal atoms; each alternative is a different query: --negation boolean (the probability, "
+                    "the default), or the plain hull with --literals negation or --complement-events negation"));
             }
             return fail(std::move(diagnostics));
         }

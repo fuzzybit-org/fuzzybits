@@ -22,6 +22,17 @@
   continues the open gate, indented or not. An indented continuation line whose second operand is
   an event named with digits only (`  A 7 B`) used to add operands; it now defines an at-least gate.
   To keep it a continuation, move that operand off the second position.
+- FTP targets are probability queries by default (#244). `fzb compile` and `fuzzybits.compile`
+  used to write a monotone-hull query for every FTP target, which `fzb run` refuses, because the
+  reader recorded `ftp.negation = delete_term` for every project and the driver took the query type
+  from it. The query type is now requested, never read from the model:
+  - Without `--negation` (or `negation` in the config document), every target is a `PROBABILITY`
+    query and the file is pcfb minor 1. Results change only where a target's cone has a complement.
+  - To keep the previous default, pass `--negation hull` (`negation="hull"`, or `"negation": "hull"`
+    in the config document). `--negation both` writes both queries.
+  - The reader no longer records the `ftp.negation` attribute. `fzb inspect` and
+    `fuzzybits.read_project` drop it from `conventions`, and the `compile.ftp.default-negation`
+    note is gone.
 
 ### Changes
 

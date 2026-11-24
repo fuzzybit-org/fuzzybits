@@ -89,19 +89,20 @@ def test_compile_returns_the_blob_with_metadata_and_names(tmp_path: Path):
     assert summary["samples"] == 3
 
 
-def test_hull_is_the_default_and_carries_its_metadata(tmp_path: Path):
+def test_probability_is_the_default_and_hull_is_requested(tmp_path: Path):
     model = _write(tmp_path, "m.ftp", SIMPLE)
-    blob = fuzzybits.compile([model])
-    summary = fuzzybits.inspect(blob)
+    default = fuzzybits.compile([model])
+    summary = fuzzybits.inspect(default)
     assert summary["diagnostics"] == []
+    assert summary["schema_version"] == 0x00010001
+    assert summary["metadata"]["compile.query.0.negation"] == "boolean"
+    blob = fuzzybits.compile([model], negation="hull")
+    summary = fuzzybits.inspect(blob)
     assert summary["schema_version"] == 0x00010002
     meta = summary["metadata"]
     assert meta["compile.query.0.negation"] == "monotone_hull"
     assert meta["compile.query.0.literal_mode"] == "atom_split"
     assert meta["compile.query.0.max_initiators_per_cutset"] == "1"
-    boolean = fuzzybits.inspect(fuzzybits.compile([model], negation="boolean"))
-    assert boolean["schema_version"] == 0x00010001
-    assert boolean["metadata"]["compile.query.0.negation"] == "boolean"
     both = fuzzybits.inspect(fuzzybits.compile([model], config={"targets": [{"name": "TOP", "negation": "both"}]}))
     assert both["queries"] == 2
     assert both["metadata"]["compile.query.1.negation"] == "monotone_hull"
@@ -114,12 +115,14 @@ def test_hull_targets_with_marked_literals_are_refused(tmp_path: Path):
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
     for options in ({}, {"literals": "omega_l"}):
         with pytest.raises(RuntimeError) as failure:
-            fuzzybits.compile([model], **options)
+            fuzzybits.compile([model], negation="hull", **options)
         assert "compile.ftp.hull-literals-unsupported" in str(failure.value)
         assert "--literals negation" in str(failure.value)
-    blob = fuzzybits.compile([model], literals="negation")
+    blob = fuzzybits.compile([model], negation="hull", literals="negation")
     assert fuzzybits.inspect(blob)["metadata"]["compile.query.0.literal_mode"] == "negation"
-    assert fuzzybits.compile([model], complement_events="negation")
+    assert fuzzybits.compile([model], negation="hull", complement_events="negation")
+    # The default probability query is not affected by marked literals.
+    assert fuzzybits.inspect(fuzzybits.compile([model]))["metadata"]["compile.query.0.negation"] == "boolean"
 
 
 def test_targets_watch_overrides_and_levels(tmp_path: Path):
@@ -275,7 +278,7 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
     assert _close(fuzzybits.exact(pcfb), 0.5)
     assert json.loads(report.read_text())["options"]["overrides"][0]["name"] == "OPER"
 
-    hull = _run_fzb("compile", str(model), "--no-progress", "-o", str(pcfb), cwd=tmp_path)
+    hull = _run_fzb("compile", str(model), "--negation", "hull", "--no-progress", "-o", str(pcfb), cwd=tmp_path)
     assert hull.returncode != 0
     assert "hull-literals-unsupported" in hull.stderr
     assert "--literals negation" in hull.stderr

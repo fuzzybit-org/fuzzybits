@@ -50,10 +50,9 @@ inline constexpr std::string_view kFtpHeaderAttribute = "ftp.header";
 inline constexpr std::string_view kFtpLimitAttribute = "ftp.limit";
 inline constexpr std::string_view kFtpMaxSizeAttribute = "ftp.maxsize";
 inline constexpr std::string_view kFtpImportFlagAttribute = "ftp.import_flag";
-// Source conventions, recorded for the compile driver; nothing in `ir::pra`
-// or the lowering reads them.
-inline constexpr std::string_view kFtpNegationAttribute = "ftp.negation";
-inline constexpr std::string_view kFtpNegationDeleteTerm = "delete_term";
+// A source convention, recorded for the compile driver; nothing in `ir::pra`
+// or the lowering reads it. How complements are read is never recorded: it is
+// the query type, which the compile request chooses.
 inline constexpr std::string_view kFtpMaxInitiatorsAttribute = "ftp.max_initiators_per_cutset";
 inline constexpr std::string_view kFtpMaxInitiatorsOne = "1";
 inline constexpr std::string_view kFtpMaxInitiatorsNone = "none";

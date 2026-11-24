@@ -748,7 +748,7 @@ int cmd_compile(int argc, char **argv) {
         "complement-events", po::value<std::string>(),
         "FTP: -EVENT operands: atom|negation (default atom: marked literals)")(
         "negation", po::value<std::string>(),
-        "FTP: boolean|hull (default hull when the model records ftp.negation = delete_term)")(
+        "FTP: query type of every target: boolean (the probability, default), hull or both")(
         "max-initiators-per-cutset", po::value<std::string>(),
         "FTP: at most N initiating events per cut set, or none (default: the model's "
         "ftp.max_initiators_per_cutset)")("literals", po::value<std::string>(),
@@ -776,7 +776,7 @@ int cmd_compile(int argc, char **argv) {
         std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
                      "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
                      "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... "
-                     "[--no-ccf] [--negation boolean|hull] "
+                     "[--no-ccf] [--negation boolean|hull|both] "
                      "[--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
                      "                   [--no-progress] [--quiet]\n\n"
                   << desc << std::endl;

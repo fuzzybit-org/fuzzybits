@@ -167,7 +167,8 @@ TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[i
     REQUIRE(attribute(model, model.project_attributes(), "ftp.limit") == std::vector<std::string>{"1.0E-09"});
     REQUIRE(attribute(model, model.project_attributes(), "ftp.header") ==
             std::vector<std::string>{"**CHAR32", "**DBNAME: unit", "**FTITLE: simple", "*XEQ"});
-    REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") == std::vector<std::string>{"delete_term"});
+    // How complements are read is the query type, chosen by the compile request: never a model attribute.
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.negation").empty());
     REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset") ==
             std::vector<std::string>{"1"});
 }
@@ -230,8 +231,7 @@ TEST_CASE("FTP conventions are recorded as model attributes", "[io][ftp][project
     const auto initiators = [](fuzzybits::api::option_set const &options) {
         const auto read = readText(kSimple, options);
         auto const &model = requireModel(read);
-        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation") ==
-                std::vector<std::string>{"delete_term"});
+        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation").empty());
         return attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset");
     };
     fuzzybits::api::option_set options;

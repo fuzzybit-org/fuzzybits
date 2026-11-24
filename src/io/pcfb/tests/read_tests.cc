@@ -545,6 +545,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
         boolean.negation = "boolean";
         variants.push_back({"boolean", boolean});
         ftp::options hull;
+        hull.negation = "hull";
         hull.complement_events = "negation";
         variants.push_back({"hull", hull});
         ftp::options both;
@@ -552,6 +553,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
         both.config = R"({"negation": "both"})";
         variants.push_back({"both", both});
         ftp::options literals;
+        literals.negation = "hull";
         literals.literals = "negation";
         variants.push_back({"hull with atoms as negation", literals});
     }

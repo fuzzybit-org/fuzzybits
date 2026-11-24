@@ -23,7 +23,6 @@ auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::p
     if (project.maxSize) {
         builder.add_project_attribute(kFtpMaxSizeAttribute, project.maxSizeText);
     }
-    builder.add_project_attribute(kFtpNegationAttribute, kFtpNegationDeleteTerm);
     if (options.maxOneInitiator) {
         builder.add_project_attribute(kFtpMaxInitiatorsAttribute, kFtpMaxInitiatorsOne);
     }

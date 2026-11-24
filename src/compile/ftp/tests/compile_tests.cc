@@ -69,6 +69,12 @@ constexpr auto simple =
     return options;
 }
 
+[[nodiscard]] auto hull_options() -> ftp::options {
+    ftp::options options;
+    options.negation = "hull";
+    return options;
+}
+
 [[nodiscard]] auto compile_text(std::string text, ftp::options const &options) -> ftp::compile_result {
     const auto sources = sources_of({{"m.ftp", std::move(text)}});
     return ftp::compile_sources(sources, options);
@@ -200,12 +206,35 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
 constexpr auto minor_1 = 0x00010001U;
 constexpr auto minor_2 = 0x00010002U;
 
-TEST_CASE("FTP input defaults to hull queries with their metadata", "[compile][ftp][hull]") {
-    // `simple` has no complemented event, so no marked literals.
+TEST_CASE("FTP input defaults to probability queries", "[compile][ftp]") {
+    // The query type is requested, never read from the model: the default is the probability.
     const auto compiled = compile_ok(simple, {});
     const auto circuit = view(compiled.bytes);
-    REQUIRE(circuit.schema_version() == minor_2);
+    REQUIRE(circuit.schema_version() == minor_1);
     REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP"});
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
+    REQUIRE(string_meta(circuit, "compile.query.0.negation") == "boolean");
+    REQUIRE(compiled.targets[0].boolean);
+    REQUIRE_FALSE(compiled.targets[0].monotone_hull);
+    const auto result = compile_text(simple, {});
+    REQUIRE_FALSE(has_code(result.diagnostics(), "compile.ftp.default-negation"));
+    REQUIRE_FALSE(has_code(result.diagnostics(), "pc.pipeline.pass-skipped"));
+    REQUIRE(std::abs(exact(compiled) - 0.314) <= 1e-12);
+    const auto recorded = json::parse(*string_meta(circuit, "compile.options"));
+    REQUIRE(recorded);
+    REQUIRE(recorded.value().find("targets")->items[0].find("negation")->string == "boolean");
+
+    // Complemented events and gates change nothing about the default: every target is a probability query.
+    const auto marked = compile_ok(read_file(fixture("initiator_rule") / "model.ftp"), {});
+    REQUIRE(query_kinds(view(marked.bytes)) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
+}
+
+TEST_CASE("a hull query is written only when requested, with its metadata", "[compile][ftp][hull]") {
+    // `simple` has no complemented event, so no marked literals: the requested hull is written as asked,
+    // although its value equals the probability.
+    const auto compiled = compile_ok(simple, hull_options());
+    const auto circuit = view(compiled.bytes);
+    REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.negation") == "monotone_hull");
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "atom_split");
@@ -214,16 +243,18 @@ TEST_CASE("FTP input defaults to hull queries with their metadata", "[compile][f
     REQUIRE(rule->value_as_IntValue()->value() == 1);
     REQUIRE(compiled.targets[0].monotone_hull);
     REQUIRE_FALSE(compiled.targets[0].boolean);
-    const auto result = compile_text(simple, {});
-    REQUIRE(has_code(result.diagnostics(), "compile.ftp.default-negation"));
-    REQUIRE(has_code(result.diagnostics(), "pc.pipeline.pass-skipped"));
+    REQUIRE(has_code(compile_text(simple, hull_options()).diagnostics(), "pc.pipeline.pass-skipped"));
     // The runtime refuses hull queries until #183, the exact evaluator included.
     REQUIRE_THROWS_AS(exact(compiled), fuzzybits::compile::ExactEvalError);
-    // Without literals the hull of a coherent tree is its probability: the Boolean file of the same model.
-    REQUIRE(std::abs(exact(compile_ok(simple, boolean_options())) - 0.314) <= 1e-12);
-    const auto recorded = json::parse(*string_meta(circuit, "compile.options"));
-    REQUIRE(recorded);
-    REQUIRE(recorded.value().find("targets")->items[0].find("negation")->string == "hull");
+
+    // The config document requests it too; a flag overrides the document.
+    ftp::options document;
+    document.config = R"({"negation": "hull"})";
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
+            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    document.negation = "boolean";
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
+            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
 }
 
 TEST_CASE("--negation boolean writes minor-1 Boolean files", "[compile][ftp][hull]") {
@@ -277,7 +308,7 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
 TEST_CASE("hull targets with marked literals are refused with the ways out", "[compile][ftp][hull]") {
     const auto text = read_file(fixture("initiator_rule") / "model.ftp");
     for (const char *mode : {"atom_split", "omega_l"}) {
-        ftp::options options;
+        auto options = hull_options();
         options.literals = mode;
         const auto refused = compile_text(text, options);
         INFO(mode << "\n" << render(refused.diagnostics()));
@@ -290,18 +321,20 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
         REQUIRE(hint->message.find("--literals negation") != std::string::npos);
         REQUIRE(hint->message.find("--negation boolean") != std::string::npos);
     }
-    // The default mode is atom_split.
-    REQUIRE_FALSE(compile_text(text, {}));
+    // The default literal mode of a requested hull is atom_split.
+    REQUIRE_FALSE(compile_text(text, hull_options()));
+    // The default query is the probability, which marks do not affect.
+    REQUIRE(compile_text(text, {}));
 
     // Marked operands read as plain complements: `negation` mode, or no marks.
-    ftp::options plain;
+    auto plain = hull_options();
     plain.literals = "negation";
     const auto negation = compile_ok(text, plain);
     const auto circuit = view(negation.bytes);
     REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "negation");
-    ftp::options unmarked;
+    auto unmarked = hull_options();
     unmarked.complement_events = "negation";
     REQUIRE(compile_text(text, unmarked));
 

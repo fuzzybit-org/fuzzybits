@@ -469,11 +469,12 @@ def compile(  # noqa: A001 - public API name
         FTP reader options: ``"error" | "first" | "last"`` (default ``"last"``)
         and ``"atom" | "negation"`` (default ``"atom"``).
     negation:
-        FTP: ``"boolean"`` or ``"hull"``. The default is hull when the model
-        records ``ftp.negation = delete_term`` (always, for FTP input). Hull
-        queries are written (pcfb 1.2) but not sampled yet: ``run`` refuses
-        them, so pass ``"boolean"`` to run the model. A hull target with
-        marked literals needs ``literals="negation"`` (or ``"boolean"``).
+        FTP: the query type of every target: ``"boolean"`` (the probability,
+        default), ``"hull"`` (the monotone hull: complements read as delete
+        terms) or ``"both"``. The type is requested, never read from the model.
+        Hull queries are written (pcfb 1.2) but not sampled yet: ``run``
+        refuses them. A hull target with marked literals is refused unless
+        ``literals="negation"``.
     max_initiators_per_cutset:
         FTP: at most this many initiating events per cut set; ``None`` or
         ``"none"`` for no rule. Default: the model's
