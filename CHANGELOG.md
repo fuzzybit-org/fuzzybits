@@ -25,6 +25,8 @@
 
 ### Changes
 
+- `scram-cli` no longer crashes on exit on Windows (`0xC0000005` after a complete run). It
+  shut libxml2 down before freeing its input schema validator.
 - The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`
   output piped or redirected to a cp1252 stream raised `UnicodeEncodeError`.
 - AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks

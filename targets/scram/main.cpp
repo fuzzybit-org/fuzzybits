@@ -18,7 +18,7 @@
 
 /// @file
 
-#include <libxml/parser.h>     // xmlInitParser, xmlCleanupParser
+#include <libxml/parser.h>     // xmlInitParser
 #include <libxml/xmlversion.h> // LIBXML_TEST_VERSION, LIBXML_DOTTED_VERSION
 
 #include <boost/core/typeinfo.hpp>
@@ -33,7 +33,6 @@
 #include <vector>
 
 #include "error.h"
-#include "ext/scope_guard.h"
 #include "initializer.h"
 #include "logger.h"
 #include "reporter.h"
@@ -54,7 +53,10 @@ namespace po = boost::program_options;
 int main(const int argc, char *argv[]) {
     LIBXML_TEST_VERSION
     xmlInitParser();
-    SCOPE_EXIT(&xmlCleanupParser);
+    // No xmlCleanupParser at scope exit: function-local statics that hold libxml2 objects (the
+    // input schema validator in Initializer::ProcessInputFiles) are destroyed after main returns,
+    // and freeing them locks libxml2's dictionary mutex. After cleanup that mutex is destroyed; on
+    // Windows the lock then writes through a null pointer and the process exits 0xC0000005 (#108).
 
     xmlGenericErrorFunc xml_error_printer = ScramCLI::LogXmlError;
     initGenericErrorDefaultFunc(&xml_error_printer);
