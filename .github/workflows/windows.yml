@@ -72,6 +72,11 @@ jobs:
       ACPP_PREFIX: ${{ github.workspace }}/.cache/acpp-prefix
       SCCACHE_GHA_ENABLED: "true"
     steps:
+      # The runner sets core.autocrlf=true. Benchmark manifests and test fixtures hash the
+      # committed LF bytes, including those in submodules, so check out without conversion.
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -182,6 +187,11 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
       PYTHON_VERSIONS: ${{ inputs.python_versions }}
     steps:
+      # The runner sets core.autocrlf=true. Benchmark manifests and test fixtures hash the
+      # committed LF bytes, including those in submodules, so check out without conversion.
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
