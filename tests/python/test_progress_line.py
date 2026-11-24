@@ -7,21 +7,25 @@ got wrong (#205): no frame wraps, redraws never drift, and the final screen is o
 
 from __future__ import annotations
 
-import fcntl
-import os
-import pty
-import re
-import select
-import shutil
-import signal
-import struct
-import subprocess
 import sys
-import termios
-import time
-from pathlib import Path
 
 import pytest
+
+if sys.platform == "win32":
+    pytest.skip("PTY tests need pty/termios/fcntl (POSIX only)", allow_module_level=True)
+
+import fcntl  # noqa: E402
+import os  # noqa: E402
+import pty  # noqa: E402
+import re  # noqa: E402
+import select  # noqa: E402
+import shutil  # noqa: E402
+import signal  # noqa: E402
+import struct  # noqa: E402
+import subprocess  # noqa: E402
+import termios  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 pytest.importorskip("fuzzybits")
 pyte = pytest.importorskip("pyte")

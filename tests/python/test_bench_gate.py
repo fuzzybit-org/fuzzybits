@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -101,6 +103,10 @@ def test_runtime_host_is_local_for_default_docker_context():
     assert _runtime_host(target) == "xerxes"
 
 
+_needs_flock = pytest.mark.skipif(sys.platform == "win32", reason="local GPU locks use flock (POSIX)")
+
+
+@_needs_flock
 def test_local_gpu_lock_roundtrip(tmp_path: Path):
     lock = tmp_path / "gpu-lock-xerxes-0"
     handle = acquire_lock(None, str(lock), retries=0)
@@ -114,6 +120,7 @@ def test_local_gpu_lock_roundtrip(tmp_path: Path):
     release_lock(again)
 
 
+@_needs_flock
 def test_local_gpu_lock_released_when_holder_dies(tmp_path: Path):
     import subprocess
 
