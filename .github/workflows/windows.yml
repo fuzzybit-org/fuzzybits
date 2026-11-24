@@ -183,7 +183,8 @@ jobs:
           $build = Join-Path $env:GITHUB_WORKSPACE "build\$env:FZB_PRESET"
           $libxml = Join-Path $build '_deps\libxml2-build'
           $env:PATH = "$env:ACPP_PREFIX\bin;$libxml;$build\src;$env:PATH"
-          pwsh -NoProfile -File scripts/ci/windows-crash-dumps.ps1 diagnose `
+          # In this pwsh, not pwsh -File: -SearchRoot takes an array, which -File passes as strings.
+          & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
             -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $build, $env:ACPP_PREFIX -BuildDir $build
 
       - name: Upload crash dumps and symbols
@@ -319,7 +320,8 @@ jobs:
         timeout-minutes: 20
         shell: pwsh
         run: |
-          pwsh -NoProfile -File scripts/ci/windows-crash-dumps.ps1 diagnose `
+          # In this pwsh, not pwsh -File: -SearchRoot takes an array, which -File passes as strings.
+          & ./scripts/ci/windows-crash-dumps.ps1 diagnose `
             -DumpDir $env:FZB_CRASH_DUMPS -SearchRoot $env:RUNNER_TEMP, (Join-Path $env:APPDATA 'uv\python')
 
       - name: Upload crash dumps

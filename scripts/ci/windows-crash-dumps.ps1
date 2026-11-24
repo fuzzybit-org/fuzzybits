@@ -111,7 +111,7 @@ function Invoke-Diagnose {
     } else {
         Write-Host '::warning::cdb.exe (Debugging Tools for Windows) not found; dumps are listed and uploaded, not analysed'
     }
-    $cacheRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
+    $cacheRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [IO.Path]::GetTempPath() }
     $server = "srv*$(Join-Path $cacheRoot 'symcache')*https://msdl.microsoft.com/download/symbols"
     $symbolPath = (@($server) + (Get-Dirs @('*.pdb'))) -join ';'
     $imagePath = (@($server) + (Get-Dirs @('*.exe', '*.dll', '*.pyd'))) -join ';'
@@ -213,3 +213,5 @@ switch ($Command) {
     'enable' { Enable-LocalDumps }
     'diagnose' { Invoke-Diagnose }
 }
+# Not the exit code of the last cdb or ctest: callers (and the runner's pwsh wrapper) read $LASTEXITCODE.
+exit 0
