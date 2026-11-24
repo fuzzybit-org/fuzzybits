@@ -1,31 +1,43 @@
-# pcfb is public. Default: FetchContent the pinned 1.2 implementation
-# (fuzzybit-org/pcfb@3fa1551) anonymously. Optional local override:
-#   -DFUZZYBITS_PCFB_SOURCE_DIR=/path/to/pcfb
-# (Dockerfile.fzb still accepts --build-context pcfb=… for offline builds.)
-#
-# Pin: toolchain.env PCFB_GIT_TAG → FUZZYBITS_PIN_PCFB_GIT_TAG (#59). The
-# CACHE default below matches that pin so a configure without ToolchainPins
-# still FetchContents the same revision.
+# pcfb (public, fuzzybit-org/pcfb) is a git submodule at extern/pcfb. Its gitlink
+# is the only pin: bump it with `git -C extern/pcfb checkout <rev>` and commit the
+# superproject. Sources, in order:
+#   1. -DFUZZYBITS_PCFB_SOURCE_DIR=/path/to/pcfb (a local checkout; overrides the
+#      submodule).
+#   2. extern/pcfb, when the submodule is initialised
+#      (`git submodule update --init extern/pcfb`).
+#   3. FetchContent of the gitlink's own revision (read with git), for a source
+#      tree whose submodule is not initialised.
+# On Windows the pcfb sources are copied into the build tree and their POSIX mmap
+# I/O is patched there (cmake/patches/pcfb_windows_mmap.cmake), so the submodule
+# itself is never modified.
 
 set(FUZZYBITS_PCFB_SOURCE_DIR "" CACHE PATH
-    "Path to a local pcfb checkout (skips FetchContent)")
-if(DEFINED FUZZYBITS_PIN_PCFB_GIT_TAG AND NOT FUZZYBITS_PIN_PCFB_GIT_TAG STREQUAL "")
-  set(_pcfb_git_tag_default "${FUZZYBITS_PIN_PCFB_GIT_TAG}")
-else()
-  set(_pcfb_git_tag_default "3fa15513cd547b06192dbaf7e98279155d736a0b")
-endif()
-set(FUZZYBITS_PCFB_GIT_TAG "${_pcfb_git_tag_default}" CACHE STRING
-    "Pinned pcfb git revision (1.2)")
-unset(_pcfb_git_tag_default)
+    "Path to a local pcfb checkout (overrides the extern/pcfb submodule)")
+set(FUZZYBITS_PCFB_GIT_REPO "https://github.com/fuzzybit-org/pcfb.git" CACHE STRING
+    "pcfb git remote for the FetchContent fallback")
 
-if(DEFINED FUZZYBITS_PIN_PCFB_GIT_REPO AND NOT FUZZYBITS_PIN_PCFB_GIT_REPO STREQUAL "")
-  set(_pcfb_git_repo_default "${FUZZYBITS_PIN_PCFB_GIT_REPO}")
-else()
-  set(_pcfb_git_repo_default "https://github.com/fuzzybit-org/pcfb.git")
-endif()
-set(FUZZYBITS_PCFB_GIT_REPO "${_pcfb_git_repo_default}" CACHE STRING
-    "pcfb git remote (ignored when FUZZYBITS_PCFB_SOURCE_DIR is set)")
-unset(_pcfb_git_repo_default)
+set(_fuzzybits_pcfb_submodule "${CMAKE_CURRENT_LIST_DIR}/../extern/pcfb")
+cmake_path(NORMAL_PATH _fuzzybits_pcfb_submodule)
+
+# The revision the superproject's gitlink records for extern/pcfb, or "" when git
+# cannot tell (no .git, no git executable).
+function(fuzzybits_pcfb_gitlink out_var)
+  set(_rev "")
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse "HEAD:extern/pcfb"
+      WORKING_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/.."
+      OUTPUT_VARIABLE _rev
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
+      RESULT_VARIABLE _status)
+    if(NOT _status EQUAL 0)
+      set(_rev "")
+    endif()
+  endif()
+  set(${out_var} "${_rev}" PARENT_SCOPE)
+endfunction()
 
 function(fuzzybits_add_pcfb)
   if(TARGET pcfb)
@@ -39,27 +51,44 @@ function(fuzzybits_add_pcfb)
   set(BUILD_TESTING OFF CACHE BOOL "Build the testing tree" FORCE)
   set(PCFB_BUILD_TESTS OFF CACHE BOOL "Build pcfb tests" FORCE)
 
+  set(_source "")
   if(FUZZYBITS_PCFB_SOURCE_DIR)
     if(NOT EXISTS "${FUZZYBITS_PCFB_SOURCE_DIR}/CMakeLists.txt")
       message(FATAL_ERROR
         "FUZZYBITS_PCFB_SOURCE_DIR=${FUZZYBITS_PCFB_SOURCE_DIR} does not contain CMakeLists.txt")
     endif()
-    message(STATUS "pcfb: add_subdirectory(${FUZZYBITS_PCFB_SOURCE_DIR}) pin ${FUZZYBITS_PCFB_GIT_TAG}")
-    add_subdirectory("${FUZZYBITS_PCFB_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/_deps/pcfb-build"
-                     EXCLUDE_FROM_ALL)
+    set(_source "${FUZZYBITS_PCFB_SOURCE_DIR}")
+    message(STATUS "pcfb: ${_source} (FUZZYBITS_PCFB_SOURCE_DIR)")
+  elseif(EXISTS "${_fuzzybits_pcfb_submodule}/CMakeLists.txt")
+    set(_source "${_fuzzybits_pcfb_submodule}")
+    message(STATUS "pcfb: ${_source} (submodule)")
   else()
-    message(STATUS "pcfb: FetchContent ${FUZZYBITS_PCFB_GIT_REPO} @ ${FUZZYBITS_PCFB_GIT_TAG}")
+    fuzzybits_pcfb_gitlink(_rev)
+    if(_rev STREQUAL "")
+      message(FATAL_ERROR
+        "pcfb: extern/pcfb is not initialised and its revision cannot be read from git. "
+        "Run `git submodule update --init extern/pcfb`, or pass -DFUZZYBITS_PCFB_SOURCE_DIR=/path/to/pcfb.")
+    endif()
+    message(STATUS "pcfb: FetchContent ${FUZZYBITS_PCFB_GIT_REPO} @ ${_rev} (submodule not initialised)")
     include(FetchContent)
     FetchContent_Declare(pcfb
       GIT_REPOSITORY ${FUZZYBITS_PCFB_GIT_REPO}
-      GIT_TAG        ${FUZZYBITS_PCFB_GIT_TAG}
+      GIT_TAG        ${_rev}
     )
-    FetchContent_MakeAvailable(pcfb)
-    if(WIN32)
-      include("${CMAKE_CURRENT_LIST_DIR}/patches/pcfb_windows_mmap.cmake")
-      fuzzybits_pcfb_apply_windows_mmap("${pcfb_SOURCE_DIR}")
-    endif()
+    FetchContent_Populate(pcfb)
+    set(_source "${pcfb_SOURCE_DIR}")
   endif()
+
+  if(WIN32)
+    # Patch a copy, never the submodule or a user checkout.
+    set(_copy "${CMAKE_BINARY_DIR}/_deps/pcfb-patched")
+    file(REMOVE_RECURSE "${_copy}")
+    file(COPY "${_source}/" DESTINATION "${_copy}" PATTERN ".git" EXCLUDE)
+    include("${CMAKE_CURRENT_LIST_DIR}/patches/pcfb_windows_mmap.cmake")
+    fuzzybits_pcfb_apply_windows_mmap("${_copy}")
+    set(_source "${_copy}")
+  endif()
+  add_subdirectory("${_source}" "${CMAKE_BINARY_DIR}/_deps/pcfb-build" EXCLUDE_FROM_ALL)
 
   set(BUILD_TESTING "${_fuzzybits_saved_testing}" CACHE BOOL "Build the testing tree" FORCE)
 
@@ -72,3 +101,4 @@ function(fuzzybits_add_pcfb)
 endfunction()
 
 fuzzybits_add_pcfb()
+unset(_fuzzybits_pcfb_submodule)

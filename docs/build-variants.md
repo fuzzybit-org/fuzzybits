@@ -309,7 +309,8 @@ install (the Linux path) does **not** provide a working generic SSCP compiler
 on Windows; AdaptiveCpp must be built *into* LLVM
 (`-DLLVM_ADAPTIVECPP_LINK_INTO_TOOLS=ON`, LLVM ≥ 18). pcfb's POSIX `mmap`
 I/O is rewritten to `MapViewOfFile` on WIN32 only
-(`cmake/patches/pcfb_windows_mmap.cmake`); Linux/macOS keep upstream `io.cpp`.
+(`cmake/patches/pcfb_windows_mmap.cmake`), applied to a copy of the sources in the build tree, never to the
+`extern/pcfb` submodule; Linux/macOS keep upstream `io.cpp`.
 Pins:
 `ACPP_REF_WINDOWS=9f842c701a599107cc6d117d3539f971036363a1` (same commit as
 `ACPP_COMMIT` / `v25.10.0`), `LLVM_REF_WINDOWS=llvmorg-20.1.8`,
