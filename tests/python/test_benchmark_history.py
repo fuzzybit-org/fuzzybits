@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -124,6 +126,7 @@ def test_compare_ratio():
     assert compare_ratio(10.0, 0.0) is None
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="local GPU locks use flock (POSIX)")
 def test_local_gpu_lock(tmp_path: Path):
     from benchmarks.harness.guards import GuardError, acquire_lock, release_lock
 

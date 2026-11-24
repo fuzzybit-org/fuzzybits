@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fcntl
 import os
 import shlex
 import subprocess
@@ -11,6 +10,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:
+    # Windows has no flock. The harness runs on Linux hosts, but tests import its modules
+    # on every platform, so only a local lock attempt fails there.
+    fcntl = None  # type: ignore[assignment]
 
 DEFAULT_LOAD_FRACTION = 0.50
 DEFAULT_RETRIES = 6
@@ -330,6 +336,8 @@ class LockHandle:
 
 def _acquire_lock_once(host: str | None, path: str) -> LockHandle:
     if not host:
+        if fcntl is None:
+            raise GuardError(f"could not acquire {path}: local locks need flock (POSIX only)")
         try:
             # O_RDONLY also opens a directory left by the old mkdir lock.
             fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o666)

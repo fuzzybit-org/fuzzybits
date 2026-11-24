@@ -25,7 +25,8 @@ SIMPLE = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n 
 
 def _write(tmp_path: Path, name: str, text: str) -> Path:
     path = tmp_path / name
-    path.write_text(text, encoding="utf-8")
+    # newline="": the tests hash `text`, so keep "\n" as written (Windows would write "\r\n").
+    path.write_text(text, encoding="utf-8", newline="")
     return path
 
 

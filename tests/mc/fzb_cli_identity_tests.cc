@@ -126,9 +126,11 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
 
     std::ostringstream scram;
 #ifdef _WIN32
-    scram << "cmd /C \"cd /D " << shell_quote(tmp.string()) << " && " << shell_quote(SCRAM_CLI_PATH)
+    // run_cmd already wraps this in cmd /S /C "...". A nested cmd /C "..." shifts the quotes, so the
+    // outer cmd.exe splits at && and scram-cli runs outside tmp with its last argument ending in '"'.
+    scram << "cd /D " << shell_quote(tmp.string()) << " && " << shell_quote(SCRAM_CLI_PATH)
           << " --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N " << requested << " --no-indent -V 0 -o "
-          << shell_quote(report.string()) << " " << shell_quote(xml.string()) << "\"";
+          << shell_quote(report.string()) << " " << shell_quote(xml.string());
 #else
     scram << "timeout 60 bash -lc \"cd '" << tmp.string() << "' && '" << SCRAM_CLI_PATH
           << "' --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N " << requested << " --no-indent -V 0 -o '"
