@@ -10,8 +10,11 @@ implicit). Where FTREX 2.0 and ZEBRA 1.0b reject a file, or skip a line and
 assume p = 1 for the events it would define, this parser reports an error
 (#191):
 
-- Names are ``[A-Za-z0-9_/-]+`` and may start with a digit. A leading ``-`` on
-  a child reference complements it, so defined names may not start with ``-``.
+- Names are ``[A-Za-z0-9_/%~-]+`` and may start with a digit. ``%`` and ``~``
+  are ordinary name characters: CAFTA exports prefix initiator names with
+  ``%`` (``%IE``, ``B-%IE``) and use ``~`` inside names, and FTREX 2.0 and
+  ZEBRA 1.0b both solve such files. A leading ``-`` on a child reference
+  complements it, so defined names may not start with ``-``.
 - ``NAME + c...`` is OR, ``NAME * c...`` is AND, ``NAME k c...`` is at-least-k.
   An indented line continues the child list of the gate above it.
 - The gate lines of a file are its tree section: it comes first and ends with
@@ -47,7 +50,7 @@ OR, AND, ATLEAST = "or", "and", "atleast"
 POLICIES = ("error", "first", "last")
 DEFAULT_POLICY = "last"
 
-_NAME = re.compile(r"[A-Za-z0-9_/-]+\Z")
+_NAME = re.compile(r"[A-Za-z0-9_/%~-]+\Z")
 _NUMBER = re.compile(r"[+-]?[0-9]+(?:\.[0-9]+)?(?:[Ee][+-]?[0-9]+)?\Z")
 _KEYWORDS = frozenset({"ENDTREE", "PROCESS", "IMPORT", "LIMIT"})
 

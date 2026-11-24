@@ -796,6 +796,28 @@ LIMIT 1E-9
     assert p.limit == 1e-9 and p.headers == ["**CHAR32", "*XEQ"]
 
 
+def test_parser_percent_and_tilde_names(tmp_path):
+    """CAFTA exports prefix initiators with ``%`` and use ``~`` in names (CRLF)."""
+    text = ("T + G~1 B-%IE\nG~1 * %IE A\nB-%IE * %IE -%IE2\nENDTREE\nPROCESS T\nIMPORT\n"
+            "0.1 %IE I\n0.2 %IE2 I\n0.5 A\n")
+    p = parse_project([_write(tmp_path, text, newline="\r\n")])
+    assert p.diagnostics == []
+    assert p.gates["T"].children == [("G~1", False), ("B-%IE", False)]
+    assert p.gates["B-%IE"].children == [("%IE", False), ("%IE2", True)]
+    assert [(i.name, i.initiator) for i in p.imports] == [("%IE", True), ("%IE2", True), ("A", False)]
+    probs, _ = p.probabilities()
+    # Boolean: %IE and (A or not %IE2) = 0.1 * (1 - 0.5 * 0.2).
+    assert exact_probability(p, "T", probs, "boolean")["probability"] == pytest.approx(0.09)
+    # The characters are only names: renaming them away changes no result.
+    plain = parse_project([_write(tmp_path, text.replace("%", "P_").replace("~", "_"), name="plain.ftp")])
+    plain_probs, _ = plain.probabilities()
+    for semantics in ("boolean", "hull"):
+        for rule in (None, 1):
+            got = exact_probability(p, "T", probs, semantics, max_initiators=rule)["probability"]
+            want = exact_probability(plain, "T", plain_probs, semantics, max_initiators=rule)["probability"]
+            assert got == want, (semantics, rule)
+
+
 def test_parser_crlf_matches_lf(tmp_path):
     fx = FIXTURES / "success_branch_delete_term"
     text = (fx / "model.ftp").read_text()
