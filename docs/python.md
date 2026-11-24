@@ -117,14 +117,19 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
 (safetensors, detected from the header) **or** CAFTA FTP projects to a pcfb
 buffer (the same host path as `fzb compile`). FTP input takes `target=`,
 `overrides=`, `duplicate_import=`, `complement_events=`, `negation=`,
-`max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
+`initiator_values=`, `initiator_unit=`, `max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
 returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). MEF input expands
 common-cause groups unless `ccf=False` (`fzb compile --no-ccf`); `target=` and
 `watch=` take a name or a sequence of names (MEF and nombrilo input take one target). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
 explicit converters; see [`nombrilo.md`](nombrilo.md). `inspect` always runs `pcfb::validate` and
 returns its diagnostics (empty iff the circuit is core-1.1 conforming).
 `run` is the one-shot `fzb run` equivalent: `list[QueryResult(name, estimate,
-ci_low, ci_high, n, hits)]`. `Session` reconstructs the PDAG and streams
+ci_low, ci_high, n, hits)]`, as a `RunResults` list whose `groups` attribute holds one
+`GroupResult(name, unit, terms, estimate, ci_low, ci_high, exposure)` per query group of the file,
+such as an FTP target's initiating-event frequency; `exposure="1y"` adds the probability of at
+least one occurrence over the period (checked before sampling). `exact_groups(pcfb, exposure=None)`
+is the exact counterpart for small models, as `fzb inspect --exact`
+([initiating-event frequencies](ftp-input.md#initiating-event-frequencies)). `Session` reconstructs the PDAG and streams
 raw per-pass popcounts (`num_one_bits` / `total_bits`, pass index, trials
 per pass) so a host-side convergence loop can replace
 `run_compile` + `layer_manager.single_pass_all` without changing results.

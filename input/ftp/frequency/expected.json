@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "description": "Initiating-event values are frequencies (#243): F(T) = sum_i f_i * P(T | I_i TRUE, the other initiating events FALSE), per year. Models from #243; F1-noI is left out (a value above 1 without I is not a probability).",
+  "unit": "per-year",
+  "models": {
+    "F1": {
+      "target": "TOP",
+      "frequency": 0.596000000000001,
+      "terms": {
+        "IE": 20.0
+      }
+    },
+    "F2": {
+      "target": "TOP",
+      "frequency": 12.0,
+      "terms": {
+        "IE": 20.0
+      }
+    },
+    "F3": {
+      "target": "TOP",
+      "frequency": 8.190199999999999,
+      "terms": {
+        "IE": 20.0
+      }
+    },
+    "F4": {
+      "target": "TOP",
+      "frequency": 0.26,
+      "terms": {
+        "IE1": 20.0,
+        "IE2": 3.0
+      }
+    },
+    "F5": {
+      "target": "TOP",
+      "error": "compile.pra_to_pc.mixed-units"
+    },
+    "F6": {
+      "target": "TOP",
+      "frequency": 0.066,
+      "terms": {
+        "IE1": 0.4,
+        "IE2": 0.26
+      }
+    },
+    "F7": {
+      "target": "TOP",
+      "error": "compile.pra_to_pc.mixed-units"
+    }
+  },
+  "exposure": {
+    "model": "F2",
+    "duration": "1mo",
+    "probability": 0.6321205588285577
+  }
+}

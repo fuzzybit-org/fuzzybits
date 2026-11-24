@@ -205,7 +205,7 @@ builder was removed with #182); `fzb compile` drives it ([`ftp-input.md`](ftp-in
 | `-name` operand | complemented operand; on a basic event also marked `literal` (`io.ftp.complement_events = atom`, default; `negation` leaves it unmarked); on a gate never marked (a negation, i.e. a delete term under hull queries) | core |
 | `ENDTREE` (the file's tree section comes first and must be closed) | — | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate` |
 | `IMPORT` records `value name [flags]` | basic event, `literal` probability, one source per record | core |
-| `I` flag | initiating event on the basic event; a value > 1 is a `frequency` literal | core |
+| `I` flag | initiating event on the basic event; its value is a `frequency` literal, whatever its magnitude (#243) | core |
 | other flags | element attribute `ftp.import_flag` | extension (warning) |
 | event imported twice | `io.ftp.duplicate_import = last` (default) / `first` (warning) / `error`; an `I` on any record is kept | diagnosable |
 | referenced name that is neither a gate nor imported | — (never an implicit p = 1) | `io.ftp.undefined-reference` |

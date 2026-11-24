@@ -2434,7 +2434,7 @@ std::optional<NombriloCircuit> try_derive_1to1(const pcfb::ir::Circuit &circuit,
     out.metadata["base_count"] = std::to_string(out.base_count);
     if (options.extras) {
         for (const char *key : {"fuzzybits.pcfb.queries", "fuzzybits.pcfb.event_ids", "fuzzybits.pcfb.sources",
-                                "fuzzybits.pcfb.metadata"}) {
+                                "fuzzybits.pcfb.metadata", "fuzzybits.pcfb.query_groups"}) {
             if (auto v = pcfb_meta_string(circuit, key)) {
                 out.metadata[key] = *v;
             }
@@ -2690,6 +2690,30 @@ pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit,
         out.metadata["fuzzybits.pcfb.event_ids"] = json_u32_array(sample_event);
         out.metadata["fuzzybits.pcfb.sources"] = dump_sources_json(sample_source);
         out.metadata["fuzzybits.pcfb.metadata"] = dump_pcfb_metadata_json(circuit);
+        // pcfb query groups (spec §5.4), e.g. initiating-event frequencies: carried for the reader of the
+        // export; nombrilo has no field for them and the import does not restore them.
+        if (sc->query_groups() != nullptr && sc->query_groups()->size() != 0) {
+            std::string groups = "[";
+            for (const auto *group : *sc->query_groups()) {
+                groups += groups.size() > 1 ? "," : "";
+                groups += "{\"name\":" + json_string(group->name() ? group->name()->string_view() : "") +
+                          ",\"unit\":" + json_string(group->unit() ? group->unit()->string_view() : "") +
+                          ",\"terms\":[";
+                bool first = true;
+                if (group->terms() != nullptr) {
+                    for (const auto *term : *group->terms()) {
+                        std::ostringstream weight;
+                        weight.precision(17);
+                        weight << term->weight();
+                        groups += std::string(first ? "" : ",") + "{\"query\":" + std::to_string(term->query()) +
+                                  ",\"weight\":" + weight.str() + "}";
+                        first = false;
+                    }
+                }
+                groups += "]}";
+            }
+            out.metadata["fuzzybits.pcfb.query_groups"] = groups + "]";
+        }
     }
 
     if (auto r = validate_circuit(out); !r) {

@@ -42,6 +42,22 @@ struct target_quantification final {
     std::string literal_mode;
     // The initiator rule already lowered into the target's logic; unset: no rule.
     std::optional<std::uint32_t> max_initiators_per_cutset;
+    // A query conditioned on one initiating event (#243): its name and its frequency, the query's
+    // weight in its group. Empty / unset: not a conditioned query.
+    std::string initiator;
+    std::optional<double> initiator_frequency;
+};
+
+// A weighted sum of query results (pcfb SubCircuit.query_groups, spec §5.4), such as an
+// initiating-event frequency sum_i f_i * P(target | initiator i). Each term names a target and
+// the weight of its query of `kind`; the writer turns (target, kind) into the query's index. The
+// terms are distinct targets that all have a query of `kind`.
+struct query_group final {
+    std::string name;
+    // Unit of the summed value, e.g. "per-year"; empty: dimensionless.
+    std::string unit;
+    query_kind kind = query_kind::probability;
+    std::vector<std::pair<ir::pc::target_id, double>> terms;
 };
 
 // ir::pc carries no names or provenance, so everything here comes from the
@@ -65,6 +81,8 @@ struct write_options final {
     std::string compile_options;
     // The kind of every target without an entry in target_kinds (option io.pcfb.query_kind).
     query_kind query = query_kind::probability;
+    // Written to SubCircuit.query_groups in this order; empty: no groups (the file is unchanged).
+    std::vector<query_group> query_groups;
 };
 
 struct write_output final {

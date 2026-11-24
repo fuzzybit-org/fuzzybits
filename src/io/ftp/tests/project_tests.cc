@@ -375,14 +375,20 @@ TEST_CASE("FTP duplicate imports follow the duplicate-import policy", "[io][ftp]
     }
 }
 
-TEST_CASE("FTP initiator values above 1 are frequencies; other values must be probabilities", "[io][ftp][project]") {
-    const auto read = readText("TOP * IE A\nENDTREE\nPROCESS TOP\nIMPORT\n  2.5E+00 IE I\n  1.0E-01 A\n");
+TEST_CASE("FTP initiator values are frequencies; other values must be probabilities", "[io][ftp][project]") {
+    // Every `I` value is a frequency, above and below 1 alike (#243), and reading one is not a warning.
+    const auto read =
+        readText("TOP * IE A IE2\nENDTREE\nPROCESS TOP\nIMPORT\n  2.5E+00 IE I\n  1.0E-01 A\n  4.0E-01 IE2 I\n");
     auto const &model = requireModel(read);
-    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.initiator-frequency", "'IE'") == 1);
-    auto const &expression =
-        model.expressions()[model.basic_events()[model.find_basic_event("IE").raw()].expression.raw()];
-    REQUIRE(expression.quantity == pra::quantity_kind::frequency);
-    REQUIRE(expression.value == 2.5);
+    REQUIRE(read.diagnostics().items().empty());
+    for (auto const &[name, value] : {std::pair<const char *, double>{"IE", 2.5}, {"IE2", 0.4}}) {
+        auto const &expression =
+            model.expressions()[model.basic_events()[model.find_basic_event(name).raw()].expression.raw()];
+        REQUIRE(expression.quantity == pra::quantity_kind::frequency);
+        REQUIRE(expression.value == value);
+    }
+    auto const &plain = model.expressions()[model.basic_events()[model.find_basic_event("A").raw()].expression.raw()];
+    REQUIRE(plain.quantity == pra::quantity_kind::probability);
 
     for (const auto *bad : {"  1.5E+00 A\n", "  -1.0E-01 A\n", "  1.0E+999 A\n", "  -2.0E+00 A I\n"}) {
         const auto rejected = readText(std::string("TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n") + bad);

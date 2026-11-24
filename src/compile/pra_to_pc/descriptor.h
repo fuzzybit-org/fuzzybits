@@ -42,9 +42,22 @@ enum class packing_mode : std::uint8_t {
     single_circuit,
 };
 
+// How the value of an initiating event is quantified.
+enum class initiator_values : std::uint8_t {
+    // Its value is a probability. A frequency literal up to 1 is used as one (note
+    // compile.pra_to_pc.frequency-as-probability); above 1 it is an error.
+    probability,
+    // Its value is a frequency (#243). A target whose cone holds initiating events I_1..I_m becomes
+    // m conditioned targets, I_i := TRUE and every other I_j := FALSE, and the target's value is
+    // F = sum_i f_i * value(target | I_i), in initiator_unit. A target that may hold with every
+    // initiating event FALSE mixes a probability with a frequency and is an error
+    // (compile.pra_to_pc.mixed-units). max_initiators_per_cutset must be unset: each conditioned
+    // target has exactly one initiating event TRUE.
+    frequency,
+};
+
 // R1 quantification config. Probability policy is fixed: every basic event
-// in the cone needs a literal; a frequency is used as a probability only if
-// it is at most 1, with a warning.
+// in the cone needs a literal; frequencies follow `initiators`.
 struct quantification_config final {
     // Empty: every primary domain target of the model, in id order, with
     // `default_negation`.
@@ -64,6 +77,12 @@ struct quantification_config final {
     // assignments (and, under the monotone hull, exactly the cut sets) with
     // more than k initiating events.
     std::optional<std::uint32_t> max_initiators_per_cutset;
+    initiator_values initiators = initiator_values::probability;
+    // The unit of every initiating-event frequency, e.g. "per-year". Required under
+    // initiator_values::frequency when a target's cone holds an initiating event
+    // (compile.pra_to_pc.missing-initiator-unit; the FTP driver defaults it to per-year);
+    // recorded, never interpreted.
+    std::optional<std::string> initiator_unit;
     packing_mode packing = packing_mode::single_circuit;
 };
 
@@ -96,6 +115,13 @@ struct transform_report final {
     // Nodes and edges of the initiator rule; included in pc_nodes and pc_edges.
     std::size_t generated_nodes = 0;
     std::size_t generated_edges = 0;
+    // quantification_config::initiators and ::initiator_unit as applied.
+    initiator_values initiators = initiator_values::probability;
+    std::optional<std::string> initiator_unit;
+    // PC targets conditioned on one initiating event, and the nodes lowered once per condition
+    // (gates whose cone holds an initiating event); both included in pc_targets and pc_nodes.
+    std::size_t conditioned_targets = 0;
+    std::size_t conditioned_nodes = 0;
 };
 
 struct pra_pc_lowering final {
