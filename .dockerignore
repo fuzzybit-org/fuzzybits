@@ -15,3 +15,5 @@ cmake-build-*
 .vscode
 .cursor
 .specstory
+# Private submodules (fuzzybit-org/private-fixtures, pra-solver-images): never in an image
+extern/

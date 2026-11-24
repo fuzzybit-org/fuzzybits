@@ -73,3 +73,22 @@ left are formatting, and each replayed commit is reformatted. Run step 2 without
 Some tests and benchmarks use private models (`--private` in `ws.sh`,
 `FUZZYBITS_PRIVATE_FIXTURES_DIR`). Never print, commit or paste their identifiers or values. Report
 aggregates only.
+
+The private repositories are submodules under `extern/`:
+
+| Path | Repository |
+|---|---|
+| `extern/private-fixtures` | the private models and their cards |
+| `extern/pra-solver-images` | wine images for the licensed vendor solvers |
+
+- Each has `update = none` in `.gitmodules`, so `git submodule update --init --recursive` and CI checkouts skip
+  them.
+- With ssh access to the repositories, fetch one explicitly:
+
+  ```bash
+  git submodule update --init --checkout extern/private-fixtures
+  ```
+
+- `ws.sh` never syncs them into a workspace; pass `--private=extern/private-fixtures` instead.
+- CI checks with `scripts/ci/private-submodules.sh` that every submodule under `extern/` has `update = none`, is
+  not populated, and cannot be read from the runner.

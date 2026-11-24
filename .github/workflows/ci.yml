@@ -94,6 +94,12 @@ jobs:
       - name: Tracked non-LFS files must be ≤ 5 MiB
         run: bash scripts/ci/check-tracked-file-sizes.sh
 
+      # extern/ holds private repositories: CI must neither fetch them nor be able to read them.
+      - name: Private submodules stay out of CI
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/private-submodules.sh
+
       - name: uv
         uses: astral-sh/setup-uv@b75a909f75acd358c2196fb9a5f1299a9a8868a4 # v6.7.0
 
