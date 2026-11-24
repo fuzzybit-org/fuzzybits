@@ -1,0 +1,53 @@
+# Scope check (docs/planning.md): every PR into develop against .github/roadmap.toml.
+#
+# The job checks out the *base* commit and runs the base's scope_check.py and
+# roadmap.toml, so a PR's edits to either apply from the next PR on, never to its
+# own check. It reads the PR's metadata, files and patches through the API, and
+# never checks out, builds or runs the head.
+#
+# Trigger: `pull_request`, because check-self-hosted-reachability.py forbids
+# `pull_request_target` repository-wide. With `pull_request`, this workflow file
+# itself comes from the PR. An edit to it is a `governance` surface change, which
+# the base's check reports. GitHub-hosted runner, read-only token (#250).
+#
+# Mode (warn/enforce) is policy.mode in roadmap.toml. The check re-runs on label
+# changes, so applying `scope-exception`, `size-exception` or `surface-approved`
+# updates it.
+name: scope
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled, ready_for_review]
+    branches: [develop]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: scope-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  scope:
+    name: scope
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # New-directory detection compares the PR's added paths with this tree.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Check scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The PR that introduces the check has no base copy to run.
+          if [[ ! -f scripts/ci/scope_check.py || ! -f .github/roadmap.toml ]]; then
+            echo "::notice title=scope::the base branch has no scope check yet; skipped"
+            exit 0
+          fi
+          python3 scripts/ci/scope_check.py --event "${GITHUB_EVENT_PATH}"

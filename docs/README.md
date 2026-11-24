@@ -2,6 +2,7 @@
 
 These pages state what CI or a reproducible command proves. Plans live in
 [ROADMAP.md](../ROADMAP.md) and in issues. How to contribute: [CONTRIBUTING.md](../CONTRIBUTING.md).
+How work is planned, scoped and checked: [planning.md](planning.md).
 
 ## Using fuzzybits
 
@@ -22,8 +23,16 @@ These pages state what CI or a reproducible command proves. Plans live in
 | [pra-pc-ir-architecture.md](pra-pc-ir-architecture.md) | Design analysis: PRA → PC lowering and projection |
 | [ir-pc-passes.md](ir-pc-passes.md) | `ir::pc` passes and compilation levels |
 | [pc-pcfb.md](pc-pcfb.md) | `ir::pc` ↔ `.pcfb` writer and reader |
-| [rfc/monotone-hull-queries.md](rfc/monotone-hull-queries.md) | RFC: monotone-hull probability queries |
+| [rfc/README.md](rfc/README.md) | RFC lifecycle (proposed, accepted, implemented) and index |
+| [rfc/monotone-hull-queries.md](rfc/monotone-hull-queries.md) | RFC (proposed): monotone-hull probability queries |
 | [architecture.md](architecture.md) | Monte Carlo engine design (from the mcSCRAM era; partly dated, #112) |
+
+## Planning
+
+| Page | Covers |
+|---|---|
+| [planning.md](planning.md) | Goals, milestones, triage, PR scope rules, the lab, drift detection, agent rules |
+| [../lab/README.md](../lab/README.md) | Lab experiments: charter, time box, graduation |
 
 ## Building, CI and releases
 

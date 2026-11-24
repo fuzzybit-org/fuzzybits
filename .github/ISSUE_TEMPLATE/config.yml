@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Planning and scope rules
+    url: https://github.com/fuzzybit-org/fuzzybits/blob/develop/docs/planning.md
+    about: How issues are triaged, how milestones work, and where experiments go.
+  - name: Roadmap
+    url: https://github.com/fuzzybit-org/fuzzybits/blob/develop/ROADMAP.md
+    about: The milestones in progress and in queue.
