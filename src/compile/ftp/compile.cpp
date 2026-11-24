@@ -5,6 +5,7 @@
 #include "compile/pra_to_pc/descriptor.h"
 #include "compile/sha256.h"
 #include "io/pcfb/descriptor.h"
+#include "io/pcfb/frequency.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/passes/passes.h"
 #include "ir/pra/model.h"
@@ -37,11 +38,10 @@ namespace pc = ir::pc;
 namespace reader = io::backend::fuzzybits::ftp;
 namespace lowering_ns = backend::fuzzybits::pra_to_pc;
 namespace prog = runtime::progress;
+namespace pcfb_frequency = io::pcfb_frequency;
 using clock = std::chrono::steady_clock;
 
 constexpr std::string_view source_format = "cafta-ftp";
-constexpr std::string_view negation_attribute = "ftp.negation";
-constexpr std::string_view negation_delete_term = "delete_term";
 constexpr std::string_view max_initiators_attribute = "ftp.max_initiators_per_cutset";
 constexpr std::string_view limit_attribute = "ftp.limit";
 
@@ -178,6 +178,8 @@ struct settings_document final {
     std::optional<std::string> duplicate_import;
     std::optional<std::string> complement_events;
     std::optional<std::optional<std::uint32_t>> max_initiators;
+    std::optional<std::string> initiator_values;
+    std::optional<std::string> initiator_unit;
     std::optional<int> level;
 };
 
@@ -189,11 +191,12 @@ class document_reader final {
         if (!root.is_object()) {
             return fail("the document must be a JSON object");
         }
-        static constexpr std::array<std::string_view, 9> known{"targets",           "watch",
-                                                               "overrides",         "negation",
-                                                               "literals",          "duplicate_import",
-                                                               "complement_events", "max_initiators_per_cutset",
-                                                               "compilation_level"};
+        static constexpr std::array<std::string_view, 11> known{"targets",           "watch",
+                                                                "overrides",         "negation",
+                                                                "literals",          "duplicate_import",
+                                                                "complement_events", "max_initiators_per_cutset",
+                                                                "initiator_values",  "initiator_unit",
+                                                                "compilation_level"};
         for (auto const &key : root.keys) {
             if (std::ranges::find(known, std::string_view(key)) == known.end()) {
                 return fail("unknown key " + in_quotes(key));
@@ -228,6 +231,16 @@ class document_reader final {
                 out.max_initiators = std::optional<std::uint32_t>{static_cast<std::uint32_t>(value->integer)};
             } else {
                 error("max_initiators_per_cutset must be a non-negative integer, null or \"none\"");
+            }
+        }
+        if (auto const *value = root.find("initiator_values")) {
+            out.initiator_values = choice(*value, "initiator_values", {"frequency", "probability"});
+        }
+        if (auto const *value = root.find("initiator_unit")) {
+            if (value->is_string() && pcfb_frequency::find_unit(value->string)) {
+                out.initiator_unit = value->string;
+            } else {
+                error("initiator_unit must be one of " + pcfb_frequency::unit_names());
             }
         }
         if (auto const *value = root.find("compilation_level")) {
@@ -405,6 +418,8 @@ struct effective final {
     pra::negation_set negation;
     pra::literal_mode literals = pra::literal_mode::atom_split;
     std::optional<std::uint32_t> max_initiators;
+    std::string initiator_values = "frequency";
+    std::optional<std::string> initiator_unit;
     int level = 1;
     std::vector<override_item> overrides;
 };
@@ -495,7 +510,7 @@ struct lowered_stage final {
         }
     }
     if (settings.negation && !parse_negation(*settings.negation)) {
-        diagnostics.push(option_error("negation must be boolean or hull, not " + in_quotes(*settings.negation)));
+        diagnostics.push(option_error("negation must be boolean, hull or both, not " + in_quotes(*settings.negation)));
     }
     if (settings.literals && !parse_literals(*settings.literals)) {
         diagnostics.push(
@@ -510,6 +525,15 @@ struct lowered_stage final {
         *settings.complement_events != "negation") {
         diagnostics.push(
             option_error("complement-events must be atom or negation, not " + in_quotes(*settings.complement_events)));
+    }
+    if (settings.initiator_values && *settings.initiator_values != "frequency" &&
+        *settings.initiator_values != "probability") {
+        diagnostics.push(option_error("initiator-values must be frequency or probability, not " +
+                                      in_quotes(*settings.initiator_values)));
+    }
+    if (settings.initiator_unit && !pcfb_frequency::find_unit(*settings.initiator_unit)) {
+        diagnostics.push(option_error("initiator-unit must be one of " + pcfb_frequency::unit_names() + ", not " +
+                                      in_quotes(*settings.initiator_unit)));
     }
     settings_document document;
     if (settings.config) {
@@ -558,34 +582,40 @@ struct lowered_stage final {
         return std::nullopt;
     }
 
-    // Attribute defaults sit below the document and the flags.
-    bool negation_from_attribute = false;
+    // The query type is requested, never read from the model: every target is a
+    // probability query unless the flags or the document ask for the hull.
     if (settings.negation) {
         merged.negation = *parse_negation(*settings.negation);
-    } else if (document.negation) {
-        merged.negation = *document.negation;
-    } else if (const auto attribute = attribute_value(*model, negation_attribute);
-               attribute && *attribute == negation_delete_term) {
-        merged.negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
-        negation_from_attribute = true;
     } else {
-        if (attribute) {
-            diagnostics.push(api::make_warning("compile.ftp.unknown-attribute",
-                                               "model attribute ftp.negation has the unknown value " +
-                                                   in_quotes(*attribute) + "; using boolean negation"));
-        }
-        merged.negation = pra::negation_set::of(pra::negation_semantics::boolean);
-    }
-    if (negation_from_attribute) {
-        diagnostics.push(api::make_note("compile.ftp.default-negation",
-                                        "negation defaults to hull: the model records ftp.negation = delete_term "
-                                        "(--negation boolean selects Boolean complements)"));
+        merged.negation = document.negation.value_or(pra::negation_set::of(pra::negation_semantics::boolean));
     }
     merged.literals = settings.literals ? *parse_literals(*settings.literals)
                                         : document.literals.value_or(pra::literal_mode::atom_split);
 
+    merged.initiator_values =
+        settings.initiator_values.value_or(document.initiator_values.value_or(std::string("frequency")));
+    merged.initiator_unit = settings.initiator_unit ? settings.initiator_unit : document.initiator_unit;
+    const bool frequencies = merged.initiator_values == "frequency";
+    // `none` (no rule) agrees with frequencies; a count is a rule, which they make redundant.
+    const auto rule_count = [](auto const &setting) { return setting && setting->has_value(); };
+    if (frequencies && (rule_count(settings.max_initiators_per_cutset) || rule_count(document.max_initiators))) {
+        diagnostics.push(option_error("max-initiators-per-cutset N applies only with --initiator-values probability: "
+                                      "with frequencies each conditioned query has exactly one initiating event"));
+        return std::nullopt;
+    }
+    if (!frequencies && merged.initiator_unit) {
+        diagnostics.push(option_error("initiator-unit applies only with --initiator-values frequency"));
+        return std::nullopt;
+    }
+    if (frequencies && !merged.initiator_unit) {
+        merged.initiator_unit = std::string(pcfb_frequency::default_unit);
+    }
+
     bool initiators_from_attribute = false;
-    if (settings.max_initiators_per_cutset) {
+    if (frequencies) {
+        // The attribute records the cut-set convention of at most one initiator, which the
+        // conditioning already implies.
+    } else if (settings.max_initiators_per_cutset) {
         merged.max_initiators = *settings.max_initiators_per_cutset;
     } else if (document.max_initiators) {
         merged.max_initiators = *document.max_initiators;
@@ -614,6 +644,9 @@ struct lowered_stage final {
     config.default_negation = merged.negation;
     config.default_literals = merged.literals;
     config.max_initiators_per_cutset = merged.max_initiators;
+    config.initiators =
+        frequencies ? lowering_ns::initiator_values::frequency : lowering_ns::initiator_values::probability;
+    config.initiator_unit = merged.initiator_unit;
 
     const std::optional<pra::negation_set> negation_flag =
         settings.negation ? std::optional<pra::negation_set>(merged.negation) : std::nullopt;
@@ -732,6 +765,12 @@ struct lowered_stage final {
         summary.max_initiators_per_cutset = stage.settings.max_initiators;
         summary.initiating_events = stage.lowering.projection.initiators(binding).size();
         summary.literal_events = stage.lowering.projection.literal_events(binding).size();
+        if (binding.condition.valid()) {
+            const pra::domain_ref initiator(binding.condition);
+            summary.initiator = std::string(model->stable_name(initiator));
+            summary.initiator_frequency =
+                model->expressions()[model->basic_events()[binding.condition.raw()].expression.raw()].value;
+        }
         out.push_back(std::move(summary));
     }
     return out;
@@ -749,6 +788,9 @@ struct lowered_stage final {
     root.set("duplicate_import", json::value::make_string(stage.settings.duplicate_import));
     root.set("complement_events", json::value::make_string(stage.settings.complement_events));
     root.set("max_initiators_per_cutset", optional_count(stage.settings.max_initiators));
+    root.set("initiator_values", json::value::make_string(stage.settings.initiator_values));
+    root.set("initiator_unit", stage.settings.initiator_unit ? json::value::make_string(*stage.settings.initiator_unit)
+                                                             : json::value::make_null());
     auto primary = json::value::make_array();
     auto watch = json::value::make_array();
     for (auto const &target : targets) {
@@ -760,6 +802,10 @@ struct lowered_stage final {
         entry.set("literals", json::value::make_string(target.literals));
         entry.set("initiating_events", json::value::make_int(static_cast<std::int64_t>(target.initiating_events)));
         entry.set("literal_events", json::value::make_int(static_cast<std::int64_t>(target.literal_events)));
+        if (!target.initiator.empty()) {
+            entry.set("initiator", json::value::make_string(target.initiator));
+            entry.set("initiator_frequency", json::value::make_number(*target.initiator_frequency));
+        }
         (target.watch ? watch : primary).push(std::move(entry));
     }
     root.set("targets", std::move(primary));
@@ -822,9 +868,8 @@ struct lowered_stage final {
                 diagnostics.push(api::make_error(
                     "compile.ftp.hull-literals-unsupported",
                     "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries "
-                    "literal atoms; "
-                    "use --literals negation (marked operands read as plain complements), --negation boolean, "
-                    "or --complement-events negation"));
+                    "literal atoms; each alternative is a different query: --negation boolean (the probability, "
+                    "the default), or the plain hull with --literals negation or --complement-events negation"));
             }
             return fail(std::move(diagnostics));
         }
@@ -1082,6 +1127,8 @@ auto report_json(compile_result const &result, const unsigned indent) -> std::st
         lowering.set("pc_targets", count(report.pc_targets));
         lowering.set("generated_nodes", count(report.generated_nodes));
         lowering.set("generated_edges", count(report.generated_edges));
+        lowering.set("conditioned_targets", count(report.conditioned_targets));
+        lowering.set("conditioned_nodes", count(report.conditioned_nodes));
         root.set("lowering", std::move(lowering));
         auto passes = json::value::make_array();
         for (auto const &pass : compiled.passes) {

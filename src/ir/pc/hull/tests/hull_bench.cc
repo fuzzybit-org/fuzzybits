@@ -16,9 +16,9 @@
 // around P (larger residuals). --verify re-decides the candidates by complete
 // search alone and by BDDs alone and fails on any difference.
 //
-// --hull lowers the targets as `fzb compile` does for hull queries (negation
-// hull, the initiator rule from the model attribute unless --max-initiators
-// says otherwise), applies the ir::pc passes of --level, and measures the rule
+// --hull lowers the targets as `fzb compile --negation hull --initiator-values
+// probability` does (the initiator rule from the model attribute unless
+// --max-initiators says otherwise), applies the ir::pc passes of --level, and measures the rule
 // as lowered: bounds L and U per lane, the check on the candidates. Results are
 // labelled by target index. With k = 1, --decompose-initiators decides the
 // same lanes by h = ↑g∅ ∨ ⋁ᵢ (xᵢ ∧ ↑gᵢ), where g∅ and gᵢ are g with the
@@ -1131,6 +1131,9 @@ auto run_hull(std::vector<std::string> const &files, hull_options const &options
     const auto sources = read_sources(files);
     compile_ftp::options settings;
     settings.negation = "hull";
+    // The initiator rule is the cut-set reading of initiating events, used only when their values are
+    // probabilities (#243); this bench measures that rule.
+    settings.initiator_values = "probability";
     settings.literals = options.literals;
     settings.max_initiators_per_cutset = options.max_initiators;
     settings.targets = options.targets;

@@ -35,6 +35,14 @@ auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options, 
     };
     rekey(options.target_kinds);
     rekey(options.quantification);
+    // Passes keep every target (only node ids move), so each group term keeps its target.
+    for (auto &group : options.query_groups) {
+        for (auto &[target, weight] : group.terms) {
+            if (target.raw() < passes.target_map.size() && passes.target_map[target.raw()].valid()) {
+                target = passes.target_map[target.raw()];
+            }
+        }
+    }
 
     auto const output_ops = passes.output.op_codes();
     auto const input_ops = input.op_codes();

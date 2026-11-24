@@ -33,6 +33,7 @@ from benchmarks.reference import (  # noqa: E402
     estimate_boolean,
     estimate_hull,
     exact_cut_sets,
+    exact_frequency,
     exact_probability,
     exact_table,
     parse_project,
@@ -832,7 +833,9 @@ def test_parser_percent_and_tilde_names(tmp_path):
     """#240: '%' and '~' are name characters; the values are those of the model with them renamed away."""
     p = parse_project([_write(tmp_path, _PERCENT_TILDE, "m.ftp", "\r\n")])
     assert p.diagnostics == []
+    assert p.gates["T"].children == [("G~1", False), ("B-%IE", False)]
     assert p.gates["B-%IE"].children == [("%IE", False), ("%IE2", True)]
+    assert [(i.name, i.initiator) for i in p.imports] == [("%IE", True), ("%IE2", True), ("A", False)]
     assert p.initiators() == {"%IE", "%IE2"}
     probs, _ = p.probabilities()
     assert exact_probability(p, "T", probs, "boolean")["probability"] == pytest.approx(0.09, rel=1e-12)
@@ -1209,3 +1212,30 @@ def test_private_variant(ij):
     if kind == "observed":
         pytest.skip(f"{label}: observed-only reference (not asserted), z={z:+.2f}")
     assert ok, f"{label}: z={z:+.2f}"
+
+
+FREQUENCY = ROOT / "input" / "ftp" / "frequency"
+
+
+@pytest.mark.parametrize("name", ["F1", "F2", "F3", "F4", "F5", "F6", "F7"])
+def test_exact_frequency_of_the_initiator_models(name: str):
+    """#243: F(T) = sum_i f_i P(T | I_i TRUE, other initiators FALSE); mixed units raise. Hull equals Boolean
+    here, since every conditioned target is coherent."""
+    spec = json.loads((FREQUENCY / "expected.json").read_text(encoding="utf-8"))["models"][name]
+    project = parse_project([FREQUENCY / f"{name}.ftp"])
+    probs, _ = project.probabilities()
+    if "error" in spec:
+        with pytest.raises(ModelError, match="mixed units"):
+            exact_frequency(project, spec["target"], probs)
+        return
+    for semantics in ("boolean", "hull"):
+        result = exact_frequency(project, spec["target"], probs, semantics)
+        assert result["frequency"] == pytest.approx(spec["frequency"], rel=1e-12), semantics
+        assert {term["initiator"]: term["frequency"] for term in result["terms"]} == spec["terms"]
+
+
+def test_exact_frequency_needs_an_initiator(tmp_path):
+    project = parse_project([_write(tmp_path, "TOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n0.1 A\n0.2 B\n", "m.ftp")])
+    probs, _ = project.probabilities()
+    with pytest.raises(ModelError, match="no initiating event"):
+        exact_frequency(project, "TOP", probs)

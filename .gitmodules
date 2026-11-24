@@ -4,6 +4,9 @@
 [submodule "input/generic-pwr-model"]
 	path = input/generic-pwr-model
 	url = https://github.com/openpra-org/generic-pwr-model.git
+[submodule "extern/pcfb"]
+	path = extern/pcfb
+	url = https://github.com/fuzzybit-org/pcfb.git
 [submodule "extern/private-fixtures"]
 	path = extern/private-fixtures
 	url = git@github.com:fuzzybit-org/private-fixtures.git

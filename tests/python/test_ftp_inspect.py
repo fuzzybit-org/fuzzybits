@@ -131,7 +131,6 @@ def test_read_project_conventions_and_structure(tmp_path: Path):
     assert document["conventions"] == {
         "LIMIT": "1.0E-09",
         "MAXSIZE": "3",
-        "ftp.negation": "delete_term",
         "ftp.max_initiators_per_cutset": "1",
         "header_lines": ["**CHAR32", "**DBNAME: sample"],
     }

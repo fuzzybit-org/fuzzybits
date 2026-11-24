@@ -11,7 +11,8 @@ paths:
 ---
 # Build, toolchain and CI
 
-- Every toolchain pin is in `toolchain.env`. The image tag hashes it
+- Every toolchain pin is in `toolchain.env`. Library dependencies built with fuzzybits are not
+  toolchain pins: pcfb is the submodule `extern/pcfb`. The image tag hashes `toolchain.env`
   (`scripts/ci/toolchain-sha.sh`), so any edit there means a toolchain rebuild. Docs:
   `docs/ci-toolchain.md`, `docs/build-variants.md`, `docs/cuda-builds.md`, `docs/images.md`.
 - Presets in `CMakePresets.json` are the only CMake entry points used by CI, `ws.sh` and the

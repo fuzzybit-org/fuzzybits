@@ -184,6 +184,7 @@ class Reader final {
         }
         ops_ = sub->operators();
         queries_ = sub->queries();
+        groups_ = sub->query_groups();
         opCount_ = ops_ == nullptr ? 0U : ops_->size();
         const std::uint64_t tensorCount = sub->tensors() == nullptr ? 0U : sub->tensors()->size();
         if (opCount_ >= kNone - 1 || tensorCount >= kNone - 1) {
@@ -578,6 +579,7 @@ class Reader final {
             }
             kinds.back().push_back(kind);
             queryTarget_.push_back(static_cast<std::uint32_t>(kinds.size() - 1));
+            queryKind_.push_back(kind);
             previousNode = node;
             previousName = name;
         }
@@ -684,6 +686,21 @@ class Reader final {
                                                   "max_initiators_per_cutset' is not a 32-bit count and is ignored"));
                 }
             }
+            if (const auto initiator =
+                    metadataIndex_.contains(prefix + "initiator") ? metadataText(prefix + "initiator") : std::nullopt) {
+                entry.initiator = *initiator;
+                present = true;
+            }
+            if (const auto found = metadataIndex_.find(prefix + "initiator_frequency"); found != metadataIndex_.end()) {
+                if (auto const *number = std::get_if<double>(&output_.metadata[found->second].second)) {
+                    entry.initiator_frequency = *number;
+                    present = true;
+                } else {
+                    diagnostics_.push(warning(diag::invalid_metadata, "metadata '" + prefix +
+                                                                          "initiator_frequency' is not a number and is "
+                                                                          "ignored"));
+                }
+            }
             if (!present) {
                 continue;
             }
@@ -693,7 +710,8 @@ class Reader final {
                 output_.options.quantification[id] = entry;
             } else if (auto const &kept = output_.options.quantification[id];
                        kept.literal_mode != entry.literal_mode ||
-                       kept.max_initiators_per_cutset != entry.max_initiators_per_cutset) {
+                       kept.max_initiators_per_cutset != entry.max_initiators_per_cutset ||
+                       kept.initiator != entry.initiator || kept.initiator_frequency != entry.initiator_frequency) {
                 diagnostics_.push(
                     warning(diag::quantification_conflict, "queries of target " + std::to_string(target) +
                                                                " record different quantification; the first is kept"));
@@ -719,6 +737,19 @@ class Reader final {
             options.target_kinds.emplace(id, targetKinds_[target]);
         }
         fillQuantification();
+        // pcfb::validate has checked the groups (rule 9): terms name queries of one kind, once each.
+        if (groups_ != nullptr) {
+            for (auto const *group : *groups_) {
+                query_group out{.name = std::string(textOf(group->name())), .unit = std::string(textOf(group->unit()))};
+                if (group->terms() != nullptr) {
+                    for (auto const *term : *group->terms()) {
+                        out.kind = queryKind_[term->query()];
+                        out.terms.emplace_back(ir::pc::target_id(queryTarget_[term->query()]), term->weight());
+                    }
+                }
+                options.query_groups.push_back(std::move(out));
+            }
+        }
         if (auto name = metadataText("general.model_name")) {
             options.model_name = std::move(*name);
         } else {
@@ -749,6 +780,7 @@ class Reader final {
 
     flatbuffers::Vector<flatbuffers::Offset<::pcfb::Op>> const *ops_ = nullptr;
     flatbuffers::Vector<flatbuffers::Offset<::pcfb::Query>> const *queries_ = nullptr;
+    flatbuffers::Vector<flatbuffers::Offset<::pcfb::QueryGroup>> const *groups_ = nullptr;
     std::uint32_t opCount_ = 0;
     bool missingReported_ = false;
     std::size_t sourcesDropped_ = 0;
@@ -771,6 +803,7 @@ class Reader final {
     std::vector<std::string> targetNames_;
     std::vector<std::vector<query_kind>> targetKinds_;
     std::vector<std::uint32_t> queryTarget_;
+    std::vector<query_kind> queryKind_;
     std::vector<ir::pc::observable_role> targetRoles_;
     std::unordered_map<std::string, std::size_t> metadataIndex_;
 };

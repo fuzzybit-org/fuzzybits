@@ -14,7 +14,7 @@ from typing import Any, TextIO
 
 from . import __version__, _runtime
 from ._api import compile as compile_pcfb
-from ._api import _ftp_inspect_native, exact, inspect, pcfb_to_nombrilo, run
+from ._api import GroupResult, _ftp_inspect_native, exact, exact_groups, inspect, pcfb_to_nombrilo, run
 
 ROOT_USAGE = (
     "Usage: fzb <command> [options]\n\n"
@@ -161,7 +161,7 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
         options["watch"] = list(args.watch)
     if overrides:
         options["overrides"] = overrides
-    for key in ("duplicate_import", "complement_events", "negation", "literals"):
+    for key in ("duplicate_import", "complement_events", "negation", "literals", "initiator_values", "initiator_unit"):
         if getattr(args, key) is not None:
             options[key] = getattr(args, key)
     if args.max_initiators_per_cutset is not None:
@@ -235,7 +235,7 @@ def cmd_compile(argv: Sequence[str]) -> int:
         usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
         "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
         "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--no-ccf] "
-        "[--negation boolean|hull] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
+        "[--negation boolean|hull|both] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
         "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
@@ -289,13 +289,23 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
     parser.add_argument(
         "--negation",
-        help="FTP: boolean|hull (default hull when the model records ftp.negation = delete_term)",
+        help="FTP: query type of every target: boolean (the probability, default), hull or both",
     )
     parser.add_argument(
         "--max-initiators-per-cutset",
-        help="FTP: at most N initiating events per cut set, or none (default: the model's ftp.max_initiators_per_cutset)",
+        help="FTP, with --initiator-values probability: at most N initiating events per cut set, or none "
+        "(default: the model's ftp.max_initiators_per_cutset)",
     )
     parser.add_argument("--literals", help="FTP hull targets: atom_split|omega_l|negation (default atom_split)")
+    parser.add_argument(
+        "--initiator-values",
+        help="FTP: I values are frequency (default: one conditioned query per initiating event, summed as the "
+        "target's frequency) or probability (values up to 1)",
+    )
+    parser.add_argument(
+        "--initiator-unit",
+        help="FTP: unit of the I values, per-year|per-month|per-week|per-day|per-hour (default per-year with frequencies)",
+    )
     parser.add_argument("--config", metavar="FILE", help="FTP: quantification config FILE (JSON); flags override it")
     parser.add_argument(
         "--report",
@@ -354,6 +364,8 @@ def cmd_compile(argv: Sequence[str]) -> int:
         "negation": args.negation,
         "max-initiators-per-cutset": args.max_initiators_per_cutset,
         "literals": args.literals,
+        "initiator-values": args.initiator_values,
+        "initiator-unit": args.initiator_unit,
         "config": args.config,
         "report": args.report,
     }
@@ -461,6 +473,12 @@ def cmd_export(argv: Sequence[str]) -> int:
         return 1
 
     try:
+        if args.strict and _runtime.native().query_groups_pcfb(Path(args.input_file).read_bytes()):
+            print(
+                "fzb export: warning: --strict drops the file's query groups (frequencies); without --strict "
+                "they are kept in fuzzybits.pcfb.query_groups",
+                file=sys.stderr,
+            )
         blob = pcfb_to_nombrilo(args.input_file, extras=not args.strict)
     except Exception as exc:
         return _cli_error("export", exc)
@@ -542,7 +560,7 @@ def cmd_inspect(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb inspect",
         usage=(
-            "fzb inspect model.pcfb [--validate] [--json] [--exact]\n"
+            "fzb inspect model.pcfb [--validate] [--json] [--exact [--exposure DURATION]]\n"
             "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
             "[--complement-events atom|negation] [--strict] [--counts-only]"
         ),
@@ -556,8 +574,9 @@ def cmd_inspect(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--exact",
         action="store_true",
-        help="exhaustive exact P(query) for small models (≤ 30 events)",
+        help="exhaustive exact P(query) for small models (≤ 30 events), and the exact value of every frequency group",
     )
+    parser.add_argument("--exposure", metavar="DURATION", help="with --exact: as for fzb run")
     parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
     parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
     parser.add_argument("--strict", action="store_true", help="FTP: exit 1 on warnings as well as errors")
@@ -580,6 +599,12 @@ def cmd_inspect(argv: Sequence[str]) -> int:
         return 1
     if kind == "ftp":
         return _inspect_ftp_command(args)
+    if kind == "ftp" and args.exposure:
+        print("fzb inspect: --exposure applies to .pcfb input only", file=sys.stderr)
+        return 1
+    if args.exposure and not args.exact:
+        print("fzb inspect: --exposure needs --exact", file=sys.stderr)
+        return 1
     for flag, value in (
         ("duplicate-import", args.duplicate_import),
         ("complement-events", args.complement_events),
@@ -627,13 +652,20 @@ def cmd_inspect(argv: Sequence[str]) -> int:
             print(f"fzb inspect --exact: {msg}", file=sys.stderr)
             return 1
         print(f"exact_probability  {p:.16e}")
+        try:
+            groups = exact_groups(args.input_file, exposure=args.exposure)
+        except Exception as exc:
+            print(f"fzb inspect --exact: {exc}", file=sys.stderr)
+            return 1
+        _print_groups(groups, args.exposure, "exact_group  ")
     return rc
 
 
 def cmd_run(argv: Sequence[str]) -> int:
     parser = _Parser(
         prog="fzb run",
-        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]\n"
+        usage="fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json] "
+        "[--exposure DURATION]\n"
         "              [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb run options",
         add_help=False,
@@ -654,6 +686,12 @@ def cmd_run(argv: Sequence[str]) -> int:
         help="AdaptiveCpp backend: auto, cuda, hip, omp, or metal",
     )
     parser.add_argument("--json", action="store_true", help="print results as JSON")
+    parser.add_argument(
+        "--exposure",
+        metavar="DURATION",
+        help="for each frequency group, also print P(at least one occurrence in DURATION) = 1 - exp(-F * DURATION); "
+        "DURATION is a number and y|mo|wk|d|h, e.g. 1y, 1mo",
+    )
     parser.add_argument(
         "--progress-log",
         metavar="FILE",
@@ -695,6 +733,7 @@ def cmd_run(argv: Sequence[str]) -> int:
             backend=backend,
             progress=_progress_enabled(args),
             progress_log=args.progress_log,
+            exposure=args.exposure,
         )
     except Exception as exc:
         return _cli_error("run", exc)
@@ -713,6 +752,8 @@ def cmd_run(argv: Sequence[str]) -> int:
                 for row in rows
             ]
         }
+        if rows.groups:
+            payload["groups"] = [_group_json(group, args.exposure) for group in rows.groups]
         json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
         sys.stdout.write("\n")
     else:
@@ -721,6 +762,7 @@ def cmd_run(argv: Sequence[str]) -> int:
                 f"{row.name}  {row.estimate:.8e}  [{row.ci_low:.8e}, {row.ci_high:.8e}]  "
                 f"n={row.n}  hits={row.hits}"
             )
+        _print_groups(rows.groups, args.exposure, "")
     return 0
 
 
@@ -742,6 +784,40 @@ def _utf8_stdio() -> None:
             reconfigure(encoding="utf-8", errors=getattr(stream, "errors", None) or "strict")
         except (OSError, ValueError):
             pass
+
+
+def _unit_label(unit: str) -> str:
+    for spec in _runtime.native().frequency_units():
+        if spec["unit"] == unit:
+            return str(spec["label"])
+    return unit or "(no unit)"
+
+
+def _print_groups(groups: Sequence[GroupResult], exposure: str | None, prefix: str) -> None:
+    """Group lines as the native ``fzb`` prints them."""
+    for group in groups:
+        print(
+            f"{prefix}{group.name}  {group.estimate:.8e}  [{group.ci_low:.8e}, {group.ci_high:.8e}]  "
+            f"{_unit_label(group.unit)}  ({len(group.terms)} conditioned queries)"
+        )
+        if group.exposure is not None:
+            p, low, high = group.exposure
+            print(f"{prefix}{group.name}  P(>=1 in {exposure})  {p:.8e}  [{low:.8e}, {high:.8e}]")
+
+
+def _group_json(group: GroupResult, exposure: str | None) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "name": group.name,
+        "unit": group.unit,
+        "terms": len(group.terms),
+        "estimate": group.estimate,
+        "ci_low": group.ci_low,
+        "ci_high": group.ci_high,
+    }
+    if group.exposure is not None:
+        p, low, high = group.exposure
+        out["exposure"] = {"duration": exposure, "probability": p, "ci_low": low, "ci_high": high}
+    return out
 
 
 def main(argv: Sequence[str] | None = None) -> int:

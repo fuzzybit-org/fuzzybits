@@ -4,6 +4,7 @@
 
 #include "runtime/tests/test_backend.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
@@ -152,8 +153,10 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                 INFO("policy " << policy);
                 std::filesystem::remove(pcfb);
                 const auto base = "compile" + inputs +
-                                  " --negation boolean --max-initiators-per-cutset none --duplicate-import " + policy +
-                                  " --no-progress -o " + quoted(pcfb.string()) + " --report " + quoted(report.string());
+                                  " --negation boolean --initiator-values probability --max-initiators-per-cutset none "
+                                  "--duplicate-import " +
+                                  policy + " --no-progress -o " + quoted(pcfb.string()) + " --report " +
+                                  quoted(report.string());
 
                 if (outcome.find("results")->is(json::value::kind_type::null)) {
                     const auto failed = run_fzb(base, scratch);
@@ -203,7 +206,8 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                         const auto &target = results->keys[index];
                         INFO("variant target " << target << flags);
                         const auto ran =
-                            run_fzb("compile" + inputs + " --negation boolean --duplicate-import " +
+                            run_fzb("compile" + inputs +
+                                        " --negation boolean --initiator-values probability --duplicate-import " +
                                         variant.find("policy")->string + flags + " --no-progress --target " +
                                         quoted(target) + " -o " + quoted(pcfb.string()),
                                     scratch);
@@ -221,14 +225,15 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][cli][hull]") {
+TEST_CASE("fzb compile writes probability queries for FTP input unless hull is requested",
+          "[compile][ftp][cli][hull]") {
     const auto scratch = scratch_directory("hull");
     const auto out = scratch / "m.pcfb";
-    // No complemented event: no marked literals, so the default hull target can be written.
     const auto model = scratch / "m.ftp";
     std::ofstream(model)
         << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
+    // The default: a minor-1 file with one probability query, which the exact evaluator reads.
     const auto ran =
         run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch);
     INFO(ran.err);
@@ -237,20 +242,23 @@ TEST_CASE("fzb compile defaults to hull queries for FTP input", "[compile][ftp][
     REQUIRE(inspected.status == 0);
     auto summary = json::parse(inspected.out);
     REQUIRE(summary);
+    REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
+    require_close(exact_of(out, scratch), 0.314);
+
+    // --negation hull: a minor-2 file with the hull query and its metadata.
+    const auto hull = run_fzb(
+        "compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()), scratch);
+    INFO(hull.err);
+    REQUIRE(hull.status == 0);
+    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --validate --json", scratch).out);
+    REQUIRE(summary);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
     auto const *metadata = summary.value().find("metadata");
     REQUIRE(metadata->find("compile.query.0.negation")->string == "monotone_hull");
     REQUIRE(metadata->find("compile.query.0.literal_mode")->string == "atom_split");
-    REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset")->string == "1");
-
-    // --negation boolean: a minor-1 file, which the exact evaluator still reads.
-    const auto boolean = run_fzb(
-        "compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()), scratch);
-    REQUIRE(boolean.status == 0);
-    summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
-    REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
-    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
-    require_close(exact_of(out, scratch), 0.314);
+    // Initiating-event values are frequencies by default, so no initiator rule is lowered or recorded.
+    REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset") == nullptr);
 
     // Both kinds on one target: two queries with the target's name.
     const auto config = scratch / "both.json";
@@ -273,7 +281,8 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
     const auto scratch = scratch_directory("literals");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
     const auto out = (scratch / "m.pcfb");
-    for (const char *flags : {"", " --literals omega_l", " --negation hull"}) {
+    for (const char *flags : {" --negation hull --initiator-values probability",
+                              " --negation hull --initiator-values probability --literals omega_l"}) {
         const auto refused = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << refused.err);
         REQUIRE(refused.status != 0);
@@ -282,7 +291,9 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
         REQUIRE(refused.err.find("--literals negation") != std::string::npos);
         REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
     }
-    for (const char *flags : {" --literals negation", " --negation boolean", " --complement-events negation"}) {
+    for (const char *flags : {" --initiator-unit per-year", " --negation boolean --initiator-values probability",
+                              " --negation hull --initiator-values probability --literals negation",
+                              " --negation hull --initiator-values probability --complement-events negation"}) {
         const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << ran.err);
         REQUIRE(ran.status == 0);
@@ -298,9 +309,9 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     const auto out = scratch / "m.pcfb";
     std::ofstream(model)
         << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
-    REQUIRE(
-        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
-        0);
+    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()),
+                    scratch)
+                .status == 0);
     const auto run =
         run_fzb("run " + quoted(out.string()) + " --trials 1024" + fuzzybits::testing::backend_flag(), scratch);
     INFO(run.err);
@@ -309,11 +320,10 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     REQUIRE(run.err.find("MONOTONE_HULL_PROBABILITY") != std::string::npos);
     REQUIRE(run.out.find("estimate") == std::string::npos);
 
-    // The same model as a Boolean file runs.
+    // The same model compiled with the default probability query runs.
     REQUIRE(
-        run_fzb("compile " + quoted(model.string()) + " --negation boolean --no-progress -o " + quoted(out.string()),
-                scratch)
-            .status == 0);
+        run_fzb("compile " + quoted(model.string()) + " --no-progress -o " + quoted(out.string()), scratch).status ==
+        0);
     const auto boolean = run_fzb(
         "run " + quoted(out.string()) + " --trials 65536" + fuzzybits::testing::backend_flag() + " --json", scratch);
     INFO(boolean.err);
@@ -328,7 +338,7 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     const auto report = scratch / "report.json";
     const auto config = scratch / "config.json";
     std::ofstream(config)
-        << R"({"negation": "boolean", "max_initiators_per_cutset": null, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
+        << R"({"negation": "boolean", "initiator_values": "probability", "max_initiators_per_cutset": null, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
 
     // The file alone: no initiator rule, SEQ-3 first with OPER forced FALSE.
     auto ran = run_fzb("compile " + model + " --config " + quoted(config.string()) + " --no-progress -o " +
@@ -385,7 +395,9 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     REQUIRE(names[1].string == "TOP");
 
     // The text summary prints the counts.
-    ran = run_fzb("compile " + model + " --negation boolean --no-progress -o " + quoted(pcfb.string()), scratch);
+    ran = run_fzb("compile " + model + " --negation boolean --initiator-values probability --no-progress -o " +
+                      quoted(pcfb.string()),
+                  scratch);
     REQUIRE(ran.status == 0);
     REQUIRE(ran.err.find("wrote ") != std::string::npos);
     REQUIRE(ran.err.find("circuit: nodes ") != std::string::npos);
@@ -394,7 +406,8 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     // The default output name follows the first file's stem, like the MEF path; a directory names the project.
     const auto previous = std::filesystem::current_path();
     std::filesystem::current_path(scratch);
-    ran = run_fzb("compile " + model + " --negation boolean --no-progress --quiet", scratch);
+    ran = run_fzb("compile " + model + " --negation boolean --initiator-values probability --no-progress --quiet",
+                  scratch);
     std::filesystem::current_path(previous);
     REQUIRE(ran.status == 0);
     REQUIRE(ran.err.empty());
@@ -407,7 +420,9 @@ TEST_CASE("fzb compile takes several files and a directory as one project", "[co
     const auto directory = fixtures_root() / "multi_file_project";
     const auto pcfb = scratch / "p.pcfb";
     const auto flags =
-        std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
+        std::string(
+            " --negation boolean --initiator-values probability --max-initiators-per-cutset none --no-progress -o ") +
+        quoted(pcfb.string());
 
     const auto by_directory = run_fzb("compile " + quoted(directory.string()) + flags, scratch);
     INFO(by_directory.err);
@@ -556,7 +571,7 @@ TEST_CASE("fzb compile --ccf is a deprecated no-op and conflicts with --no-ccf",
 TEST_CASE("fzb compile accepts --no-ccf and the deprecated --ccf for FTP input", "[compile][ftp][cli][ccf]") {
     const auto scratch = scratch_directory("ccf-ftp");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
-    const auto flags = std::string(" --negation boolean --no-progress -o ");
+    const auto flags = std::string(" --negation boolean --initiator-values probability --no-progress -o ");
     const auto base = scratch / "base.pcfb";
     const auto other = scratch / "other.pcfb";
 
@@ -587,7 +602,9 @@ TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][
     std::ofstream(watched) << "E3\n";
     const auto pcfb = scratch / "m.pcfb";
     const auto flags =
-        std::string(" --negation boolean --max-initiators-per-cutset none --no-progress -o ") + quoted(pcfb.string());
+        std::string(
+            " --negation boolean --initiator-values probability --max-initiators-per-cutset none --no-progress -o ") +
+        quoted(pcfb.string());
 
     // Plain names and files mix; file contents expand in place.
     auto ran = run_fzb("compile " + quoted(model.string()) + " --target TOP --target @" + quoted(targets.string()) +
@@ -692,6 +709,92 @@ TEST_CASE("fzb compile help shows the new target and CCF flags", "[compile][cli]
     for (auto const *needle : {"--target NAME|@FILE", "--watch NAME|@FILE", "--no-ccf"}) {
         INFO(needle);
         REQUIRE(ran.out.find(needle) != std::string::npos);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb run and fzb inspect --exact report frequency groups and exposure",
+          "[compile][ftp][cli][frequency][mc]") {
+    const auto scratch = scratch_directory("frequency");
+    const auto root = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "frequency";
+    const auto f2 = scratch / "f2.pcfb";
+    const auto f4 = scratch / "f4.pcfb";
+    for (auto const &[model, out] : {std::pair{root / "F2.ftp", f2}, std::pair{root / "F4.ftp", f4}}) {
+        const auto ran = run_fzb("compile " + quoted(model.string()) + " --initiator-unit per-year --no-progress -o " +
+                                     quoted(out.string()),
+                                 scratch);
+        INFO(ran.err);
+        REQUIRE(ran.status == 0);
+    }
+
+    // F2: F = 12 per year; over one month 1 - exp(-1).
+    auto inspected = run_fzb("inspect " + quoted(f2.string()) + " --exact --exposure 1mo", scratch);
+    INFO(inspected.err);
+    REQUIRE(inspected.status == 0);
+    REQUIRE(inspected.out.find("exact_group  TOP  1.20000000e+01") != std::string::npos);
+    REQUIRE(inspected.out.find("per year  (1 conditioned queries)") != std::string::npos);
+    REQUIRE(inspected.out.find("P(>=1 in 1mo)  6.32120559e-01") != std::string::npos);
+    REQUIRE(run_fzb("inspect " + quoted(f2.string()) + " --exposure 1mo", scratch).status != 0);
+    REQUIRE(run_fzb("inspect " + quoted(f2.string()) + " --exact --exposure 1fortnight", scratch).status != 0);
+
+    // F4: two conditioned queries; the group estimate is the weighted sum, near F = 0.26 per year.
+    const auto ran = run_fzb("run " + quoted(f4.string()) + " --trials 1e6 --exposure 1y --json --no-progress" +
+                                 fuzzybits::testing::backend_flag(),
+                             scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    auto document = json::parse(ran.out);
+    REQUIRE(document);
+    auto const &queries = document.value().find("queries")->items;
+    REQUIRE(queries.size() == 2);
+    REQUIRE(queries[0].find("name")->string == "TOP|IE1");
+    REQUIRE(queries[1].find("name")->string == "TOP|IE2");
+    auto const &group = document.value().find("groups")->items.at(0);
+    REQUIRE(group.find("name")->string == "TOP");
+    REQUIRE(group.find("unit")->string == "per-year");
+    const auto estimate = group.find("estimate")->number;
+    REQUIRE(std::abs(estimate - (20.0 * queries[0].find("estimate")->number +
+                                 3.0 * queries[1].find("estimate")->number)) <= 1e-12 * estimate);
+    REQUIRE(std::abs(estimate - 0.26) <= 0.05 * 0.26);
+    REQUIRE(group.find("ci_low")->number <= estimate);
+    REQUIRE(group.find("ci_high")->number >= estimate);
+    REQUIRE(std::abs(group.find("exposure")->find("probability")->number - -std::expm1(-estimate)) <= 1e-12);
+
+    // --exposure on a file without groups is refused before sampling.
+    const auto plain = scratch / "plain.pcfb";
+    REQUIRE(run_fzb("compile " + quoted((fixtures_root() / "header_limit" / "model.ftp").string()) +
+                        " --no-progress -o " + quoted(plain.string()),
+                    scratch)
+                .status == 0);
+    const auto refused = run_fzb("run " + quoted(plain.string()) + " --trials 1024 --exposure 1y --no-progress" +
+                                     fuzzybits::testing::backend_flag(),
+                                 scratch);
+    REQUIRE(refused.status != 0);
+    REQUIRE(refused.err.find("no frequency groups") != std::string::npos);
+    std::filesystem::remove_all(scratch);
+}
+
+TEST_CASE("fzb run answers every query of a multi-target file", "[compile][ftp][cli][mc]") {
+    // Queries outside the first query's cone used to fail with "unknown event" (the PDAG root was the first query).
+    const auto scratch = scratch_directory("multi");
+    const auto out = scratch / "m.pcfb";
+    REQUIRE(run_fzb("compile " + quoted((fixtures_root() / "process_multi_target").string()) + " --no-progress -o " +
+                        quoted(out.string()),
+                    scratch)
+                .status == 0);
+    const auto ran = run_fzb("run " + quoted(out.string()) + " --trials 1e6 --json --no-progress" +
+                                 fuzzybits::testing::backend_flag(),
+                             scratch);
+    INFO(ran.err);
+    REQUIRE(ran.status == 0);
+    auto document = json::parse(ran.out);
+    REQUIRE(document);
+    auto const &queries = document.value().find("queries")->items;
+    REQUIRE(queries.size() == 3);
+    const std::array expected{0.622, 0.464, 0.098};
+    for (std::size_t index = 0; index < queries.size(); ++index) {
+        INFO(queries[index].find("name")->string);
+        REQUIRE(std::abs(queries[index].find("estimate")->number - expected[index]) <= 0.01);
     }
     std::filesystem::remove_all(scratch);
 }

@@ -22,6 +22,31 @@
   continues the open gate, indented or not. An indented continuation line whose second operand is
   an event named with digits only (`  A 7 B`) used to add operands; it now defines an at-least gate.
   To keep it a continuation, move that operand off the second position.
+- FTP targets are probability queries by default (#244). `fzb compile` and `fuzzybits.compile`
+  used to write a monotone-hull query for every FTP target, which `fzb run` refuses, because the
+  reader recorded `ftp.negation = delete_term` for every project and the driver took the query type
+  from it. The query type is now requested, never read from the model:
+  - Without `--negation` (or `negation` in the config document), every target is a `PROBABILITY`
+    query and the file is pcfb minor 1. Results change only where a target's cone has a complement.
+  - To keep the previous default, pass `--negation hull` (`negation="hull"`, or `"negation": "hull"`
+    in the config document). `--negation both` writes both queries.
+  - The reader no longer records the `ftp.negation` attribute. `fzb inspect` and
+    `fuzzybits.read_project` drop it from `conventions`, and the `compile.ftp.default-negation`
+    note is gone.
+- FTP `I` values are initiating-event frequencies (#243). By default (`--initiator-values frequency`) a
+  target whose cone holds initiating events becomes one conditioned query per initiator (`<target>|<initiator>`,
+  that initiator TRUE and the others FALSE), and the file gains a query group per target: its frequency
+  `F = Σ f_i · P(target | I_i)` in the unit of `--initiator-unit`.
+  - `--initiator-unit per-year|per-month|per-week|per-day|per-hour` names the unit, `per-year` by default. The
+    unit is recorded in each group and printed with its results.
+  - A target that may hold with every initiating event FALSE is an error (`compile.pra_to_pc.mixed-units`).
+  - The initiator rule no longer applies by default: with frequencies `--max-initiators-per-cutset N` is an
+    error (`none` is accepted) and the `ftp.max_initiators_per_cutset` attribute is ignored.
+  - To keep the previous reading (values up to 1 as probabilities, above 1 rejected, the initiator rule),
+    pass `--initiator-values probability` (`initiator_values="probability"`, or `"initiator_values":
+    "probability"` in the config document).
+  - The reader marks every `I` value as a frequency, and the `io.ftp.initiator-frequency` warning is gone.
+    `compile.pra_to_pc.frequency-as-probability` is now a note.
 
 ### Changes
 
@@ -29,6 +54,17 @@
   shut libxml2 down before freeing its input schema validator.
 - The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`
   output piped or redirected to a cp1252 stream raised `UnicodeEncodeError`.
+- `fzb run` and `fuzzybits.run` print the query groups of a file after its queries (the weighted sum
+  of the estimates and a conservative interval), and `fzb inspect --exact` and `fuzzybits.exact_groups`
+  their exact values. `--exposure DURATION` (`1y`, `1mo`, `720h`; `exposure=` in Python) adds the
+  probability of at least one occurrence over the period, `1 − e^{−F·τ}`. `fzb export --to nombrilo`
+  carries the groups in `fuzzybits.pcfb.query_groups`; `--strict` drops them with a warning.
+- pcfb is the git submodule `extern/pcfb` (pin: its gitlink; `toolchain.env` no longer pins it, so a
+  pcfb bump does not rebuild the toolchain image). It is pinned to the query-group amendment of pcfb
+  1.2 (`SubCircuit.query_groups`), on top of the literal-atom amendment. Run
+  `git submodule update --init extern/pcfb` in existing checkouts.
+- `fzb run` answers every query of a file whose queries are not all in the first query's cone, such as
+  an FTP project with several targets; such files failed with `unknown event`.
 - AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks
   cuda, then hip, then omp) in the `generic` wheel and images. Needs the ROCm 7 user space and
   access to `/dev/kfd` and a render node (#228).

@@ -25,8 +25,8 @@ struct override_spec final {
 };
 
 // Settings of one compile. Unset values take, in this order, the `config`
-// document, the model attributes the reader records (`ftp.negation`,
-// `ftp.max_initiators_per_cutset`) and the built-in default. Flags override
+// document, the model attribute the reader records
+// (`ftp.max_initiators_per_cutset`) and the built-in default. Flags override
 // the document: `targets` and `watch` replace its lists, `negation` and
 // `literals` replace every per-target choice in it, `overrides` replace its
 // entries of the same name.
@@ -41,12 +41,21 @@ struct options final {
     std::optional<std::string> duplicate_import;
     // atom | negation (default atom).
     std::optional<std::string> complement_events;
-    // boolean | hull (default: hull when the model records
-    // ftp.negation = delete_term, else boolean).
+    // boolean | hull | both: the query type of every target (default
+    // boolean, the probability query). Never read from the model.
     std::optional<std::string> negation;
     // Outer unset: from the document or the model attribute. Inner unset: no
-    // rule (`none`).
+    // rule (`none`). Only with initiator_values = probability.
     std::optional<std::optional<std::uint32_t>> max_initiators_per_cutset;
+    // frequency | probability (default frequency, #243): how `I` values are
+    // quantified. frequency: one conditioned query per initiating event in a
+    // target's cone, grouped as the target's frequency; probability: values up
+    // to 1 used as probabilities, above 1 rejected.
+    std::optional<std::string> initiator_values;
+    // per-year | per-month | per-week | per-day | per-hour: the unit of every
+    // `I` value (default per-year with initiator_values = frequency); rejected
+    // with probability.
+    std::optional<std::string> initiator_unit;
     // atom_split | omega_l | negation (default atom_split).
     std::optional<std::string> literals;
     // 0 or 1 (default 1).
@@ -68,6 +77,10 @@ struct target_summary final {
     bool monotone_hull = false;
     std::string literals;
     std::optional<std::uint32_t> max_initiators_per_cutset;
+    // A query conditioned on this initiating event (initiator_values =
+    // frequency); empty otherwise. Its frequency is the query's weight.
+    std::string initiator;
+    std::optional<double> initiator_frequency;
     std::size_t initiating_events = 0;
     std::size_t literal_events = 0;
 };

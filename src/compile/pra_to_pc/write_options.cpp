@@ -6,6 +6,7 @@
 #include "ir/pra/projection.h"
 
 #include <cstddef>
+#include <map>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -40,9 +41,41 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
 
     writer::write_options options;
     api::diagnostic_list diagnostics;
+    // Conditioned targets of one domain target (or element) form one group per query kind, in
+    // binding order; the group is the target's frequency (descriptor.h, initiator_values).
+    struct pending_group final {
+        std::string name;
+        std::vector<std::pair<ir::pc::target_id, double>> terms;
+        bool boolean = false;
+        bool hull = false;
+    };
+    std::vector<pending_group> groups;
+    std::map<std::pair<ir::pra::domain_target_id, ir::pra::domain_ref>, std::size_t> group_of;
     for (auto const &target : lowering.projection.target_bindings()) {
-        const auto name = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target))
+        const auto base = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target))
                                                        : model->stable_name(target.subject);
+        std::string name(base);
+        writer::target_quantification quantification{
+            .literal_mode = std::string(literal_mode_name(target.literals)),
+            .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
+        };
+        if (target.condition.valid()) {
+            const auto initiator = std::string(model->stable_name(ir::pra::domain_ref(target.condition)));
+            const auto frequency =
+                model->expressions()[model->basic_events()[target.condition.raw()].expression.raw()].value;
+            name += "|" + initiator;
+            quantification.initiator = initiator;
+            quantification.initiator_frequency = frequency;
+            const auto key = std::make_pair(target.domain_target, target.subject);
+            auto [found, added] = group_of.try_emplace(key, groups.size());
+            if (added) {
+                groups.push_back(pending_group{.name = std::string(base)});
+            }
+            auto &group = groups[found->second];
+            group.terms.emplace_back(target.pc_target, frequency);
+            group.boolean = group.boolean || target.negation.boolean;
+            group.hull = group.hull || target.negation.monotone_hull;
+        }
         std::vector<writer::query_kind> kinds;
         if (target.negation.boolean) {
             kinds.push_back(writer::query_kind::probability);
@@ -66,13 +99,22 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
             diagnostics.push(api::make_error("compile.pra_to_pc.invalid-artifact",
                                              "target '" + std::string(name) + "' requests no negation semantics"));
         }
-        options.target_names.emplace(target.pc_target, std::string(name));
+        options.target_names.emplace(target.pc_target, std::move(name));
         options.target_kinds.emplace(target.pc_target, std::move(kinds));
-        options.quantification.emplace(target.pc_target,
-                                       writer::target_quantification{
-                                           .literal_mode = std::string(literal_mode_name(target.literals)),
-                                           .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
-                                       });
+        options.quantification.emplace(target.pc_target, std::move(quantification));
+    }
+    const auto unit = lowering.report.initiator_unit.value_or(std::string{});
+    for (auto &group : groups) {
+        if (group.boolean) {
+            options.query_groups.push_back(writer::query_group{
+                .name = group.name, .unit = unit, .kind = writer::query_kind::probability, .terms = group.terms});
+        }
+        if (group.hull) {
+            options.query_groups.push_back(writer::query_group{.name = group.name,
+                                                               .unit = unit,
+                                                               .kind = writer::query_kind::monotone_hull_probability,
+                                                               .terms = std::move(group.terms)});
+        }
     }
     for (auto const &event : lowering.projection.event_bindings()) {
         options.node_names.emplace(event.node, std::string(model->stable_name(event.element)));

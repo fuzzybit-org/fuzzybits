@@ -75,6 +75,7 @@ position `i` of the file the writer sets
 | `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
 | `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
 | `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+| `compile.query.<i>.initiator`, `.initiator_frequency` | string and float64: the initiating event a conditioned query sets TRUE, and its frequency (the query's weight in its group), if set |
 | `compile.complement_tensors` | bytes: little-endian `uint32` tensor ids in ascending order, the unnamed `NOT` tensors the writer created for sources used in both polarities; only written when there is at least one |
 | `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |
 
@@ -85,6 +86,22 @@ target whose cone has marked literal events is refused with
 `compile.pra_to_pc.hull-literals-unsupported` until pcfb carries literal atoms (RFC 7.3, #197). In
 `negation` mode marked operands are ordinary complements, the plain hull a hull query means, so the
 target is written.
+
+## Query groups
+
+`write_options::query_groups` writes pcfb `SubCircuit.query_groups` (pcfb spec §5.4, a v1.2
+amendment): each group has a name, a unit and terms `(target, weight)` for queries of one `kind`; the
+writer turns each `(target, kind)` into the index of that query. A group with no terms, a target
+that is not in the circuit or has no query of the group's kind, a target listed twice, or a negative
+or non-finite weight is `io.pcfb.invalid-query-group`. A file with groups declares minor 2; a file
+without them is unchanged. The groups add a quantity and change no query.
+
+`pcfb_write_options` writes one group per domain target and kind under
+`initiator_values::frequency` (#243): its conditioned targets, weighted by their initiators'
+frequencies, in the lowering's `initiator_unit`. `io/pcfb/query_groups.h` reads a file's groups, and
+`io/pcfb/frequency.h` holds the units and the `--exposure` conversion. `fzb run`, `fzb inspect --exact`
+and Python's `run(...).groups` / `exact_groups` evaluate them; nombrilo export carries them in
+`fuzzybits.pcfb.query_groups` (dropped by `--strict`).
 
 ## Order
 
@@ -181,7 +198,8 @@ in `pcfb::validate`.
 | `NO_OP` | one-operand AND (`io.pcfb.no-op-as-and`) |
 | `Query` | target on the tensor's node; consecutive queries with one tensor and one name and distinct kinds are one target with several kinds |
 
-Per-query `compile.query.<i>.*` metadata fills `options.quantification`; `general.*` and
+Per-query `compile.query.<i>.*` metadata fills `options.quantification`, and `SubCircuit.query_groups`
+fills `options.query_groups` (term queries mapped back to their targets and kinds); `general.*` and
 `compile.options` fill the provenance fields. Node and target names are the file's (a basic event
 without `SampleArgs.name` has none, so a rewrite generates `e<event_id>` again).
 
