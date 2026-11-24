@@ -11,7 +11,7 @@ bit-parallel Boolean Monte Carlo estimator and a hull estimator.
 from __future__ import annotations
 
 from .cli import run
-from .exact import exact_cut_sets, exact_probability, exact_table
+from .exact import exact_cut_sets, exact_frequency, exact_probability, exact_table
 from .ftp import Diagnostic, ModelError, Project, parse_project
 from .hull import LaneChecker, estimate_hull
 from .montecarlo import estimate_boolean
@@ -25,6 +25,7 @@ __all__ = [
     "estimate_boolean",
     "estimate_hull",
     "exact_cut_sets",
+    "exact_frequency",
     "exact_probability",
     "exact_table",
     "parse_project",

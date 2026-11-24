@@ -45,8 +45,17 @@ struct options final {
     // boolean, the probability query). Never read from the model.
     std::optional<std::string> negation;
     // Outer unset: from the document or the model attribute. Inner unset: no
-    // rule (`none`).
+    // rule (`none`). Only with initiator_values = probability.
     std::optional<std::optional<std::uint32_t>> max_initiators_per_cutset;
+    // frequency | probability (default frequency, #243): how `I` values are
+    // quantified. frequency: one conditioned query per initiating event in a
+    // target's cone, grouped as the target's frequency; probability: values up
+    // to 1 used as probabilities, above 1 rejected.
+    std::optional<std::string> initiator_values;
+    // per-year | per-month | per-week | per-day | per-hour: the unit of every
+    // `I` value (default per-year with initiator_values = frequency); rejected
+    // with probability.
+    std::optional<std::string> initiator_unit;
     // atom_split | omega_l | negation (default atom_split).
     std::optional<std::string> literals;
     // 0 or 1 (default 1).
@@ -68,6 +77,10 @@ struct target_summary final {
     bool monotone_hull = false;
     std::string literals;
     std::optional<std::uint32_t> max_initiators_per_cutset;
+    // A query conditioned on this initiating event (initiator_values =
+    // frequency); empty otherwise. Its frequency is the query's weight.
+    std::string initiator;
+    std::optional<double> initiator_frequency;
     std::size_t initiating_events = 0;
     std::size_t literal_events = 0;
 };

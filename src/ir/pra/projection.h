@@ -124,6 +124,11 @@ struct target_binding final {
     // are in neither set; their operands are outside the cone.
     table_range<basic_event_id> initiators;
     table_range<basic_event_id> literal_events;
+    // Under initiator_values::frequency: the initiating event this PC target is conditioned on
+    // (TRUE; every other initiating event of the cone FALSE). The domain target's frequency is the
+    // sum over its conditioned PC targets of the initiator's value times the target's value.
+    // Invalid for an unconditioned target.
+    basic_event_id condition;
 };
 
 // Sparse maps between a PRA model and the PC circuit lowered from it

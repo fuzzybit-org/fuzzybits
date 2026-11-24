@@ -38,7 +38,7 @@ Mixing FTP and non-FTP inputs is an error. MEF and nombrilo inputs are unchanged
 | `-name` operand | complemented operand; on a basic event also marked `literal` (`--complement-events atom`, default); on a gate always a negation |
 | `ENDTREE` | closes the tree section, which comes first in each file |
 | `IMPORT` records `value name [flags]` | basic events with literal probabilities; the value `-1` is probability 1 (a warning) |
-| `I` flag | initiating event; a value above 1 is a frequency and is used as a probability only up to 1, with a warning |
+| `I` flag | initiating event; its value is a frequency, of any magnitude ([Initiating-event frequencies](#initiating-event-frequencies)) |
 | `PROCESS names` | primary targets; without `PROCESS`, the root gates (a warning) |
 | `LIMIT x` | recorded in the metadata only; never a truncation in this path |
 | `MAXSIZE n` (outside a tree section) | the cut-set order limit, recorded like `LIMIT` (`ftp.maxsize`); never applied |
@@ -95,7 +95,9 @@ event without the `I` flag. Each of these is a mistake that would otherwise chan
 | `--duplicate-import error\|first\|last` | duplicate `IMPORT` records | `last` |
 | `--complement-events atom\|negation` | `atom`: `-EVENT` is a marked literal; `negation`: an ordinary complement | `atom` |
 | `--negation boolean\|hull\|both` | the query type of every target: the probability (complements are negations), the monotone hull (complements are delete terms) or both | `boolean` |
-| `--max-initiators-per-cutset N\|none` | every target is ANDed with the delete term of more than N initiating events in its cone | `1` (the reader records `ftp.max_initiators_per_cutset = 1`) |
+| `--initiator-values frequency\|probability` | `frequency`: each `I` value is a frequency, and a target becomes one conditioned query per initiating event in its cone, grouped as its frequency; `probability`: values up to 1 are probabilities, above 1 an error | `frequency` |
+| `--initiator-unit per-year\|per-month\|per-week\|per-day\|per-hour` | the unit of every `I` value with frequencies; rejected with probabilities | `per-year` with frequencies |
+| `--max-initiators-per-cutset N\|none` | with `--initiator-values probability` only: every target is ANDed with the delete term of more than N initiating events in its cone | `1` (the reader records `ftp.max_initiators_per_cutset = 1`) |
 | `--literals atom_split\|omega_l\|negation` | how hull targets read marked literals | `atom_split` |
 | `-c 0\|1` | `0`: no passes; `1`: `ir::pc` passes (constant folding of literal 0 and, for Boolean targets, 1; propagation; single-input elimination; coalescing) | `1` |
 | `--config FILE` | quantification config (JSON, below); flags override it | none |
@@ -104,13 +106,15 @@ event without the `I` flag. Each of these is a mistake that would otherwise chan
 | `--no-progress`, `--quiet`, `--progress-log FILE` | as for MEF input | |
 
 Precedence, highest first: command-line flags, the `--config` document, the model attribute the reader records
-(`ftp.max_initiators_per_cutset`), the built-in default. The query type (`negation`) is never read from the model. `--target` and `--watch` replace the document's
-lists; `--negation` and `--literals` replace every per-target choice in it; `--override` replaces an entry of the same
+(`ftp.max_initiators_per_cutset`, with probabilities only), the built-in default. The query type (`negation`) and the
+initiator reading are never read from the model. `--target` and `--watch` replace the document's lists; `--negation`
+and `--literals` replace every per-target choice in it; `--override` replaces an entry of the same
 name. `LIMIT` is never an option: it goes to the metadata only. The text summary prints counts (files, gates, events,
 circuit nodes and edges before and after the passes, warnings and notes); warnings print up to ten, the report has all.
 
 Python: `fuzzybits.compile([...], target=..., watch=..., overrides={...}, duplicate_import=..., complement_events=...,
-negation=..., max_initiators_per_cutset=..., literals=..., config=..., pdag_c=..., report=True)`. With `report=True`
+negation=..., initiator_values=..., initiator_unit=..., max_initiators_per_cutset=..., literals=..., config=...,
+pdag_c=..., report=True)`. With `report=True`
 it returns `(blob, report)`; warnings are issued as `UserWarning`. The Python `fzb` script has the same flags.
 
 ### Config document
@@ -119,7 +123,8 @@ it returns `(blob, report)`; warnings are issued as `UserWarning`. The Python `f
 {
   "negation": "boolean",
   "literals": "atom_split",
-  "max_initiators_per_cutset": null,
+  "initiator_values": "frequency",
+  "initiator_unit": "per-year",
   "compilation_level": 1,
   "duplicate_import": "last",
   "complement_events": "atom",
@@ -131,7 +136,8 @@ it returns `(blob, report)`; warnings are issued as `UserWarning`. The Python `f
 
 Every key is optional and unknown keys are an error (`compile.ftp.invalid-config`). A target is a name or an object with
 `name`, `subject` (`domain_target`, `gate` or `basic_event`; default: looked up in that order), `negation` (`boolean`,
-`hull`, `both` or an array) and `literals`. `max_initiators_per_cutset` is a number, `null` or `"none"`. Overrides are an
+`hull`, `both` or an array) and `literals`. `initiator_values` and `initiator_unit` take the values of the flags.
+`max_initiators_per_cutset` is a number, `null` or `"none"`, with `"initiator_values": "probability"` only. Overrides are an
 object of `name: true|false|1|0` or an array of `{name, value, kind}`. TOML is not read yet.
 
 ## Negation semantics and the `.pcfb` writer
@@ -158,9 +164,54 @@ marked operands is therefore refused in `atom_split` mode (the default) and in `
 alternatives. Each is a different query: `--negation boolean` (the probability, the default), or the plain hull with
 `--literals negation` or `--complement-events negation`. Probability targets ignore the marks.
 
-`--max-initiators-per-cutset N` ANDs each target with `not atleast(N + 1; initiating events in its cone)`. Under Boolean
-semantics this deletes the assignments with more than N initiating events (a probability change), under the hull it
-deletes the cut sets with more than N.
+`--max-initiators-per-cutset N` (with `--initiator-values probability`) ANDs each target with
+`not atleast(N + 1; initiating events in its cone)`. Under Boolean semantics this deletes the assignments with more
+than N initiating events (a probability change), under the hull it deletes the cut sets with more than N.
+
+## Initiating-event frequencies
+
+The value on an `I`-flagged import is an initiating-event frequency (events per unit time), whatever its magnitude
+(#243). FTP keeps the value and drops its unit, so the unit is given with `--initiator-unit`, `per-year` by default.
+The compiler cannot check the unit: a project in another unit compiled without the flag is labelled per year. The
+unit is written into each query group and printed with every result (`fzb run`, `fzb inspect --exact`,
+`GroupResult.unit`). One unit applies to every `I` value of the project: a project that mixes units cannot be
+detected from the export.
+
+With `--initiator-values frequency` (the default), a target whose cone holds initiating events `I_1 … I_m` with values
+`f_i` has the frequency
+
+```
+F(T) = Σ_i f_i · P(T | I_i = TRUE, I_j = FALSE for j ≠ i)
+```
+
+- The lowering writes one query per initiating event: the target with `I_i` set TRUE and the cone's other initiating
+  events FALSE (constants, as with `--override`). Query `i` is named `<target>|<initiator>` and records
+  `compile.query.<i>.initiator` and `.initiator_frequency`. With `--negation hull` each conditioned query is a hull
+  query: `F` uses the hull of each conditioned target.
+- The `.pcfb` file holds a query group per target and kind (pcfb `SubCircuit.query_groups`, spec §5.4): the target's
+  name, the unit, and the terms `(query, f_i)`. The queries stay ordinary probability queries, so a runtime that does
+  not read groups still answers each of them correctly.
+- `fzb run` and `fuzzybits.run` print each group after the queries: `F` as the weighted sum of the query estimates,
+  and the interval `[Σ f_i lo_i, Σ f_i hi_i]`. The queries share their samples, so their estimates are correlated;
+  that interval is conservative whatever the correlation (with `m` terms at level `1 − α`, coverage is at least
+  `1 − mα`). `fzb inspect --exact` and `fuzzybits.exact_groups` give the exact `F` of small models.
+- `--exposure DURATION` (`fzb run`, `fzb inspect --exact`; `exposure=` in Python), a positive number followed by
+  `y`, `mo`, `wk`, `d` or `h`, adds `P(at least one occurrence in τ) = 1 − e^{−F·τ}`, assuming occurrences form a
+  Poisson process. A year is 365.25 days and a month a twelfth of it. The period converts the result only: it is
+  never applied to the initiators, because `P(I) = 1 − e^{−f·τ}` saturates a frequent initiator and loses its
+  multiplicity.
+- A target that may hold with every initiating event FALSE mixes a probability with a frequency
+  (`compile.pra_to_pc.mixed-units`). The check evaluates the target with every initiating event FALSE in three-valued
+  logic: it is sound, but conservative where a target is false only for a reason that logic cannot see (`x ∧ ¬x`).
+- The initiator rule is not used: each conditioned query has exactly one initiating event TRUE, which is what the rule
+  approximates in cut sets. `--max-initiators-per-cutset N` with frequencies is an error (`none` is accepted), and
+  the `ftp.max_initiators_per_cutset` attribute is ignored.
+
+`--initiator-values probability` keeps the earlier reading: values up to 1 are probabilities (note
+`compile.pra_to_pc.frequency-as-probability`), values above 1 are rejected (`compile.pra_to_pc.frequency-out-of-range`),
+and the initiator rule applies. The conformance fixtures that tag probabilities with `I` (`initiator_rule`,
+`imports_tags_duplicates`, `multi_file_project`) are checked this way; `input/ftp/frequency/` holds the models of #243
+with their frequencies.
 
 ## `.pcfb` metadata
 
@@ -169,10 +220,11 @@ deletes the cut sets with more than N.
 | `general.source_format` | `cafta-ftp` |
 | `general.source_sha256` | SHA-256 of the file contents concatenated in sorted path order (32 bytes; `fzb inspect --json` prints hex) |
 | `general.model_name` | project name, else the input directory name, else the first sorted file's stem |
-| `compile.query.<i>.negation`, `.literal_mode`, `.max_initiators_per_cutset` | per query `i` in file order: `boolean` or `monotone_hull`, the literal mode, and the initiator rule when one is lowered into the target (written by the `.pcfb` writer) |
-| `compile.options` | JSON of the effective settings: compilation level, reader options, initiator rule, the `ftp.limit` text, and per target (queries in file order, then watch targets) the subject kind, negation semantics, literal mode and the counts of initiating and literal events; overrides |
+| `compile.query.<i>.negation`, `.literal_mode`, `.max_initiators_per_cutset`, `.initiator`, `.initiator_frequency` | per query `i` in file order: `boolean` or `monotone_hull`, the literal mode, the initiator rule when one is lowered into the target, and for a conditioned query its initiating event and frequency (written by the `.pcfb` writer) |
+| `compile.options` | JSON of the effective settings: compilation level, reader options, initiator values and unit, initiator rule, the `ftp.limit` text, and per target (queries in file order, then watch targets) the subject kind, negation semantics, literal mode and the counts of initiating and literal events; overrides |
 
-Query names are the target names (the PROCESS target, gate or basic event name); basic-event samples carry the event
+Query names are the target names (the PROCESS target, gate or basic event name), and `<target>|<initiator>` for a
+conditioned query. Basic-event samples carry the event
 name and gate nodes their gate name where an output node still computes them. Names survive `-c 1`: the lowering's
 projection is composed with the pass node maps (`compose_write_options`), so a gate eliminated onto another node, a
 folded constant or an absorbed child loses its name and nothing else does.
@@ -257,7 +309,7 @@ Every diagnostic has a stable id; the report and `fzb inspect` list them with se
 | `io.ftp.import-without-header`, `io.ftp.invalid-probability`, `io.ftp.invalid-limit`, `io.ftp.invalid-maxsize` | `IMPORT`, `LIMIT` and `MAXSIZE` errors |
 | `io.ftp.undefined-reference`, `io.ftp.undefined-process-target`, `io.ftp.gate-imported` | a name has no definition, or is both a gate and an imported event |
 | `io.ftp.duplicate-import` | warning (error under `--duplicate-import error`), naming every record |
-| `io.ftp.initiator-frequency`, `io.ftp.unknown-import-flag`, `io.ftp.duplicate-limit`, `io.ftp.duplicate-maxsize`, `io.ftp.missing-process` | warnings |
+| `io.ftp.unknown-import-flag`, `io.ftp.duplicate-limit`, `io.ftp.duplicate-maxsize`, `io.ftp.missing-process` | warnings |
 | `io.ftp.name-case`, `io.ftp.minus-one-value`, `io.ftp.ignored-tokens` | warnings: a name written in another letter case, a value `-1` read as 1, tokens after a keyword not read ([Grammar](#grammar)) |
 | `io.ftp.no-targets`, `io.ftp.no-files`, `io.ftp.open-failed`, `io.ftp.invalid-option` | project and option errors |
 | `ir.pra.cycle`, `ir.pra.invalid-*`, `ir.pra.duplicate-name` | model validation errors |
@@ -267,14 +319,17 @@ Every diagnostic has a stable id; the report and `fzb inspect` list them with se
 | `compile.ftp.default-initiator-rule` | note: the initiator rule came from the model attribute |
 | `compile.ftp.unknown-attribute` | warning: an attribute value the driver does not know is ignored |
 | `compile.pra_to_pc.unknown-target`, `.unknown-element`, `.ambiguous-element`, `.duplicate-target`, `.duplicate-override`, `.unused-override` | target and override resolution |
-| `compile.pra_to_pc.frequency-as-probability`, `.frequency-out-of-range` | an initiator frequency used as a probability (at most 1, warning) or rejected |
+| `compile.pra_to_pc.frequency-as-probability`, `.frequency-out-of-range` | with `--initiator-values probability`: an initiator frequency used as a probability (at most 1, note) or rejected |
+| `compile.pra_to_pc.missing-initiator-unit` | frequencies without a unit in the lowering config; the FTP driver always supplies one (`per-year` by default), so only direct callers of the lowering see it |
+| `compile.pra_to_pc.mixed-units` | a target may hold with every initiating event FALSE |
+| `compile.pra_to_pc.initiator-rule-with-frequencies` | an initiator rule with frequencies (the driver reports it as `compile.ftp.invalid-option`) |
 | `compile.pra_to_pc.complement-under-negation`, `.complemented-initiator`, `.mixed-literal` | hull literal checks |
 | `pc.pipeline.incompatible-pass`, `pc.pipeline.pass-skipped`, `pc.pass.atom-split-skipped` | pass planning and skipped rewrites |
 | `io.pcfb.*` | writer errors |
 
 The conformance fixtures in `input/ftp/conformance/` document the expected diagnostics and values; the `invalid_*`
-fixtures fail with their ids. `fzb compile --negation boolean` followed by `fzb inspect --exact` reproduces the `boolean`
-values of every fixture (`src/compile/ftp/tests/cli_tests.cc`).
+fixtures fail with their ids. `fzb compile --negation boolean --initiator-values probability` followed by
+`fzb inspect --exact` reproduces the `boolean` values of every fixture (`src/compile/ftp/tests/cli_tests.cc`).
 
 ## Limits
 
@@ -282,3 +337,5 @@ values of every fixture (`src/compile/ftp/tests/cli_tests.cc`).
 - Hull queries are written but not yet estimated (#183); hull targets with marked literals wait for literal atoms in pcfb.
 - `fzb inspect --exact` for hull queries (#202) is separate.
 - `--config` reads JSON only.
+- Frequencies carry one unit per project, which FTP does not record. Importance measures of frequency targets are not
+  defined yet.

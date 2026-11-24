@@ -393,6 +393,18 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
               std::vector<pra::basic_event_id>{i1, i2, i3});
     }
 
+    SECTION("frequencies need a unit in the lowering config") {
+        // The FTP driver supplies per-year by default; direct callers of the lowering name the unit.
+        lowering::quantification_config config;
+        config.initiators = lowering::initiator_values::frequency;
+        auto unitless = lowering::lower(model, config);
+        REQUIRE_FALSE(unitless);
+        CHECK(count(unitless.diagnostics(), "compile.pra_to_pc.missing-initiator-unit") == 1);
+        config.initiator_unit = "per-hour";
+        const auto artifact = require_lower(model, config);
+        CHECK(artifact.report.initiator_unit == "per-hour");
+    }
+
     SECTION("at most one initiator") {
         lowering::quantification_config config;
         config.max_initiators_per_cutset = 1;

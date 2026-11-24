@@ -34,7 +34,8 @@ def _close(actual: float, expected: float) -> bool:
 
 
 def _boolean(**options):
-    return {"negation": "boolean", "max_initiators_per_cutset": None, **options}
+    # The conformance fixtures tag probabilities with I, so their values are read as probabilities (#243).
+    return {"negation": "boolean", "initiator_values": "probability", "max_initiators_per_cutset": None, **options}
 
 
 @pytest.mark.parametrize("fixture", FIXTURES, ids=lambda path: path.name)
@@ -58,6 +59,7 @@ def test_conformance_fixtures_match_expected_boolean_values(fixture: Path):
     for variant in spec.get("variants", []):
         options = {
             "negation": "boolean",
+            "initiator_values": "probability",
             "duplicate_import": variant["policy"],
             "overrides": variant.get("overrides"),
             "max_initiators_per_cutset": variant.get("max_initiators_per_cutset"),
@@ -102,7 +104,8 @@ def test_probability_is_the_default_and_hull_is_requested(tmp_path: Path):
     meta = summary["metadata"]
     assert meta["compile.query.0.negation"] == "monotone_hull"
     assert meta["compile.query.0.literal_mode"] == "atom_split"
-    assert meta["compile.query.0.max_initiators_per_cutset"] == "1"
+    # Initiating-event values are frequencies by default, so no initiator rule is lowered or recorded.
+    assert "compile.query.0.max_initiators_per_cutset" not in meta
     both = fuzzybits.inspect(fuzzybits.compile([model], config={"targets": [{"name": "TOP", "negation": "both"}]}))
     assert both["queries"] == 2
     assert both["metadata"]["compile.query.1.negation"] == "monotone_hull"
@@ -115,14 +118,16 @@ def test_hull_targets_with_marked_literals_are_refused(tmp_path: Path):
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
     for options in ({}, {"literals": "omega_l"}):
         with pytest.raises(RuntimeError) as failure:
-            fuzzybits.compile([model], negation="hull", **options)
+            fuzzybits.compile([model], negation="hull", initiator_values="probability", **options)
         assert "compile.ftp.hull-literals-unsupported" in str(failure.value)
         assert "--literals negation" in str(failure.value)
-    blob = fuzzybits.compile([model], negation="hull", literals="negation")
+    blob = fuzzybits.compile([model], negation="hull", initiator_values="probability", literals="negation")
     assert fuzzybits.inspect(blob)["metadata"]["compile.query.0.literal_mode"] == "negation"
-    assert fuzzybits.compile([model], negation="hull", complement_events="negation")
+    assert fuzzybits.compile([model], negation="hull", initiator_values="probability", complement_events="negation")
     # The default probability query is not affected by marked literals.
-    assert fuzzybits.inspect(fuzzybits.compile([model]))["metadata"]["compile.query.0.negation"] == "boolean"
+    assert fuzzybits.inspect(fuzzybits.compile([model], initiator_unit="per-year"))["metadata"][
+        "compile.query.0.negation"
+    ] == "boolean"
 
 
 def test_targets_watch_overrides_and_levels(tmp_path: Path):
@@ -148,13 +153,16 @@ def test_targets_watch_overrides_and_levels(tmp_path: Path):
 def test_defaults_come_from_the_model_attributes_and_flags_override_the_config():
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
     # ftp.max_initiators_per_cutset = 1 is the default rule: TOP is 0.288, not 0.45.
-    by_attribute = fuzzybits.compile([model], negation="boolean")
+    by_attribute = fuzzybits.compile([model], negation="boolean", initiator_values="probability")
     assert _close(fuzzybits.exact(by_attribute), 0.28800000000000003)
-    without = fuzzybits.compile([model], negation="boolean", max_initiators_per_cutset="none")
+    without = fuzzybits.compile(
+        [model], negation="boolean", initiator_values="probability", max_initiators_per_cutset="none"
+    )
     assert _close(fuzzybits.exact(without), 0.45000000000000007)
 
     config = {
         "negation": "boolean",
+        "initiator_values": "probability",
         "max_initiators_per_cutset": None,
         "targets": ["SEQ-3", "TOP"],
         "overrides": {"OPER": 0},
@@ -177,7 +185,7 @@ def test_defaults_come_from_the_model_attributes_and_flags_override_the_config()
 
 def test_config_from_a_file(tmp_path: Path):
     model = _write(tmp_path, "m.ftp", SIMPLE)
-    config = _write(tmp_path, "config.json", json.dumps({"negation": "boolean", "max_initiators_per_cutset": None}))
+    config = _write(tmp_path, "config.json", json.dumps({"negation": "boolean", "initiator_values": "probability", "max_initiators_per_cutset": None}))
     for value in (config, str(config)):
         assert _close(fuzzybits.exact(fuzzybits.compile([model], config=value)), 0.314)
 
@@ -260,6 +268,8 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
         str(model),
         "--negation",
         "boolean",
+        "--initiator-values",
+        "probability",
         "--max-initiators-per-cutset",
         "none",
         "--target",
@@ -278,7 +288,18 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
     assert _close(fuzzybits.exact(pcfb), 0.5)
     assert json.loads(report.read_text())["options"]["overrides"][0]["name"] == "OPER"
 
-    hull = _run_fzb("compile", str(model), "--negation", "hull", "--no-progress", "-o", str(pcfb), cwd=tmp_path)
+    hull = _run_fzb(
+        "compile",
+        str(model),
+        "--negation",
+        "hull",
+        "--initiator-values",
+        "probability",
+        "--no-progress",
+        "-o",
+        str(pcfb),
+        cwd=tmp_path,
+    )
     assert hull.returncode != 0
     assert "hull-literals-unsupported" in hull.stderr
     assert "--literals negation" in hull.stderr
@@ -291,3 +312,56 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
     mef = _run_fzb("compile", str(xml), "--negation", "boolean", "-o", str(pcfb), cwd=tmp_path)
     assert mef.returncode != 0
     assert "CAFTA FTP input only" in mef.stderr
+
+
+FREQUENCY = Path(__file__).resolve().parents[2] / "input" / "ftp" / "frequency"
+
+
+@pytest.mark.parametrize("name", ["F1", "F2", "F3", "F4", "F5", "F6", "F7"])
+def test_initiator_frequencies_are_query_groups(name: str):
+    """#243: one conditioned query per initiating event, grouped as the target's frequency."""
+    spec = json.loads((FREQUENCY / "expected.json").read_text(encoding="utf-8"))["models"][name]
+    model = FREQUENCY / f"{name}.ftp"
+    if "error" in spec:
+        with pytest.raises(RuntimeError, match=spec["error"]):
+            fuzzybits.compile([model], initiator_unit="per-year")
+        return
+    blob = fuzzybits.compile([model], initiator_unit="per-year")
+    summary = fuzzybits.inspect(blob)
+    assert summary["query_names"] == [f"TOP|{initiator}" for initiator in spec["terms"]]
+    (group,) = fuzzybits.exact_groups(blob)
+    assert group.name == "TOP" and group.unit == "per-year"
+    assert [weight for _, weight in group.terms] == list(spec["terms"].values())
+    assert _close(group.estimate, spec["frequency"])
+
+
+def test_initiator_frequency_run_and_exposure():
+    blob = fuzzybits.compile([FREQUENCY / "F4.ftp"], initiator_unit="per-year")
+    rows = fuzzybits.run(blob, trials=1_000_000, backend="omp", exposure="1y")
+    assert [row.name for row in rows] == ["TOP|IE1", "TOP|IE2"]
+    (group,) = rows.groups
+    assert _close(group.estimate, 20.0 * rows[0].estimate + 3.0 * rows[1].estimate)
+    assert abs(group.estimate - 0.26) <= 0.05 * 0.26
+    assert group.ci_low <= group.estimate <= group.ci_high
+    assert _close(group.exposure[0], -math.expm1(-group.estimate))
+
+    (exact,) = fuzzybits.exact_groups(fuzzybits.compile([FREQUENCY / "F2.ftp"], initiator_unit="per-year"), exposure="1mo")
+    assert _close(exact.estimate, 12.0)
+    assert _close(exact.exposure[0], -math.expm1(-1.0))
+    with pytest.raises(ValueError, match="exposure"):
+        fuzzybits.exact_groups(blob, exposure="1fortnight")
+    with pytest.raises(ValueError, match="no frequency groups"):
+        fuzzybits.run(fuzzybits.compile([FREQUENCY / "F6.ftp"], initiator_values="probability",
+                                        max_initiators_per_cutset="none"), trials=1024, backend="omp", exposure="1y")
+
+
+def test_initiator_unit_defaults_to_per_year_and_the_probability_reading_stays():
+    (group,) = fuzzybits.exact_groups(fuzzybits.compile([FREQUENCY / "F1.ftp"]))
+    assert group.unit == "per-year"
+    assert _close(group.estimate, 0.596)
+    with pytest.raises(RuntimeError, match="frequency-out-of-range"):
+        fuzzybits.compile([FREQUENCY / "F1.ftp"], initiator_values="probability")
+    blob = fuzzybits.compile([FREQUENCY / "F6.ftp"], initiator_values="probability", max_initiators_per_cutset="none")
+    assert _close(fuzzybits.exact(blob), 0.0556)
+    with pytest.raises(RuntimeError, match="invalid-option"):
+        fuzzybits.compile([FREQUENCY / "F1.ftp"], initiator_unit="per-year", max_initiators_per_cutset=1)

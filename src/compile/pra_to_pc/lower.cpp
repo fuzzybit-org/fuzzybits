@@ -18,9 +18,11 @@
 #include "ir/pra/target.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <string>
@@ -146,7 +148,8 @@ class lowering final {
     lowering(ir::handle handle, pra::model const &model, quantification_config const &config)
         : handle_(std::move(handle)), model_(model), config_(config), overridden_(model, override_state::none),
           reached_(model, 0), nodes_(model, pc::bool_node_id::invalid()), is_initiator_(model.basic_events().size(), 0),
-          sources_(model.expressions().size(), pc::probability_source_id::invalid()) {
+          sources_(model.expressions().size(), pc::probability_source_id::invalid()),
+          dependent_(model.gates().size(), 0) {
         for (auto const &initiator : model.initiating_events()) {
             is_initiator_[initiator.event.raw()] = 1;
         }
@@ -155,6 +158,11 @@ class lowering final {
     [[nodiscard]] auto run() && -> lowering_result {
         resolve_targets();
         resolve_overrides();
+        if (frequencies() && config_.max_initiators_per_cutset) {
+            error("compile.pra_to_pc.initiator-rule-with-frequencies",
+                  "max_initiators_per_cutset applies only when initiating-event values are probabilities; with "
+                  "frequencies every conditioned target has exactly one initiating event");
+        }
         if (diagnostics_.has_errors()) {
             return lowering_result::fail(std::move(diagnostics_));
         }
@@ -165,6 +173,14 @@ class lowering final {
             return lowering_result::fail(std::move(diagnostics_));
         }
         collect_target_events();
+        if (frequencies()) {
+            mark_dependent_gates();
+            check_frequency_targets();
+            if (diagnostics_.has_errors()) {
+                return lowering_result::fail(std::move(diagnostics_));
+            }
+            plan_conditions();
+        }
         check_capacity();
         if (diagnostics_.has_errors()) {
             return lowering_result::fail(std::move(diagnostics_));
@@ -183,6 +199,17 @@ class lowering final {
 
     [[nodiscard]] auto is_overridden(const pra::domain_ref ref) const -> bool {
         return overridden_[ref] != override_state::none;
+    }
+
+    [[nodiscard]] auto frequencies() const noexcept -> bool {
+        return config_.initiators == initiator_values::frequency;
+    }
+
+    // Under frequencies, an initiating event that no override replaces is a condition: a constant in
+    // every conditioned target, never a sampled basic event.
+    [[nodiscard]] auto is_condition(const pra::domain_ref ref) const -> bool {
+        const auto event = ref.as<pra::basic_event_id>();
+        return frequencies() && event.valid() && is_initiator_[event.raw()] != 0 && !is_overridden(ref);
     }
 
     void resolve_targets() {
@@ -359,6 +386,15 @@ class lowering final {
                 "basic event " + name(element) + (is_initiator_[index] != 0 ? " (initiating event)" : "");
             switch (expression.kind) {
             case pra::expression_kind::literal:
+                if (is_condition(element)) {
+                    // A weight, not a probability: any finite value >= 0, and no PC source.
+                    if (!(expression.value >= 0.0) || !std::isfinite(expression.value)) {
+                        error("compile.pra_to_pc.frequency-out-of-range", subject + " has frequency " +
+                                                                              format_value(expression.value) +
+                                                                              ", which is not a finite value >= 0");
+                    }
+                    continue;
+                }
                 if (expression.quantity == pra::quantity_kind::frequency) {
                     if (expression.value > 1.0) {
                         error("compile.pra_to_pc.frequency-out-of-range",
@@ -366,9 +402,9 @@ class lowering final {
                                   ", which cannot be used as a probability");
                         continue;
                     }
-                    diagnostics_.push(api::make_warning("compile.pra_to_pc.frequency-as-probability",
-                                                        subject + " has frequency " + format_value(expression.value) +
-                                                            ", used as a probability"));
+                    diagnostics_.push(api::make_note("compile.pra_to_pc.frequency-as-probability",
+                                                     subject + " has frequency " + format_value(expression.value) +
+                                                         ", used as a probability"));
                 }
                 if (!sources_[expression_id.raw()].valid()) {
                     sources_[expression_id.raw()] = builder_.add_literal_probability(expression.value);
@@ -542,6 +578,184 @@ class lowering final {
         return count > *config_.max_initiators_per_cutset ? count : 0;
     }
 
+    // Under frequencies: a gate depends on the conditions when its cone, through elements no override
+    // replaces, holds an initiating event. Such a gate is lowered once per condition; every other
+    // element once.
+    void mark_dependent_gates() {
+        for (const auto gate : model_.topological_gates()) {
+            if (is_overridden(gate)) {
+                continue;
+            }
+            for (auto const &operand : model_.operands(gate)) {
+                if (is_overridden(operand.event)) {
+                    continue;
+                }
+                const auto child = operand.event.as<pra::gate_id>();
+                if (is_condition(operand.event) || (child.valid() && dependent_[child.raw()] != 0)) {
+                    dependent_[gate.raw()] = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    // Three-valued (Kleene) value of every element with every initiating event FALSE and every other
+    // basic event unknown. FALSE means the target cannot hold without an initiating event. Sound but
+    // conservative: a target false only for a reason Kleene logic cannot see (x and not x) reads as
+    // unknown.
+    [[nodiscard]] auto values_without_initiators() const -> element_columns<std::uint8_t> {
+        constexpr std::uint8_t f = 0;
+        constexpr std::uint8_t t = 1;
+        constexpr std::uint8_t u = 2;
+        element_columns<std::uint8_t> value(model_, u);
+        const auto constant = [&](const pra::domain_ref ref) -> std::optional<std::uint8_t> {
+            const auto state = overridden_[ref];
+            if (state == override_state::constant_true) {
+                return t;
+            }
+            if (state == override_state::constant_false) {
+                return f;
+            }
+            return std::nullopt;
+        };
+        for (std::uint32_t index = 0; index < model_.basic_events().size(); ++index) {
+            const pra::domain_ref ref = pra::basic_event_id(index);
+            value[ref] = constant(ref).value_or(is_condition(ref) ? f : u);
+        }
+        for (std::uint32_t index = 0; index < model_.house_events().size(); ++index) {
+            const pra::domain_ref ref = pra::house_event_id(index);
+            value[ref] = constant(ref).value_or(model_.house_events()[index].value ? t : f);
+        }
+        const auto negate = [](const std::uint8_t v) -> std::uint8_t {
+            return v == u ? u : static_cast<std::uint8_t>(1 - v);
+        };
+        for (const auto gate : model_.topological_gates()) {
+            if (const auto fixed = constant(gate)) {
+                value[gate] = *fixed;
+                continue;
+            }
+            auto const &row = model_.gates()[gate.raw()];
+            std::size_t ones = 0;
+            std::size_t unknowns = 0;
+            const auto operands = model_.operands(gate);
+            for (auto const &operand : operands) {
+                auto v = value[operand.event];
+                if (operand.complement) {
+                    v = negate(v);
+                }
+                ones += v == t ? 1 : 0;
+                unknowns += v == u ? 1 : 0;
+            }
+            const auto n = operands.size();
+            const auto zeros = n - ones - unknowns;
+            std::uint8_t out = u;
+            switch (row.kind) {
+            case pra::gate_kind::and_gate:
+            case pra::gate_kind::nand_gate:
+                out = zeros > 0 ? f : (unknowns > 0 ? u : t);
+                out = row.kind == pra::gate_kind::nand_gate ? negate(out) : out;
+                break;
+            case pra::gate_kind::or_gate:
+            case pra::gate_kind::nor_gate:
+                out = ones > 0 ? t : (unknowns > 0 ? u : f);
+                out = row.kind == pra::gate_kind::nor_gate ? negate(out) : out;
+                break;
+            case pra::gate_kind::not_gate:
+                out = negate(n == 1 ? (ones == 1 ? t : (unknowns == 1 ? u : f)) : u);
+                break;
+            case pra::gate_kind::xor_gate:
+            case pra::gate_kind::xnor_gate:
+                out = unknowns > 0 ? u : ((ones % 2 == 1) ? t : f);
+                out = row.kind == pra::gate_kind::xnor_gate ? negate(out) : out;
+                break;
+            case pra::gate_kind::cardinality: {
+                const auto low = row.bounds.low;
+                const auto high = row.bounds.high;
+                const auto most = ones + unknowns;
+                if (ones >= low && most <= high) {
+                    out = t;
+                } else if (most < low || ones > high) {
+                    out = f;
+                }
+                break;
+            }
+            }
+            value[gate] = out;
+        }
+        return value;
+    }
+
+    void check_frequency_targets() {
+        std::vector<std::string> unitless;
+        std::optional<element_columns<std::uint8_t>> without;
+        for (std::size_t index = 0; index < targets_.size(); ++index) {
+            if (initiator_ranges_[index].count == 0) {
+                continue;
+            }
+            auto const &request = targets_[index];
+            if (!config_.initiator_unit || config_.initiator_unit->empty()) {
+                unitless.push_back(target_name(request));
+            }
+            if (!without) {
+                without = values_without_initiators();
+            }
+            if (const auto v = (*without)[request.subject]; v != 0) {
+                error("compile.pra_to_pc.mixed-units",
+                      "target " + target_name(request) + (v == 1 ? " holds" : " may hold") +
+                          " with every initiating event FALSE, so its value would mix a probability with a "
+                          "frequency; quantify it with initiating-event values as probabilities, or target its "
+                          "initiator-dependent part");
+            }
+        }
+        if (!unitless.empty()) {
+            std::string list;
+            for (std::size_t index = 0; index < unitless.size() && index < listed_warning_limit; ++index) {
+                list += (index == 0 ? "" : ", ") + unitless[index];
+            }
+            if (unitless.size() > listed_warning_limit) {
+                list += ", ...";
+            }
+            error("compile.pra_to_pc.missing-initiator-unit",
+                  std::to_string(unitless.size()) +
+                      " target(s) hold initiating events, whose values are frequencies, and no initiator unit is "
+                      "given: " +
+                      list);
+        }
+    }
+
+    // Per target with initiating events: its gates that depend on them, in topological order.
+    void plan_conditions() {
+        condition_gates_.assign(targets_.size(), {});
+        std::vector<std::uint32_t> stamp(model_.gates().size(), 0);
+        std::vector<pra::gate_id> stack;
+        for (std::uint32_t target = 0; target < targets_.size(); ++target) {
+            if (initiator_ranges_[target].count == 0) {
+                continue;
+            }
+            const auto mark = target + 1;
+            const auto reach = [&](const pra::domain_ref element) {
+                const auto gate = element.as<pra::gate_id>();
+                if (gate.valid() && dependent_[gate.raw()] != 0 && stamp[gate.raw()] != mark) {
+                    stamp[gate.raw()] = mark;
+                    stack.push_back(gate);
+                }
+            };
+            reach(targets_[target].subject);
+            while (!stack.empty()) {
+                const auto gate = stack.back();
+                stack.pop_back();
+                for (auto const &operand : model_.operands(gate)) {
+                    reach(operand.event);
+                }
+            }
+            for (const auto gate : model_.topological_gates()) {
+                if (stamp[gate.raw()] == mark) {
+                    condition_gates_[target].push_back(gate);
+                }
+            }
+        }
+    }
+
     void check_capacity() {
         std::uint64_t nodes = 0;
         std::uint64_t edges = 0;
@@ -568,6 +782,13 @@ class lowering final {
                 nodes += 2;
                 edges += std::uint64_t{size} + 2;
             }
+            if (frequencies() && target < condition_gates_.size()) {
+                const std::uint64_t conditions = initiator_ranges_[target].count;
+                for (const auto gate : condition_gates_[target]) {
+                    nodes += conditions;
+                    edges += conditions * model_.operands(gate).size();
+                }
+            }
         }
         if (nodes > id_limit || edges > id_limit || initiator_events_.size() > id_limit ||
             literal_events_.size() > id_limit) {
@@ -588,8 +809,13 @@ class lowering final {
             nodes_[element] = node;
             events.push_back(pra::event_binding{.element = element, .node = node, .kind = kind});
         };
+        // Shared nodes: conditions and the gates that depend on them are lowered per condition below.
         const auto lowered = [&](const pra::domain_ref element) {
-            return reached_[element] != 0 && !is_overridden(element);
+            if (reached_[element] == 0 || is_overridden(element) || is_condition(element)) {
+                return false;
+            }
+            const auto gate = element.as<pra::gate_id>();
+            return !gate.valid() || dependent_[gate.raw()] == 0;
         };
 
         for (std::size_t index = 0; index < overrides_.size(); ++index) {
@@ -638,9 +864,71 @@ class lowering final {
             report.source_operands += edges.size();
         }
 
+        // Per condition I_i of a target: I_i is TRUE, the cone's other initiating events FALSE, and every
+        // gate that depends on them is lowered again over those constants.
+        std::optional<pc::bool_node_id> true_node;
+        std::optional<pc::bool_node_id> false_node;
+        const auto constant = [&](const bool value) {
+            auto &slot = value ? true_node : false_node;
+            if (!slot) {
+                slot = builder_.add_constant(value);
+            }
+            return *slot;
+        };
+        std::vector<pc::bool_node_id> context(model_.gates().size(), pc::bool_node_id::invalid());
+        pra::basic_event_id current;
+        const auto resolve = [&](const pra::domain_ref element) {
+            if (is_condition(element)) {
+                return constant(element.as<pra::basic_event_id>() == current);
+            }
+            if (const auto gate = element.as<pra::gate_id>();
+                gate.valid() && !is_overridden(element) && dependent_[gate.raw()] != 0) {
+                return context[gate.raw()];
+            }
+            return nodes_[element];
+        };
+
+        std::uint32_t next_target = 0;
         for (std::uint32_t index = 0; index < targets_.size(); ++index) {
             auto const &request = targets_[index];
-            const auto target = pc::target_id(index);
+            if (frequencies() && initiator_ranges_[index].count != 0) {
+                auto const &range = initiator_ranges_[index];
+                for (std::uint32_t offset = 0; offset < range.count; ++offset) {
+                    current = initiator_events_[range.offset + offset];
+                    for (const auto gate : condition_gates_[index]) {
+                        edges.clear();
+                        for (auto const &operand : model_.operands(gate)) {
+                            edges.push_back(
+                                pc::edge_ref{.source = resolve(operand.event), .complement = operand.complement});
+                        }
+                        auto const &row = model_.gates()[gate.raw()];
+                        context[gate.raw()] = row.kind == pra::gate_kind::cardinality
+                                                  ? builder_.add_cardinality(row.bounds.low, row.bounds.high, edges)
+                                                  : builder_.add_gate(pc_op(row.kind), edges);
+                        ++report.conditioned_nodes;
+                    }
+                    const auto root = resolve(request.subject);
+                    const auto target = pc::target_id(next_target++);
+                    pra::target_binding binding{
+                        .domain_target = request.domain_target,
+                        .subject = request.subject,
+                        .pc_target = target,
+                        .role = request.role,
+                        .root = root,
+                        .node = root,
+                        .negation = request.negation,
+                        .literals = request.literals,
+                        .initiators = range,
+                        .literal_events = literal_ranges_[index],
+                        .condition = current,
+                    };
+                    (void)builder_.add_target(root, binding.role);
+                    targets.push_back(binding);
+                    ++report.conditioned_targets;
+                }
+                continue;
+            }
+            const auto target = pc::target_id(next_target++);
             pra::target_binding binding{
                 .domain_target = request.domain_target,
                 .subject = request.subject,
@@ -683,6 +971,8 @@ class lowering final {
             return lowering_result::fail(std::move(diagnostics_));
         }
         report.max_initiators_per_cutset = config_.max_initiators_per_cutset;
+        report.initiators = config_.initiators;
+        report.initiator_unit = config_.initiator_unit;
         report.pc_nodes = sealed.output.node_count();
         report.pc_edges = sealed.output.edge_count();
         report.pc_targets = sealed.output.targets().size();
@@ -717,6 +1007,10 @@ class lowering final {
     std::vector<pra::basic_event_id> literal_events_;
     std::vector<pra::table_range<pra::basic_event_id>> initiator_ranges_;
     std::vector<pra::table_range<pra::basic_event_id>> literal_ranges_;
+    // By gate id, under frequencies: 1 when the gate's cone holds a condition (mark_dependent_gates).
+    std::vector<std::uint8_t> dependent_;
+    // By target: its dependent gates in topological order (plan_conditions).
+    std::vector<std::vector<pra::gate_id>> condition_gates_;
 };
 
 } // namespace

@@ -14,6 +14,8 @@
 #include "compile/pcfb_writer.h"
 #include "compile/sha256.h"
 #include "initializer.h"
+#include "io/pcfb/frequency.h"
+#include "io/pcfb/query_groups.h"
 #include "mc/core/direct_eval.h"
 #include "mc/queue/layer_manager.h"
 #include "mc/stats/tally_node_map.h"
@@ -1130,6 +1132,28 @@ const char *diagnostic_code_name(pcfb::Diagnostic::Code code) {
         return "ExtraSubcircuit";
     case C::InvalidFile:
         return "InvalidFile";
+    case C::UnknownQueryKind:
+        return "UnknownQueryKind";
+    case C::SchemaVersionTooOld:
+        return "SchemaVersionTooOld";
+    case C::UnknownLiteralMode:
+        return "UnknownLiteralMode";
+    case C::LiteralSampleNotSample:
+        return "LiteralSampleNotSample";
+    case C::LiteralSamplesNotAscending:
+        return "LiteralSamplesNotAscending";
+    case C::LiteralFieldsOnNonHullQuery:
+        return "LiteralFieldsOnNonHullQuery";
+    case C::EmptyQueryGroup:
+        return "EmptyQueryGroup";
+    case C::QueryGroupTermOutOfRange:
+        return "QueryGroupTermOutOfRange";
+    case C::QueryGroupDuplicateTerm:
+        return "QueryGroupDuplicateTerm";
+    case C::QueryGroupBadWeight:
+        return "QueryGroupBadWeight";
+    case C::QueryGroupMixedKinds:
+        return "QueryGroupMixedKinds";
     }
     return "Unknown";
 }
@@ -1606,6 +1630,8 @@ fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
     text({"complement_events", "complement-events"}, out.complement_events);
     text({"negation"}, out.negation);
     text({"literals"}, out.literals);
+    text({"initiator_values", "initiator-values"}, out.initiator_values);
+    text({"initiator_unit", "initiator-unit"}, out.initiator_unit);
     text({"config"}, out.config);
     if (auto value = get_option(options, {"max_initiators_per_cutset", "max-initiators-per-cutset"})) {
         if (value->is_none() || (py::isinstance<py::str>(*value) && value->cast<std::string>() == "none")) {
@@ -1779,6 +1805,43 @@ py::dict inspect_pcfb_path(const std::string &path) {
         throw std::runtime_error("inspect: " + circuit.error().message);
     }
     return inspect_circuit(*circuit);
+}
+
+// The query groups (pcfb spec §5.4) of an in-memory `.pcfb`: name, unit and (query, weight) terms.
+py::list query_groups_pcfb_bytes(const py::bytes &data) {
+    auto owned = bytes_from_py(data);
+    auto circuit = pcfb::io::from_bytes(owned);
+    if (!circuit) {
+        throw std::runtime_error("query_groups: " + circuit.error().message);
+    }
+    py::list out;
+    for (auto const &group : fuzzybits::io::pcfb_frequency::query_groups_of(*circuit)) {
+        py::list terms;
+        for (auto const &term : group.terms) {
+            terms.append(py::make_tuple(term.query, term.weight));
+        }
+        py::dict entry;
+        entry["name"] = group.name;
+        entry["unit"] = group.unit;
+        entry["terms"] = terms;
+        out.append(entry);
+    }
+    return out;
+}
+
+// The initiator units `fzb compile --initiator-unit` accepts, with their --exposure suffix,
+// display label and length in hours.
+py::list frequency_units() {
+    py::list out;
+    for (auto const &unit : fuzzybits::io::pcfb_frequency::units) {
+        py::dict entry;
+        entry["unit"] = std::string(unit.unit);
+        entry["duration"] = std::string(unit.duration);
+        entry["label"] = std::string(unit.label);
+        entry["hours"] = unit.hours;
+        out.append(entry);
+    }
+    return out;
 }
 
 double exact_pcfb_bytes(const py::bytes &data, std::uint32_t query_index) {
@@ -2305,6 +2368,17 @@ Summarise a `.pcfb` file (same keys as `fzb inspect --json`, plus `diagnostics`)
     m.def("exact_pcfb_bytes", &exact_pcfb_bytes, py::arg("data"), py::arg("query_index") = 0,
           R"pbdoc(
 Exhaustive exact P(query) for a small in-memory `.pcfb` (≤ 30 random SAMPLE events).
+)pbdoc");
+
+    m.def("query_groups_pcfb", &query_groups_pcfb_bytes, py::arg("data"),
+          R"pbdoc(
+The query groups of an in-memory `.pcfb` (pcfb spec §5.4), for example initiating-event frequencies:
+a list of {name, unit, terms: [(query index, weight)]}.
+)pbdoc");
+
+    m.def("frequency_units", &frequency_units,
+          R"pbdoc(
+The initiator units of `fzb compile --initiator-unit`: {unit, duration, label, hours} each.
 )pbdoc");
 
     m.def("exact_pcfb_path", &exact_pcfb_path, py::arg("path"), py::arg("query_index") = 0,
