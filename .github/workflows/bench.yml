@@ -143,6 +143,10 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
+      # pcfb is the extern/pcfb submodule; only it is needed, not the large input/ submodules.
+      - name: Check out the pcfb submodule
+        run: git submodule update --init --depth 1 extern/pcfb
+
       - name: Fetch develop
         run: git fetch --no-tags origin develop:refs/remotes/origin/develop
 

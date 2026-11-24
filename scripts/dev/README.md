@@ -92,7 +92,8 @@ container. Never print, commit or paste private identifiers or values; report ag
 The image is the toolchain tag pinned by `toolchain.env`
 (`ghcr.io/fuzzybit-org/fuzzybits-toolchain:${ACPP_REF}-generic-<sha256(toolchain.env)[:12]>`). A pin
 change moves the hash before CI publishes the new tag; then `ws.sh` falls back to the moving tag
-`${ACPP_REF}-generic` with a note (fetched dependencies such as pcfb are not part of the image).
+`${ACPP_REF}-generic` with a note (library dependencies such as pcfb are not part of the image: pcfb is the
+`extern/pcfb` submodule, which `sync` copies with the checkout when it is initialised).
 `TOOLCHAIN_IMAGE=...` overrides both. An existing workspace keeps the image it was created with; run
 `down` and start again to pick up a new one.
 

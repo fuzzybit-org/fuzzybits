@@ -7,7 +7,8 @@ paths:
 
 - pcfb: `docs/pc-pcfb.md` is the mapping between `ir::pc` and the file format, and holds the
   diagnostics table. Keep it in step with `src/io/pcfb`.
-  - The pcfb version is pinned (`cmake/FuzzybitsPcfb.cmake`, `toolchain.env`).
+  - pcfb is the submodule `extern/pcfb`; its gitlink is the pin (`cmake/FuzzybitsPcfb.cmake`). Schema
+    changes go to `fuzzybit-org/pcfb` first, then the gitlink moves.
   - Query kinds the runtime does not implement are rejected before sampling
     (`src/io/pcfb/query_guard.h`).
 - FTP: `docs/ftp-input.md` describes the FTP → `ir::pra` → `ir::pc` → `.pcfb` pipeline.
