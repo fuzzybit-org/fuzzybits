@@ -174,7 +174,6 @@ struct settings_document final {
     std::optional<pra::negation_set> negation;
     std::optional<pra::literal_mode> literals;
     std::optional<std::string> duplicate_import;
-    std::optional<std::string> complement_events;
     std::optional<std::optional<std::uint32_t>> max_initiators;
     std::optional<std::string> initiator_values;
     std::optional<std::string> initiator_unit;
@@ -189,11 +188,15 @@ class document_reader final {
         if (!root.is_object()) {
             return fail("the document must be a JSON object");
         }
-        static constexpr std::array<std::string_view, 11> known{"targets",           "watch",
-                                                                "overrides",         "negation",
-                                                                "literals",          "duplicate_import",
-                                                                "complement_events", "max_initiators_per_cutset",
-                                                                "initiator_values",  "initiator_unit",
+        static constexpr std::array<std::string_view, 10> known{"targets",
+                                                                "watch",
+                                                                "overrides",
+                                                                "negation",
+                                                                "literals",
+                                                                "duplicate_import",
+                                                                "max_initiators_per_cutset",
+                                                                "initiator_values",
+                                                                "initiator_unit",
                                                                 "compilation_level"};
         for (auto const &key : root.keys) {
             if (std::ranges::find(known, std::string_view(key)) == known.end()) {
@@ -218,9 +221,6 @@ class document_reader final {
         }
         if (auto const *value = root.find("duplicate_import")) {
             out.duplicate_import = choice(*value, "duplicate_import", {"error", "first", "last"});
-        }
-        if (auto const *value = root.find("complement_events")) {
-            out.complement_events = choice(*value, "complement_events", {"atom", "negation"});
         }
         if (auto const *value = root.find("max_initiators_per_cutset")) {
             if (value->is(json::value::kind_type::null) || (value->is_string() && value->string == "none")) {
@@ -412,7 +412,6 @@ class document_reader final {
 // The settings that survive merging the flags, the document and the model.
 struct effective final {
     std::string duplicate_import = "last";
-    std::string complement_events = "atom";
     pra::negation_set negation;
     pra::literal_mode literals = pra::literal_mode::atom_split;
     std::optional<std::uint32_t> max_initiators;
@@ -519,11 +518,6 @@ struct lowered_stage final {
         diagnostics.push(option_error("duplicate-import must be error, first or last, not " +
                                       in_quotes(*settings.duplicate_import)));
     }
-    if (settings.complement_events && *settings.complement_events != "atom" &&
-        *settings.complement_events != "negation") {
-        diagnostics.push(
-            option_error("complement-events must be atom or negation, not " + in_quotes(*settings.complement_events)));
-    }
     if (settings.initiator_values && *settings.initiator_values != "frequency" &&
         *settings.initiator_values != "probability") {
         diagnostics.push(option_error("initiator-values must be frequency or probability, not " +
@@ -552,7 +546,6 @@ struct lowered_stage final {
 
     effective merged;
     merged.duplicate_import = settings.duplicate_import.value_or(document.duplicate_import.value_or("last"));
-    merged.complement_events = settings.complement_events.value_or(document.complement_events.value_or("atom"));
     merged.level = settings.level.value_or(document.level.value_or(1));
     if (merged.level != 0 && merged.level != 1) {
         diagnostics.push(option_error("-c must be 0 or 1 for FTP input, not " + std::to_string(merged.level)));
@@ -566,7 +559,6 @@ struct lowered_stage final {
     set = sorted_sources(given);
     api::option_set reader_options;
     reader_options.set(reader::duplicate_import_option(), merged.duplicate_import);
-    reader_options.set(reader::complement_events_option(), merged.complement_events);
     auto project = reader::read_project(std::span<reader::source_text const>(set.sources), reader_options);
     diagnostics.append(project.diagnostics());
     seconds.read = seconds_since(read_start);
@@ -780,7 +772,6 @@ struct lowered_stage final {
     root.set("format", json::value::make_string(std::string(source_format)));
     root.set("compilation_level", json::value::make_int(stage.settings.level));
     root.set("duplicate_import", json::value::make_string(stage.settings.duplicate_import));
-    root.set("complement_events", json::value::make_string(stage.settings.complement_events));
     root.set("max_initiators_per_cutset", optional_count(stage.settings.max_initiators));
     root.set("initiator_values", json::value::make_string(stage.settings.initiator_values));
     root.set("initiator_unit", stage.settings.initiator_unit ? json::value::make_string(*stage.settings.initiator_unit)
@@ -863,7 +854,7 @@ struct lowered_stage final {
                     "compile.ftp.hull-literals-unsupported",
                     "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries "
                     "literal atoms; each alternative is a different query: --negation boolean (the probability, "
-                    "the default), or the plain hull with --literals negation or --complement-events negation"));
+                    "the default), or the plain hull with --literals negation"));
             }
             return fail(std::move(diagnostics));
         }

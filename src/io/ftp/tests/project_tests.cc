@@ -117,11 +117,9 @@ TEST_CASE("FTP project reader descriptor produces ir.pra.model", "[io][ftp][proj
     REQUIRE(descriptor.endpoint == ftp::project_reader_endpoint_id());
     REQUIRE(descriptor.input_format == fuzzybits::io::formats::ftp());
     REQUIRE(descriptor.produces.contains(fuzzybits::api::capability_id("ir.pra.model")));
-    REQUIRE(descriptor.options.entries.size() == 2);
+    REQUIRE(descriptor.options.entries.size() == 1);
     REQUIRE(descriptor.options.entries[0].key == ftp::duplicate_import_option());
     REQUIRE(std::get<std::string>(descriptor.options.entries[0].default_value) == "last");
-    REQUIRE(descriptor.options.entries[1].key == ftp::complement_events_option());
-    REQUIRE(std::get<std::string>(descriptor.options.entries[1].default_value) == "atom");
 }
 
 TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[io][ftp][project]") {
@@ -191,37 +189,27 @@ IMPORT
     };
     using marking = std::vector<std::pair<bool, bool>>;
 
-    SECTION("atom (default)") {
-        const auto read = readText(text);
-        auto const &model = requireModel(read);
+    const auto require_marks = [&marks](pra::model const &model) {
         REQUIRE(marks(model, "TOP") == marking{{false, false}, {true, false}, {true, true}});
         REQUIRE(marks(model, "G1") == marking{{false, false}, {true, true}});
         REQUIRE(marks(model, "G2") == marking{{true, true}, {false, false}});
         REQUIRE(model.summary().complemented_operand_count == 4);
         REQUIRE(model.summary().literal_operand_count == 3);
+    };
+
+    SECTION("always") {
+        const auto read = readText(text);
+        require_marks(requireModel(read));
     }
-    SECTION("explicit atom") {
-        fuzzybits::api::option_set options;
-        options.set(ftp::complement_events_option(), std::string("atom"));
-        REQUIRE(requireModel(readText(text, options)).summary().literal_operand_count == 3);
-    }
-    SECTION("negation leaves every complement unmarked") {
-        fuzzybits::api::option_set options;
-        options.set(ftp::complement_events_option(), std::string("negation"));
-        const auto read = readText(text, options);
-        auto const &model = requireModel(read);
-        REQUIRE(marks(model, "TOP") == marking{{false, false}, {true, false}, {true, false}});
-        REQUIRE(marks(model, "G2") == marking{{true, false}, {false, false}});
-        REQUIRE(model.summary().complemented_operand_count == 4);
-        REQUIRE(model.summary().literal_operand_count == 0);
-    }
-    SECTION("other values are rejected") {
-        fuzzybits::api::option_set options;
-        options.set(ftp::complement_events_option(), std::string("literal"));
-        const auto read = readText(text, options);
-        REQUIRE_FALSE(read);
-        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option",
-                      "io.ftp.complement_events") == 1);
+    SECTION("the removed io.ftp.complement_events key is not a reader option") {
+        // It is not in the descriptor, and a value under it changes nothing: no policy leaves -EVENT unmarked.
+        for (const auto *value : {"negation", "atom", "literal"}) {
+            fuzzybits::api::option_set options;
+            options.set(fuzzybits::api::option_key("io.ftp.complement_events"), std::string(value));
+            const auto read = readText(text, options);
+            REQUIRE(read.diagnostics().items().size() == readText(text).diagnostics().items().size());
+            require_marks(requireModel(read));
+        }
     }
 }
 

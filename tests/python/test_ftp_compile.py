@@ -130,7 +130,11 @@ def test_hull_targets_with_marked_literals_are_refused(tmp_path: Path):
         assert "--literals negation" in str(failure.value)
     blob = fuzzybits.compile([model], negation="hull", initiator_values="probability", literals="negation")
     assert fuzzybits.inspect(blob)["metadata"]["compile.query.0.literal_mode"] == "negation"
-    assert fuzzybits.compile([model], negation="hull", initiator_values="probability", complement_events="negation")
+    # complement_events is gone: -EVENT is always a marked literal; literals="negation" is the plain hull.
+    with pytest.raises(TypeError, match="complement_events"):
+        fuzzybits.compile([model], negation="hull", initiator_values="probability", complement_events="negation")
+    with pytest.raises(RuntimeError, match="invalid-config"):
+        fuzzybits.compile([model], initiator_values="probability", config={"complement_events": "negation"})
     # The default probability query is not affected by marked literals.
     assert fuzzybits.inspect(fuzzybits.compile([model], initiator_unit="per-year"))["metadata"][
         "compile.query.0.negation"
@@ -318,6 +322,23 @@ def test_fzb_compile_cli_on_ftp(tmp_path: Path):
     assert hull.returncode != 0
     assert "hull-literals-unsupported" in hull.stderr
     assert "--literals negation" in hull.stderr
+
+    removed = _run_fzb(
+        "compile",
+        str(model),
+        "--negation",
+        "hull",
+        "--initiator-values",
+        "probability",
+        "--complement-events",
+        "negation",
+        "--no-progress",
+        "-o",
+        str(pcfb),
+        cwd=tmp_path,
+    )
+    assert removed.returncode != 0
+    assert "complement-events" in removed.stderr
 
     bad = _run_fzb("compile", str(model), "--negation", "boolean", "--override", "OPER", "-o", str(pcfb), cwd=tmp_path)
     assert bad.returncode != 0

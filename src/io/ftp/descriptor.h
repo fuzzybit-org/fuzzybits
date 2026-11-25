@@ -24,14 +24,6 @@ enum class duplicate_import_policy : std::uint8_t {
     error,
 };
 
-// How the project reader hands a complemented basic-event operand `-EVENT` to
-// `ir::pra` (`io.ftp.complement_events`): `atom` marks it `literal`,
-// `negation` leaves it an ordinary complement. `-GATE` is never marked.
-enum class complement_events_policy : std::uint8_t {
-    atom,
-    negation,
-};
-
 // One file of a project held in memory; `path` is used in source locations
 // and diagnostics.
 struct source_text final {
@@ -43,7 +35,6 @@ struct source_text final {
 [[nodiscard]] auto writer_endpoint_id() -> api::endpoint_id;
 [[nodiscard]] auto truncation_limit_option() -> api::option_key;
 [[nodiscard]] auto duplicate_import_option() -> api::option_key;
-[[nodiscard]] auto complement_events_option() -> api::option_key;
 [[nodiscard]] auto project_reader_descriptor() -> io::reader_descriptor;
 [[nodiscard]] auto writer_descriptor() -> io::writer_descriptor;
 

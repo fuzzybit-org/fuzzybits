@@ -550,7 +550,7 @@ Vendor outputs are not committed.
   target, with a literal mode for the events referenced with a direct
   complement (`-NAME` on an event) in the target's cone. These tools read
   only FTP, so they apply the FTP reader's convention: every `-EVENT` is a
-  marked literal (`io.ftp.complement_events = atom`), every `-GATE` a
+  marked literal (the FTP reader always marks it), every `-GATE` a
   negation. Models from sources without such literals get the plain hull.
   - `--literals split` (default, the FTP convention), the *atom-split hull*:
     every such `-NAME` is
@@ -561,8 +561,8 @@ Vendor outputs are not committed.
   - `--literals omega`: those events are *fixed* (a witness keeps their value):
     Rauzy's $\omega_L g$.
   - `--literals positive`: every event droppable, the plain hull of the literal
-    target (the FTP reader's `io.ftp.complement_events = negation`; mode
-    `negation` in the RFC).
+    target (`fzb compile --literals negation`; mode `negation` in the
+    RFC).
 
   A complemented gate, also a single-input one, is a delete term in every mode.
   `split` and `omega` agree wherever no directly complemented event also

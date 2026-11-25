@@ -41,19 +41,6 @@ auto parse_options(api::option_set const &options, api::diagnostic_list &diagnos
     return duplicate_import_policy::last;
 }
 
-auto parse_pra_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> PraOptions {
-    PraOptions out;
-    if (const auto value = options.get<std::string>(complement_events_option()); value && *value != "atom") {
-        if (*value == "negation") {
-            out.complementEvents = complement_events_policy::negation;
-        } else {
-            diagnostics.push(api::make_error(
-                "io.ftp.invalid-option", "io.ftp.complement_events must be atom or negation, not '" + *value + "'"));
-        }
-    }
-    return out;
-}
-
 auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<source_text>> {
     auto files = project_files(inputs);
     if (!files) {
@@ -97,8 +84,7 @@ namespace {
     return project;
 }
 
-[[nodiscard]] auto toPra(detail::ParsedProject project, api::option_set const &options) -> io::read_result {
-    const auto praOptions = detail::parse_pra_options(options, project.diagnostics);
+[[nodiscard]] auto toPra(detail::ParsedProject project) -> io::read_result {
     if (project.diagnostics.has_errors()) {
         return io::read_result::fail(std::move(project.diagnostics));
     }
@@ -107,7 +93,7 @@ namespace {
             api::make_error("io.ftp.no-targets", "FTP project has no PROCESS target and no root gate"));
         return io::read_result::fail(std::move(project.diagnostics));
     }
-    auto [model, diagnostics] = detail::build_pra(project, praOptions);
+    auto [model, diagnostics] = detail::build_pra(project);
     project.diagnostics.append(std::move(diagnostics));
     if (project.diagnostics.has_errors() || !model.valid()) {
         return io::read_result::fail(std::move(project.diagnostics));
@@ -126,8 +112,6 @@ auto project_reader_endpoint_id() -> api::endpoint_id { return api::endpoint_id(
 auto truncation_limit_option() -> api::option_key { return api::option_key("io.ftp.truncation_limit"); }
 
 auto duplicate_import_option() -> api::option_key { return api::option_key("io.ftp.duplicate_import"); }
-
-auto complement_events_option() -> api::option_key { return api::option_key("io.ftp.complement_events"); }
 
 namespace {
 
@@ -156,20 +140,7 @@ auto project_reader_descriptor() -> io::reader_descriptor {
                 api::capability_id("ir.pra.domain_targets"),
                 api::capability_id("ir.pra.source_locations"),
             },
-        .options =
-            api::option_schema{
-                .entries =
-                    {
-                        duplicateImportSpec(),
-                        api::option_spec{
-                            .key = complement_events_option(),
-                            .name = "Complemented events",
-                            .default_value = std::string("atom"),
-                            .help = "-EVENT operands: atom (default) marks them as literals, each its own "
-                                    "atom under hull queries; negation leaves them ordinary complements. "
-                                    "-GATE is always a negation.",
-                        },
-                    }},
+        .options = api::option_schema{.entries = {duplicateImportSpec()}},
     };
 }
 
@@ -208,11 +179,11 @@ auto read_project(std::span<std::filesystem::path const> inputs, api::option_set
     if (!sources) {
         return io::read_result::fail(std::move(sources.diagnostics()));
     }
-    return toPra(parseSources(std::move(sources).value(), options), options);
+    return toPra(parseSources(std::move(sources).value(), options));
 }
 
 auto read_project(std::span<source_text const> sources, api::option_set const &options) -> io::read_result {
-    return toPra(parseSources(std::vector<source_text>(sources.begin(), sources.end()), options), options);
+    return toPra(parseSources(std::vector<source_text>(sources.begin(), sources.end()), options));
 }
 
 auto read_project(io::read_request const &request) -> io::read_result {

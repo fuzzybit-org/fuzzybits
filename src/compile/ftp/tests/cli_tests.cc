@@ -301,15 +301,26 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
         REQUIRE(refused.err.find("--literals negation") != std::string::npos);
         REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
     }
+    // --literals negation is the plain hull of a model with -EVENT.
     for (const char *flags : {" --initiator-unit per-year", " --negation boolean --initiator-values probability",
-                              " --negation hull --initiator-values probability --literals negation",
-                              " --negation hull --initiator-values probability --complement-events negation"}) {
+                              " --negation hull --initiator-values probability --literals negation"}) {
         const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << ran.err);
         REQUIRE(ran.status == 0);
         REQUIRE(std::filesystem::exists(out));
         std::filesystem::remove(out);
     }
+    // --complement-events is gone: -EVENT is always a marked literal, and --literals negation reads it as a plain
+    // complement.
+    const auto removed = run_fzb("compile " + model +
+                                     " --negation hull --initiator-values probability --complement-events negation "
+                                     "--no-progress -o " +
+                                     quoted(out.string()),
+                                 scratch);
+    INFO(removed.err);
+    REQUIRE(removed.status != 0);
+    REQUIRE_FALSE(std::filesystem::exists(out));
+    REQUIRE(removed.err.find("complement-events") != std::string::npos);
     std::filesystem::remove_all(scratch);
 }
 

@@ -137,8 +137,6 @@ def test_read_project_conventions_and_structure(tmp_path: Path):
     assert structure["complemented_edges_to_gates"] == 1
     assert structure["literal_operands"] == 1
     assert structure["limit"] == 1e-9
-    atom = fuzzybits.read_project(_write(tmp_path, "s2.ftp", text), complement_events="negation")
-    assert atom["structure"]["literal_operands"] == 0
 
 
 def test_read_project_duplicate_imports_name_the_chosen_record(tmp_path: Path):
@@ -165,8 +163,9 @@ def test_read_project_rejects_bad_arguments(tmp_path: Path):
     path = _write(tmp_path, "a.ftp", CLEAN)
     with pytest.raises(ValueError, match="duplicate-import"):
         fuzzybits.read_project(path, duplicate_import="newest")
-    with pytest.raises(ValueError, match="complement-events"):
-        fuzzybits.read_project(path, complement_events="both")
+    # Removed: -EVENT is always a marked literal.
+    with pytest.raises(TypeError, match="complement_events"):
+        fuzzybits.read_project(path, complement_events="negation")
     with pytest.raises(ValueError):
         fuzzybits.read_project([])
 
@@ -223,6 +222,9 @@ def test_cli_usage_and_option_errors(tmp_path: Path):
     run = _run_fzb("inspect", str(path), "--duplicate-import", "newest")
     assert run.returncode == 1
     assert "fzb inspect: --duplicate-import must be error, first or last" in run.stderr
+    run = _run_fzb("inspect", str(path), "--complement-events", "negation")
+    assert run.returncode == 1
+    assert "complement-events" in run.stderr
     run = _run_fzb("inspect", str(path), "--exact")
     assert run.returncode == 1
     assert "--exact applies to .pcfb input only" in run.stderr

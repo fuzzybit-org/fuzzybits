@@ -38,8 +38,6 @@ struct options final {
     std::vector<override_spec> overrides;
     // error | first | last (default last).
     std::optional<std::string> duplicate_import;
-    // atom | negation (default atom).
-    std::optional<std::string> complement_events;
     // boolean | hull | both: the query type of every target (default
     // boolean, the probability query). Never read from the model.
     std::optional<std::string> negation;

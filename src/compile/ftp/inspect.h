@@ -20,8 +20,6 @@ namespace fuzzybits::compile::ftp {
 struct inspect_options final {
     // error | first | last
     std::string duplicate_import = "last";
-    // atom | negation
-    std::string complement_events = "atom";
 };
 
 // Empty when the options are valid, else the message of the first problem.

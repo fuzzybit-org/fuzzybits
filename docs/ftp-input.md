@@ -35,7 +35,7 @@ Mixing FTP and non-FTP inputs is an error. MEF and nombrilo inputs are unchanged
 | FTP construct | Meaning in `ir::pra` |
 |---|---|
 | `NAME + ops`, `NAME * ops`, `NAME k ops` (other lines continue the open gate) | OR, AND and k-out-of-n gates, with file and line |
-| `-name` operand | complemented operand; on a basic event also marked `literal` (`--complement-events atom`, default); on a gate always a negation |
+| `-name` operand | complemented operand; on a basic event always also marked `literal` (Boolean-neutral: only hull queries read the mark, see `--literals`); on a gate never marked, always a negation |
 | `ENDTREE` | closes the tree section, which comes first in each file |
 | `IMPORT` records `value name [flags]` | basic events with literal probabilities; the value `-1` is probability 1 (a warning) |
 | `I` flag | initiating event; its value is a frequency, of any magnitude ([Initiating-event frequencies](#initiating-event-frequencies)) |
@@ -93,12 +93,11 @@ event without the `I` flag. Each of these is a mistake that would otherwise chan
 | `--no-ccf` | accepted and ignored: FTP projects have no common-cause groups | |
 | `--override NAME=0\|1` (repeatable) | the gate, basic event or house event becomes a constant; its operands leave the cone | none |
 | `--duplicate-import error\|first\|last` | duplicate `IMPORT` records | `last` |
-| `--complement-events atom\|negation` | `atom`: `-EVENT` is a marked literal; `negation`: an ordinary complement | `atom` |
 | `--negation boolean\|hull\|both` | the query type of every target: the probability (complements are negations), the monotone hull (complements are delete terms) or both | `boolean` |
 | `--initiator-values frequency\|probability` | `frequency`: each `I` value is a frequency, and a target becomes one conditioned query per initiating event in its cone, grouped as its frequency; `probability`: values up to 1 are probabilities, above 1 an error | `frequency` |
 | `--initiator-unit per-year\|per-month\|per-week\|per-day\|per-hour` | the unit of every `I` value with frequencies; rejected with probabilities | `per-year` with frequencies |
 | `--max-initiators-per-cutset N\|none` | hull queries only, with `--initiator-values probability` only: every hull query is ANDed with the delete term of more than N initiating events in its cone; probability queries never are | `none` |
-| `--literals atom_split\|omega_l\|negation` | how hull targets read marked literals | `atom_split` |
+| `--literals atom_split\|omega_l\|negation` | how hull targets read marked literals (every `-EVENT`); `negation` reads them as plain complements, the plain hull | `atom_split` |
 | `-c 0\|1` | `0`: no passes; `1`: `ir::pc` passes (constant folding of literal 0 and, for Boolean targets, 1; propagation; single-input elimination; coalescing) | `1` |
 | `--config FILE` | quantification config (JSON, below); flags override it | none |
 | `--report FILE` | JSON report: effective settings, lowering transform report, pass reports, sizes, timings, every diagnostic; native `fzb` also writes it when the compile fails | none |
@@ -112,8 +111,7 @@ replaces an entry of the same name. `LIMIT` is never an option: it goes to the m
 counts (files, gates, events, circuit nodes and edges before and after the passes, warnings and notes); warnings print
 up to ten, the report has all.
 
-Python: `fuzzybits.compile([...], target=..., watch=..., overrides={...}, duplicate_import=..., complement_events=...,
-negation=..., initiator_values=..., initiator_unit=..., max_initiators_per_cutset=..., literals=..., config=...,
+Python: `fuzzybits.compile([...], target=..., watch=..., overrides={...}, duplicate_import=..., negation=..., initiator_values=..., initiator_unit=..., max_initiators_per_cutset=..., literals=..., config=...,
 pdag_c=..., report=True)`. With `report=True`
 it returns `(blob, report)`; warnings are issued as `UserWarning`. The Python `fzb` script has the same flags.
 
@@ -127,7 +125,6 @@ it returns `(blob, report)`; warnings are issued as `UserWarning`. The Python `f
   "initiator_unit": "per-year",
   "compilation_level": 1,
   "duplicate_import": "last",
-  "complement_events": "atom",
   "targets": ["TOP", {"name": "SEQ-1", "negation": ["boolean", "hull"], "literals": "omega_l"}],
   "watch": ["SEQ-3"],
   "overrides": {"PUMP-A": 0, "VALVE": true}
@@ -157,12 +154,12 @@ both named after the target. The compiler adapts to the query type: it skips the
 queries is #183: until then `fzb run`, `fuzzybits.run` and `fzb inspect --exact` refuse a file with a hull query
 (`pcfb.unsupported-query-kind`).
 
-pcfb 1.2 has no literal atoms per query yet, so a hull query reads a marked operand (`-EVENT` under
-`--complement-events atom`) as a plain complement, which is the `negation` literal mode. A hull target whose cone has
-marked operands is therefore refused in `atom_split` mode (the default) and in `omega_l` mode, with
+pcfb 1.2 has no literal atoms per query yet, so a hull query can read a marked operand (every `-EVENT`: the reader
+always marks it) only as a plain complement, which is the `negation` literal mode. A hull target whose cone has marked
+operands is therefore refused in `atom_split` mode (the default) and in `omega_l` mode, with
 `compile.pra_to_pc.hull-literals-unsupported` per target and `compile.ftp.hull-literals-unsupported`, which names the
 alternatives. Each is a different query: `--negation boolean` (the probability, the default), or the plain hull with
-`--literals negation` or `--complement-events negation`. Probability targets ignore the marks.
+`--literals negation`. Probability targets ignore the marks.
 
 `--max-initiators-per-cutset N` (with `--initiator-values probability`) ANDs each hull query with
 `not atleast(N + 1; initiating events in its cone)`: under the hull it deletes exactly the cut sets with more than N
@@ -242,7 +239,7 @@ fzb inspect project_dir/ --json --counts-only
 ```
 
 ```python
-doc = fuzzybits.read_project("project_dir", duplicate_import="last", complement_events="atom")
+doc = fuzzybits.read_project("project_dir", duplicate_import="last")
 ```
 
 `fzb inspect` runs the project reader only: no lowering, no passes, no `.pcfb`. It takes the same inputs as
@@ -254,7 +251,6 @@ are rejected for FTP input, and the FTP flags below for `.pcfb` input.
 |---|---|
 | `--json` | print the content below as JSON (text otherwise, with the same fields) |
 | `--duplicate-import error\|first\|last` | as for `fzb compile` (default `last`) |
-| `--complement-events atom\|negation` | as for `fzb compile` (default `atom`) |
 | `--strict` | exit 1 on warnings as well as errors |
 | `--counts-only` | no element names (see below) |
 
@@ -282,7 +278,7 @@ key of those files), `house_events`, `complemented_edges_to_gates` and `literal_
 | `initiator_tagged_events`, `initiator_tagged_events_with_p_1` | initiating events, and those with value 1 |
 | `events_p_eq_1`, `events_p_eq_0`, `events_0_lt_p_lt_2^-32` | basic events by value |
 | `complemented_edges`, `complemented_edges_to_basic_events`, `complemented_edges_to_gates` | complemented operands, by what they reference |
-| `literal_operands` | complemented basic-event operands marked as atomic literals (`--complement-events atom`) |
+| `literal_operands` | complemented basic-event operands marked as atomic literals: every `-EVENT` operand |
 | `roots` | gates no other gate references |
 | `process_targets`, `default_targets` | the `PROCESS` names as declared (empty when there are none), and the model's targets: those names, or the root gates (with `io.ftp.missing-process`) |
 | `limit` | the `LIMIT` value, `null` when absent |
@@ -290,7 +286,7 @@ key of those files), `house_events`, `complemented_edges_to_gates` and `literal_
 | `duplicate_imports` | per repeated event, its records `{file, line, chosen}` in project order; the chosen record (the one the policy kept) also has `value` |
 
 Under `--duplicate-import error` a repeated import is an error, so `structure` is `null`; the diagnostic names the
-records. `--duplicate-import` and `--complement-events` change `structure` only through those counts.
+records. `--duplicate-import` changes `structure` only through those counts.
 
 `--counts-only` is for logs of models whose identifiers must not be published. No element name appears: diagnostics
 keep `id`, `severity` and `file`/`line` and drop `message` (messages quote names); `roots`, `process_targets`,
@@ -299,7 +295,7 @@ keep `id`, `severity` and `file`/`line` and drop `message` (messages quote names
 Diagnostic ids are the reader's `io.ftp.*` ids (see below; they match the codes in the conformance fixtures) and
 `ir.pra.*` model validation ids. `file` and `line` are the source position the reader recorded for the diagnostic. Python:
 `read_project` raises `fuzzybits.FtpProjectError` (a `RuntimeError`) when the project has errors, with the diagnostics (a
-list of dicts as above) in its `diagnostics` attribute; warnings are returned, not raised. Invalid `duplicate_import` or `complement_events` values
+list of dicts as above) in its `diagnostics` attribute; warnings are returned, not raised. Invalid `duplicate_import` values
 raise `ValueError`.
 
 ## Diagnostics
