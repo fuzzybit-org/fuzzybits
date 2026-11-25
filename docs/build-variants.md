@@ -42,7 +42,7 @@ invoked directly.
 |---|---|---|---|---|---|
 | `generic` | `generic` | `malloc` | Release | ON | `OPTIMIZE_FOR_NATIVE=OFF` |
 | `windows-generic` | `generic` | `malloc` | Release | ON | Windows-only; clang targeting the MSVC ABI; same cache as `generic` |
-| `windows-generic-debuginfo` | `generic` | `malloc` | Release | ON | `windows-generic` plus CodeView debug info and PDBs (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded`, `/DEBUG`); what `windows-omp` builds and tests |
+| `windows-generic-debuginfo` | `generic` | `malloc` | Release | ON | `windows-generic` plus CodeView line tables and PDBs (`-gline-tables-only -gcodeview`, `/DEBUG`); what `windows-omp` builds and tests |
 | `cuda-sm70` | `cuda:sm_70` | `malloc` | Release | ON | `ACPP_USE_ACCELERATED_CPU=off`, `ACPP_STDPAR=off`, `ACPP_EXTRA_COMPILE_OPTIONS=--cuda-include-ptx=sm_70`; Linux-only |
 | `cuda-sm86` | `cuda:sm_86` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_86` |
 | `cuda-sm120` | `cuda:sm_120` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_120` |
@@ -348,7 +348,10 @@ Test failures fail `windows-omp` visibly instead of being hidden by a
 step-level `continue-on-error`. Open Windows problems are tracked in #108.
 
 `windows-omp` builds `windows-generic-debuginfo`: the same `-O3` code with
-CodeView debug info, so crash stacks have symbols. `/DEBUG` makes the linker
+CodeView line tables, so crash stacks have function names and source lines.
+Full debug info (`-g`) crashes AdaptiveCpp's `TargetSeparationPass` while it
+writes the device module of `targets/python/bindings.cpp` (also on Linux, with
+the same AdaptiveCpp), so the preset emits line tables only. `/DEBUG` makes the linker
 keep unreferenced functions, so its binaries are larger than the wheels'. Both
 jobs turn on Windows Error Reporting local dumps before their tests
 ([`scripts/ci/windows-crash-dumps.ps1`](../scripts/ci/windows-crash-dumps.ps1)).
