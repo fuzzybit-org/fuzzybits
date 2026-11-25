@@ -1,0 +1,30 @@
+diff --git a/src/mc/queue/sample_shaper.h b/src/mc/queue/sample_shaper.h
+index 6b078322..ec0822fe 100644
+--- a/src/mc/queue/sample_shaper.h
++++ b/src/mc/queue/sample_shaper.h
+@@ -42,6 +42,8 @@
+ 
+ #pragma once
+ 
++#include <cstdlib>
++
+ #include "mc/event/node.h"
+ #include "working_set.h"
+ 
+@@ -220,9 +222,13 @@ template <typename bitpack_t_> struct sample_shaper {
+ 
+     [[nodiscard]] static device_budget query_device_budget(const sycl::device &device) {
+         device_budget budget;
+-        budget.max_alloc_bytes =
+-            std::min<std::size_t>(MAX_ALLOCATABLE_DEVICE_BYTES,
+-                                  static_cast<std::size_t>(device.get_info<sycl::info::device::max_mem_alloc_size>()));
++        // LAB ONLY (not for merge): FZB_LAB_MAX_DEVICE_BYTES overrides the 1 GiB ceiling.
++        std::size_t ceiling = MAX_ALLOCATABLE_DEVICE_BYTES;
++        if (const char *lab = std::getenv("FZB_LAB_MAX_DEVICE_BYTES"); lab != nullptr && *lab != '\0') {
++            ceiling = static_cast<std::size_t>(std::strtoull(lab, nullptr, 10));
++        }
++        budget.max_alloc_bytes = std::min<std::size_t>(
++            ceiling, static_cast<std::size_t>(device.get_info<sycl::info::device::max_mem_alloc_size>()));
+         const auto cache_line_bytes =
+             static_cast<std::size_t>(device.get_info<sycl::info::device::global_mem_cache_line_size>());
+         budget.cache_line_bitpacks = cache_line_bytes / sizeof(bitpack_t_); // 0 if device reports 0
