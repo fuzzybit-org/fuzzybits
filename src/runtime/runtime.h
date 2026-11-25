@@ -122,8 +122,6 @@ struct ReconstructedPdag {
     std::vector<ReconstructedQuery> queries;
     GraphMeta meta;
     std::vector<OriginRecord> origins;
-    /// Notes about 32-bit Bernoulli truncation (#17 is Phase 2).
-    std::vector<std::string> threshold_notes;
 
     ReconstructedPdag();
     ReconstructedPdag(ReconstructedPdag &&) noexcept;

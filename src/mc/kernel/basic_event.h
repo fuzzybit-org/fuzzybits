@@ -1,24 +1,12 @@
 /**
  * @file basic_event.h
- * @brief SYCL kernel implementation for parallel basic event sampling using Philox PRNG
+ * @brief SYCL kernel that samples basic events into bitpacks
  * @author Arjun Earthperson
  * @date 2025
  *
- * @details This file implements a high-performance SYCL kernel for generating random samples
- * from basic events in probabilistic analysis. It uses the Philox counter-based pseudorandom
- * number generator to ensure reproducible, high-quality random numbers suitable for Monte
- * Carlo simulations in parallel computing environments.
- *
- * The implementation provides efficient bit-packed sampling with configurable bit widths
- * and supports massive parallelization across GPU threads. Each basic event is sampled
- * independently using its failure probability, with results stored in bit-packed format
- * for memory efficiency and computational performance.
- *
- * Key features:
- * - Philox 4x32-10 PRNG for cryptographic-quality randomness
- * - Memory-efficient bit-packed storage
- * - Reproducible results with deterministic seeding
- * - Optimal SYCL kernel dispatch and work-group sizing
+ * @details Each basic event's bitpacks are exact Bernoulli(T / 2^64) draws from the bit-sliced Philox
+ * sampler defined in prng/bernoulli.h. The kernel has two forms that produce the same bitpacks; the host
+ * picks one per device type (`sampler_form_for`).
  *
  * @copyright Copyright (C) 2025 Arjun Earthperson
  * This program is free software; you can redistribute it and/or modify
@@ -38,119 +26,116 @@
 #pragma once
 
 #include "mc/event/node.h"
-#include "mc/prng/philox128.h"
-#include "mc/prng/state128.h"
-#include "mc/prng/xorshift128.h"
-#include "prng/sfc64.h"
-#include "prng/wyrand.h"
+#include "mc/event/sample_shape.h"
+#include "mc/prng/bernoulli.h"
 
 #include <sycl/sycl.hpp>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <type_traits>
+
 namespace scram::mc::kernel {
 
-template <typename prob_t_, typename bitpack_t_, typename size_t_> class basic_event {
+/// How the basic-event kernel spreads an event's bitpacks over work-items.
+enum class sampler_form {
+    /// GPU: a work-item samples a strided run of up to `kMaxRun` bitpacks one at a time, starting the next
+    /// as soon as one is decided (`bernoulli::sample_strided`).
+    strided,
+    /// CPU: a work-item samples `kLanes` consecutive bitpacks in vector registers (`bernoulli::sample_lanes`).
+    lanes,
+};
+
+inline sampler_form sampler_form_for(const sycl::device &device) {
+    return device.is_cpu() ? sampler_form::lanes : sampler_form::strided;
+}
+
+template <typename prob_t_, typename bitpack_t_, typename size_t_, sampler_form form_> class basic_event {
+    static_assert(std::is_same_v<bitpack_t_, std::uint64_t>, "the bit-sliced sampler defines 64-trial bitpacks");
 
     using be_block = event::basic_event_block<prob_t_, bitpack_t_>;
     be_block basic_events_block_;
 
-    using sample_shape = event::sample_shape<size_t_>;
-    /// @brief Configuration for sample batch dimensions and bit-packing
-    const sample_shape sample_shape_;
+    /// Bitpacks per event per iteration (batch_size * bitpacks_per_batch).
+    std::uint32_t bitpacks_;
+
+    /// Work-items per event: `strided` runs, or `lanes` groups of kLanes bitpacks.
+    std::uint32_t items_per_event_;
+
+    /// Work-groups per event: items_per_event_ rounded up to whole work-groups, so none spans two events.
+    std::uint32_t groups_per_event_;
 
   public:
-    basic_event(const be_block &basic_events_block, const sample_shape &sample_shape)
-        : basic_events_block_(basic_events_block), sample_shape_(sample_shape) {}
+    static constexpr int kLanes = 16;
+    static constexpr std::uint32_t kMaxRun = 32;
+    static constexpr std::size_t kWorkGroup = form_ == sampler_form::strided ? 128 : 64;
 
-    struct positional_counter {
-        /// @brief Basic event position in block
-        /// range: [0, basic_events_block_.count)
-        /// constraints: [[ event_idx < basic_events_block_.count ]]
-        /// @warning typically, pdag_idx and event_idx could be correlated
-        uint32_t event_idx;
-
-        /// @brief Unique index identifier in the pdag
-        /// range: [2, ?)
-        uint32_t pdag_idx;
-
-        /// @brief Batch index/position:
-        /// range: [0, sample_shape_.batch_size)
-        /// constraints: [[ batch_idx < sample_shape_.batch_size ]]
-        uint32_t batch_idx;
-
-        /// @brief Bitpack index within the current batch
-        /// range: [0, sample_shape_.bitpacks_per_batch)
-        /// constraints: [[ bitpack_idx < sample_shape_.bitpacks_per_batch ]]
-        uint32_t bitpack_idx;
-
-        /// @brief linearized index
-        /// batch_idx * bitpacks_per_batch + bitpack_idx
-        uint32_t sample_idx;
-
-        /// @brief iteration index
-        /// (iteration + 1) << 6,
-        uint32_t iteration_idx;
-
-        bool is_out_of_bounds;
-
-        [[gnu::always_inline]] explicit positional_counter(const sycl::nd_item<3> &item, const be_block &event_block,
-                                                           const sample_shape &sample_shape,
-                                                           const uint32_t &iteration) {
-            event_idx = static_cast<uint32_t>(item.get_global_id(0));
-            batch_idx = static_cast<uint32_t>(item.get_global_id(1));
-            bitpack_idx = static_cast<uint32_t>(item.get_global_id(2));
-            pdag_idx = static_cast<uint32_t>(event_block[event_idx].index);
-            sample_idx = batch_idx * sample_shape.bitpacks_per_batch + bitpack_idx;
-            iteration_idx = iteration;
-            is_out_of_bounds = event_idx >= event_block.count || batch_idx >= sample_shape.batch_size ||
-                               bitpack_idx >= sample_shape.bitpacks_per_batch;
+    basic_event(const be_block &basic_events_block, const event::sample_shape<size_t_> &sample_shape,
+                const sycl::device &device)
+        : basic_events_block_(basic_events_block),
+          bitpacks_(static_cast<std::uint32_t>(sample_shape.batch_size * sample_shape.bitpacks_per_batch)) {
+        if constexpr (form_ == sampler_form::strided) {
+            // Up to kMaxRun bitpacks per work-item, fewer when the iteration is too small to keep every compute
+            // unit busy (2048 work-items per unit bounds what a GPU keeps in flight).
+            const std::size_t units =
+                std::max<std::size_t>(device.get_info<sycl::info::device::max_compute_units>(), 1);
+            const std::size_t total = basic_events_block_.count * static_cast<std::size_t>(bitpacks_);
+            const auto run = static_cast<std::uint32_t>(std::clamp<std::size_t>(total / (units * 2048), 1, kMaxRun));
+            items_per_event_ = (bitpacks_ + run - 1) / run;
+        } else {
+            (void)device;
+            items_per_event_ = (bitpacks_ + kLanes - 1) / kLanes;
         }
-
-        [[gnu::always_inline]] [[nodiscard]] static prng::state128 fill(const positional_counter &args) {
-            const prng::state128 to_fill = {
-                .x = {
-                    args.pdag_idx + 1, args.event_idx + 1, args.sample_idx + 1,
-                    (args.iteration_idx + 1) << 6, // spare 6 bits to store generation count (i)
-                }};
-            return to_fill;
-        }
-    };
-
-    void operator()(const sycl::nd_item<3> &item, const uint32_t iteration) const {
-
-        const positional_counter args(item, basic_events_block_, sample_shape_, iteration);
-
-        // Bounds checking
-        if (args.is_out_of_bounds) {
-            return;
-        }
-
-        const prng::state128 seed_base = positional_counter::fill(args);
-
-        const auto &p_threshold = basic_events_block_[args.event_idx].probability_threshold;
-        const bitpack_t_ bitpack_value = prng::philox::pack_bernoulli_draws<bitpack_t_>(seed_base, p_threshold);
-
-        // Store the bitpacked samples into the buffer
-        bitpack_t_ *output = basic_events_block_[args.event_idx].buffer;
-        output[args.sample_idx] = bitpack_value;
+        groups_per_event_ = static_cast<std::uint32_t>((items_per_event_ + kWorkGroup - 1) / kWorkGroup);
     }
 
-    static sycl::nd_range<3> get_range(const size_t_ num_events, const sycl::range<3> &local_range,
-                                       const event::sample_shape<size_t_> &sample_shape_) {
+    /// One dimension of events x work-groups per event. A second dimension for events would cap them at the
+    /// CUDA grid's 65535 blocks in y.
+    [[nodiscard]] sycl::nd_range<1> get_range() const {
+        return {sycl::range<1>{basic_events_block_.count * groups_per_event_ * kWorkGroup}, sycl::range<1>{kWorkGroup}};
+    }
 
-        size_t global_size_x = num_events;
-        size_t global_size_y = sample_shape_.batch_size;
-        size_t global_size_z = sample_shape_.bitpacks_per_batch;
+    [[nodiscard]] std::size_t events() const { return basic_events_block_.count; }
+    [[nodiscard]] std::size_t items_per_event() const { return groups_per_event_ * kWorkGroup; }
 
-        // Round up to the next multiple of the local size in each dimension
-        global_size_x = ((global_size_x + local_range[0] - 1) / local_range[0]) * local_range[0];
-        global_size_y = ((global_size_y + local_range[1] - 1) / local_range[1]) * local_range[1];
-        global_size_z = ((global_size_z + local_range[2] - 1) / local_range[2]) * local_range[2];
+    void operator()(const sycl::nd_item<1> &item, const std::uint32_t iteration) const {
+        // The event comes from the work-group index, which compilers know is uniform across the group, so
+        // per-event values stay in scalar registers instead of being loaded per work-item.
+        const auto group = static_cast<std::uint32_t>(item.get_group(0));
+        const auto event_idx = group / groups_per_event_;
+        const auto item_idx =
+            static_cast<std::uint32_t>((group - event_idx * groups_per_event_) * kWorkGroup + item.get_local_id(0));
+        if (item_idx >= items_per_event_) {
+            return;
+        }
+        const auto &event = basic_events_block_[event_idx];
+        bitpack_t_ *output = event.buffer;
+        const auto pdag_idx = static_cast<std::uint32_t>(event.index);
 
-        sycl::range<3> global_range(global_size_x, global_size_y, global_size_z);
-        LOG(INFO) << "kernel::basic_event::\tlocal_range{x,y,z}:(" << local_range[0] << ", " << local_range[1] << ", "
-                  << local_range[2] << ")\tglobal_range{x,y,z}:(" << global_range[0] << ", " << global_range[1] << ", "
-                  << global_range[2] << ")\tnum_events:" << num_events << " | " << sample_shape_;
-        return {global_range, local_range};
+        if constexpr (form_ == sampler_form::strided) {
+            if (event.always_true || event.threshold == 0) {
+                const bitpack_t_ value = event.always_true ? ~bitpack_t_{0} : bitpack_t_{0};
+                for (std::uint32_t s = item_idx; s < bitpacks_; s += items_per_event_) {
+                    output[s] = value;
+                }
+                return;
+            }
+            prng::bernoulli::sample_strided(output, item_idx, items_per_event_, bitpacks_, pdag_idx, event_idx,
+                                            iteration, event.threshold);
+        } else {
+            const std::uint32_t first = item_idx * kLanes;
+            const std::uint32_t valid = std::min<std::uint32_t>(kLanes, bitpacks_ - first);
+            if (event.always_true || event.threshold == 0) {
+                const bitpack_t_ value = event.always_true ? ~bitpack_t_{0} : bitpack_t_{0};
+                for (std::uint32_t i = 0; i < valid; ++i) {
+                    output[first + i] = value;
+                }
+                return;
+            }
+            prng::bernoulli::sample_lanes<kLanes>(output + first, valid, first, pdag_idx, event_idx, iteration,
+                                                  event.threshold);
+        }
     }
 };
 } // namespace scram::mc::kernel

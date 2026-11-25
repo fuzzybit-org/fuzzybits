@@ -72,7 +72,7 @@ has no power. (The “e.g. 100” figure is the same order of magnitude;
 hits = 0 the table omits z; the power rule has already classified the row.
 
 Rare-event work is [#6](https://github.com/fuzzybit-org/fuzzybits/issues/6)
-(importance sampling) and [#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)/[#91](https://github.com/fuzzybit-org/fuzzybits/issues/91).
+(importance sampling).
 GPUs help by a few orders of magnitude and still do not reach n·p ≈ 1000 for
 these models. Do not enlarge the CI budget to chase them.
 
@@ -138,10 +138,9 @@ treated as zero.
 
 v1 records compile time, PDAG size (`fzb inspect --json`: tensors, operators,
 samples) and sampling throughput. Accuracy is deferred: SAPHIRE MCS values are
-mostly 1e-10 to 1e-6, values below 2.3e-10 quantize to zero ([#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)),
-and only the first fault-tree top event is compiled
-([#92](https://github.com/fuzzybit-org/fuzzybits/issues/92)). Revisit with #92,
-#17 and #6. The generic-pwr-model OpenPSA export is not self-contained MEF;
+mostly 1e-10 to 1e-6, and only the first fault-tree top event is compiled
+([#92](https://github.com/fuzzybit-org/fuzzybits/issues/92)). Revisit with #92
+and #6. The generic-pwr-model OpenPSA export is not self-contained MEF;
 the harness rewrites a cached copy via `benchmarks/datasets/compat/generic_pwr.py`.
 
 A fresh clone needs:

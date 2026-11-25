@@ -524,8 +524,6 @@ TEST_CASE("pcfb reconstruction places SAMPLE event_id at the Variable index", "[
         }
     }
     REQUIRE(reconstructed.events.size() >= n_sample);
-    REQUIRE_FALSE(reconstructed.threshold_notes.empty());
-    REQUIRE(reconstructed.threshold_notes.front().find("2^32") != std::string::npos);
 }
 
 TEST_CASE("fzb run chinese.pcfb is bit-identical to the in-memory PDAG path", "[runtime][mc][bit-identity]") {

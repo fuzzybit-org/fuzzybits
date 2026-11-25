@@ -945,7 +945,7 @@ def run(
 
     ``seed`` is rejected (#65). ``backend`` is ``"auto"``, ``"cuda"``,
     ``"hip"``, ``"omp"``, or ``"metal"``; ``"auto"`` keeps the mask :func:`fuzzybits.init`
-    already applied. Metal SSCP currently rejects ``double`` until #17/#30.
+    already applied.
 
     ``on_progress`` receives a :class:`ProgressSnapshot` per coalesced engine
     snapshot (first and last always included, at most ~10 per second). Raising

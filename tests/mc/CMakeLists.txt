@@ -80,6 +80,20 @@ set_tests_properties(mc.bitpack_identity PROPERTIES
   TIMEOUT ${MC_TEST_TIMEOUT}
 )
 
+# Host-only: the bit-sliced Bernoulli sampler against Philox known answers, exact references and
+# statistical checks. Device output is compared with the same reference by mc.bitpack_identity.
+add_executable(mc_bernoulli_sampler_tests bernoulli_sampler_tests.cc)
+target_link_libraries(mc_bernoulli_sampler_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_bernoulli_sampler_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_test(NAME mc.bernoulli_sampler COMMAND mc_bernoulli_sampler_tests)
+set_tests_properties(mc.bernoulli_sampler PROPERTIES
+  LABELS "mc"
+  TIMEOUT ${MC_TEST_TIMEOUT}
+)
+
 add_executable(mc_atleast_gate_tests atleast_gate_tests.cc)
 target_link_libraries(mc_atleast_gate_tests PRIVATE Catch2::Catch2WithMain mc)
 target_include_directories(mc_atleast_gate_tests PRIVATE
