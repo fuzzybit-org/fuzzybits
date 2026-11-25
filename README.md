@@ -228,10 +228,9 @@ Limits
   model's parameters.
 - The interval is the normal approximation. With few hits it is too
   narrow, and with no hits it is [0, 0], so check the hit count.
-- Probabilities are stored as 32-bit thresholds. Values below
-  $2^{-32} \approx 2.3 \times 10^{-10}$ become 0, and others are rounded down by up to
-  $2^{-32}$, a relative error of up to $2^{-32}/p$: about 2% at $10^{-8}$ and 0.2%
-  at $10^{-7}$ ([#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)).
+- Probabilities are sampled through 64-bit thresholds $\lfloor p \cdot 2^{64} \rfloor$:
+  each is rounded down by less than $2^{-64}$, and every $p \ge 2^{-64}$ is sampled at a
+  nonzero rate ([#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)).
 - Results are deterministic for a given model and trial count.
   --seed is not supported yet
   ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)), so
@@ -251,12 +250,12 @@ Status
 | Common-cause groups: beta-factor, MGL, alpha-factor, phi-factor | yes, expanded by default; --no-ccf disables |
 | CPU (OpenMP), NVIDIA GPU (CUDA) and Apple Silicon GPU (Metal)   | yes; Metal with several passes per step: [#171](https://github.com/fuzzybit-org/fuzzybits/issues/171) |
 | AMD GPU (HIP, ROCm 7)                                           | yes, from 0.18.7 |
+| Probabilities below $2^{-32}$, down to $2^{-64}$                | yes ([#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)) |
 | Event-tree sequences and end states in one pass                 | not yet ([#92](https://github.com/fuzzybit-org/fuzzybits/issues/92)) |
 | Probabilities of intermediate gates                             | not yet ([#96](https://github.com/fuzzybit-org/fuzzybits/issues/96)) |
 | Importance measures (Birnbaum, Fussell–Vesely, RAW, RRW)        | not yet   |
 | Importance sampling for rare events                             | not yet ([#6](https://github.com/fuzzybit-org/fuzzybits/issues/6)) |
 | User-set random seed                                            | not yet ([#65](https://github.com/fuzzybit-org/fuzzybits/issues/65)) |
-| Probabilities below $2^{-32}$                                   | not yet ([#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)) |
 
 
 Background

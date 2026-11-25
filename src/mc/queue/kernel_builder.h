@@ -203,6 +203,21 @@ register_kernel_partition(const std::shared_ptr<queueable_base> &queueable_parti
     execution_partitions.push_back(std::move(description));
 }
 
+/// Basic-event sampling partition in sampler form `form_`. Reports its range as {events, 1, work-items per
+/// event} so the partition description keeps the 3-D shape of the other kernels.
+template <kernel::sampler_form form_, typename prob_t_, typename bitpack_t_, typename size_t_>
+static std::shared_ptr<queueable_base>
+make_basic_event_partition(sycl::queue &queue_, const event::basic_event_block<prob_t_, bitpack_t_> &event_block,
+                           const event::sample_shape<size_t_> &sample_shape_, sycl::range<3> &global_range,
+                           sycl::range<3> &local_range) {
+    using kernel_type = kernel::basic_event<prob_t_, bitpack_t_, size_t_, form_>;
+    const kernel_type be_kernel(event_block, sample_shape_, queue_.get_device());
+    const auto nd_range = be_kernel.get_range();
+    global_range = sycl::range<3>{be_kernel.events(), 1, be_kernel.items_per_event()};
+    local_range = sycl::range<3>{1, 1, nd_range.get_local_range()[0]};
+    return std::make_shared<iterable_queueable<kernel_type, 1>>(queue_, be_kernel, nd_range);
+}
+
 /**
  * @brief Builds a SYCL kernel for parallel basic event sampling
  *
@@ -336,23 +351,21 @@ static std::shared_ptr<queueable_base> build_kernel_for_variables(
     block_type event_block = event::create_basic_event_block<prob_t_, bitpack_t_>(queue_, indexed_probabilities,
                                                                                   sample_shape_.num_bitpacks());
 
-    // 3) Build the basic_event kernel using the block wrapper
-    using kernel_type = kernel::basic_event<prob_t_, bitpack_t_, size_t_>;
-    kernel_type be_kernel(event_block, sample_shape_);
+    // 3) Build the basic_event kernel in the device's sampler form (both forms produce the same bitpacks)
+    sycl::range<3> global_range{1, 1, 1};
+    sycl::range<3> local_range{1, 1, 1};
+    const auto queueable_partition = kernel::sampler_form_for(queue_.get_device()) == kernel::sampler_form::lanes
+                                         ? make_basic_event_partition<kernel::sampler_form::lanes>(
+                                               queue_, event_block, sample_shape_, global_range, local_range)
+                                         : make_basic_event_partition<kernel::sampler_form::strided>(
+                                               queue_, event_block, sample_shape_, global_range, local_range);
+    register_kernel_partition(
+        queueable_partition,
+        make_kernel_partition_description<size_t_, bitpack_t_>(layer_index_, "basic_event", "sample", node_indices, {},
+                                                               global_range, local_range, sample_shape_),
+        execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_);
 
-    // 4) Compute the ND-range and create a queueable partition
-    const auto local_range =
-        working_set<size_t_, bitpack_t_>(queue_, num_events_in_kernel, sample_shape_).compute_optimal_local_range_3d();
-    const auto nd_range = be_kernel.get_range(num_events_in_kernel, local_range, sample_shape_);
-    iterable_queueable<kernel_type, 3> be_partition(queue_, be_kernel, nd_range);
-    auto queueable_partition = std::make_shared<decltype(be_partition)>(be_partition);
-    register_kernel_partition(queueable_partition,
-                              make_kernel_partition_description<size_t_, bitpack_t_>(
-                                  layer_index_, "basic_event", "sample", node_indices, {}, nd_range.get_global_range(),
-                                  nd_range.get_local_range(), sample_shape_),
-                              execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_);
-
-    // 5) Update allocated objects and queueables in the global maps
+    // 4) Update allocated objects and queueables in the global maps
     for (auto i = 0; i < num_events_in_kernel; ++i) {
         const auto event_index_in_pdag = indexed_probabilities[i].first;
         // allocated_basic_events_by_index_[event_index_in_pdag] = event_block.data + i;
@@ -360,10 +373,10 @@ static std::shared_ptr<queueable_base> build_kernel_for_variables(
         queueables_by_index_[event_index_in_pdag] = queueable_partition;
     }
 
-    // 6) Store the basic events block for dealloc
+    // 5) Store the basic events block for dealloc
     device_basic_event_blocks_.push_back(event_block);
 
-    // 7) Enqueue for computation
+    // 6) Enqueue for computation
     queueables_.push_back(queueable_partition);
     return queueable_partition;
 }

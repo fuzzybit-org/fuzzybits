@@ -14,7 +14,6 @@
 #include <exception>
 #include <limits>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
@@ -23,8 +22,6 @@
 
 namespace fuzzybits::runtime {
 namespace {
-
-constexpr double kTwoTo32 = 4294967296.0; // 2^32
 
 /// A tensor is a Variable (SAMPLE) or a Gate (every other op, constants included). The PDAG constant
 /// never becomes an argument of a gate that has other arguments (see `constant_gate`).
@@ -333,15 +330,6 @@ std::unique_ptr<scram::mef::Gate> make_origin_gate(std::string name, const Origi
     }
 }
 
-std::string threshold_note(double p, std::uint64_t spec_threshold, bool always_true) {
-    const auto kernel_threshold = static_cast<std::uint64_t>(p * kTwoTo32);
-    std::ostringstream os;
-    os << "p=" << p << " SampleArgs.threshold=" << spec_threshold << " always_true=" << (always_true ? "true" : "false")
-       << " kernel_threshold=floor(p*2^32)=" << kernel_threshold
-       << " (32-bit Philox word; #17 / Phase 2 lifts this to 64-bit)";
-    return os.str();
-}
-
 scram::core::Connective connective_for(pcfb::OpCode op) {
     switch (op) {
     case pcfb::OpCode::BITWISE_AND:
@@ -609,7 +597,6 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         event->expression(expr.get());
         graph->SetBasicEvent(var->index(), event.get());
         vars_by_event[s.event_id] = var;
-        out.threshold_notes.push_back(threshold_note(s.p, s.threshold, s.always_true));
         const auto expected = pcfb::probability_to_threshold(s.always_true ? 1.0 : s.p);
         if (!s.always_true && expected != s.threshold) {
             // validate() already enforces ±1 ulp; keep a hard check for the runtime.
