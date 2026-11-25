@@ -80,8 +80,7 @@ namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
 }
 
 [[nodiscard]] auto atom_split_hull(pc::circuit const &model) -> passes::pipeline_options {
-    return passes::pipeline_options{.semantics =
-                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+    return passes::pipeline_options{.kinds = std::vector(model.targets().size(), pc::query_kind::monotone_hull),
                                     .atom_events = direct_complements(model)};
 }
 
@@ -136,12 +135,11 @@ TEST_CASE("C1 on public FTP fixtures: fewer or equal edges, same probabilities",
         if (literal_only(*input) && event_count(*input) <= 20) {
             require_close(exact_probabilities(*input), exact_probabilities(compiled.output));
             require_close(hull_probabilities(*input),
-                          hull_probabilities(
-                              passes::compile(*input, passes::compile_level::c1,
-                                              passes::pipeline_options{
-                                                  .semantics = std::vector(input->targets().size(),
-                                                                           passes::target_semantics::monotone_hull)})
-                                  .output));
+                          hull_probabilities(passes::compile(*input, passes::compile_level::c1,
+                                                             passes::pipeline_options{
+                                                                 .kinds = std::vector(input->targets().size(),
+                                                                                      pc::query_kind::monotone_hull)})
+                                                 .output));
             const auto atoms = direct_complements(*input);
             if (event_count(*input) + atoms.front().size() <= 20) {
                 const auto split = passes::compile(*input, passes::compile_level::c1, atom_split_hull(*input));
@@ -196,8 +194,7 @@ TEST_CASE("C1 on private FTP models reports aggregate node and edge counts", "[i
 
         const auto hull = passes::compile(
             *input, passes::compile_level::c1,
-            passes::pipeline_options{
-                .semantics = std::vector(input->targets().size(), passes::target_semantics::monotone_hull)});
+            passes::pipeline_options{.kinds = std::vector(input->targets().size(), pc::query_kind::monotone_hull)});
         REQUIRE(hull.ok());
         REQUIRE(hull.edges_after <= hull.edges_before);
         hull_nodes += hull.nodes_after;

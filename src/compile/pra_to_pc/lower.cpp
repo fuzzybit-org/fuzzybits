@@ -8,6 +8,7 @@
 #include "ir/pc/edge.h"
 #include "ir/pc/id.h"
 #include "ir/pc/op_code.h"
+#include "ir/pc/query.h"
 #include "ir/pc/target.h"
 #include "ir/pra/event.h"
 #include "ir/pra/expression.h"
@@ -119,8 +120,10 @@ struct resolved_target final {
     pra::domain_target_id domain_target;
     pra::domain_ref subject;
     pc::observable_role role = pc::observable_role::primary;
-    pra::negation_set negation;
-    pra::literal_mode literals = pra::literal_mode::atom_split;
+    // Ascending (probability before monotone_hull), without repeats; never empty.
+    std::vector<pc::query_kind> kinds;
+    // Set exactly when `kinds` holds monotone_hull.
+    std::optional<pra::hull_query> hull;
 };
 
 // Operands of these gates are not monotone in the gate's value.
@@ -158,10 +161,17 @@ class lowering final {
     [[nodiscard]] auto run() && -> lowering_result {
         resolve_targets();
         resolve_overrides();
-        if (frequencies() && config_.max_initiators_per_cutset) {
-            error("compile.pra_to_pc.initiator-rule-with-frequencies",
-                  "max_initiators_per_cutset applies only when initiating-event values are probabilities; with "
-                  "frequencies every conditioned target has exactly one initiating event");
+        if (frequencies()) {
+            for (auto const &target : targets_) {
+                if (target.hull && target.hull->max_initiators) {
+                    error("compile.pra_to_pc.initiator-rule-with-frequencies",
+                          "target " + target_name(target) +
+                              ": the initiator rule (max_initiators) applies only when initiating-event values are "
+                              "probabilities; with frequencies every conditioned target has exactly one initiating "
+                              "event");
+                    break;
+                }
+            }
         }
         if (diagnostics_.has_errors()) {
             return lowering_result::fail(std::move(diagnostics_));
@@ -215,13 +225,22 @@ class lowering final {
     void resolve_targets() {
         std::set<pra::domain_ref> seen;
         const auto add = [&](target_request const &request, const bool watch) {
-            if (request.negation.empty()) {
-                error("compile.pra_to_pc.empty-negation",
-                      "target " + in_quotes(request.name) + " requests no negation semantics");
+            resolved_target out{.kinds = request.kinds.empty() ? config_.default_kinds : request.kinds};
+            std::ranges::sort(out.kinds);
+            out.kinds.erase(std::ranges::unique(out.kinds).begin(), out.kinds.end());
+            if (out.kinds.empty()) {
+                error("compile.pra_to_pc.no-query-kinds", "target " + in_quotes(request.name) + " requests no query");
                 return;
             }
-            resolved_target out{.negation = request.negation,
-                                .literals = request.literals.value_or(config_.default_literals)};
+            const bool hull = std::ranges::find(out.kinds, pc::query_kind::monotone_hull) != out.kinds.end();
+            if (request.hull && !hull) {
+                error("compile.pra_to_pc.hull-parameters-without-hull",
+                      "target " + in_quotes(request.name) + " sets hull parameters but requests no hull query");
+                return;
+            }
+            if (hull) {
+                out.hull = request.hull.value_or(config_.default_hull);
+            }
             pra::domain_ref key;
             if (!request.element) {
                 const auto target = model_.find_target(request.name);
@@ -265,9 +284,7 @@ class lowering final {
             for (std::uint32_t index = 0; index < targets.size(); ++index) {
                 if (targets[index].role == pra::target_role::primary) {
                     const pra::domain_ref target = pra::domain_target_id(index);
-                    add(target_request{.name = std::string(model_.stable_name(target)),
-                                       .negation = config_.default_negation},
-                        false);
+                    add(target_request{.name = std::string(model_.stable_name(target))}, false);
                 }
             }
         } else {
@@ -519,21 +536,21 @@ class lowering final {
                 // The hull check reads every complemented edge into an atom-split or
                 // omega_L event as the literal, so an unmarked complement of the same
                 // event cannot keep its negation reading.
-                if (request.negation.monotone_hull && request.literals != pra::literal_mode::negation &&
+                if (request.hull && request.hull->literals != pra::hull_literals::plain &&
                     unmarked_stamp[event.raw()] == stamp) {
                     error("compile.pra_to_pc.mixed-literal",
                           "target " + target_name(request) + ": basic event " + name(event) +
                               " has both literal and unmarked complemented operands");
-                } else if (request.negation.monotone_hull && event_below_stamp[event.raw()] == stamp) {
+                } else if (request.hull && event_below_stamp[event.raw()] == stamp) {
                     divergent.push_back(event);
                 }
-                if (request.negation.monotone_hull && config_.max_initiators_per_cutset &&
-                    is_initiator_[event.raw()] != 0 && warned_initiator[event.raw()] == 0) {
+                if (request.hull && request.hull->max_initiators && is_initiator_[event.raw()] != 0 &&
+                    warned_initiator[event.raw()] == 0) {
                     warned_initiator[event.raw()] = 1;
                     if (initiator_warnings++ < listed_warning_limit) {
                         diagnostics_.push(api::make_warning("compile.pra_to_pc.complemented-initiator",
                                                             "initiating event " + name(event) +
-                                                                " has a literal complement; max_initiators_per_cutset "
+                                                                " has a literal complement; the initiator rule "
                                                                 "is exact only for uncomplemented initiators"));
                     }
                 }
@@ -544,7 +561,8 @@ class lowering final {
                         api::make_warning("compile.pra_to_pc.complement-under-negation",
                                           "target " + target_name(request) + ": basic event " + name(event) +
                                               " is a literal and also occurs below a negation, "
-                                              "xor or upper-bounded cardinality; the literal modes can differ"));
+                                              "xor or upper-bounded cardinality; the hull readings of literals "
+                                              "can differ"));
                 }
             }
         }
@@ -574,11 +592,12 @@ class lowering final {
     // probability query it would remove every assignment with more than k initiating events, which
     // changes the target (docs/rfc/monotone-hull-queries.md 4.8).
     [[nodiscard]] auto delete_term_size(const std::size_t target) const -> std::uint32_t {
-        if (!config_.max_initiators_per_cutset || !targets_[target].negation.monotone_hull) {
+        auto const &hull = targets_[target].hull;
+        if (!hull || !hull->max_initiators) {
             return 0;
         }
         const auto count = initiator_ranges_[target].count;
-        return count > *config_.max_initiators_per_cutset ? count : 0;
+        return count > *hull->max_initiators ? count : 0;
     }
 
     // Under frequencies: a gate depends on the conditions when its cone, through elements no override
@@ -891,7 +910,24 @@ class lowering final {
             return nodes_[element];
         };
 
+        // One binding, and one PC target, per query of each request, in kind order.
         std::uint32_t next_target = 0;
+        const auto bind_query = [&](resolved_target const &request, const std::uint32_t index,
+                                    const pc::query_kind kind, const pc::bool_node_id root) -> pra::target_binding & {
+            targets.push_back(pra::target_binding{
+                .domain_target = request.domain_target,
+                .subject = request.subject,
+                .pc_target = pc::target_id(next_target++),
+                .role = request.role,
+                .root = root,
+                .node = root,
+                .kind = kind,
+                .hull = kind == pc::query_kind::monotone_hull ? request.hull : std::nullopt,
+                .initiators = initiator_ranges_[index],
+                .literal_events = literal_ranges_[index],
+            });
+            return targets.back();
+        };
         for (std::uint32_t index = 0; index < targets_.size(); ++index) {
             auto const &request = targets_[index];
             if (frequencies() && initiator_ranges_[index].count != 0) {
@@ -911,81 +947,43 @@ class lowering final {
                         ++report.conditioned_nodes;
                     }
                     const auto root = resolve(request.subject);
-                    const auto target = pc::target_id(next_target++);
-                    pra::target_binding binding{
-                        .domain_target = request.domain_target,
-                        .subject = request.subject,
-                        .pc_target = target,
-                        .role = request.role,
-                        .root = root,
-                        .node = root,
-                        .negation = request.negation,
-                        .literals = request.literals,
-                        .initiators = range,
-                        .literal_events = literal_ranges_[index],
-                        .condition = current,
-                    };
-                    (void)builder_.add_target(root, binding.role);
-                    targets.push_back(binding);
-                    ++report.conditioned_targets;
+                    for (const auto kind : request.kinds) {
+                        auto &binding = bind_query(request, index, kind, root);
+                        binding.condition = current;
+                        (void)builder_.add_target(binding.node, binding.role);
+                        ++report.conditioned_targets;
+                    }
                 }
                 continue;
             }
-            const auto size = delete_term_size(index);
-            if (size != 0 && request.negation.boolean) {
-                // The probability query reads the subject itself; only the hull query gets the rule, so
-                // the two queries of this target lie on different nodes.
-                const auto target = pc::target_id(next_target++);
-                pra::target_binding binding{
-                    .domain_target = request.domain_target,
-                    .subject = request.subject,
-                    .pc_target = target,
-                    .role = request.role,
-                    .root = nodes_[request.subject],
-                    .negation = pra::negation_set::of(pra::negation_semantics::boolean),
-                    .literals = request.literals,
-                    .initiators = initiator_ranges_[index],
-                    .literal_events = literal_ranges_[index],
-                };
-                binding.node = binding.root;
-                (void)builder_.add_target(binding.node, binding.role);
-                targets.push_back(binding);
-            }
-            const auto target = pc::target_id(next_target++);
-            pra::target_binding binding{
-                .domain_target = request.domain_target,
-                .subject = request.subject,
-                .pc_target = target,
-                .role = request.role,
-                .root = nodes_[request.subject],
-                .negation =
-                    size != 0 ? pra::negation_set::of(pra::negation_semantics::monotone_hull) : request.negation,
-                .literals = request.literals,
-                .initiators = initiator_ranges_[index],
-                .literal_events = literal_ranges_[index],
-            };
-            binding.node = binding.root;
-            if (size != 0) {
-                edges.clear();
-                auto const &range = initiator_ranges_[index];
-                for (std::uint32_t offset = 0; offset < range.count; ++offset) {
-                    edges.push_back(
-                        pc::edge_ref{.source = nodes_[pra::domain_ref(initiator_events_[range.offset + offset])]});
+            const auto root = nodes_[request.subject];
+            for (const auto kind : request.kinds) {
+                auto &binding = bind_query(request, index, kind, root);
+                // The initiator rule is a cut-set rule: the hull query holds it, the probability query on
+                // the same subject never does, so the two lie on different nodes.
+                if (const auto size = delete_term_size(index); size != 0 && kind == pc::query_kind::monotone_hull) {
+                    edges.clear();
+                    auto const &range = initiator_ranges_[index];
+                    for (std::uint32_t offset = 0; offset < range.count; ++offset) {
+                        edges.push_back(
+                            pc::edge_ref{.source = nodes_[pra::domain_ref(initiator_events_[range.offset + offset])]});
+                    }
+                    const auto delete_term = builder_.add_cardinality(*request.hull->max_initiators + 1, size, edges);
+                    const auto conjunction = builder_.add_and(
+                        {pc::edge_ref{.source = root}, pc::edge_ref{.source = delete_term, .complement = true}});
+                    generated.push_back(pra::generated_binding{.node = delete_term,
+                                                               .kind = pra::generated_kind::initiator_delete_term,
+                                                               .target = binding.pc_target});
+                    generated.push_back(pra::generated_binding{.node = conjunction,
+                                                               .kind = pra::generated_kind::initiator_rule_conjunction,
+                                                               .target = binding.pc_target});
+                    binding.initiator_delete_term = delete_term;
+                    binding.node = conjunction;
+                    report.generated_nodes += 2;
+                    report.generated_edges += std::size_t{size} + 2;
                 }
-                const auto delete_term = builder_.add_cardinality(*config_.max_initiators_per_cutset + 1, size, edges);
-                const auto conjunction = builder_.add_and(
-                    {pc::edge_ref{.source = binding.root}, pc::edge_ref{.source = delete_term, .complement = true}});
-                generated.push_back(pra::generated_binding{
-                    .node = delete_term, .kind = pra::generated_kind::initiator_delete_term, .target = target});
-                generated.push_back(pra::generated_binding{
-                    .node = conjunction, .kind = pra::generated_kind::initiator_rule_conjunction, .target = target});
-                binding.initiator_delete_term = delete_term;
-                binding.node = conjunction;
-                report.generated_nodes += 2;
-                report.generated_edges += std::size_t{size} + 2;
+                (void)builder_.add_target(binding.node, binding.role);
             }
-            (void)builder_.add_target(binding.node, binding.role);
-            targets.push_back(binding);
         }
 
         auto sealed = std::move(builder_).seal();
@@ -994,7 +992,6 @@ class lowering final {
             error("compile.pra_to_pc.invalid-circuit", "the lowered circuit failed ir::pc validation");
             return lowering_result::fail(std::move(diagnostics_));
         }
-        report.max_initiators_per_cutset = config_.max_initiators_per_cutset;
         report.initiators = config_.initiators;
         report.initiator_unit = config_.initiator_unit;
         report.pc_nodes = sealed.output.node_count();

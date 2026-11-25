@@ -26,9 +26,9 @@ struct override_spec final {
 
 // Settings of one compile. Unset values take the `config` document, else the
 // built-in default; nothing is read from the model. Flags override the
-// document: `targets` and `watch` replace its lists, `negation` and
-// `literals` replace every per-target choice in it, `overrides` replace its
-// entries of the same name.
+// document: `targets` and `watch` replace its lists, `kinds`,
+// `hull_literals` and `hull_max_initiators` replace every per-target choice
+// in it, `overrides` replace its entries of the same name.
 struct options final {
     // Domain target (a PROCESS target), gate or basic event names. Empty:
     // the document's targets, else every PROCESS target.
@@ -38,26 +38,25 @@ struct options final {
     std::vector<override_spec> overrides;
     // error | first | last (default last).
     std::optional<std::string> duplicate_import;
-    // boolean | hull | both: the query type of every target (default
-    // boolean, the probability query). Never read from the model.
-    std::optional<std::string> negation;
-    // The initiator rule of hull queries: every monotone-hull query is ANDed
-    // with not atleast(N + 1; initiating events in its cone); probability
-    // queries never are. Outer unset: from the document, else no rule. Inner
-    // unset: no rule (`none`). Only with initiator_values = probability, and
-    // only when some target requests the hull.
-    std::optional<std::optional<std::uint32_t>> max_initiators_per_cutset;
-    // frequency | probability (default frequency, #243): how `I` values are
-    // quantified. frequency: one conditioned query per initiating event in a
-    // target's cone, grouped as the target's frequency; probability: values up
-    // to 1 used as probabilities, above 1 rejected.
+    // The queries of every target: probability | hull, each entry one kind
+    // or a comma-separated list. Empty: the document, else probability.
+    // Never read from the model.
+    std::vector<std::string> kinds;
+    // split | fixed | plain: how hull queries read marked literals (-EVENT);
+    // default split. Only when some target asks for the hull.
+    std::optional<std::string> hull_literals;
+    // The initiator rule of hull queries: every hull query is ANDed with
+    // not atleast(N + 1; initiating events in its cone); probability queries
+    // never are. Outer unset: the document, else no rule. Inner unset: no
+    // rule (`none`). A count needs a hull query and initiator_values =
+    // probability.
+    std::optional<std::optional<std::uint32_t>> hull_max_initiators;
+    // What `I` values are (#243): a frequency unit, per-year (default) |
+    // per-month | per-week | per-day | per-hour, giving one conditioned query
+    // per initiating event in a target's cone, grouped as the target's
+    // frequency in that unit; or `probability`, values up to 1 used as
+    // probabilities, above 1 rejected.
     std::optional<std::string> initiator_values;
-    // per-year | per-month | per-week | per-day | per-hour: the unit of every
-    // `I` value (default per-year with initiator_values = frequency); rejected
-    // with probability.
-    std::optional<std::string> initiator_unit;
-    // atom_split | omega_l | negation (default atom_split).
-    std::optional<std::string> literals;
     // 0 or 1 (default 1).
     std::optional<int> level;
     // A quantification config document (JSON text); see docs/ftp-input.md.
@@ -73,11 +72,12 @@ struct target_summary final {
     // domain_target | gate | basic_event
     std::string subject;
     bool watch = false;
-    bool boolean = true;
-    bool monotone_hull = false;
-    std::string literals;
-    // The initiator rule lowered into this target; unset when it holds no delete term.
-    std::optional<std::uint32_t> max_initiators_per_cutset;
+    // probability | hull: one summary per query.
+    std::string kind;
+    // A hull query's reading of marked literals (split | fixed | plain); empty for a probability query.
+    std::string hull_literals;
+    // The initiator rule lowered into this query's target; unset when it holds no delete term.
+    std::optional<std::uint32_t> hull_max_initiators;
     // A query conditioned on this initiating event (initiator_values =
     // frequency); empty otherwise. Its frequency is the query's weight.
     std::string initiator;

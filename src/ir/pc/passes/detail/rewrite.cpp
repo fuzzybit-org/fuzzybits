@@ -221,9 +221,9 @@ auto begin_report(circuit const &input, const pass_id pass) -> transform_report 
     transform_report report;
     report.transform_id = "ir.pc." + std::string(pass_name(pass));
     report.semantics = pass_semantics(pass);
-    for (const auto kind : {target_semantics::boolean, target_semantics::monotone_hull}) {
+    for (const auto kind : {query_kind::probability, query_kind::monotone_hull}) {
         if (pass_preserves(pass, kind)) {
-            report.preserved_semantics.push_back(kind);
+            report.preserved_kinds.push_back(kind);
         }
     }
     report.nodes_before = input.node_count();

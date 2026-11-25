@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,7 @@ INSPECT_JSON_KEYS = {
     "opcodes",
     "sample_source",
     "query_names",
+    "query_kinds",
     "metadata",
 }
 RUN_JSON_QUERY_KEYS = {"name", "estimate", "ci_low", "ci_high", "n", "hits"}
@@ -94,6 +96,28 @@ def test_fzb_help_and_version():
     unknown = _run_fzb("not-a-command")
     assert unknown.returncode == 1
     assert "unknown command" in unknown.stderr
+
+
+def _native_options(source: str, function: str, end: str) -> set[str]:
+    """Long option names of a boost::program_options chain in ``targets/fzb/main.cpp``."""
+    start = source.index(function)
+    body = source[start : source.index(end, start)]
+    return set(re.findall(r'(?:add_options\(\)|\))\(\s*"([a-z][a-z0-9-]*)(?:,[a-z])?"', body))
+
+
+def test_fzb_compile_options_match_the_native_cli():
+    """The wheel's Python ``fzb compile`` takes exactly the options of the native one (docs/python.md)."""
+    main_cpp = Path(__file__).resolve().parents[2] / "targets" / "fzb" / "main.cpp"
+    if not main_cpp.is_file():
+        pytest.skip("targets/fzb/main.cpp is not in this checkout")
+    source = main_cpp.read_text(encoding="utf-8")
+    native = _native_options(source, "int cmd_compile(", "add_progress_options(desc);")
+    native |= _native_options(source, "void add_progress_options(", "\n}")
+    native.discard("input-file")  # positional on both sides
+    help_text = _run_fzb("compile", "--help").stdout
+    python = set(re.findall(r"(?<![\w-])--([a-z][a-z0-9-]*)", help_text))
+    assert "kind" in native and "hull-literals" in native
+    assert python == native, (sorted(python - native), sorted(native - python))
 
 
 def test_fzb_help_on_non_utf8_stdout():

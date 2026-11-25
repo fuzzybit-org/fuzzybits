@@ -36,8 +36,8 @@ auto pass_semantics(const pass_id pass) noexcept -> semantic_class {
     }
 }
 
-auto pass_preserves(const pass_id pass, const target_semantics kind) noexcept -> bool {
-    return pass != pass_id::fold_unit_probability || kind == target_semantics::boolean;
+auto pass_preserves(const pass_id pass, const query_kind kind) noexcept -> bool {
+    return pass != pass_id::fold_unit_probability || kind == query_kind::probability;
 }
 
 auto run_pass(const pass_id pass, circuit const &input, pass_options const &options) -> transform_result {
@@ -75,8 +75,8 @@ class pipeline final {
         }
     }
 
-    // Errors for a malformed semantics table or a pass in `schedule` that
-    // does not preserve some target's semantics.
+    // Errors for a malformed kind table or a pass in `schedule` that does
+    // not preserve some target's query kind.
     [[nodiscard]] auto check(std::span<pass_id const> schedule) -> bool {
         if (!current_.valid()) {
             result_.diagnostics.push(
@@ -84,11 +84,10 @@ class pipeline final {
             return false;
         }
         const auto targets = current_.targets().size();
-        if (!options_.semantics.empty() && options_.semantics.size() != targets) {
-            result_.diagnostics.push(api::make_error("pc.pipeline.target-semantics-mismatch",
-                                                     "target semantics has " +
-                                                         std::to_string(options_.semantics.size()) + " entries for " +
-                                                         std::to_string(targets) + " targets"));
+        if (!options_.kinds.empty() && options_.kinds.size() != targets) {
+            result_.diagnostics.push(api::make_error("pc.pipeline.query-kinds-mismatch",
+                                                     "query kinds has " + std::to_string(options_.kinds.size()) +
+                                                         " entries for " + std::to_string(targets) + " targets"));
             return false;
         }
         if (!options_.atom_events.empty() && options_.atom_events.size() != targets) {
@@ -98,8 +97,8 @@ class pipeline final {
             return false;
         }
         for (std::uint32_t target = 0; target < options_.atom_events.size(); ++target) {
-            if (options_.atom_events[target].empty() || options_.semantics.empty() ||
-                options_.semantics[target] != target_semantics::monotone_hull) {
+            if (options_.atom_events[target].empty() || options_.kinds.empty() ||
+                options_.kinds[target] != query_kind::monotone_hull) {
                 continue;
             }
             pass_options_.atoms.targets.push_back(target_id(target));
@@ -123,8 +122,8 @@ class pipeline final {
             }
             result_.diagnostics.push(api::make_error(
                 "pc.pipeline.incompatible-pass",
-                std::string(pass_name(pass)) + " is distribution-preserving for boolean targets only; " +
-                    std::to_string(refused.size()) + " target(s) use monotone_hull semantics (target ids " + listed +
+                std::string(pass_name(pass)) + " is distribution-preserving for probability queries only; " +
+                    std::to_string(refused.size()) + " target(s) are monotone-hull queries (target ids " + listed +
                     ")"));
         }
         return ok;
@@ -132,8 +131,8 @@ class pipeline final {
 
     [[nodiscard]] auto refused_targets(const pass_id pass) const -> std::vector<std::uint32_t> {
         std::vector<std::uint32_t> refused;
-        for (std::uint32_t target = 0; target < options_.semantics.size(); ++target) {
-            if (!pass_preserves(pass, options_.semantics[target])) {
+        for (std::uint32_t target = 0; target < options_.kinds.size(); ++target) {
+            if (!pass_preserves(pass, options_.kinds[target])) {
                 refused.push_back(target);
             }
         }
@@ -237,8 +236,7 @@ auto compile(circuit const &input, const compile_level level, pipeline_options c
             return std::move(state).finish(false);
         }
     } else {
-        state.note("pc.pipeline.pass-skipped",
-                   "fold_unit_probability skipped: some targets use monotone_hull semantics");
+        state.note("pc.pipeline.pass-skipped", "fold_unit_probability skipped: some targets are monotone-hull queries");
     }
 
     constexpr pass_id round[] = {pass_id::propagate_constants, pass_id::eliminate_single_input, pass_id::coalesce};

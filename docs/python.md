@@ -116,10 +116,10 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
 `compile` / `compile_file` lower OpenPSA/MEF, nombrilo.circuit
 (safetensors, detected from the header) **or** CAFTA FTP projects to a pcfb
 buffer (the same host path as `fzb compile`). FTP input takes `target=`,
-`overrides=`, `duplicate_import=`, `negation=`,
-`initiator_values=`, `initiator_unit=`, `max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
+`overrides=`, `duplicate_import=`, `kind=` (a string or a list), `hull_literals=`, `hull_max_initiators=`,
+`initiator_values=` and `config=`, and `report=True`
 returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). MEF input expands
-common-cause groups unless `ccf=False` (`fzb compile --no-ccf`); `target=` and
+common-cause groups unless `ccf=False` (`fzb compile --no-ccf`; an error with FTP input); `target=` and
 `watch=` take a name or a sequence of names (MEF and nombrilo input take one target). `nombrilo_to_pcfb` / `pcfb_to_nombrilo` are the
 explicit converters; see [`nombrilo.md`](nombrilo.md). `inspect` always runs `pcfb::validate` and
 returns its diagnostics (empty iff the circuit is core-1.1 conforming).
@@ -194,7 +194,7 @@ to override.
 ```bash
 fzb compile model.xml [more.xml ...] [-c N] [--no-kn] [--no-ccf] [--target NAME|@FILE] [--watch NAME|@FILE]... [-o model.pcfb]
 fzb compile model.safetensors [--target NAME|@FILE] [--weights FILE] [-o model.pcfb]
-fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--negation boolean|hull|both] [--override NAME=0|1]... [--config FILE] [--report FILE]
+fzb compile a.ftp [b.ftp ...]|DIR [-c 0|1] [--target NAME|@FILE]... [--watch NAME|@FILE]... [--kind probability|hull]... [--hull-literals split|fixed|plain] [--hull-max-initiators N|none] [--initiator-values UNIT|probability] [--override NAME=0|1]... [--config FILE] [--report FILE]
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]

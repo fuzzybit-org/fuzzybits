@@ -84,10 +84,10 @@ and the same model and trial count always print the same line.
 
 CAFTA FTP projects compile the same way, from files or a directory:
 
-    fzb compile project_dir/ --negation boolean -o model.pcfb
+    fzb compile project_dir/ -o model.pcfb
 
-`--negation boolean` writes Boolean queries, which `fzb run` samples. Without it, FTP input is
-compiled to monotone-hull queries, which `fzb run` does not sample yet; see docs/ftp-input.md.
+Every FTP target is a probability query, which `fzb run` samples. `--kind hull` asks for the
+monotone hull instead, which `fzb run` does not sample yet; see docs/ftp-input.md.
 
 fzb compile expands common-cause failure groups by default; add --no-ccf
 to leave them out. --target and --watch repeat, and --target @FILE reads

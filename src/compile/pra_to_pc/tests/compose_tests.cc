@@ -60,8 +60,8 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
     names.target_kinds = {
         {first_target, {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}},
         {second_target, {writer::query_kind::monotone_hull_probability}}};
-    names.quantification = {{first_target, {.literal_mode = "atom_split", .max_initiators_per_cutset = 1}},
-                            {second_target, {.literal_mode = "negation", .max_initiators_per_cutset = std::nullopt}}};
+    names.quantification = {{first_target, {.literal_mode = "split", .max_initiators_per_cutset = 1}},
+                            {second_target, {.literal_mode = "plain", .max_initiators_per_cutset = std::nullopt}}};
     names.node_names = {{a, "A"},       {b, "B"},          {zero, "ZERO"},       {wrapper, "WRAP"}, {inverted, "NOT-B"},
                         {dead, "DEAD"}, {top, "TOP-GATE"}, {other, "OTHER-GATE"}};
 
@@ -81,9 +81,9 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
     REQUIRE(composed.target_kinds.at(compiled.target_map[second_target.raw()]) ==
             std::vector<writer::query_kind>{writer::query_kind::monotone_hull_probability});
     REQUIRE(composed.quantification.size() == 2);
-    REQUIRE(composed.quantification.at(compiled.target_map[first_target.raw()]).literal_mode == "atom_split");
+    REQUIRE(composed.quantification.at(compiled.target_map[first_target.raw()]).literal_mode == "split");
     REQUIRE(composed.quantification.at(compiled.target_map[first_target.raw()]).max_initiators_per_cutset == 1U);
-    REQUIRE(composed.quantification.at(compiled.target_map[second_target.raw()]).literal_mode == "negation");
+    REQUIRE(composed.quantification.at(compiled.target_map[second_target.raw()]).literal_mode == "plain");
     REQUIRE_FALSE(composed.quantification.at(compiled.target_map[second_target.raw()]).max_initiators_per_cutset);
 
     // The events keep their names on event nodes, and the gate eliminated onto `a` does not take `a`'s node.

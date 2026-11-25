@@ -199,29 +199,30 @@ TEST_CASE("pcfb writer: per-target quantification is recorded next to the querie
     options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
                             {pc::target_id(1), {kind::monotone_hull_probability}}};
     options.quantification = {
-        {pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split", .max_initiators_per_cutset = 1}},
+        {pc::target_id(0),
+         writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
         {pc::target_id(1),
-         writer::target_quantification{.literal_mode = "omega_l", .max_initiators_per_cutset = std::nullopt}},
+         writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = std::nullopt}},
     };
     const auto file = writeAndRead(model, options);
     REQUIRE(queriesOf(file.circuit).size() == 4);
 
-    // Query 0 and 1 belong to target 0 (Boolean, then hull), query 2 to target 1, query 3 to target 2.
-    CHECK(stringMeta(file.circuit, "compile.query.0.negation") == "boolean");
-    CHECK(stringMeta(file.circuit, "compile.query.1.negation") == "monotone_hull");
-    CHECK(stringMeta(file.circuit, "compile.query.2.negation") == "monotone_hull");
-    for (const auto index : {0, 1}) {
-        const auto prefix = "compile.query." + std::to_string(index) + ".";
-        CHECK(intMeta(file.circuit, prefix + "max_initiators_per_cutset") == 1);
+    // Query 0 and 1 belong to target 0 (probability, then hull), query 2 to target 1, query 3 to target 2.
+    // The kind is Query.kind: no `negation` key. The target name goes on every query of the target; the
+    // hull reading and the initiator rule on its hull query only.
+    for (const auto index : {0, 1, 2, 3}) {
+        CHECK_FALSE(meta(file.circuit, "compile.query." + std::to_string(index) + ".negation"));
     }
-    // The literal mode is a parameter of the hull query: the probability query on the same tensor does
-    // not carry it.
+    CHECK(stringMeta(file.circuit, "compile.query.0.target") == "TOP");
+    CHECK(stringMeta(file.circuit, "compile.query.1.target") == "TOP");
+    CHECK_FALSE(meta(file.circuit, "compile.query.0.max_initiators_per_cutset"));
+    CHECK(intMeta(file.circuit, "compile.query.1.max_initiators_per_cutset") == 1);
     CHECK_FALSE(meta(file.circuit, "compile.query.0.literal_mode"));
-    CHECK(stringMeta(file.circuit, "compile.query.1.literal_mode") == "atom_split");
-    CHECK(stringMeta(file.circuit, "compile.query.2.literal_mode") == "omega_l");
+    CHECK(stringMeta(file.circuit, "compile.query.1.literal_mode") == "split");
+    CHECK(stringMeta(file.circuit, "compile.query.2.literal_mode") == "fixed");
     CHECK_FALSE(meta(file.circuit, "compile.query.2.max_initiators_per_cutset"));
     // A target without an entry records nothing.
-    CHECK_FALSE(meta(file.circuit, "compile.query.3.negation"));
+    CHECK_FALSE(meta(file.circuit, "compile.query.3.target"));
 
     // No quantification entries, no keys: the metadata of a plain file is unchanged.
     const auto plain = writeAndRead(model, threeTargetNames());
@@ -249,6 +250,6 @@ TEST_CASE("pcfb writer: invalid query kinds and quantification entries are diagn
     CHECK(codeOf(repeated));
 
     auto orphan = threeTargetNames();
-    orphan.quantification = {{pc::target_id(9), writer::target_quantification{.literal_mode = "atom_split"}}};
+    orphan.quantification = {{pc::target_id(9), writer::target_quantification{.literal_mode = "split"}}};
     CHECK(hasCode(writer::write(model.to_handle(), orphan).diagnostics(), "io.pcfb.invalid-quantification"));
 }

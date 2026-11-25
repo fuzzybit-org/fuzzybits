@@ -201,11 +201,13 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
         INFO("quantification of target " << target.raw());
         const auto found = read.options.quantification.find(target);
         REQUIRE(found != read.options.quantification.end());
-        // The literal mode travels on the target's hull query only.
+        // The hull reading and the initiator rule travel on the target's hull query only.
         const auto kinds = effectiveKinds(options, target);
         const bool hull = std::ranges::find(kinds, kind::monotone_hull_probability) != kinds.end();
+        REQUIRE(found->second.target == entry.target);
         REQUIRE(found->second.literal_mode == (hull ? entry.literal_mode : std::string{}));
-        REQUIRE(found->second.max_initiators_per_cutset == entry.max_initiators_per_cutset);
+        REQUIRE(found->second.max_initiators_per_cutset ==
+                (hull ? entry.max_initiators_per_cutset : std::optional<std::uint32_t>{}));
     }
     REQUIRE(read.options.model_name == options.model_name);
     REQUIRE(read.options.source_format == options.source_format);
@@ -387,8 +389,9 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
                             {pc::target_id(1), {kind::monotone_hull_probability}}};
     options.quantification = {
-        {pc::target_id(0), writer::target_quantification{.literal_mode = "atom_split", .max_initiators_per_cutset = 1}},
-        {pc::target_id(1), writer::target_quantification{.literal_mode = "omega_l"}},
+        {pc::target_id(0),
+         writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
+        {pc::target_id(1), writer::target_quantification{.literal_mode = "fixed"}},
     };
     options.node_names = {{pc::bool_node_id(0), "PUMP-A"}, {pc::bool_node_id(3), "BOTH"}};
     options.model_name = "demo";
@@ -409,9 +412,10 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     CHECK(read.options.target_kinds.at(pc::target_id(2)) == std::vector<kind>{kind::probability});
     CHECK(read.circuit.targets().size() == 3);
     CHECK(read.options.quantification.size() == 2);
-    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "atom_split");
+    CHECK(read.options.quantification.at(pc::target_id(0)).target == "TOP");
+    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "split");
     CHECK(read.options.quantification.at(pc::target_id(0)).max_initiators_per_cutset == 1U);
-    CHECK(read.options.quantification.at(pc::target_id(1)).literal_mode == "omega_l");
+    CHECK(read.options.quantification.at(pc::target_id(1)).literal_mode == "fixed");
     CHECK_FALSE(read.options.quantification.at(pc::target_id(1)).max_initiators_per_cutset.has_value());
     CHECK(read.options.node_names.at(pc::bool_node_id(0)) == "PUMP-A");
     CHECK(read.options.node_names.at(pc::bool_node_id(3)) == "BOTH");
@@ -442,8 +446,13 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     REQUIRE(find("general.generator") != nullptr);
     CHECK(std::get<std::string>(*find("general.generator")) == "fuzzybits");
     CHECK(std::get<std::string>(*find("pcfb.opset")) == "core-1.1");
-    CHECK(std::get<std::int64_t>(*find("compile.query.0.max_initiators_per_cutset")) == 1);
-    CHECK(std::get<std::string>(*find("compile.query.2.negation")) == "monotone_hull");
+    // Query 0 is target 0's probability query: the target name only. Query 1, its hull query, carries the
+    // hull parameters. The kind is Query.kind; no `negation` key.
+    CHECK(std::get<std::string>(*find("compile.query.0.target")) == "TOP");
+    CHECK(find("compile.query.0.max_initiators_per_cutset") == nullptr);
+    CHECK(std::get<std::int64_t>(*find("compile.query.1.max_initiators_per_cutset")) == 1);
+    CHECK(std::get<std::string>(*find("compile.query.2.literal_mode")) == "fixed");
+    CHECK(find("compile.query.2.negation") == nullptr);
     CHECK(std::get<std::vector<std::byte>>(*find("general.source_sha256")).size() == 32);
 
     requireStable(read);
@@ -553,23 +562,23 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
     };
     std::vector<variant> variants;
     {
-        ftp::options boolean;
-        boolean.negation = "boolean";
-        variants.push_back({"boolean", boolean});
-        // The default literal mode: refused, and skipped, where -EVENT gives marked literals.
+        ftp::options probability;
+        probability.kinds = {"probability"};
+        variants.push_back({"probability", probability});
+        // The default hull reading (split): refused, and skipped, where -EVENT gives marked literals.
         ftp::options hull;
-        hull.negation = "hull";
+        hull.kinds = {"hull"};
         variants.push_back({"hull", hull});
         ftp::options both;
-        both.config = R"({"negation": "both", "literals": "negation"})";
+        both.config = R"({"kinds": ["probability", "hull"], "hull": {"literals": "plain"}})";
         variants.push_back({"both", both});
         ftp::options literals;
-        literals.negation = "hull";
-        literals.literals = "negation";
-        variants.push_back({"hull with atoms as negation", literals});
+        literals.kinds = {"hull"};
+        literals.hull_literals = "plain";
+        variants.push_back({"hull reading literals as plain complements", literals});
         // Initiating-event frequencies: one conditioned query per initiator and a query group per target.
         ftp::options frequency;
-        frequency.initiator_unit = "per-year";
+        frequency.initiator_values = "per-year";
         variants.push_back({"frequency", frequency});
     }
 
@@ -877,7 +886,7 @@ TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][
     options.model_name = "demo";
     options.target_kinds = {{pc::target_id(0), {kind::monotone_hull_probability}}};
     options.quantification = {
-        {pc::target_id(0), writer::target_quantification{.literal_mode = "omega_l", .max_initiators_per_cutset = 2}}};
+        {pc::target_id(0), writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = 2}}};
     options.source_sha256 = std::array<std::byte, 32>{};
     auto model = unpack(requireWrite(threeTargetModel(), options).bytes);
     for (auto &entry : model->metadata) {
@@ -903,7 +912,7 @@ TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][
     auto const &read = result.value();
     CHECK_FALSE(read.options.source_sha256.has_value());
     CHECK_FALSE(read.options.quantification.at(pc::target_id(0)).max_initiators_per_cutset.has_value());
-    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "omega_l");
+    CHECK(read.options.quantification.at(pc::target_id(0)).literal_mode == "fixed");
     // Circuit.name is the fallback of general.model_name.
     CHECK(read.options.model_name == "demo");
     // The entries stay as they were.
@@ -981,7 +990,7 @@ TEST_CASE("pcfb reader: FTP --watch compiles to a file that reads back with the 
     const std::string text =
         "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
     ftp::options settings;
-    settings.negation = "boolean";
+    settings.kinds = {"probability"};
     settings.watch = {"G1"};
     const std::vector<fuzzybits::io::backend::fuzzybits::ftp::source_text> sources{{.path = "model.ftp", .text = text}};
     const auto compiled = ftp::compile_sources(sources, settings);

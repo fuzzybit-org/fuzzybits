@@ -316,7 +316,7 @@ int cmd_run(int argc, char **argv) {
         }
         if (exposure_hours && groups.empty()) {
             throw std::runtime_error("--exposure: the file has no frequency groups (compile FTP input with "
-                                     "--initiator-values frequency)");
+                                     "--initiator-values set to a frequency unit, per-year by default)");
         }
         for (auto const &group : groups) {
             if (exposure_hours && !pcfb_frequency::find_unit(group.unit)) {
@@ -492,7 +492,19 @@ struct InspectSummary {
     std::map<std::string, int> sample_sources;
     std::map<std::string, std::string> metadata;
     std::vector<std::string> queries;
+    // Per query, as `fzb compile --kind` spells it: probability or hull.
+    std::vector<std::string> query_kinds;
 };
+
+std::string query_kind_text(const pcfb::QueryKind kind) {
+    switch (kind) {
+    case pcfb::QueryKind::PROBABILITY:
+        return "probability";
+    case pcfb::QueryKind::MONOTONE_HULL_PROBABILITY:
+        return "hull";
+    }
+    return "unknown(" + std::to_string(static_cast<unsigned>(kind)) + ")";
+}
 
 InspectSummary summarise(const pcfb::ir::Circuit &circuit) {
     InspectSummary s;
@@ -554,6 +566,7 @@ InspectSummary summarise(const pcfb::ir::Circuit &circuit) {
             }
             std::string name = q->name() ? q->name()->str() : "";
             s.queries.push_back(name.empty() ? ("t" + std::to_string(q->target())) : name);
+            s.query_kinds.push_back(query_kind_text(q->kind()));
         }
     }
     return s;
@@ -581,6 +594,10 @@ void print_text(const InspectSummary &s, std::ostream &out) {
         out << "query_names\n";
         for (const auto &q : s.queries) {
             out << "  " << q << "\n";
+        }
+        out << "query_kinds\n";
+        for (const auto &kind : s.query_kinds) {
+            out << "  " << kind << "\n";
         }
     }
     if (!s.metadata.empty()) {
@@ -624,6 +641,15 @@ void print_json(const InspectSummary &s, std::ostream &out) {
         }
         first = false;
         out << "\"" << json_escape(q) << "\"";
+    }
+    out << "],\n  \"query_kinds\": [";
+    first = true;
+    for (const auto &kind : s.query_kinds) {
+        if (!first) {
+            out << ", ";
+        }
+        first = false;
+        out << "\"" << json_escape(kind) << "\"";
     }
     out << "],\n  \"metadata\": {";
     first = true;
@@ -699,7 +725,7 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
         return 1;
     };
     for (const char *flag : {"no-kn", "no-xor", "recognize-atleast", "no-recognize-atleast", "recognize-xor",
-                             "no-recognize-xor", "keep-null", "allow-extern", "weights"}) {
+                             "no-recognize-xor", "keep-null", "allow-extern", "weights", "no-ccf"}) {
         if (vm.count(flag)) {
             return fail(std::string("--") + flag + " applies to OpenPSA/MEF input, not to FTP projects");
         }
@@ -720,33 +746,30 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
     if (vm.count("duplicate-import")) {
         opt.duplicate_import = vm["duplicate-import"].as<std::string>();
     }
-    if (vm.count("negation")) {
-        opt.negation = vm["negation"].as<std::string>();
+    if (vm.count("kind")) {
+        opt.kinds = vm["kind"].as<std::vector<std::string>>();
     }
-    if (vm.count("literals")) {
-        opt.literals = vm["literals"].as<std::string>();
+    if (vm.count("hull-literals")) {
+        opt.hull_literals = vm["hull-literals"].as<std::string>();
     }
-    if (vm.count("initiator-values")) {
-        opt.initiator_values = vm["initiator-values"].as<std::string>();
-    }
-    if (vm.count("initiator-unit")) {
-        opt.initiator_unit = vm["initiator-unit"].as<std::string>();
-    }
-    if (vm.count("max-initiators-per-cutset")) {
-        const auto text = vm["max-initiators-per-cutset"].as<std::string>();
+    if (vm.count("hull-max-initiators")) {
+        const auto text = vm["hull-max-initiators"].as<std::string>();
         if (text == "none") {
-            opt.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+            opt.hull_max_initiators = std::optional<std::uint32_t>{};
         } else {
             std::uint32_t count = 0;
             const auto *end = text.data() + text.size();
             const auto [pointer, status] = std::from_chars(text.data(), end, count);
             if (status != std::errc{} || pointer != end || text.empty()) {
-                return fail("--max-initiators-per-cutset must be a non-negative integer or none, not '" + text + "'");
+                return fail("--hull-max-initiators must be a non-negative integer or none, not '" + text + "'");
             }
-            opt.max_initiators_per_cutset = std::optional<std::uint32_t>{count};
+            opt.hull_max_initiators = std::optional<std::uint32_t>{count};
         }
     }
-    if (!vm["compilation-passes"].defaulted()) {
+    if (vm.count("initiator-values")) {
+        opt.initiator_values = vm["initiator-values"].as<std::string>();
+    }
+    if (vm.count("compilation-passes")) {
         opt.level = vm["compilation-passes"].as<int>();
     }
     if (vm.count("config")) {
@@ -874,15 +897,14 @@ int cmd_compile(int argc, char **argv) {
     po::options_description desc("fzb compile options");
     desc.add_options()("help,h", "display this help message")("output,o", po::value<std::string>(),
                                                               "output .pcfb path")(
-        "compilation-passes,c", po::value<int>()->default_value(2),
-        "MEF: 0=off 1=null-only 2=optimize 4-8=multipass. FTP: 0=none 1=ir::pc passes (default 1)")(
-        "no-kn", "expand k/n to and/or")("no-xor", "expand xor to and/or")(
-        "recognize-atleast", "recognize expanded threshold groups (default on)")("no-recognize-atleast",
-                                                                                 "disable k/n group recognition")(
-        "recognize-xor", "recognize expanded xor (default on)")("no-recognize-xor", "disable xor group recognition")(
-        "keep-null", "keep NULL/pass-through gates")("ccf",
-                                                     "deprecated no-op: common-cause groups are expanded by default")(
-        "no-ccf", "do not expand common-cause failure groups (MEF; accepted and ignored for FTP)")(
+        "compilation-passes,c", po::value<int>(),
+        "pass level. MEF/nombrilo (SCRAM preprocessing): 0=off 1=null-only 2=optimize (default) 4-8=multipass. "
+        "FTP (ir::pc passes): 0=none 1=all (default)")("no-kn", "expand k/n to and/or")(
+        "no-xor", "expand xor to and/or")("recognize-atleast", "recognize expanded threshold groups (default on)")(
+        "no-recognize-atleast", "disable k/n group recognition")("recognize-xor",
+                                                                 "recognize expanded xor (default on)")(
+        "no-recognize-xor", "disable xor group recognition")("keep-null", "keep NULL/pass-through gates")(
+        "no-ccf", "MEF: do not expand common-cause failure groups (expanded by default)")(
         "allow-extern", "**UNSAFE** allow external libraries")(
         "target", po::value<std::vector<std::string>>(),
         "MEF: top-event / gate / nombrilo name (one). FTP: PROCESS target, gate or basic event "
@@ -892,18 +914,19 @@ int cmd_compile(int argc, char **argv) {
         "override", po::value<std::vector<std::string>>(), "FTP: force an element, NAME=0 or NAME=1 (repeatable)")(
         "duplicate-import", po::value<std::string>(),
         "FTP: event imported more than once: error|first|last (default last)")(
-        "negation", po::value<std::string>(),
-        "FTP: query type of every target: boolean (the probability, default), hull or both")(
-        "max-initiators-per-cutset", po::value<std::string>(),
+        "kind", po::value<std::vector<std::string>>(),
+        "FTP: the query of every target, probability (default) or hull; repeat it, or give probability,hull, for "
+        "both (two queries per target)")(
+        "hull-literals", po::value<std::string>(),
+        "FTP hull queries: how -EVENT operands are read, split (an atom of its own, default), fixed (Rauzy's "
+        "omega_L) or plain (an ordinary complement)")(
+        "hull-max-initiators", po::value<std::string>(),
         "FTP hull queries, with --initiator-values probability: delete the cut sets with more than N initiating "
-        "events, or none (default: none)")("literals", po::value<std::string>(),
-                                           "FTP hull targets: atom_split|omega_l|negation (default atom_split)")(
+        "events, or none (default)")(
         "initiator-values", po::value<std::string>(),
-        "FTP: I values are frequency (default: one conditioned query per initiating event, summed as the target's "
-        "frequency) or probability (values up to 1)")(
-        "initiator-unit", po::value<std::string>(),
-        "FTP: unit of the I values, per-year|per-month|per-week|per-day|per-hour (default per-year with frequencies)")(
-        "config", po::value<std::string>(), "FTP: quantification config FILE (JSON); flags override it")(
+        "FTP: what I values are: a frequency in per-year (default), per-month, per-week, per-day or per-hour (one "
+        "conditioned query per initiating event, summed as the target's frequency), or probability (values up to "
+        "1)")("config", po::value<std::string>(), "FTP: quantification config FILE (JSON); flags override it")(
         "report", po::value<std::string>(), "FTP: write the lowering and pass reports and diagnostics to FILE (JSON)")(
         "weights", po::value<std::string>(), "nombrilo variant weights file")("progress-log", po::value<std::string>(),
                                                                               kProgressLogHelp)(
@@ -923,14 +946,15 @@ int cmd_compile(int argc, char **argv) {
         return 1;
     }
     if (vm.count("help")) {
-        std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
-                     "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
-                     "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... "
-                     "[--no-ccf] [--negation boolean|hull|both] [--initiator-values frequency|probability] "
-                     "[--initiator-unit UNIT] "
-                     "[--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
-                     "                   [--no-progress] [--quiet]\n\n"
-                  << desc << std::endl;
+        std::cout
+            << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
+               "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
+               "       fzb compile a.ftp [b.ftp ...]|DIR [-c 0|1] [--target NAME|@FILE]... [--watch NAME|@FILE]... "
+               "[--kind probability|hull]... [--hull-literals split|fixed|plain] [--hull-max-initiators N|none] "
+               "[--initiator-values UNIT|probability] [--override NAME=0|1]... [--config FILE] [--report FILE] "
+               "[-o model.pcfb]\n"
+               "                   [--no-progress] [--quiet]\n\n"
+            << desc << std::endl;
         return 0;
     }
     if (!vm.count("input-file")) {
@@ -938,15 +962,6 @@ int cmd_compile(int argc, char **argv) {
         return 1;
     }
 
-    if (vm.count("ccf") && vm.count("no-ccf")) {
-        std::cerr << "fzb compile: --ccf and --no-ccf cannot be combined" << std::endl;
-        return 1;
-    }
-    if (vm.count("ccf")) {
-        std::cerr << "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; "
-                     "use --no-ccf to disable"
-                  << std::endl;
-    }
     std::vector<std::string> targets;
     std::vector<std::string> watch;
     {
@@ -979,8 +994,8 @@ int cmd_compile(int argc, char **argv) {
     case fuzzybits::compile::ftp::input_kind::other:
         break;
     }
-    for (const char *flag : {"override", "duplicate-import", "negation", "max-initiators-per-cutset", "literals",
-                             "initiator-values", "initiator-unit", "config", "report"}) {
+    for (const char *flag : {"override", "duplicate-import", "kind", "hull-literals", "hull-max-initiators",
+                             "initiator-values", "config", "report"}) {
         if (vm.count(flag)) {
             std::cerr << "fzb compile: --" << flag << " applies to CAFTA FTP input only\n";
             return 1;
@@ -988,7 +1003,7 @@ int cmd_compile(int argc, char **argv) {
     }
 
     fuzzybits::compile::Options opt;
-    opt.compilation_level = vm["compilation-passes"].as<int>();
+    opt.compilation_level = vm.count("compilation-passes") ? vm["compilation-passes"].as<int>() : 2;
     opt.expand_atleast_gates = vm.count("no-kn") > 0;
     opt.expand_xor_gates = vm.count("no-xor") > 0;
     if (vm.count("no-recognize-atleast")) {

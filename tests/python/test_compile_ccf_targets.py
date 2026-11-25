@@ -16,11 +16,8 @@ from test_cli import _run_fzb  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 CCF_MODEL = ROOT / "tests" / "input" / "core" / "beta_factor_ccf.xml"
 FTP_MODEL = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n"
-DEPRECATED = (
-    "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable"
-)
 ONE_TARGET = "fzb compile: MEF and nombrilo inputs take one --target; several targets need the new MEF reader (#148)"
-FTP_FLAGS = ("--negation", "boolean", "--max-initiators-per-cutset", "none", "--no-progress")
+FTP_FLAGS = ("--kind", "probability", "--no-progress")
 
 
 @pytest.fixture()
@@ -64,9 +61,12 @@ def test_api_records_ccf_in_compile_metadata():
     assert str(off["compile.ccf"]).lower() in {"0", "false"}
 
 
-def test_api_ccf_is_ignored_for_ftp(ftp_model: Path):
-    options = {"negation": "boolean", "max_initiators_per_cutset": None}
-    assert fuzzybits.compile(str(ftp_model), ccf=False, **options) == fuzzybits.compile(str(ftp_model), **options)
+def test_api_ccf_false_is_refused_for_ftp(ftp_model: Path):
+    options = {"kind": "probability"}
+    # FTP projects have no common-cause groups: ccf=True (the default) is accepted, ccf=False refused.
+    assert fuzzybits.compile(str(ftp_model), ccf=True, **options) == fuzzybits.compile(str(ftp_model), **options)
+    with pytest.raises(ValueError, match="ccf applies to MEF input only"):
+        fuzzybits.compile(str(ftp_model), ccf=False, **options)
 
 
 def test_cli_default_and_no_ccf(tmp_path: Path):
@@ -80,41 +80,26 @@ def test_cli_default_and_no_ccf(tmp_path: Path):
     assert plain.read_bytes() == fuzzybits.compile(str(CCF_MODEL), no_kn=False, ccf=False)
 
 
-def test_cli_ccf_is_a_deprecated_noop(tmp_path: Path):
-    ran, legacy = _compile_cli(tmp_path, str(CCF_MODEL), "--ccf", "--no-progress")
-    assert ran.returncode == 0, ran.stderr
-    assert ran.stderr.count(DEPRECATED) == 1
-    assert legacy.read_bytes() == fuzzybits.compile(str(CCF_MODEL), no_kn=False)
-
-
-def test_cli_ccf_with_no_ccf_is_an_error(tmp_path: Path):
-    ran, out = _compile_cli(tmp_path, str(CCF_MODEL), "--ccf", "--no-ccf", "--no-progress")
-    assert ran.returncode == 1
-    assert "--ccf and --no-ccf cannot be combined" in ran.stderr
+def test_cli_has_no_ccf_flag(tmp_path: Path):
+    ran, out = _compile_cli(tmp_path, str(CCF_MODEL), "--ccf", "--no-progress")
+    assert ran.returncode != 0
     assert not out.exists()
 
 
-def test_cli_accepts_ccf_flags_for_ftp(tmp_path: Path, ftp_model: Path):
+def test_cli_no_ccf_is_for_mef_input(tmp_path: Path, ftp_model: Path):
     ran, base = _compile_cli(tmp_path, str(ftp_model), *FTP_FLAGS)
     assert ran.returncode == 0, ran.stderr
-    expected = base.read_bytes()
-    ran, out = _compile_cli(tmp_path, str(ftp_model), "--no-ccf", *FTP_FLAGS)
-    assert ran.returncode == 0, ran.stderr
-    assert "deprecated" not in ran.stderr
-    assert out.read_bytes() == expected
-    ran, out = _compile_cli(tmp_path, str(ftp_model), "--ccf", *FTP_FLAGS)
-    assert ran.returncode == 0, ran.stderr
-    assert ran.stderr.count(DEPRECATED) == 1
-    assert out.read_bytes() == expected
-    ran, _ = _compile_cli(tmp_path, str(ftp_model), "--ccf", "--no-ccf", *FTP_FLAGS)
+    ran, out = _compile_cli(tmp_path, str(ftp_model), "--no-ccf", *FTP_FLAGS, name="other.pcfb")
     assert ran.returncode == 1
+    assert "--no-ccf applies to OpenPSA/MEF input" in ran.stderr
+    assert not out.exists()
 
 
 # Targets
 
 
 def test_api_ftp_target_and_watch_sequences(ftp_model: Path):
-    options = {"negation": "boolean", "max_initiators_per_cutset": None}
+    options = {"kind": "probability"}
     blob = fuzzybits.compile(str(ftp_model), target=["TOP", "G1"], watch=["E3", "E1"], **options)
     assert _names(blob) == ["TOP", "G1", "E3", "E1"]
     assert _names(fuzzybits.compile(str(ftp_model), target="G1", **options)) == ["G1"]
@@ -176,7 +161,7 @@ def test_cli_name_file_without_names_or_not_a_file(tmp_path: Path, ftp_model: Pa
 
 def test_api_watch_takes_integer_indices_not_floats(ftp_model: Path):
     with pytest.raises(TypeError):
-        fuzzybits.compile(str(ftp_model), watch=1.5, negation="boolean", max_initiators_per_cutset=None)
+        fuzzybits.compile(str(ftp_model), watch=1.5, kind="probability")
 
 
 def test_native_compile_expands_ccf_without_the_key():

@@ -4,6 +4,7 @@
 #include "ir/pc/circuit.h"
 #include "ir/pc/edge.h"
 #include "ir/pc/id.h"
+#include "ir/pc/query.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -14,20 +15,13 @@
 
 namespace fuzzybits::ir::pc::passes {
 
-// Query semantics of one target. ir::pc targets do not carry it (IR-PC §2);
-// the ir::pra -> ir::pc lowering (#181) records it and callers pass it in.
-enum class target_semantics : std::uint8_t {
-    boolean,
-    monotone_hull,
-};
-
 // docs/rfc/monotone-hull-queries.md §7.5.
 enum class semantic_class : std::uint8_t {
     // Every target computes the same Boolean function, so every query kind
     // defined from the function is preserved.
     function_preserving,
-    // Target probabilities under independent sampling are unchanged for the
-    // semantics listed in transform_report::preserved_semantics only.
+    // Target values under independent sampling are unchanged for the query
+    // kinds listed in transform_report::preserved_kinds only.
     distribution_preserving,
 };
 
@@ -53,7 +47,7 @@ struct transform_report final {
     std::string transform_id;
     std::uint32_t version = 1;
     semantic_class semantics = semantic_class::function_preserving;
-    std::vector<target_semantics> preserved_semantics;
+    std::vector<query_kind> preserved_kinds;
     std::vector<node_image> node_map;
     std::vector<target_id> target_map;
     std::uint32_t nodes_before = 0;
@@ -70,8 +64,8 @@ struct transform_report final {
     std::size_t scratch_bytes = 0;
     api::diagnostic_list diagnostics;
 
-    [[nodiscard]] auto preserves(const target_semantics kind) const -> bool {
-        return std::ranges::find(preserved_semantics, kind) != preserved_semantics.end();
+    [[nodiscard]] auto preserves(const query_kind kind) const -> bool {
+        return std::ranges::find(preserved_kinds, kind) != preserved_kinds.end();
     }
 };
 

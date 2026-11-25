@@ -122,27 +122,29 @@ struct random_case final {
             lowering::override_request{.name = std::string(model.stable_name(element)), .value = value});
     }
     if (chance(0.6)) {
-        out.config.max_initiators_per_cutset = uniform(0, 2);
+        out.config.default_hull.max_initiators = uniform(0, 2);
     }
     // Probability, hull or both: the rule goes into hull queries only, and a target with both kinds
     // keeps its probability query on the subject.
-    const auto query_kinds = [&]() {
+    const auto query_kinds = [&]() -> std::vector<pc::query_kind> {
         switch (uniform(0, 2)) {
         case 0:
-            return pra::negation_set::of(pra::negation_semantics::boolean);
+            return {pc::query_kind::probability};
         case 1:
-            return pra::negation_set::of(pra::negation_semantics::monotone_hull);
+            return {pc::query_kind::monotone_hull};
         default:
-            return pra::negation_set::both();
+            return {pc::query_kind::probability, pc::query_kind::monotone_hull};
         }
     };
-    out.config.default_negation = query_kinds();
-    // The random models mix marked and unmarked complements of one event, which only the negation mode
-    // of hull queries accepts (compile.pra_to_pc.mixed-literal); the literal modes are tested elsewhere.
-    out.config.default_literals = pra::literal_mode::negation;
+    out.config.default_kinds = query_kinds();
+    // The random models mix marked and unmarked complements of one event, which only the plain reading
+    // of hull queries accepts (compile.pra_to_pc.mixed-literal); the other readings are tested elsewhere.
+    out.config.default_hull.literals = pra::hull_literals::plain;
     for (auto &request : out.config.watch_targets) {
-        request.negation = query_kinds();
+        request.kinds = query_kinds();
     }
+    // Initiating-event values as probabilities: the initiator rule needs them.
+    out.config.initiators = lowering::initiator_values::probability;
     return out;
 }
 
@@ -202,7 +204,7 @@ TEST_CASE("pra_to_pc lowers every connective function-preservingly", "[compile][
     lowering::quantification_config config;
     config.watch_targets = {{.name = "SIDE"}};
     const auto lowered = require_lower(model, config);
-    require_equivalent(model, lowered, {}, std::nullopt);
+    require_equivalent(model, lowered, {});
 
     auto const &circuit = lowered.circuit;
     auto const &projection = lowered.projection;
@@ -268,7 +270,7 @@ TEST_CASE("pra_to_pc matches brute-force PRA semantics on random models", "[comp
         CAPTURE(iteration);
         const auto sample = random_case_from(rng);
         const auto lowered = require_lower(sample.model, sample.config);
-        require_equivalent(sample.model, lowered, sample.overrides, sample.config.max_initiators_per_cutset);
+        require_equivalent(sample.model, lowered, sample.overrides);
 
         const pra_reference reference(sample.model, sample.overrides);
         for (auto const &target : lowered.projection.target_bindings()) {
@@ -276,8 +278,7 @@ TEST_CASE("pra_to_pc matches brute-force PRA semantics on random models", "[comp
                   reference.cone_events(target.subject, true));
             CHECK(events_of_span(lowered.projection.initiators(target)) == reference.cone_initiators(target.subject));
             with_delete_terms += target.initiator_delete_term.valid() ? 1 : 0;
-            with_split += target.negation == pra::negation_set::of(pra::negation_semantics::boolean) &&
-                                  sample.config.max_initiators_per_cutset &&
+            with_split += target.kind == pc::query_kind::probability && sample.config.default_hull.max_initiators &&
                                   std::ranges::any_of(lowered.projection.target_bindings(),
                                                       [&](auto const &other) {
                                                           return other.pc_target != target.pc_target &&
@@ -288,7 +289,7 @@ TEST_CASE("pra_to_pc matches brute-force PRA semantics on random models", "[comp
                               : 0;
             with_complements += target.literal_events.count != 0 ? 1 : 0;
         }
-        with_rule += sample.config.max_initiators_per_cutset ? 1 : 0;
+        with_rule += sample.config.default_hull.max_initiators ? 1 : 0;
         with_overrides += sample.overrides.empty() ? 0 : 1;
     }
     CHECK(with_rule > 100);
@@ -335,8 +336,7 @@ TEST_CASE("pra_to_pc overrides become constants and cut the cone", "[compile][pr
                            {{.element = inner, .value = false},
                             {.element = b, .value = true},
                             {.element = house, .value = false},
-                            {.element = other, .value = true}},
-                           std::nullopt);
+                            {.element = other, .value = true}});
 
         auto const &projection = artifact.projection;
         for (const pra::domain_ref element : {pra::domain_ref(inner), pra::domain_ref(b), pra::domain_ref(house)}) {
@@ -411,12 +411,16 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
     const auto model = seal(std::move(builder));
     const pra_reference reference(model, {});
 
+    // The values are read as probabilities here; the lowering reads them as frequencies by default.
+    lowering::quantification_config probabilities;
+    probabilities.initiators = lowering::initiator_values::probability;
+
     SECTION("rule unset: the targets are the subjects") {
-        auto lowered = lowering::lower(model);
+        auto lowered = lowering::lower(model, probabilities);
         REQUIRE(lowered);
         CHECK(codes(lowered.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.frequency-as-probability"});
         auto const &artifact = lowered.value();
-        require_equivalent(model, artifact, {}, std::nullopt);
+        require_equivalent(model, artifact, {});
         CHECK(artifact.projection.generated_bindings().empty());
         for (auto const &target : artifact.projection.target_bindings()) {
             CHECK(target.node == target.root);
@@ -429,7 +433,7 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
     SECTION("frequencies need a unit in the lowering config") {
         // The FTP driver supplies per-year by default; direct callers of the lowering name the unit.
         lowering::quantification_config config;
-        config.initiators = lowering::initiator_values::frequency;
+        CHECK(config.initiators == lowering::initiator_values::frequency);
         auto unitless = lowering::lower(model, config);
         REQUIRE_FALSE(unitless);
         CHECK(count(unitless.diagnostics(), "compile.pra_to_pc.missing-initiator-unit") == 1);
@@ -439,11 +443,11 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
     }
 
     SECTION("at most one initiator") {
-        lowering::quantification_config config;
-        config.max_initiators_per_cutset = 1;
-        config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+        auto config = probabilities;
+        config.default_hull.max_initiators = 1;
+        config.default_kinds = {pc::query_kind::monotone_hull};
         const auto artifact = require_lower(model, config);
-        require_equivalent(model, artifact, {}, 1U);
+        require_equivalent(model, artifact, {});
 
         auto const &top_binding = artifact.projection.target_bindings()[0];
         REQUIRE(top_binding.initiator_delete_term.valid());
@@ -495,11 +499,11 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
     }
 
     SECTION("the rule goes into hull queries only") {
-        lowering::quantification_config config;
-        config.max_initiators_per_cutset = 1;
+        auto config = probabilities;
+        config.default_hull.max_initiators = 1;
         // Probability queries: the rule would remove assignments, so it is not lowered.
         const auto probability = require_lower(model, config);
-        require_equivalent(model, probability, {}, 1U);
+        require_equivalent(model, probability, {});
         CHECK(probability.projection.generated_bindings().empty());
         CHECK(probability.projection.target_bindings().size() == 2);
         for (auto const &target : probability.projection.target_bindings()) {
@@ -508,33 +512,39 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
         }
 
         // Both kinds: TOP's probability query stays on its subject and its hull query gets the rule, on two
-        // PC targets; SINGLE has one initiator, nothing to delete, so both queries share one target.
-        config.default_negation = pra::negation_set::both();
+        // nodes; SINGLE has one initiator, nothing to delete, so its two queries share one node.
+        config.default_kinds = {pc::query_kind::probability, pc::query_kind::monotone_hull};
         const auto both_kinds = require_lower(model, config);
-        require_equivalent(model, both_kinds, {}, 1U);
+        require_equivalent(model, both_kinds, {});
         auto const bindings = both_kinds.projection.target_bindings();
-        REQUIRE(bindings.size() == 3);
+        REQUIRE(bindings.size() == 4);
         CHECK(bindings[0].subject == pra::domain_ref(top));
-        CHECK(bindings[0].negation == pra::negation_set::of(pra::negation_semantics::boolean));
+        CHECK(bindings[0].kind == pc::query_kind::probability);
+        CHECK_FALSE(bindings[0].hull);
         CHECK(bindings[0].node == bindings[0].root);
         CHECK(bindings[1].subject == pra::domain_ref(top));
-        CHECK(bindings[1].negation == pra::negation_set::of(pra::negation_semantics::monotone_hull));
+        CHECK(bindings[1].kind == pc::query_kind::monotone_hull);
+        CHECK(bindings[1].hull == pra::hull_query{.literals = pra::hull_literals::split, .max_initiators = 1});
         CHECK(bindings[1].initiator_delete_term.valid());
         CHECK(bindings[1].root == bindings[0].root);
         CHECK(bindings[1].node != bindings[1].root);
+        // SINGLE: one query per kind, both on its subject.
         CHECK(bindings[2].subject == pra::domain_ref(single));
-        CHECK(bindings[2].negation == pra::negation_set::both());
-        CHECK_FALSE(bindings[2].initiator_delete_term.valid());
-        CHECK(both_kinds.circuit.targets().size() == 3);
-        CHECK(both_kinds.report.pc_targets == 3);
+        CHECK(bindings[2].kind == pc::query_kind::probability);
+        CHECK(bindings[3].subject == pra::domain_ref(single));
+        CHECK(bindings[3].kind == pc::query_kind::monotone_hull);
+        CHECK_FALSE(bindings[3].initiator_delete_term.valid());
+        CHECK(bindings[2].node == bindings[3].node);
+        CHECK(both_kinds.circuit.targets().size() == 4);
+        CHECK(both_kinds.report.pc_targets == 4);
     }
 
     SECTION("no initiators at all") {
-        lowering::quantification_config config;
-        config.max_initiators_per_cutset = 0;
-        config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+        auto config = probabilities;
+        config.default_hull.max_initiators = 0;
+        config.default_kinds = {pc::query_kind::monotone_hull};
         const auto artifact = require_lower(model, config);
-        require_equivalent(model, artifact, {}, 0U);
+        require_equivalent(model, artifact, {});
         CHECK(
             artifact.circuit.cardinality_low()[artifact.projection.target_bindings()[0].initiator_delete_term.raw()] ==
             1);
@@ -542,12 +552,12 @@ TEST_CASE("pra_to_pc initiator rule deletes exactly the worlds with too many ini
     }
 
     SECTION("an overridden initiator is a constant and does not count") {
-        lowering::quantification_config config;
-        config.max_initiators_per_cutset = 1;
-        config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+        auto config = probabilities;
+        config.default_hull.max_initiators = 1;
+        config.default_kinds = {pc::query_kind::monotone_hull};
         config.overrides = {{.name = "I2", .value = true}};
         const auto artifact = require_lower(model, config);
-        require_equivalent(model, artifact, {{.element = i2, .value = true}}, 1U);
+        require_equivalent(model, artifact, {{.element = i2, .value = true}});
         CHECK(events_of_span(artifact.projection.initiators(artifact.projection.target_bindings()[0])) ==
               std::vector<pra::basic_event_id>{i1, i3});
     }
@@ -600,7 +610,7 @@ TEST_CASE("pra_to_pc records significant literals per target", "[compile][pra_to
     lowering::quantification_config config;
     config.overrides = {{.name = "B7", .value = false}};
     const auto artifact = require_lower(model, config);
-    require_equivalent(model, artifact, {{.element = b[7], .value = false}}, std::nullopt);
+    require_equivalent(model, artifact, {{.element = b[7], .value = false}});
 
     auto const &projection = artifact.projection;
     REQUIRE(projection.target_bindings().size() == 3);
@@ -632,8 +642,12 @@ TEST_CASE("pra_to_pc probability policy", "[compile][pra_to_pc][probability]") {
     (void)builder.add_target({.stable_name = "BAD"}, pra::domain_target_kind::gate, bad, pra::target_role::watch);
     const auto model = seal(std::move(builder));
 
+    // The initiating-event values are read as probabilities here (the lowering's default is frequencies).
+    lowering::quantification_config probabilities;
+    probabilities.initiators = lowering::initiator_values::probability;
+
     SECTION("events outside the cone are not checked; frequencies up to 1 warn") {
-        auto lowered = lowering::lower(model);
+        auto lowered = lowering::lower(model, probabilities);
         REQUIRE(lowered);
         REQUIRE(codes(lowered.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.frequency-as-probability"});
         CHECK(lowered.diagnostics().items()[0].message.find("'IE_LOW' (initiating event)") != std::string::npos);
@@ -641,11 +655,11 @@ TEST_CASE("pra_to_pc probability policy", "[compile][pra_to_pc][probability]") {
         const auto node = artifact.projection.node_of(rate).raw();
         CHECK(artifact.circuit.probability_sources()[artifact.circuit.probability_source_refs()[node].raw()].literal ==
               0.75);
-        require_equivalent(model, artifact, {}, std::nullopt);
+        require_equivalent(model, artifact, {});
     }
 
     SECTION("every offending event in the cone is reported") {
-        lowering::quantification_config config;
+        auto config = probabilities;
         config.watch_targets = {{.name = "BAD"}};
         auto lowered = lowering::lower(model, config);
         REQUIRE_FALSE(lowered);
@@ -668,18 +682,23 @@ TEST_CASE("pra_to_pc target selection", "[compile][pra_to_pc][targets]") {
     const auto w = builder.add_target({.stable_name = "W"}, pra::domain_target_kind::gate, h, pra::target_role::watch);
     const auto model = seal(std::move(builder));
 
-    SECTION("default: the primary targets with the default negation") {
+    SECTION("default: the primary targets with the default kinds, one binding per query") {
         lowering::quantification_config config;
-        config.default_negation = pra::negation_set::both();
+        config.default_kinds = {pc::query_kind::monotone_hull, pc::query_kind::probability};
         const auto artifact = require_lower(model, config);
-        REQUIRE(artifact.projection.target_bindings().size() == 1);
-        CHECK(artifact.projection.target_bindings()[0].domain_target == p);
-        CHECK(artifact.projection.target_bindings()[0].negation == pra::negation_set::both());
+        auto const bindings = artifact.projection.target_bindings();
+        REQUIRE(bindings.size() == 2);
+        CHECK(bindings[0].domain_target == p);
+        CHECK(bindings[0].kind == pc::query_kind::probability);
+        CHECK(bindings[1].domain_target == p);
+        CHECK(bindings[1].kind == pc::query_kind::monotone_hull);
+        CHECK(bindings[1].hull == pra::hull_query{});
+        CHECK(bindings[0].node == bindings[1].node);
     }
 
     SECTION("explicit targets, watch targets and element targets") {
         lowering::quantification_config config;
-        config.targets = {{.name = "W", .negation = pra::negation_set::of(pra::negation_semantics::monotone_hull)},
+        config.targets = {{.name = "W", .kinds = {pc::query_kind::monotone_hull}},
                           {.name = "H", .element = pra::element_kind::gate}};
         config.watch_targets = {{.name = "P"}, {.name = "A", .element = pra::element_kind::basic_event}};
         const auto artifact = require_lower(model, config);
@@ -687,8 +706,8 @@ TEST_CASE("pra_to_pc target selection", "[compile][pra_to_pc][targets]") {
         REQUIRE(targets.size() == 4);
         CHECK(targets[0].domain_target == w);
         CHECK(targets[0].role == pc::observable_role::watch);
-        CHECK(targets[0].negation.monotone_hull);
-        CHECK_FALSE(targets[0].negation.boolean);
+        CHECK(targets[0].kind == pc::query_kind::monotone_hull);
+        CHECK(targets[1].kind == pc::query_kind::probability);
         CHECK_FALSE(targets[1].domain_target.valid());
         CHECK(targets[1].subject == pra::domain_ref(h));
         CHECK(targets[1].role == pc::observable_role::primary);
@@ -697,24 +716,32 @@ TEST_CASE("pra_to_pc target selection", "[compile][pra_to_pc][targets]") {
         CHECK(targets[2].role == pc::observable_role::watch);
         CHECK(targets[3].subject == pra::domain_ref(a));
         CHECK(targets[3].role == pc::observable_role::watch);
-        require_equivalent(model, artifact, {}, std::nullopt);
+        require_equivalent(model, artifact, {});
     }
 
     SECTION("errors") {
         lowering::quantification_config config;
-        config.targets = {
-            {.name = "NOPE"},
-            {.name = "P"},
-            {.name = "P"},
-            {.name = "A", .element = pra::element_kind::house_event},
-            {.name = "G", .element = pra::element_kind::basic_event},
-            {.name = "G", .element = pra::element_kind::gate, .negation = {.boolean = false, .monotone_hull = false}}};
+        config.targets = {{.name = "NOPE"},
+                          {.name = "P"},
+                          {.name = "P"},
+                          {.name = "A", .element = pra::element_kind::house_event},
+                          {.name = "G", .element = pra::element_kind::basic_event},
+                          {.name = "G",
+                           .element = pra::element_kind::gate,
+                           .kinds = {pc::query_kind::probability},
+                           .hull = pra::hull_query{}}};
         auto lowered = lowering::lower(model, config);
         REQUIRE_FALSE(lowered);
         CHECK(codes(lowered.diagnostics()) ==
               std::vector<std::string>{"compile.pra_to_pc.unknown-target", "compile.pra_to_pc.duplicate-target",
                                        "compile.pra_to_pc.invalid-target", "compile.pra_to_pc.unknown-target",
-                                       "compile.pra_to_pc.empty-negation"});
+                                       "compile.pra_to_pc.hull-parameters-without-hull"});
+
+        lowering::quantification_config none;
+        none.default_kinds = {};
+        auto empty = lowering::lower(model, none);
+        REQUIRE_FALSE(empty);
+        CHECK(codes(empty.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.no-query-kinds"});
     }
 
     SECTION("nothing to lower") {

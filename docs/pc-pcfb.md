@@ -72,20 +72,21 @@ position `i` of the file the writer sets
 
 | Key | Value |
 |---|---|
-| `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
-| `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set; on hull queries only, so a probability query on the same tensor has none. The reader takes it from the hull query and ignores a probability query's copy |
-| `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set; the FTP compile sets it only on hull queries whose target holds the delete term |
+| `compile.query.<i>.target` | `target_quantification::target`: the domain target or element the query observes, if set; a conditioned query's name adds `\|<initiator>`, this does not |
+| `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`split`, `fixed`, `plain`), if set; on hull queries only, so a probability query on the same tensor has none. The reader takes it from the hull query and ignores a probability query's copy |
+| `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set; on hull queries only, and the FTP compile sets it only where the target holds the delete term |
 | `compile.query.<i>.initiator`, `.initiator_frequency` | string and float64: the initiating event a conditioned query sets TRUE, and its frequency (the query's weight in its group), if set |
 | `compile.complement_tensors` | bytes: little-endian `uint32` tensor ids in ascending order, the unnamed `NOT` tensors the writer created for sources used in both polarities; only written when there is at least one |
 | `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |
 
 `fzb inspect` lists them with the other metadata. Targets without an entry record nothing.
 `compile::backend::fuzzybits::pra_to_pc::pcfb_write_options` fills all three maps from the lowering
-artifact: a target's negation set gives its kinds, and an `atom_split` or `omega_l` monotone-hull
-target whose cone has marked literal events is refused with
-`compile.pra_to_pc.hull-literals-unsupported` until pcfb carries literal atoms (RFC 7.3, #197). In
-`negation` mode marked operands are ordinary complements, the plain hull a hull query means, so the
-target is written.
+artifact: one target per binding, of the binding's kind (the lowering makes one binding per query,
+and two bindings share a node unless the hull query holds the initiator rule), and a `split` or
+`fixed` hull query whose cone has marked literal events is refused with
+`compile.pra_to_pc.hull-literals-unsupported` until the writer fills pcfb's literal fields (RFC
+7.3, #235). Read `plain`, marked operands are ordinary complements, the plain hull a hull query
+means, so the query is written. The kind of a query is `Query.kind`; no metadata key repeats it.
 
 ## Query groups
 

@@ -38,6 +38,7 @@ INSPECT_JSON_KEYS = (
     "opcodes",
     "sample_source",
     "query_names",
+    "query_kinds",
     "metadata",
 )
 
@@ -144,6 +145,7 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
         "keep_null",
         "allow_extern",
         "weights",
+        "no_ccf",
     ):
         if getattr(args, flag):
             print(
@@ -165,13 +167,15 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
         options["watch"] = list(args.watch)
     if overrides:
         options["overrides"] = overrides
-    for key in ("duplicate_import", "negation", "literals", "initiator_values", "initiator_unit"):
+    if args.kind:
+        options["kind"] = list(args.kind)
+    for key in ("duplicate_import", "hull_literals", "initiator_values"):
         if getattr(args, key) is not None:
             options[key] = getattr(args, key)
-    if args.max_initiators_per_cutset is not None:
-        text = args.max_initiators_per_cutset
+    if args.hull_max_initiators is not None:
+        text = args.hull_max_initiators
         if text == "none":
-            options["max_initiators_per_cutset"] = None
+            options["hull_max_initiators"] = None
         else:
             try:
                 count = int(text)
@@ -179,11 +183,11 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
                 count = -1
             if count < 0 or not text.isdigit():
                 print(
-                    f"fzb compile: --max-initiators-per-cutset must be a non-negative integer or none, not '{text}'",
+                    f"fzb compile: --hull-max-initiators must be a non-negative integer or none, not '{text}'",
                     file=sys.stderr,
                 )
                 return 1
-            options["max_initiators_per_cutset"] = count
+            options["hull_max_initiators"] = count
     if args.config is not None:
         try:
             options["config"] = Path(args.config).read_text(encoding="utf-8")
@@ -238,8 +242,10 @@ def cmd_compile(argv: Sequence[str]) -> int:
         prog="fzb compile",
         usage="fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
         "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
-        "       fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE]... [--no-ccf] "
-        "[--negation boolean|hull|both] [--override NAME=0|1]... [--config FILE] [--report FILE] [-o model.pcfb]\n"
+        "       fzb compile a.ftp [b.ftp ...]|DIR [-c 0|1] [--target NAME|@FILE]... [--watch NAME|@FILE]... "
+        "[--kind probability|hull]... [--hull-literals split|fixed|plain] [--hull-max-initiators N|none] "
+        "[--initiator-values UNIT|probability] [--override NAME=0|1]... [--config FILE] [--report FILE] "
+        "[-o model.pcfb]\n"
         "                       [--no-progress] [--quiet] [--progress-log FILE]",
         description="fzb compile options",
         add_help=False,
@@ -252,8 +258,8 @@ def cmd_compile(argv: Sequence[str]) -> int:
         "--compilation-passes",
         type=int,
         default=None,
-        help="MEF: 0=off 1=null-only 2=optimize 4-8=multipass (default 2). "
-        "FTP: 0=none 1=ir::pc passes (default 1)",
+        help="pass level. MEF/nombrilo (SCRAM preprocessing): 0=off 1=null-only 2=optimize (default) 4-8=multipass. "
+        "FTP (ir::pc passes): 0=none 1=all (default)",
     )
     parser.add_argument("--no-kn", action="store_true", help="expand k/n to and/or")
     parser.add_argument("--no-xor", action="store_true", help="expand xor to and/or")
@@ -271,14 +277,9 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--no-recognize-xor", action="store_true", help="disable xor group recognition")
     parser.add_argument("--keep-null", action="store_true", help="keep NULL/pass-through gates")
     parser.add_argument(
-        "--ccf",
-        action="store_true",
-        help="deprecated no-op: common-cause groups are expanded by default",
-    )
-    parser.add_argument(
         "--no-ccf",
         action="store_true",
-        help="do not expand common-cause failure groups (MEF; accepted and ignored for FTP)",
+        help="MEF: do not expand common-cause failure groups (expanded by default)",
     )
     parser.add_argument("--allow-extern", action="store_true", help="**UNSAFE** allow external libraries")
     parser.add_argument(
@@ -291,23 +292,27 @@ def cmd_compile(argv: Sequence[str]) -> int:
     parser.add_argument("--override", action="append", default=[], help="FTP: force an element, NAME=0 or NAME=1 (repeatable)")
     parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
     parser.add_argument(
-        "--negation",
-        help="FTP: query type of every target: boolean (the probability, default), hull or both",
+        "--kind",
+        action="append",
+        default=[],
+        help="FTP: the query of every target, probability (default) or hull; repeat it, or give probability,hull, "
+        "for both (two queries per target)",
     )
     parser.add_argument(
-        "--max-initiators-per-cutset",
-        help="FTP hull queries, with --initiator-values probability: delete the cut sets with more than N "
-        "initiating events, or none (default: none)",
+        "--hull-literals",
+        help="FTP hull queries: how -EVENT operands are read, split (an atom of its own, default), fixed "
+        "(Rauzy's omega_L) or plain (an ordinary complement)",
     )
-    parser.add_argument("--literals", help="FTP hull targets: atom_split|omega_l|negation (default atom_split)")
+    parser.add_argument(
+        "--hull-max-initiators",
+        help="FTP hull queries, with --initiator-values probability: delete the cut sets with more than N "
+        "initiating events, or none (default)",
+    )
     parser.add_argument(
         "--initiator-values",
-        help="FTP: I values are frequency (default: one conditioned query per initiating event, summed as the "
-        "target's frequency) or probability (values up to 1)",
-    )
-    parser.add_argument(
-        "--initiator-unit",
-        help="FTP: unit of the I values, per-year|per-month|per-week|per-day|per-hour (default per-year with frequencies)",
+        help="FTP: what I values are: a frequency in per-year (default), per-month, per-week, per-day or per-hour "
+        "(one conditioned query per initiating event, summed as the target's frequency), or probability "
+        "(values up to 1)",
     )
     parser.add_argument("--config", metavar="FILE", help="FTP: quantification config FILE (JSON); flags override it")
     parser.add_argument(
@@ -338,14 +343,6 @@ def cmd_compile(argv: Sequence[str]) -> int:
         parser.print_help(sys.stderr)
         return 1
 
-    if args.ccf and args.no_ccf:
-        print("fzb compile: --ccf and --no-ccf cannot be combined", file=sys.stderr)
-        return 1
-    if args.ccf:
-        print(
-            "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable",
-            file=sys.stderr,
-        )
     try:
         args.target = _expand_name_args(args.target)
         args.watch = _expand_name_args(args.watch)
@@ -363,11 +360,10 @@ def cmd_compile(argv: Sequence[str]) -> int:
     ftp_flags = {
         "override": args.override,
         "duplicate-import": args.duplicate_import,
-        "negation": args.negation,
-        "max-initiators-per-cutset": args.max_initiators_per_cutset,
-        "literals": args.literals,
+        "kind": args.kind,
+        "hull-literals": args.hull_literals,
+        "hull-max-initiators": args.hull_max_initiators,
         "initiator-values": args.initiator_values,
-        "initiator-unit": args.initiator_unit,
         "config": args.config,
         "report": args.report,
     }
@@ -521,6 +517,9 @@ def _inspect_text(summary: Mapping[str, Any], out: TextIO) -> None:
         out.write("query_names\n")
         for name in names:
             out.write(f"  {name}\n")
+        out.write("query_kinds\n")
+        for kind in summary.get("query_kinds") or []:
+            out.write(f"  {kind}\n")
     metadata = summary.get("metadata") or {}
     if metadata:
         out.write("metadata\n")

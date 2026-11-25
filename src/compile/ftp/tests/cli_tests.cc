@@ -126,7 +126,7 @@ void require_close(const double actual, const double expected) {
 
 } // namespace
 
-TEST_CASE("fzb compile --negation boolean reproduces the conformance values under fzb inspect --exact",
+TEST_CASE("fzb compile --kind probability reproduces the conformance values under fzb inspect --exact",
           "[compile][ftp][cli][conformance]") {
     std::vector<std::filesystem::path> fixtures;
     for (auto const &entry : std::filesystem::directory_iterator(fixtures_root())) {
@@ -153,7 +153,7 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                 INFO("policy " << policy);
                 std::filesystem::remove(pcfb);
                 const auto base = "compile" + inputs +
-                                  " --negation boolean --initiator-values probability --duplicate-import " + policy +
+                                  " --kind probability --initiator-values probability --duplicate-import " + policy +
                                   " --no-progress -o " + quoted(pcfb.string()) + " --report " + quoted(report.string());
 
                 if (outcome.find("results")->is(json::value::kind_type::null)) {
@@ -201,8 +201,8 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                         // a rule of hull queries.
                         const auto refused =
                             run_fzb("compile" + inputs +
-                                        " --negation boolean --initiator-values probability "
-                                        "--max-initiators-per-cutset " +
+                                        " --kind probability --initiator-values probability "
+                                        "--hull-max-initiators " +
                                         std::to_string(rule->integer) + " --no-progress -o " + quoted(pcfb.string()),
                                     scratch);
                         INFO(refused.err);
@@ -217,7 +217,7 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                         INFO("variant target " << target << flags);
                         const auto ran =
                             run_fzb("compile" + inputs +
-                                        " --negation boolean --initiator-values probability --duplicate-import " +
+                                        " --kind probability --initiator-values probability --duplicate-import " +
                                         variant.find("policy")->string + flags + " --no-progress --target " +
                                         quoted(target) + " -o " + quoted(pcfb.string()),
                                     scratch);
@@ -253,26 +253,27 @@ TEST_CASE("fzb compile writes probability queries for FTP input unless hull is r
     auto summary = json::parse(inspected.out);
     REQUIRE(summary);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010001);
-    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.target")->string == "TOP");
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation") == nullptr);
     require_close(exact_of(out, scratch), 0.314);
 
-    // --negation hull: a minor-2 file with the hull query and its metadata.
-    const auto hull = run_fzb(
-        "compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()), scratch);
+    // --kind hull: a minor-2 file with the hull query and its metadata.
+    const auto hull =
+        run_fzb("compile " + quoted(model.string()) + " --kind hull --no-progress -o " + quoted(out.string()), scratch);
     INFO(hull.err);
     REQUIRE(hull.status == 0);
     summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --validate --json", scratch).out);
     REQUIRE(summary);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
     auto const *metadata = summary.value().find("metadata");
-    REQUIRE(metadata->find("compile.query.0.negation")->string == "monotone_hull");
-    REQUIRE(metadata->find("compile.query.0.literal_mode")->string == "atom_split");
+    REQUIRE(metadata->find("compile.query.0.target")->string == "TOP");
+    REQUIRE(metadata->find("compile.query.0.literal_mode")->string == "split");
     // Initiating-event values are frequencies by default, so no initiator rule is lowered or recorded.
     REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset") == nullptr);
 
     // Both kinds on one target: two queries with the target's name.
     const auto config = scratch / "both.json";
-    std::ofstream(config) << R"({"targets": [{"name": "TOP", "negation": "both"}]})";
+    std::ofstream(config) << R"({"targets": [{"name": "TOP", "kinds": ["probability", "hull"]}]})";
     const auto both = run_fzb("compile " + quoted(model.string()) + " --config " + quoted(config.string()) +
                                   " --no-progress -o " + quoted(out.string()),
                               scratch);
@@ -281,8 +282,23 @@ TEST_CASE("fzb compile writes probability queries for FTP input unless hull is r
     summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
     REQUIRE(summary.value().find("schema_version")->integer == 0x00010002);
     REQUIRE(summary.value().find("queries")->integer == 2);
-    REQUIRE(summary.value().find("metadata")->find("compile.query.0.negation")->string == "boolean");
-    REQUIRE(summary.value().find("metadata")->find("compile.query.1.negation")->string == "monotone_hull");
+    REQUIRE(summary.value().find("metadata")->find("compile.query.0.literal_mode") == nullptr);
+    REQUIRE(summary.value().find("metadata")->find("compile.query.1.literal_mode")->string == "split");
+    // fzb inspect shows each query's kind, spelt as --kind spells it.
+    auto const &kinds = summary.value().find("query_kinds")->items;
+    REQUIRE(kinds.size() == 2);
+    REQUIRE(kinds[0].string == "probability");
+    REQUIRE(kinds[1].string == "hull");
+
+    // The same with repeated and comma-separated --kind.
+    for (const char *kinds : {" --kind probability --kind hull", " --kind probability,hull"}) {
+        const auto flagged =
+            run_fzb("compile " + quoted(model.string()) + kinds + " --no-progress -o " + quoted(out.string()), scratch);
+        INFO(kinds << "\n" << flagged.err);
+        REQUIRE(flagged.status == 0);
+        summary = json::parse(run_fzb("inspect " + quoted(out.string()) + " --json", scratch).out);
+        REQUIRE(summary.value().find("queries")->integer == 2);
+    }
     std::filesystem::remove_all(scratch);
 }
 
@@ -291,29 +307,29 @@ TEST_CASE("fzb compile refuses hull targets with marked literals and says how to
     const auto scratch = scratch_directory("literals");
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
     const auto out = (scratch / "m.pcfb");
-    for (const char *flags : {" --negation hull --initiator-values probability",
-                              " --negation hull --initiator-values probability --literals omega_l"}) {
+    for (const char *flags : {" --kind hull --initiator-values probability",
+                              " --kind hull --initiator-values probability --hull-literals fixed"}) {
         const auto refused = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << refused.err);
         REQUIRE(refused.status != 0);
         REQUIRE_FALSE(std::filesystem::exists(out));
         REQUIRE(refused.err.find("compile.ftp.hull-literals-unsupported") != std::string::npos);
-        REQUIRE(refused.err.find("--literals negation") != std::string::npos);
-        REQUIRE(refused.err.find("--negation boolean") != std::string::npos);
+        REQUIRE(refused.err.find("--hull-literals plain") != std::string::npos);
+        REQUIRE(refused.err.find("--kind probability") != std::string::npos);
     }
-    // --literals negation is the plain hull of a model with -EVENT.
-    for (const char *flags : {" --initiator-unit per-year", " --negation boolean --initiator-values probability",
-                              " --negation hull --initiator-values probability --literals negation"}) {
+    // --hull-literals plain is the plain hull of a model with -EVENT.
+    for (const char *flags : {" --initiator-values per-year", " --kind probability --initiator-values probability",
+                              " --kind hull --initiator-values probability --hull-literals plain"}) {
         const auto ran = run_fzb("compile " + model + flags + " --no-progress -o " + quoted(out.string()), scratch);
         INFO(flags << "\n" << ran.err);
         REQUIRE(ran.status == 0);
         REQUIRE(std::filesystem::exists(out));
         std::filesystem::remove(out);
     }
-    // --complement-events is gone: -EVENT is always a marked literal, and --literals negation reads it as a plain
+    // --complement-events is gone: -EVENT is always a marked literal, and --hull-literals plain reads it as a plain
     // complement.
     const auto removed = run_fzb("compile " + model +
-                                     " --negation hull --initiator-values probability --complement-events negation "
+                                     " --kind hull --initiator-values probability --complement-events negation "
                                      "--no-progress -o " +
                                      quoted(out.string()),
                                  scratch);
@@ -330,9 +346,9 @@ TEST_CASE("fzb run refuses a compiled hull file before sampling", "[compile][ftp
     const auto out = scratch / "m.pcfb";
     std::ofstream(model)
         << "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
-    REQUIRE(run_fzb("compile " + quoted(model.string()) + " --negation hull --no-progress -o " + quoted(out.string()),
-                    scratch)
-                .status == 0);
+    REQUIRE(
+        run_fzb("compile " + quoted(model.string()) + " --kind hull --no-progress -o " + quoted(out.string()), scratch)
+            .status == 0);
     const auto run =
         run_fzb("run " + quoted(out.string()) + " --trials 1024" + fuzzybits::testing::backend_flag(), scratch);
     INFO(run.err);
@@ -359,7 +375,7 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     const auto report = scratch / "report.json";
     const auto config = scratch / "config.json";
     std::ofstream(config)
-        << R"({"negation": "boolean", "initiator_values": "probability", "max_initiators_per_cutset": null, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
+        << R"({"kinds": "probability", "initiator_values": "probability", "hull": {"max_initiators": null}, "targets": ["SEQ-3", "TOP"], "overrides": {"OPER": 0}})";
 
     // The file alone: no initiator rule, SEQ-3 first with OPER forced FALSE.
     auto ran = run_fzb("compile " + model + " --config " + quoted(config.string()) + " --no-progress -o " +
@@ -371,7 +387,8 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     {
         const auto document = parse_file(report);
         REQUIRE(document.find("status")->string == "ok");
-        REQUIRE(document.find("options")->find("max_initiators_per_cutset")->is(json::value::kind_type::null));
+        REQUIRE(document.find("options")->find("hull")->find("max_initiators")->is(json::value::kind_type::null));
+        REQUIRE(document.find("options")->find("kinds")->items[0].string == "probability");
         REQUIRE(document.find("options")->find("targets")->items.size() == 2);
         REQUIRE(document.find("options")->find("overrides")->items[0].find("name")->string == "OPER");
         REQUIRE(document.find("lowering")->find("overridden_elements")->integer == 1);
@@ -383,7 +400,7 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
 
     // Flags override the file: another target, hull queries with the initiator rule, the override flipped.
     ran = run_fzb("compile " + model + " --config " + quoted(config.string()) +
-                      " --target SEQ-4 --target TOP --negation hull --literals negation --max-initiators-per-cutset 1 "
+                      " --target SEQ-4 --target TOP --kind hull --hull-literals plain --hull-max-initiators 1 "
                       "--override OPER=1 --no-progress -c 0 -o " +
                       quoted(pcfb.string()) + " --report " + quoted(report.string()),
                   scratch);
@@ -391,7 +408,12 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     REQUIRE(ran.status == 0);
     {
         const auto document = parse_file(report);
-        REQUIRE(document.find("options")->find("max_initiators_per_cutset")->integer == 1);
+        REQUIRE(document.find("options")->find("hull")->find("max_initiators")->integer == 1);
+        REQUIRE(document.find("options")->find("hull")->find("literals")->string == "plain");
+        auto const &first = document.find("options")->find("targets")->items[0];
+        REQUIRE(first.find("kind")->string == "hull");
+        REQUIRE(first.find("hull_literals")->string == "plain");
+        REQUIRE(first.find("hull_max_initiators")->integer == 1);
         REQUIRE(document.find("options")->find("compilation_level")->integer == 0);
         REQUIRE(document.find("options")->find("targets")->items[0].find("name")->string == "SEQ-4");
         REQUIRE(document.find("options")->find("overrides")->items[0].find("value")->boolean);
@@ -419,7 +441,7 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     REQUIRE(metadata->find("compile.query.1.max_initiators_per_cutset")->string == "1");
 
     // The text summary prints the counts.
-    ran = run_fzb("compile " + model + " --negation boolean --initiator-values probability --no-progress -o " +
+    ran = run_fzb("compile " + model + " --kind probability --initiator-values probability --no-progress -o " +
                       quoted(pcfb.string()),
                   scratch);
     REQUIRE(ran.status == 0);
@@ -430,7 +452,7 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     // The default output name follows the first file's stem, like the MEF path; a directory names the project.
     const auto previous = std::filesystem::current_path();
     std::filesystem::current_path(scratch);
-    ran = run_fzb("compile " + model + " --negation boolean --initiator-values probability --no-progress --quiet",
+    ran = run_fzb("compile " + model + " --kind probability --initiator-values probability --no-progress --quiet",
                   scratch);
     std::filesystem::current_path(previous);
     REQUIRE(ran.status == 0);
@@ -444,8 +466,7 @@ TEST_CASE("fzb compile takes several files and a directory as one project", "[co
     const auto directory = fixtures_root() / "multi_file_project";
     const auto pcfb = scratch / "p.pcfb";
     const auto flags =
-        std::string(
-            " --negation boolean --initiator-values probability --max-initiators-per-cutset none --no-progress -o ") +
+        std::string(" --kind probability --initiator-values probability --hull-max-initiators none --no-progress -o ") +
         quoted(pcfb.string());
 
     const auto by_directory = run_fzb("compile " + quoted(directory.string()) + flags, scratch);
@@ -479,19 +500,29 @@ TEST_CASE("fzb compile rejects bad FTP options and mixed inputs", "[compile][ftp
         REQUIRE(ran.status != 0);
         REQUIRE(ran.err.find(needle) != std::string::npos);
     };
-    fails(model + " --negation boolean -c 2", "compile.ftp.invalid-option");
-    fails(model + " --negation maybe", "compile.ftp.invalid-option");
-    fails(model + " --negation boolean --literals maybe", "compile.ftp.invalid-option");
-    fails(model + " --negation boolean --override OPER", "NAME=0 or NAME=1");
-    fails(model + " --negation boolean --override NOPE=1", "compile.pra_to_pc.unknown-element");
-    fails(model + " --negation boolean --target NOPE", "compile.ftp.unknown-target");
-    fails(model + " --negation boolean --max-initiators-per-cutset many", "--max-initiators-per-cutset");
-    fails(model + " --negation boolean --config " + quoted((scratch / "missing.json").string()), "cannot read");
-    fails(model + " --negation boolean --no-kn", "applies to OpenPSA/MEF input");
+    fails(model + " --kind probability -c 2", "SCRAM preprocessing levels of MEF input");
+    fails(model + " --kind maybe", "compile.ftp.invalid-option");
+    fails(model + " --kind probability --hull-literals maybe", "compile.ftp.invalid-option");
+    fails(model + " --kind probability --override OPER", "NAME=0 or NAME=1");
+    fails(model + " --kind probability --override NOPE=1", "compile.pra_to_pc.unknown-element");
+    fails(model + " --kind probability --target NOPE", "compile.ftp.unknown-target");
+    fails(model + " --kind probability --hull-max-initiators many", "--hull-max-initiators");
+    fails(model + " --kind probability --initiator-values probability --hull-max-initiators 1", "hull queries only");
+    fails(model + " --kind probability --hull-literals plain", "hull queries only");
+    fails(model + " --initiator-values frequency", "compile.ftp.invalid-option");
+    fails(model + " --kind both", "compile.ftp.invalid-option");
+    // Removed options are unknown.
+    for (const char *removed : {" --negation hull", " --literals plain", " --max-initiators-per-cutset 1",
+                                " --initiator-unit per-year", " --ccf"}) {
+        fails(model + removed, "unrecognised option");
+    }
+    fails(model + " --no-ccf", "applies to OpenPSA/MEF input");
+    fails(model + " --kind probability --config " + quoted((scratch / "missing.json").string()), "cannot read");
+    fails(model + " --kind probability --no-kn", "applies to OpenPSA/MEF input");
 
     std::ofstream(scratch / "m.xml") << "<opsa-mef/>\n";
     fails(model + " " + quoted((scratch / "m.xml").string()), "cannot be combined");
-    fails(quoted((scratch / "m.xml").string()) + " --negation boolean", "applies to CAFTA FTP input only");
+    fails(quoted((scratch / "m.xml").string()) + " --kind probability", "applies to CAFTA FTP input only");
     std::filesystem::remove_all(scratch);
 }
 
@@ -506,20 +537,9 @@ namespace {
 #endif
 }
 
-constexpr const char *kDeprecatedCcf =
-    "fzb compile: --ccf is deprecated: common-cause groups are expanded by default; use --no-ccf to disable";
-
 [[nodiscard]] auto ccf_model() -> std::string {
     return quoted(
         (std::filesystem::path(PROJECT_SOURCE_DIR) / "tests" / "input" / "core" / "beta_factor_ccf.xml").string());
-}
-
-[[nodiscard]] auto count_of(std::string const &text, std::string const &needle) -> std::size_t {
-    std::size_t count = 0;
-    for (auto at = text.find(needle); at != std::string::npos; at = text.find(needle, at + 1)) {
-        ++count;
-    }
-    return count;
 }
 
 [[nodiscard]] auto summary_of(std::filesystem::path const &pcfb, std::filesystem::path const &scratch) -> json::value {
@@ -567,50 +587,21 @@ TEST_CASE("fzb compile expands common-cause groups by default and --no-ccf disab
     std::filesystem::remove_all(scratch);
 }
 
-TEST_CASE("fzb compile --ccf is a deprecated no-op and conflicts with --no-ccf", "[compile][mef][cli][ccf]") {
-    const auto scratch = scratch_directory("ccf-deprecated");
-    const auto expanded = scratch / "expanded.pcfb";
-    const auto legacy = scratch / "legacy.pcfb";
-
-    auto ran = run_fzb("compile " + ccf_model() + " --no-progress -o " + quoted(expanded.string()), scratch);
-    REQUIRE(ran.status == 0);
-    ran = run_fzb("compile " + ccf_model() + " --ccf --no-progress -o " + quoted(legacy.string()), scratch);
-    INFO(ran.err);
-    REQUIRE(ran.status == 0);
-    REQUIRE(count_of(ran.err, kDeprecatedCcf) == 1);
-    require_close(exact_of(legacy, scratch), exact_of(expanded, scratch));
-    REQUIRE(summary_of(legacy, scratch).find("metadata")->find("compile.ccf")->string == "1");
-
-    ran = run_fzb("compile " + ccf_model() + " --ccf --no-ccf --no-progress -o " + quoted(legacy.string()), scratch);
-    INFO(ran.err);
-    REQUIRE(exit_code(ran) == 1);
-    REQUIRE(ran.err.find("--ccf and --no-ccf cannot be combined") != std::string::npos);
-
-    const auto ftp = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
-    ran = run_fzb("compile " + ftp + " --ccf --no-ccf --no-progress -o " + quoted(legacy.string()), scratch);
-    REQUIRE(exit_code(ran) == 1);
-    std::filesystem::remove_all(scratch);
-}
-
-TEST_CASE("fzb compile accepts --no-ccf and the deprecated --ccf for FTP input", "[compile][ftp][cli][ccf]") {
+TEST_CASE("fzb compile has no --ccf; --no-ccf is for MEF input only", "[compile][ftp][cli][ccf]") {
     const auto scratch = scratch_directory("ccf-ftp");
+    const auto out = scratch / "m.pcfb";
+    auto ran = run_fzb("compile " + ccf_model() + " --ccf --no-progress -o " + quoted(out.string()), scratch);
+    INFO(ran.err);
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("unrecognised option") != std::string::npos);
+
+    // FTP projects have no common-cause groups.
     const auto model = quoted((fixtures_root() / "initiator_rule" / "model.ftp").string());
-    const auto flags = std::string(" --negation boolean --initiator-values probability --no-progress -o ");
-    const auto base = scratch / "base.pcfb";
-    const auto other = scratch / "other.pcfb";
-
-    REQUIRE(run_fzb("compile " + model + flags + quoted(base.string()), scratch).status == 0);
-    auto ran = run_fzb("compile " + model + " --no-ccf" + flags + quoted(other.string()), scratch);
+    ran = run_fzb("compile " + model + " --no-ccf --no-progress -o " + quoted(out.string()), scratch);
     INFO(ran.err);
-    REQUIRE(ran.status == 0);
-    REQUIRE(ran.err.find("deprecated") == std::string::npos);
-    REQUIRE(read_file(other) == read_file(base));
-
-    ran = run_fzb("compile " + model + " --ccf" + flags + quoted(other.string()), scratch);
-    INFO(ran.err);
-    REQUIRE(ran.status == 0);
-    REQUIRE(count_of(ran.err, kDeprecatedCcf) == 1);
-    REQUIRE(read_file(other) == read_file(base));
+    REQUIRE(exit_code(ran) == 1);
+    REQUIRE(ran.err.find("--no-ccf applies to OpenPSA/MEF input") != std::string::npos);
+    REQUIRE_FALSE(std::filesystem::exists(out));
     std::filesystem::remove_all(scratch);
 }
 
@@ -626,8 +617,7 @@ TEST_CASE("fzb compile reads --target and --watch names from @FILE", "[compile][
     std::ofstream(watched) << "E3\n";
     const auto pcfb = scratch / "m.pcfb";
     const auto flags =
-        std::string(
-            " --negation boolean --initiator-values probability --max-initiators-per-cutset none --no-progress -o ") +
+        std::string(" --kind probability --initiator-values probability --hull-max-initiators none --no-progress -o ") +
         quoted(pcfb.string());
 
     // Plain names and files mix; file contents expand in place.
@@ -744,8 +734,8 @@ TEST_CASE("fzb run and fzb inspect --exact report frequency groups and exposure"
     const auto f2 = scratch / "f2.pcfb";
     const auto f4 = scratch / "f4.pcfb";
     for (auto const &[model, out] : {std::pair{root / "F2.ftp", f2}, std::pair{root / "F4.ftp", f4}}) {
-        const auto ran = run_fzb("compile " + quoted(model.string()) + " --initiator-unit per-year --no-progress -o " +
-                                     quoted(out.string()),
+        const auto ran = run_fzb("compile " + quoted(model.string()) +
+                                     " --initiator-values per-year --no-progress -o " + quoted(out.string()),
                                  scratch);
         INFO(ran.err);
         REQUIRE(ran.status == 0);

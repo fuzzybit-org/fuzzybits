@@ -454,7 +454,7 @@ struct RandomModel final {
         }
     }
     options.query = chance(0.2) ? pcfb_io::query_kind::monotone_hull_probability : pcfb_io::query_kind::probability;
-    constexpr std::array literalModes{"", "atom_split", "omega_l", "negation"};
+    constexpr std::array literalModes{"", "split", "fixed", "plain"};
     for (auto const &target : model.circuit.targets()) {
         // Unique per target: targets that share a node and a name would read back as one target with two kinds.
         if (chance(0.7)) {
@@ -478,7 +478,8 @@ struct RandomModel final {
             break;
         }
         if (chance(0.4)) {
-            pcfb_io::target_quantification entry;
+            // The target name is always recorded, as the lowering does, so every entry reads back.
+            pcfb_io::target_quantification entry{.target = "D" + std::to_string(target.id.raw())};
             entry.literal_mode = literalModes[uniform(0, literalModes.size() - 1)];
             if (chance(0.5)) {
                 entry.max_initiators_per_cutset = uniform(0, 7);
@@ -500,7 +501,7 @@ struct RandomModel final {
         options.source_sha256 = digest;
     }
     if (chance(0.5)) {
-        options.compile_options = R"({"negation": "hull", "level": )" + std::to_string(uniform(0, 1)) + "}";
+        options.compile_options = R"({"kinds": ["hull"], "level": )" + std::to_string(uniform(0, 1)) + "}";
     }
     return model;
 }

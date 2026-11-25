@@ -8,6 +8,7 @@
 #include "io/pcfb/frequency.h"
 #include "ir/pc/circuit.h"
 #include "ir/pc/passes/passes.h"
+#include "ir/pc/query.h"
 #include "ir/pra/model.h"
 #include "ir/pra/projection.h"
 
@@ -22,6 +23,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -105,60 +107,72 @@ class progress_reporter final {
 
 // ---- Settings -------------------------------------------------------
 
-[[nodiscard]] auto parse_negation(std::string_view text) -> std::optional<pra::negation_set> {
-    if (text == "boolean") {
-        return pra::negation_set::of(pra::negation_semantics::boolean);
+// "probability", "hull", or comma-separated lists of them: ascending, without repeats.
+[[nodiscard]] auto parse_kinds(std::span<std::string const> values) -> std::optional<std::vector<pc::query_kind>> {
+    std::vector<pc::query_kind> out;
+    for (auto const &value : values) {
+        std::string_view rest(value);
+        while (true) {
+            const auto comma = rest.find(',');
+            const auto kind = pc::parse_query_kind(rest.substr(0, comma));
+            if (!kind) {
+                return std::nullopt;
+            }
+            out.push_back(*kind);
+            if (comma == std::string_view::npos) {
+                break;
+            }
+            rest.remove_prefix(comma + 1);
+        }
     }
-    if (text == "hull" || text == "monotone_hull") {
-        return pra::negation_set::of(pra::negation_semantics::monotone_hull);
+    if (out.empty()) {
+        return std::nullopt;
     }
-    if (text == "both") {
-        return pra::negation_set::both();
+    std::ranges::sort(out);
+    out.erase(std::ranges::unique(out).begin(), out.end());
+    return out;
+}
+
+[[nodiscard]] auto has_hull(std::span<pc::query_kind const> kinds) -> bool {
+    return std::ranges::find(kinds, pc::query_kind::monotone_hull) != kinds.end();
+}
+
+[[nodiscard]] auto kinds_json(std::span<pc::query_kind const> kinds) -> json::value {
+    auto out = json::value::make_array();
+    for (const auto kind : kinds) {
+        out.push(json::value::make_string(std::string(pc::to_string(kind))));
+    }
+    return out;
+}
+
+// --initiator-values: a frequency unit, or `probability`.
+struct initiator_reading final {
+    bool frequencies = true;
+    // Set exactly with frequencies.
+    std::optional<std::string> unit;
+};
+
+[[nodiscard]] auto parse_initiator_values(std::string_view text) -> std::optional<initiator_reading> {
+    if (text == "probability") {
+        return initiator_reading{.frequencies = false};
+    }
+    if (pcfb_frequency::find_unit(text)) {
+        return initiator_reading{.frequencies = true, .unit = std::string(text)};
     }
     return std::nullopt;
 }
 
-[[nodiscard]] auto parse_literals(std::string_view text) -> std::optional<pra::literal_mode> {
-    if (text == "atom_split") {
-        return pra::literal_mode::atom_split;
-    }
-    if (text == "omega_l") {
-        return pra::literal_mode::omega_l;
-    }
-    if (text == "negation") {
-        return pra::literal_mode::negation;
-    }
-    return std::nullopt;
-}
-
-[[nodiscard]] auto literals_name(const pra::literal_mode mode) -> std::string_view {
-    switch (mode) {
-    case pra::literal_mode::atom_split:
-        return "atom_split";
-    case pra::literal_mode::omega_l:
-        return "omega_l";
-    case pra::literal_mode::negation:
-        return "negation";
-    }
-    return "atom_split";
-}
-
-[[nodiscard]] auto negation_json(const pra::negation_set set) -> json::value {
-    if (set.boolean && set.monotone_hull) {
-        return json::value::make_array()
-            .push(json::value::make_string("boolean"))
-            .push(json::value::make_string("hull"));
-    }
-    return json::value::make_string(set.monotone_hull ? "hull" : "boolean");
-}
+[[nodiscard]] auto initiator_values_names() -> std::string { return pcfb_frequency::unit_names() + "|probability"; }
 
 // One target of the `--config` document or of the command line.
 struct target_spec final {
     std::string name;
     // domain_target | gate | basic_event; unset: look the name up.
     std::optional<std::string> subject;
-    std::optional<pra::negation_set> negation;
-    std::optional<pra::literal_mode> literals;
+    std::optional<std::vector<pc::query_kind>> kinds;
+    std::optional<pra::hull_literals> hull_literals;
+    // Outer unset: not given. Inner unset: no rule.
+    std::optional<std::optional<std::uint32_t>> hull_max_initiators;
 };
 
 struct override_item final {
@@ -171,12 +185,11 @@ struct settings_document final {
     std::optional<std::vector<target_spec>> targets;
     std::optional<std::vector<target_spec>> watch;
     std::vector<override_item> overrides;
-    std::optional<pra::negation_set> negation;
-    std::optional<pra::literal_mode> literals;
+    std::optional<std::vector<pc::query_kind>> kinds;
+    std::optional<pra::hull_literals> hull_literals;
+    std::optional<std::optional<std::uint32_t>> hull_max_initiators;
     std::optional<std::string> duplicate_import;
-    std::optional<std::optional<std::uint32_t>> max_initiators;
     std::optional<std::string> initiator_values;
-    std::optional<std::string> initiator_unit;
     std::optional<int> level;
 };
 
@@ -188,16 +201,9 @@ class document_reader final {
         if (!root.is_object()) {
             return fail("the document must be a JSON object");
         }
-        static constexpr std::array<std::string_view, 10> known{"targets",
-                                                                "watch",
-                                                                "overrides",
-                                                                "negation",
-                                                                "literals",
-                                                                "duplicate_import",
-                                                                "max_initiators_per_cutset",
-                                                                "initiator_values",
-                                                                "initiator_unit",
-                                                                "compilation_level"};
+        static constexpr std::array<std::string_view, 8> known{
+            "targets",          "watch", "overrides", "kinds", "hull", "duplicate_import", "initiator_values",
+            "compilation_level"};
         for (auto const &key : root.keys) {
             if (std::ranges::find(known, std::string_view(key)) == known.end()) {
                 return fail("unknown key " + in_quotes(key));
@@ -213,32 +219,20 @@ class document_reader final {
         if (auto const *value = root.find("overrides")) {
             overrides(*value, out.overrides);
         }
-        if (auto const *value = root.find("negation")) {
-            out.negation = negation(*value, "negation");
+        if (auto const *value = root.find("kinds")) {
+            out.kinds = kinds(*value, "kinds");
         }
-        if (auto const *value = root.find("literals")) {
-            out.literals = literals(*value, "literals");
+        if (auto const *value = root.find("hull")) {
+            hull(*value, "hull", out.hull_literals, out.hull_max_initiators);
         }
         if (auto const *value = root.find("duplicate_import")) {
             out.duplicate_import = choice(*value, "duplicate_import", {"error", "first", "last"});
         }
-        if (auto const *value = root.find("max_initiators_per_cutset")) {
-            if (value->is(json::value::kind_type::null) || (value->is_string() && value->string == "none")) {
-                out.max_initiators = std::optional<std::uint32_t>{};
-            } else if (value->is_integer() && value->integer >= 0 && value->integer <= 0xFFFFFFFFLL) {
-                out.max_initiators = std::optional<std::uint32_t>{static_cast<std::uint32_t>(value->integer)};
-            } else {
-                error("max_initiators_per_cutset must be a non-negative integer, null or \"none\"");
-            }
-        }
         if (auto const *value = root.find("initiator_values")) {
-            out.initiator_values = choice(*value, "initiator_values", {"frequency", "probability"});
-        }
-        if (auto const *value = root.find("initiator_unit")) {
-            if (value->is_string() && pcfb_frequency::find_unit(value->string)) {
-                out.initiator_unit = value->string;
+            if (value->is_string() && parse_initiator_values(value->string)) {
+                out.initiator_values = value->string;
             } else {
-                error("initiator_unit must be one of " + pcfb_frequency::unit_names());
+                error("initiator_values must be one of " + initiator_values_names());
             }
         }
         if (auto const *value = root.find("compilation_level")) {
@@ -278,39 +272,51 @@ class document_reader final {
         return std::nullopt;
     }
 
-    [[nodiscard]] auto negation(json::value const &value, std::string_view key) -> std::optional<pra::negation_set> {
-        std::optional<pra::negation_set> out;
+    // "probability", "hull" or a non-empty array of them.
+    [[nodiscard]] auto kinds(json::value const &value, std::string_view key)
+        -> std::optional<std::vector<pc::query_kind>> {
+        std::vector<std::string> names;
         if (value.is_string()) {
-            out = parse_negation(value.string);
-        } else if (value.is_array() && !value.items.empty()) {
-            pra::negation_set set{.boolean = false, .monotone_hull = false};
-            bool valid = true;
+            names.push_back(value.string);
+        } else if (value.is_array()) {
             for (auto const &item : value.items) {
-                const auto one = item.is_string() ? parse_negation(item.string) : std::nullopt;
-                if (!one || (one->boolean && one->monotone_hull)) {
-                    valid = false;
-                    break;
-                }
-                set.boolean = set.boolean || one->boolean;
-                set.monotone_hull = set.monotone_hull || one->monotone_hull;
-            }
-            if (valid) {
-                out = set;
+                names.push_back(item.is_string() ? item.string : std::string{"?"});
             }
         }
+        auto out = names.empty() ? std::nullopt : parse_kinds(names);
         if (!out) {
-            error(std::string(key) +
-                  " must be \"boolean\", \"hull\", \"both\" or an array of \"boolean\" and \"hull\"");
+            error(std::string(key) + " must be \"probability\", \"hull\" or an array of them");
         }
         return out;
     }
 
-    [[nodiscard]] auto literals(json::value const &value, std::string_view key) -> std::optional<pra::literal_mode> {
-        const auto out = value.is_string() ? parse_literals(value.string) : std::nullopt;
-        if (!out) {
-            error(std::string(key) + " must be \"atom_split\", \"omega_l\" or \"negation\"");
+    // {"literals": "split" | "fixed" | "plain", "max_initiators": N | null | "none"}.
+    void hull(json::value const &value, std::string_view key, std::optional<pra::hull_literals> &literals,
+              std::optional<std::optional<std::uint32_t>> &max_initiators) {
+        if (!value.is_object()) {
+            error(std::string(key) + " must be an object with \"literals\" and \"max_initiators\"");
+            return;
         }
-        return out;
+        for (auto const &member : value.keys) {
+            if (member != "literals" && member != "max_initiators") {
+                error(std::string(key) + " has unknown key " + in_quotes(member));
+            }
+        }
+        if (auto const *item = value.find("literals")) {
+            literals = item->is_string() ? pra::parse_hull_literals(item->string) : std::nullopt;
+            if (!literals) {
+                error(std::string(key) + ".literals must be \"split\", \"fixed\" or \"plain\"");
+            }
+        }
+        if (auto const *item = value.find("max_initiators")) {
+            if (item->is(json::value::kind_type::null) || (item->is_string() && item->string == "none")) {
+                max_initiators = std::optional<std::uint32_t>{};
+            } else if (item->is_integer() && item->integer >= 0 && item->integer <= 0xFFFFFFFFLL) {
+                max_initiators = std::optional<std::uint32_t>{static_cast<std::uint32_t>(item->integer)};
+            } else {
+                error(std::string(key) + ".max_initiators must be a non-negative integer, null or \"none\"");
+            }
+        }
     }
 
     [[nodiscard]] auto targets(json::value const &list, std::string_view key) -> std::vector<target_spec> {
@@ -325,7 +331,7 @@ class document_reader final {
                 spec.name = item.string;
             } else if (item.is_object()) {
                 for (auto const &member : item.keys) {
-                    if (member != "name" && member != "subject" && member != "negation" && member != "literals") {
+                    if (member != "name" && member != "subject" && member != "kinds" && member != "hull") {
                         error(std::string(key) + " entry has unknown key " + in_quotes(member));
                     }
                 }
@@ -343,11 +349,11 @@ class document_reader final {
                         error("subject must be \"domain_target\", \"gate\" or \"basic_event\"");
                     }
                 }
-                if (auto const *negation_value = item.find("negation")) {
-                    spec.negation = negation(*negation_value, "negation");
+                if (auto const *kinds_value = item.find("kinds")) {
+                    spec.kinds = kinds(*kinds_value, "kinds");
                 }
-                if (auto const *literals_value = item.find("literals")) {
-                    spec.literals = literals(*literals_value, "literals");
+                if (auto const *hull_value = item.find("hull")) {
+                    hull(*hull_value, "hull", spec.hull_literals, spec.hull_max_initiators);
                 }
             } else {
                 error(std::string(key) + " entries must be names or objects");
@@ -409,14 +415,14 @@ class document_reader final {
     bool failed_ = false;
 };
 
-// The settings that survive merging the flags, the document and the model.
+// The settings that survive merging the flags and the document: the defaults of targets that set
+// nothing of their own.
 struct effective final {
     std::string duplicate_import = "last";
-    pra::negation_set negation;
-    pra::literal_mode literals = pra::literal_mode::atom_split;
-    std::optional<std::uint32_t> max_initiators;
-    std::string initiator_values = "frequency";
-    std::optional<std::string> initiator_unit;
+    std::vector<pc::query_kind> kinds{pc::query_kind::probability};
+    pra::hull_query hull;
+    // A frequency unit, or `probability`.
+    std::string initiator_values = std::string(pcfb_frequency::default_unit);
     int level = 1;
     std::vector<override_item> overrides;
 };
@@ -464,13 +470,10 @@ struct lowered_stage final {
     std::string limit;
 };
 
-[[nodiscard]] auto resolve_request(pra::model const &model, target_spec const &spec,
-                                   std::optional<pra::negation_set> negation_flag,
-                                   std::optional<pra::literal_mode> literals_flag, pra::negation_set default_negation,
-                                   api::diagnostic_list &diagnostics) -> std::optional<lowering_ns::target_request> {
-    lowering_ns::target_request request{.name = spec.name,
-                                        .negation = negation_flag.value_or(spec.negation.value_or(default_negation))};
-    request.literals = literals_flag ? literals_flag : spec.literals;
+// The request's name and subject; its kinds and hull parameters are filled by the caller.
+[[nodiscard]] auto resolve_subject(pra::model const &model, target_spec const &spec, api::diagnostic_list &diagnostics)
+    -> std::optional<lowering_ns::target_request> {
+    lowering_ns::target_request request{.name = spec.name};
     std::string subject;
     if (spec.subject) {
         subject = *spec.subject;
@@ -493,11 +496,16 @@ struct lowered_stage final {
     return request;
 }
 
+[[nodiscard]] auto level_error(const int level) -> api::diagnostic {
+    return option_error("-c must be 0 or 1 for FTP input (the ir::pc passes: 0 none, 1 all), not " +
+                        std::to_string(level) + "; levels 2 to 8 are the SCRAM preprocessing levels of MEF input");
+}
+
 [[nodiscard]] auto run_lower(std::span<reader::source_text const> given, options const &settings,
                              api::diagnostic_list &diagnostics, timings &seconds, progress_reporter *progress,
                              source_set &set) -> std::optional<lowered_stage> {
     if (settings.level && *settings.level != 0 && *settings.level != 1) {
-        diagnostics.push(option_error("-c must be 0 or 1 for FTP input, not " + std::to_string(*settings.level)));
+        diagnostics.push(level_error(*settings.level));
         return std::nullopt;
     }
     for (auto const &entry : settings.overrides) {
@@ -506,26 +514,33 @@ struct lowered_stage final {
             return std::nullopt;
         }
     }
-    if (settings.negation && !parse_negation(*settings.negation)) {
-        diagnostics.push(option_error("negation must be boolean, hull or both, not " + in_quotes(*settings.negation)));
+    std::optional<std::vector<pc::query_kind>> kinds_flag;
+    if (!settings.kinds.empty()) {
+        kinds_flag = parse_kinds(settings.kinds);
+        if (!kinds_flag) {
+            std::string given_kinds;
+            for (auto const &kind : settings.kinds) {
+                given_kinds += (given_kinds.empty() ? "" : ",") + kind;
+            }
+            diagnostics.push(option_error("kind must be probability or hull, not " + in_quotes(given_kinds)));
+        }
     }
-    if (settings.literals && !parse_literals(*settings.literals)) {
-        diagnostics.push(
-            option_error("literals must be atom_split, omega_l or negation, not " + in_quotes(*settings.literals)));
+    std::optional<pra::hull_literals> literals_flag;
+    if (settings.hull_literals) {
+        literals_flag = pra::parse_hull_literals(*settings.hull_literals);
+        if (!literals_flag) {
+            diagnostics.push(
+                option_error("hull-literals must be split, fixed or plain, not " + in_quotes(*settings.hull_literals)));
+        }
     }
     if (settings.duplicate_import && *settings.duplicate_import != "error" && *settings.duplicate_import != "first" &&
         *settings.duplicate_import != "last") {
         diagnostics.push(option_error("duplicate-import must be error, first or last, not " +
                                       in_quotes(*settings.duplicate_import)));
     }
-    if (settings.initiator_values && *settings.initiator_values != "frequency" &&
-        *settings.initiator_values != "probability") {
-        diagnostics.push(option_error("initiator-values must be frequency or probability, not " +
+    if (settings.initiator_values && !parse_initiator_values(*settings.initiator_values)) {
+        diagnostics.push(option_error("initiator-values must be one of " + initiator_values_names() + ", not " +
                                       in_quotes(*settings.initiator_values)));
-    }
-    if (settings.initiator_unit && !pcfb_frequency::find_unit(*settings.initiator_unit)) {
-        diagnostics.push(option_error("initiator-unit must be one of " + pcfb_frequency::unit_names() + ", not " +
-                                      in_quotes(*settings.initiator_unit)));
     }
     settings_document document;
     if (settings.config) {
@@ -548,7 +563,7 @@ struct lowered_stage final {
     merged.duplicate_import = settings.duplicate_import.value_or(document.duplicate_import.value_or("last"));
     merged.level = settings.level.value_or(document.level.value_or(1));
     if (merged.level != 0 && merged.level != 1) {
-        diagnostics.push(option_error("-c must be 0 or 1 for FTP input, not " + std::to_string(merged.level)));
+        diagnostics.push(level_error(merged.level));
         return std::nullopt;
     }
 
@@ -572,60 +587,44 @@ struct lowered_stage final {
         return std::nullopt;
     }
 
-    // The query type is requested, never read from the model: every target is a
-    // probability query unless the flags or the document ask for the hull.
-    if (settings.negation) {
-        merged.negation = *parse_negation(*settings.negation);
-    } else {
-        merged.negation = document.negation.value_or(pra::negation_set::of(pra::negation_semantics::boolean));
-    }
-    merged.literals = settings.literals ? *parse_literals(*settings.literals)
-                                        : document.literals.value_or(pra::literal_mode::atom_split);
-
+    // Nothing is read from the model: the kinds, the hull parameters and the initiator reading come from
+    // the flags, then the document, then the defaults (the probability query; split literals, no rule;
+    // frequencies per year). A flag replaces every per-target choice of the document.
+    merged.kinds = kinds_flag.value_or(document.kinds.value_or(merged.kinds));
+    merged.hull.literals = literals_flag.value_or(document.hull_literals.value_or(merged.hull.literals));
+    merged.hull.max_initiators = settings.hull_max_initiators
+                                     ? *settings.hull_max_initiators
+                                     : document.hull_max_initiators.value_or(merged.hull.max_initiators);
     merged.initiator_values =
-        settings.initiator_values.value_or(document.initiator_values.value_or(std::string("frequency")));
-    merged.initiator_unit = settings.initiator_unit ? settings.initiator_unit : document.initiator_unit;
-    const bool frequencies = merged.initiator_values == "frequency";
-    // `none` (no rule) agrees with frequencies; a count is a rule, which they make redundant.
-    const auto rule_count = [](auto const &setting) { return setting && setting->has_value(); };
-    if (frequencies && (rule_count(settings.max_initiators_per_cutset) || rule_count(document.max_initiators))) {
-        diagnostics.push(option_error("max-initiators-per-cutset N applies only with --initiator-values probability: "
-                                      "with frequencies each conditioned query has exactly one initiating event"));
-        return std::nullopt;
-    }
-    if (!frequencies && merged.initiator_unit) {
-        diagnostics.push(option_error("initiator-unit applies only with --initiator-values frequency"));
-        return std::nullopt;
-    }
-    if (frequencies && !merged.initiator_unit) {
-        merged.initiator_unit = std::string(pcfb_frequency::default_unit);
-    }
-
-    // The initiator rule is a cut-set rule of hull queries, requested explicitly; no default (#262). With
-    // frequencies, conditioning on one initiating event at a time already does what it approximates.
-    if (frequencies) {
-    } else if (settings.max_initiators_per_cutset) {
-        merged.max_initiators = *settings.max_initiators_per_cutset;
-    } else if (document.max_initiators) {
-        merged.max_initiators = *document.max_initiators;
-    }
+        settings.initiator_values.value_or(document.initiator_values.value_or(merged.initiator_values));
+    const auto reading = *parse_initiator_values(merged.initiator_values);
 
     lowering_ns::quantification_config config;
-    config.default_negation = merged.negation;
-    config.default_literals = merged.literals;
-    config.max_initiators_per_cutset = merged.max_initiators;
+    config.default_kinds = merged.kinds;
+    config.default_hull = merged.hull;
     config.initiators =
-        frequencies ? lowering_ns::initiator_values::frequency : lowering_ns::initiator_values::probability;
-    config.initiator_unit = merged.initiator_unit;
+        reading.frequencies ? lowering_ns::initiator_values::frequency : lowering_ns::initiator_values::probability;
+    config.initiator_unit = reading.unit;
 
-    const std::optional<pra::negation_set> negation_flag =
-        settings.negation ? std::optional<pra::negation_set>(merged.negation) : std::nullopt;
-    const std::optional<pra::literal_mode> literals_flag =
-        settings.literals ? std::optional<pra::literal_mode>(merged.literals) : std::nullopt;
     const auto add = [&](std::vector<lowering_ns::target_request> &into, target_spec const &spec) {
-        if (auto request = resolve_request(*model, spec, negation_flag, literals_flag, merged.negation, diagnostics)) {
-            into.push_back(std::move(*request));
+        auto request = resolve_subject(*model, spec, diagnostics);
+        if (!request) {
+            return;
         }
+        request->kinds = kinds_flag ? merged.kinds : spec.kinds.value_or(merged.kinds);
+        if (has_hull(request->kinds)) {
+            request->hull = pra::hull_query{
+                .literals = literals_flag ? merged.hull.literals : spec.hull_literals.value_or(merged.hull.literals),
+                .max_initiators = settings.hull_max_initiators
+                                      ? merged.hull.max_initiators
+                                      : spec.hull_max_initiators.value_or(merged.hull.max_initiators),
+            };
+        } else if (!kinds_flag && (spec.hull_literals || spec.hull_max_initiators)) {
+            diagnostics.push(
+                api::make_error("compile.ftp.invalid-config",
+                                "target " + in_quotes(spec.name) + " sets hull parameters but asks for no hull query"));
+        }
+        into.push_back(std::move(*request));
     };
     std::vector<target_spec> targets;
     if (!settings.targets.empty()) {
@@ -663,17 +662,31 @@ struct lowered_stage final {
     for (auto const &spec : watch) {
         add(config.watch_targets, spec);
     }
-    if (merged.max_initiators) {
-        // Under the probability query the rule would remove every assignment with more than N
-        // initiating events, which changes the target: it is a rule of hull queries only.
-        const auto hull = [](lowering_ns::target_request const &request) { return request.negation.monotone_hull; };
-        const bool any_hull =
-            (config.targets.empty() ? merged.negation.monotone_hull : std::ranges::any_of(config.targets, hull)) ||
-            std::ranges::any_of(config.watch_targets, hull);
-        if (!any_hull) {
-            diagnostics.push(option_error("max-initiators-per-cutset applies to hull queries only, and no target "
-                                          "requests one (--negation hull or both)"));
-        }
+
+    // The hull parameters belong to hull queries; the initiator rule is a cut-set rule, which
+    // conditioning on one initiating event at a time (frequencies) already makes redundant.
+    const auto hull_request = [](lowering_ns::target_request const &request) { return request.hull.has_value(); };
+    const bool any_hull =
+        (config.targets.empty() ? has_hull(merged.kinds) : std::ranges::any_of(config.targets, hull_request)) ||
+        std::ranges::any_of(config.watch_targets, hull_request);
+    const auto rule = [](auto const &setting) { return setting && setting->has_value(); };
+    if (!any_hull && (literals_flag || rule(settings.hull_max_initiators))) {
+        diagnostics.push(option_error("hull-literals and hull-max-initiators apply to hull queries only, and no "
+                                      "target asks for one (--kind hull)"));
+    }
+    if (!any_hull && (document.hull_literals || rule(document.hull_max_initiators))) {
+        diagnostics.push(api::make_error("compile.ftp.invalid-config",
+                                         "\"hull\" applies to hull queries only, and no target asks for one"));
+    }
+    const auto with_rule = [](lowering_ns::target_request const &request) {
+        return request.hull && request.hull->max_initiators;
+    };
+    const bool any_rule = (config.targets.empty() && has_hull(merged.kinds) && merged.hull.max_initiators) ||
+                          std::ranges::any_of(config.targets, with_rule) ||
+                          std::ranges::any_of(config.watch_targets, with_rule);
+    if (any_hull && reading.frequencies && any_rule) {
+        diagnostics.push(option_error("hull-max-initiators N applies only with --initiator-values probability: with "
+                                      "frequencies each conditioned query has exactly one initiating event"));
     }
 
     merged.overrides = document.overrides;
@@ -741,13 +754,14 @@ struct lowered_stage final {
                                                       : model->stable_name(binding.subject));
         summary.subject = subject_name(binding.subject.kind(), binding.domain_target.valid());
         summary.watch = binding.role == pc::observable_role::watch;
-        summary.boolean = binding.negation.boolean;
-        summary.monotone_hull = binding.negation.monotone_hull;
-        summary.literals = std::string(literals_name(binding.literals));
-        // Only where the lowering put the delete term into this target (a hull query whose cone holds more
-        // initiating events than the rule allows).
-        if (binding.initiator_delete_term.valid()) {
-            summary.max_initiators_per_cutset = stage.settings.max_initiators;
+        summary.kind = std::string(pc::to_string(binding.kind));
+        if (binding.hull) {
+            summary.hull_literals = std::string(pra::to_string(binding.hull->literals));
+            // Only where the lowering put the delete term into this target (the cone holds more initiating
+            // events than the rule allows).
+            if (binding.initiator_delete_term.valid()) {
+                summary.hull_max_initiators = binding.hull->max_initiators;
+            }
         }
         summary.initiating_events = stage.lowering.projection.initiators(binding).size();
         summary.literal_events = stage.lowering.projection.literal_events(binding).size();
@@ -772,19 +786,25 @@ struct lowered_stage final {
     root.set("format", json::value::make_string(std::string(source_format)));
     root.set("compilation_level", json::value::make_int(stage.settings.level));
     root.set("duplicate_import", json::value::make_string(stage.settings.duplicate_import));
-    root.set("max_initiators_per_cutset", optional_count(stage.settings.max_initiators));
+    root.set("kinds", kinds_json(stage.settings.kinds));
+    auto hull = json::value::make_object();
+    hull.set("literals", json::value::make_string(std::string(pra::to_string(stage.settings.hull.literals))));
+    hull.set("max_initiators", optional_count(stage.settings.hull.max_initiators));
+    root.set("hull", std::move(hull));
     root.set("initiator_values", json::value::make_string(stage.settings.initiator_values));
-    root.set("initiator_unit", stage.settings.initiator_unit ? json::value::make_string(*stage.settings.initiator_unit)
-                                                             : json::value::make_null());
     auto primary = json::value::make_array();
     auto watch = json::value::make_array();
     for (auto const &target : targets) {
         auto entry = json::value::make_object();
         entry.set("name", json::value::make_string(target.name));
         entry.set("subject", json::value::make_string(target.subject));
-        entry.set("negation",
-                  negation_json(pra::negation_set{.boolean = target.boolean, .monotone_hull = target.monotone_hull}));
-        entry.set("literals", json::value::make_string(target.literals));
+        entry.set("kind", json::value::make_string(target.kind));
+        if (!target.hull_literals.empty()) {
+            entry.set("hull_literals", json::value::make_string(target.hull_literals));
+        }
+        if (target.hull_max_initiators) {
+            entry.set("hull_max_initiators", json::value::make_int(*target.hull_max_initiators));
+        }
         entry.set("initiating_events", json::value::make_int(static_cast<std::int64_t>(target.initiating_events)));
         entry.set("literal_events", json::value::make_int(static_cast<std::int64_t>(target.literal_events)));
         if (!target.initiator.empty()) {
@@ -852,9 +872,10 @@ struct lowered_stage final {
             if (literals) {
                 diagnostics.push(api::make_error(
                     "compile.ftp.hull-literals-unsupported",
-                    "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries "
-                    "literal atoms; each alternative is a different query: --negation boolean (the probability, "
-                    "the default), or the plain hull with --literals negation"));
+                    "hull queries that read marked literal operands (-EVENT) as split or fixed cannot be written "
+                    "until the .pcfb writer records literal atoms (#235); each alternative is a different query: "
+                    "--kind probability (the probability, the default), or the plain hull with --hull-literals "
+                    "plain"));
             }
             return fail(std::move(diagnostics));
         }
@@ -864,14 +885,12 @@ struct lowered_stage final {
         const auto passes_start = clock::now();
         pc::passes::pipeline_options pipeline;
         auto const bindings = stage->lowering.projection.target_bindings();
-        pipeline.semantics.reserve(bindings.size());
+        pipeline.kinds.reserve(bindings.size());
         pipeline.atom_events.resize(bindings.size());
         for (std::size_t index = 0; index < bindings.size(); ++index) {
             auto const &binding = bindings[index];
-            // A target asking for both kinds takes the stricter pass rules.
-            pipeline.semantics.push_back(binding.negation.monotone_hull ? pc::passes::target_semantics::monotone_hull
-                                                                        : pc::passes::target_semantics::boolean);
-            if (binding.negation.monotone_hull && binding.literals == pra::literal_mode::atom_split) {
+            pipeline.kinds.push_back(binding.kind);
+            if (binding.hull && binding.hull->literals == pra::hull_literals::split) {
                 for (const auto event : stage->lowering.projection.literal_events(binding)) {
                     if (const auto node = stage->lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
                         pipeline.atom_events[index].push_back(node);
