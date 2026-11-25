@@ -5,6 +5,7 @@ import os
 import threading
 import time
 import webbrowser
+from collections.abc import Sequence
 
 import uvicorn
 from fastapi import FastAPI
@@ -72,8 +73,13 @@ def _browser_url(host: str, port: int) -> str:
     return f"http://{browse_host}:{port}/"
 
 
-def main() -> None:
-    args = apply_server_cli()
+def main(argv: Sequence[str] | None = None, *, prog: str | None = None) -> None:
+    """Run the server; ``argv`` defaults to ``sys.argv[1:]``.
+
+    ``fzb serve`` calls this with its remaining arguments and ``prog="fzb serve"``,
+    so both entry points share one parser (:func:`~fuzzybits_server.config.parse_server_cli`).
+    """
+    args = apply_server_cli(None if argv is None else list(argv), prog=prog)
     if args.open:
         url = _browser_url(args.host, args.port)
 

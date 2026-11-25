@@ -83,7 +83,8 @@ void print_root_usage(std::ostream &out) {
         << "  compile   OpenPSA/MEF XML, nombrilo.circuit or CAFTA FTP projects → .pcfb\n"
         << "  export    .pcfb → nombrilo.circuit (.safetensors)\n"
         << "  inspect   Summarise, validate, or exactly evaluate a .pcfb\n"
-        << "  run       Monte Carlo a .pcfb (estimate and CI per query)\n";
+        << "  run       Monte Carlo a .pcfb (estimate and CI per query)\n"
+        << "  serve     Python fzb only (pip install 'fuzzybits[server]'): start fuzzybits-server\n";
 }
 
 std::string json_escape(std::string_view s) {
@@ -1355,6 +1356,11 @@ int main(int argc, char **argv) {
     }
     if (cmd == "run") {
         return cmd_run(argc - 1, argv + 1);
+    }
+    if (cmd == "serve") {
+        std::cerr << "fzb serve: not in this native fzb; it is in the fzb of the Python package: "
+                     "pip install 'fuzzybits[server]'\n";
+        return 1;
     }
     std::cerr << "fzb: unknown command '" << cmd << "'\n";
     print_root_usage(std::cerr);

@@ -95,7 +95,7 @@ edit() {
 # lock files: only the version line of our own package entries
 lock_edit='$p = $1 if /^name = "([^"]*)"/; s/^version = "\Q$ENV{OLD}\E"/version = "$ENV{NEW}"/ if $p =~ /^fuzzybits(-server)?$/'
 
-edit pyproject.toml 's/^version = "\Q$ENV{OLD}\E"/version = "$ENV{NEW}"/'
+edit pyproject.toml 's/^version = "\Q$ENV{OLD}\E"/version = "$ENV{NEW}"/; s/"fuzzybits-server==\Q$ENV{OLD}\E"/"fuzzybits-server==$ENV{NEW}"/'
 edit python/fuzzybits/__init__.py 's/^__version__ = "\Q$ENV{OLD}\E"/__version__ = "$ENV{NEW}"/'
 edit tools/server/pyproject.toml 's/^version = "\Q$ENV{OLD}\E"/version = "$ENV{NEW}"/; s/"fuzzybits==\Q$ENV{OLD}\E"/"fuzzybits==$ENV{NEW}"/'
 edit CMakeLists.txt 's/^project\(SCRAM VERSION \Q$ENV{OLD}\E /project(SCRAM VERSION $ENV{NEW} /'

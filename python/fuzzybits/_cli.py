@@ -23,7 +23,11 @@ ROOT_USAGE = (
     "  export    .pcfb → nombrilo.circuit (.safetensors)\n"
     "  inspect   Summarise, validate, or exactly evaluate a .pcfb\n"
     "  run       Monte Carlo a .pcfb (estimate and CI per query)\n"
+    "  serve     Start fuzzybits-server (API and web UI); fzb serve --help lists its options\n"
 )
+
+SERVER_DISTRIBUTION = "fuzzybits-server"
+SERVE_MISSING = "fzb serve needs the fuzzybits-server package: pip install 'fuzzybits[server]'\n"
 
 INSPECT_JSON_KEYS = (
     "schema_version",
@@ -766,6 +770,62 @@ def cmd_run(argv: Sequence[str]) -> int:
     return 0
 
 
+def _server_version() -> str | None:
+    """Installed ``fuzzybits-server`` distribution version, or ``None`` without metadata.
+
+    A source checkout on ``PYTHONPATH`` has no distribution metadata; it is not warned about.
+    """
+    from importlib import metadata
+
+    try:
+        return metadata.version(SERVER_DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def cmd_serve(argv: Sequence[str]) -> int:
+    """``fzb serve``: hand the remaining arguments to ``fuzzybits_server.app.main``.
+
+    The server's parser is the only one: ``fzb serve --help`` is its help, and its usage
+    errors exit as argparse does (status 2), not with fzb's status 1.
+    """
+    import importlib
+    import importlib.util
+
+    if importlib.util.find_spec("fuzzybits_server") is None:
+        sys.stderr.write(SERVE_MISSING)
+        return 1
+    server_version = _server_version()
+    if server_version is not None and server_version != __version__:
+        print(
+            f"fzb serve: warning: fuzzybits-server {server_version} does not match fuzzybits {__version__}; "
+            f"install matching versions: pip install 'fuzzybits[server]=={__version__}'",
+            file=sys.stderr,
+        )
+    try:
+        # Lazy: importing the server pulls in FastAPI and uvicorn, and builds the app. Import the
+        # module by name: the package re-exports the FastAPI instance as `fuzzybits_server.app`.
+        server_app = importlib.import_module("fuzzybits_server.app")
+    except ImportError as exc:
+        print(f"fzb serve: cannot import fuzzybits_server: {exc}", file=sys.stderr)
+        sys.stderr.write(SERVE_MISSING)
+        return 1
+    import inspect
+
+    if "argv" in inspect.signature(server_app.main).parameters:
+        server_app.main(list(argv), prog="fzb serve")
+    else:
+        # A fuzzybits-server older than #203 parses sys.argv itself (the version warning above
+        # has fired): give it the arguments that way.
+        saved = sys.argv
+        sys.argv = ["fzb serve", *argv]
+        try:
+            server_app.main()
+        finally:
+            sys.argv = saved
+    return 0
+
+
 def _utf8_stdio() -> None:
     """Write UTF-8 to stdout/stderr whatever the locale says.
 
@@ -842,6 +902,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return cmd_inspect(args[1:])
         if cmd == "run":
             return cmd_run(args[1:])
+        if cmd == "serve":
+            return cmd_serve(args[1:])
     except KeyboardInterrupt:
         # The native renderer already erased its block and printed the partial summary; a
         # traceback here would bury it. 128 + SIGINT is what a shell reports for Ctrl-C.

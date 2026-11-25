@@ -7,9 +7,10 @@
 #   release-version.sh apply VERSION rewrite every version string to VERSION
 #                                    (TestPyPI rehearsals: X.Y.Z -> X.Y.Z.devN)
 #
-# Version strings: pyproject.toml `version`, python/fuzzybits/__init__.py
-# `__version__`, and, once tools/server is the `fuzzybits-server`
-# distribution, its `version` plus the `fuzzybits==` pin.
+# Version strings: pyproject.toml `version` and its `server` extra's
+# `fuzzybits-server==` pin, python/fuzzybits/__init__.py `__version__`, and,
+# once tools/server is the `fuzzybits-server` distribution, its `version` plus
+# the `fuzzybits==` pin.
 set -euo pipefail
 
 root_toml=pyproject.toml
@@ -37,6 +38,8 @@ case "${cmd}" in
     [[ -n "${version}" ]] || die "no version in ${root_toml}"
     init_version="$(sed -n 's/^__version__ = "\([^"]*\)"/\1/p' "${init_py}" | head -1)"
     [[ "${init_version}" == "${version}" ]] || die "${init_py} __version__=${init_version} != ${version}"
+    extra_pin="$(sed -n 's/.*"fuzzybits-server==\([^"]*\)".*/\1/p' "${root_toml}" | head -1)"
+    [[ "${extra_pin}" == "${version}" ]] || die "${root_toml} pins fuzzybits-server==${extra_pin}, expected ${version}"
     server=false
     if server_ready; then
       server=true
@@ -54,13 +57,13 @@ case "${cmd}" in
   apply)
     v="${2:?version}"
     # -i.bak: Windows perl cannot edit in place without a backup file.
-    perl -pi.bak -e "s/^version = \"[^\"]*\"/version = \"${v}\"/" "${root_toml}"
+    perl -pi.bak -e "s/^version = \"[^\"]*\"/version = \"${v}\"/; s/\"fuzzybits-server==[^\"]*\"/\"fuzzybits-server==${v}\"/" "${root_toml}"
     perl -pi.bak -e "s/^__version__ = \"[^\"]*\"/__version__ = \"${v}\"/" "${init_py}"
     if server_ready; then
       perl -pi.bak -e "s/^version = \"[^\"]*\"/version = \"${v}\"/; s/\"fuzzybits==[^\"]*\"/\"fuzzybits==${v}\"/" "${server_toml}"
     fi
     rm -f "${root_toml}.bak" "${init_py}.bak" "${server_toml}.bak"
-    grep -HnE '^version = |^__version__ = |"fuzzybits==' "${root_toml}" "${init_py}" "${server_toml}" || true
+    grep -HnE '^version = |^__version__ = |"fuzzybits==|"fuzzybits-server==' "${root_toml}" "${init_py}" "${server_toml}" || true
     ;;
   *)
     die "unknown command ${cmd}"
