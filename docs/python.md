@@ -17,9 +17,7 @@ distribution name). Wheels are self-contained:
   runtime with Metal + OpenMP backends and SSCP JIT (`libllvm-to-metal`,
   `opt`/`llc`/`ld64.lld`, `libLLVM`, Homebrew `liblld`/`libomp`), `delocate`-repaired
   with `@loader_path` rpaths. There is no separate `libmc.dylib` (INTERFACE
-  `mc` → `libscram`). Metal kernel JIT currently rejects `double` until
-  [#17](https://github.com/fuzzybit-org/fuzzybits/issues/17)/[#30](https://github.com/fuzzybit-org/fuzzybits/issues/30);
-  OpenMP CPU is the working backend. Built on GitHub-hosted `macos-26`.
+  `mc` → `libscram`). Built on GitHub-hosted `macos-26`.
   CPython 3.12–3.15, one wheel per interpreter (no stable ABI).
 - **macOS 15+ Intel** (`macosx_15_0_x86_64`): AdaptiveCpp OpenMP + generic
   SSCP host JIT, **no Metal** (Metal is Apple Silicon only). Homebrew

@@ -39,6 +39,7 @@
 #include <vector>
 
 #include "mc/event/sample_shape.h"
+#include "pcfb/threshold.h"
 
 using cache_line_bytes = sycl::info::device::global_mem_cache_line_size;
 
@@ -78,24 +79,12 @@ template <typename bitpack_t_> struct node {
  * kernels to generate random samples based on their failure probabilities.
  *
  * @par Probability-threshold mapping
- * The Monte Carlo kernels do not compare floating-point probabilities
- * directly.  Instead, each basic event stores an *integer*
- * `probability_threshold` in the closed range \f$[0,2^{32}]\f$ that is
- * pre-computed from the user-supplied probability \f$p\in[0,1]\f$ as
- * \f[\text{threshold} = p\,\cdot\,2^{32}.\f]
- * During sampling the kernel draws a uniform 32-bit integer
- * \f$u\sim\text{Unif}\{0,\dots,2^{32}-1\}\f$ (from either Philox or
- * Xorshift) and returns \f$u < \text{threshold}\f$.
- *
- * Properties of this mapping:
- *   • Resolution: one part in \f$2^{32}\approx2.33\times10^{-10}\f$.
- *   • Representable set: all probabilities \f$n/2^{32}\f$ with integer
- *     \f$n\in\{0,\dots,2^{32}\}\f$.
- *   • The edge case \f$p=1\f$ maps to threshold \f$=2^{32}\f$ and is
- *     **always** satisfied because \f$u\le 2^{32}-1\f$.
- *
- * The kernel casts the 32-bit PRNG output to 64 bits before the
- * comparison so the full threshold range is honoured without overflow.
+ * The kernels never compare floating-point probabilities. Each basic event stores
+ * `threshold` \f$T=\min(\lfloor p\cdot2^{64}\rfloor, 2^{64}-1)\f$, computed exactly from the
+ * binary64 \f$p\f$ by `pcfb::probability_to_threshold`, and a trial is true iff its 64-bit uniform
+ * is below \f$T\f$ (prng/bernoulli.h). \f$p=1\f$ sets `always_true` instead, since no 64-bit
+ * threshold is always satisfied. Resolution is \f$2^{-64}\f$: every \f$p\ge2^{-64}\f$ samples at a
+ * nonzero rate (#17).
  *
  * @tparam prob_t_ Floating-point type for probability values
  * @tparam bitpack_t_ Integer type for bit-packed result storage
@@ -108,7 +97,7 @@ template <typename bitpack_t_> struct node {
  * @code
  * // Create a basic event with 0.01 failure probability
  * basic_event<double, std::uint64_t> pump_failure;
- * pump_failure.probability = 0.01;
+ * pump_failure.threshold = pcfb::probability_to_threshold(0.01);
  * pump_failure.index = 42;
  * pump_failure.buffer = working_set<std::size_t, std::uint64_t>::smart_alloc_device<std::uint64_t>(queue,
  * num_bitpacks);
@@ -118,16 +107,19 @@ template <typename prob_t_, typename bitpack_t_, typename index_t_ = int32_t> st
     /// @brief Unique identifier for this event within the computation graph
     index_t_ index;
 
-    std::uint64_t probability_threshold{};
+    /// @brief floor(p * 2^64): a trial is true iff its 64-bit uniform is below it
+    std::uint64_t threshold{};
+
+    /// @brief p == 1: every trial is true and no randomness is drawn
+    bool always_true{};
 };
 
 template <typename prob_t_, typename bitpack_t_, typename index_t_ = int32_t>
 inline std::ostream &operator<<(std::ostream &os, const event::basic_event<prob_t_, bitpack_t_, index_t_> &be) {
-    constexpr double two_to_32 = static_cast<double>(UINT64_C(1) << 32); // 4,294,967,296
-    const double p = static_cast<double>(be.probability_threshold) / two_to_32;
     os << "index= " << be.index << "  |  "
-       << "p(double)= " << std::scientific << std::setprecision(6) << p << "  |  "
-       << "p_threshold= " << be.probability_threshold;
+       << "p(double)= " << std::scientific << std::setprecision(6)
+       << pcfb::threshold_to_probability(be.threshold, be.always_true) << "  |  "
+       << "threshold= " << be.threshold << (be.always_true ? " (always true)" : "");
     return os;
 }
 
@@ -366,12 +358,9 @@ create_basic_event_block(const sycl::queue &queue,
 
     // 3. Populate per-event fields.
     for (std::size_t i = 0; i < num_events; ++i) {
-        // Pre-compute Bernoulli threshold in the range [0, 2^32].
-        // We use 64-bit storage so that a probability of 1.0 maps to
-        // the *inclusive* upper bound 2^32, guaranteeing that
-        // `u < threshold` is always true.
-        constexpr double two_to_32 = static_cast<double>(UINT64_C(1) << 32); // 4,294,967,296
-        events[i].probability_threshold = static_cast<std::uint64_t>(indexed_probabilities[i].second * two_to_32);
+        const auto p = static_cast<double>(indexed_probabilities[i].second);
+        events[i].always_true = p >= 1.0;
+        events[i].threshold = pcfb::probability_to_threshold(p);
         events[i].index = indexed_probabilities[i].first;
         events[i].buffer = buffer_block + i * num_bitpacks;
         LOG(DEBUG4) << events[i];

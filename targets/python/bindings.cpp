@@ -2391,8 +2391,7 @@ Exhaustive exact P(query) for a small `.pcfb` file (≤ 30 random SAMPLE events)
 One-shot Monte Carlo of an in-memory `.pcfb`. Same numbers as `fzb run`.
 
 Releases the GIL while the kernel runs. `backend` is `cuda`, `omp`, `metal`,
-or empty (use the mask already applied by fuzzybits.init). Metal currently
-fails JIT with a Python exception until double support lands (#17/#30).
+or empty (use the mask already applied by fuzzybits.init).
 
 `on_progress` receives one dict per coalesced progress snapshot
 (fuzzybits.runtime progress schema v1). It runs on the run thread with the GIL

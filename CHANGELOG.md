@@ -4,6 +4,15 @@
 
 ### Breaking changes
 
+- Basic events are sampled by a bit-sliced Philox sampler with exact 64-bit thresholds (#164, #17).
+  A trial is true iff its 64-bit uniform is below `floor(p · 2^64)`, compared most significant bit
+  first across the 64 trials of a word, so a word costs about 4 Philox blocks instead of 16.
+  - Every `p >= 2^-64` is sampled at a nonzero rate. The 32-bit sampler turned `p < 2^-32` (about
+    2.3e-10) into 0 and rounded other probabilities down by up to 2^-32.
+  - The random stream changes: estimates for a given model and trial count differ from earlier
+    releases within sampling error. There is no option to restore the old stream; earlier releases
+    reproduce earlier results.
+  - The unused SFC64, WyRand and xorshift128 headers in `src/mc/prng` are removed.
 - Common-cause failure groups are expanded by default in `fzb compile`, `fuzzybits.compile`, the
   native `compile_pcfb` / `run_probability` bindings and `fuzzybits-server`. Results change for
   models that define CCF groups and were compiled without `--ccf`.

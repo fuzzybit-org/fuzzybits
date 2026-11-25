@@ -24,7 +24,6 @@ Every input fuzzybits accepts gets a correct estimate or a refusal before sampli
 **Issues:**
 
 - `wrong-answer`:
-  - #17: thresholds quantised to 2⁻³²;
   - #65: `--seed` ignored;
   - #171 and #172: Metal;
   - #243: initiator values read as probabilities.
