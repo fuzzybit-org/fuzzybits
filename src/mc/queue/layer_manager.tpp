@@ -137,9 +137,9 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::gather_layer_nodes(
         if (auto var = std::dynamic_pointer_cast<core::Variable>(node)) {
             out_variables.push_back(var);
         }
-        // Else if the node is a Gate, group it by Connective type
+        // Else if the node is a Gate, group it by the connective its kernel evaluates
         else if (auto gate = std::dynamic_pointer_cast<core::Gate>(node)) {
-            out_gates_by_type[gate->type()].push_back(gate);
+            out_gates_by_type[kernel_connective(*gate)].push_back(gate);
         } else {
             LOG(WARNING) << "gather_layer_nodes: Node " << node->index() << " was neither a Variable nor a Gate.";
         }
@@ -415,7 +415,7 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::describe_execution_plan() const {
             item.connective = "sample";
         } else if (auto gate = std::dynamic_pointer_cast<core::Gate>(node)) {
             item.kind = "gate";
-            item.connective = kernel_dag_connective_name(gate->type());
+            item.connective = kernel_dag_connective_name(kernel_connective(*gate));
             item.atleast_min = gate->type() == core::kAtleast ? gate->min_number() : 0;
             item.module = gate->module();
             for (const auto &arg : gate->args<core::Variable>()) {
