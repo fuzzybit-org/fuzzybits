@@ -55,10 +55,15 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
         const auto base = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target))
                                                        : model->stable_name(target.subject);
         std::string name(base);
-        writer::target_quantification quantification{
-            .literal_mode = std::string(literal_mode_name(target.literals)),
-            .max_initiators_per_cutset = lowering.report.max_initiators_per_cutset,
-        };
+        // The literal mode and the initiator rule are parameters of the hull query: recorded only where
+        // they apply, the rule only where the lowering put its delete term into this target.
+        writer::target_quantification quantification;
+        if (target.negation.monotone_hull) {
+            quantification.literal_mode = std::string(literal_mode_name(target.literals));
+        }
+        if (target.initiator_delete_term.valid()) {
+            quantification.max_initiators_per_cutset = lowering.report.max_initiators_per_cutset;
+        }
         if (target.condition.valid()) {
             const auto initiator = std::string(model->stable_name(ir::pra::domain_ref(target.condition)));
             const auto frequency =

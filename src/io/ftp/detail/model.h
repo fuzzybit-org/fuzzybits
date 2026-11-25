@@ -50,12 +50,8 @@ inline constexpr std::string_view kFtpHeaderAttribute = "ftp.header";
 inline constexpr std::string_view kFtpLimitAttribute = "ftp.limit";
 inline constexpr std::string_view kFtpMaxSizeAttribute = "ftp.maxsize";
 inline constexpr std::string_view kFtpImportFlagAttribute = "ftp.import_flag";
-// A source convention, recorded for the compile driver; nothing in `ir::pra`
-// or the lowering reads it. How complements are read is never recorded: it is
-// the query type, which the compile request chooses.
-inline constexpr std::string_view kFtpMaxInitiatorsAttribute = "ftp.max_initiators_per_cutset";
-inline constexpr std::string_view kFtpMaxInitiatorsOne = "1";
-inline constexpr std::string_view kFtpMaxInitiatorsNone = "none";
+// The reader records what the files say. Quantification choices (the query kind, how hull queries read
+// complements, the initiator rule) are never recorded: the compile request makes them.
 
 // FTP names, keywords and import flags are compared without regard to ASCII
 // case: `g1` and `G1` name one element. Other bytes compare exactly.
@@ -176,20 +172,16 @@ struct ParsedProject final {
     api::diagnostic_list diagnostics;
 };
 
-struct PraOptions final {
-    complement_events_policy complementEvents = complement_events_policy::atom;
-    bool maxOneInitiator = true;
-};
-
 [[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics)
     -> duplicate_import_policy;
-[[nodiscard]] auto parse_pra_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> PraOptions;
 [[nodiscard]] auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<source_text>>;
 // Parses every source in order and resolves names, imports and targets.
 [[nodiscard]] auto parse(std::vector<source_text> sources, duplicate_import_policy policy) -> ParsedProject;
 [[nodiscard]] auto location_text(ParsedProject const &project, Location location) -> std::string;
 
-[[nodiscard]] auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result;
+// Every complemented basic-event operand (`-EVENT`) is marked `literal`; a
+// complemented gate (`-GATE`) never is.
+[[nodiscard]] auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result;
 [[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
     -> io::write_result;
 

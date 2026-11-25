@@ -1627,7 +1627,6 @@ fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
         }
     }
     text({"duplicate_import", "duplicate-import"}, out.duplicate_import);
-    text({"complement_events", "complement-events"}, out.complement_events);
     text({"negation"}, out.negation);
     text({"literals"}, out.literals);
     text({"initiator_values", "initiator-values"}, out.initiator_values);
@@ -1717,14 +1716,13 @@ py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py
 /// CAFTA FTP project -> (JSON text, plain text) of the reader's diagnostics, structure and conventions;
 /// the JSON has the content of `fzb inspect --json`. Reader errors are in the content, not raised.
 py::tuple inspect_ftp_project(const std::vector<std::string> &input_files, const std::string &duplicate_import,
-                              const std::string &complement_events, const bool counts_only) {
+                              const bool counts_only) {
     namespace ftp = fuzzybits::compile::ftp;
     if (input_files.empty()) {
         throw std::invalid_argument("inspect requires at least one FTP input");
     }
     ftp::inspect_options opt;
     opt.duplicate_import = duplicate_import;
-    opt.complement_events = complement_events;
     if (const auto problem = ftp::check_options(opt); !problem.empty()) {
         throw std::invalid_argument(problem);
     }
@@ -2290,7 +2288,7 @@ Returns:
           "Returns 'ftp' (CAFTA FTP files or directories), 'mef' (anything else) or 'mixed'.");
 
     m.def("inspect_ftp_project", &inspect_ftp_project, py::arg("input_files"), py::arg("duplicate_import") = "last",
-          py::arg("complement_events") = "atom", py::arg("counts_only") = false,
+          py::arg("counts_only") = false,
           R"pbdoc(
 Read a CAFTA FTP project (files or directories of `*.ftp`) without compiling it.
 
@@ -2307,8 +2305,8 @@ Compile a CAFTA FTP project (files or directories of `*.ftp`) into a pcfb buffer
 Args:
     input_files: FTP files or directories, read as one project in sorted path order.
     options: `target`, `watch`, `overrides` (name -> bool), `duplicate_import`,
-        `complement_events`, `negation`, `max_initiators_per_cutset`, `literals`,
-        `compilation_level` (0 or 1) and `config` (JSON text).
+        `negation`, `max_initiators_per_cutset`, `literals`, `initiator_values`,
+        `initiator_unit`, `compilation_level` (0 or 1) and `config` (JSON text).
 
 Returns:
     `(pcfb bytes, report JSON text)`.

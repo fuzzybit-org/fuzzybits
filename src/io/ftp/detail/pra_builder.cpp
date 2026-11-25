@@ -11,7 +11,7 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
 
 // Basic events take ids in event order and gates in definition order, so
 // every reference is passed as an id and never resolved by name.
-auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result {
+auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
     ir::pra::builder builder;
 
     for (const auto header : project.headers) {
@@ -22,9 +22,6 @@ auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::p
     }
     if (project.maxSize) {
         builder.add_project_attribute(kFtpMaxSizeAttribute, project.maxSizeText);
-    }
-    if (options.maxOneInitiator) {
-        builder.add_project_attribute(kFtpMaxInitiatorsAttribute, kFtpMaxInitiatorsOne);
     }
 
     std::vector<ir::pra::source_file_id> files;
@@ -67,14 +64,15 @@ auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::p
         }
     }
 
-    const auto markLiterals = options.complementEvents == complement_events_policy::atom;
-    const auto operandSpec = [&project, markLiterals](Operand const &operand) -> ir::pra::operand_spec {
+    // `-EVENT` is marked `literal` (Boolean-neutral; only hull queries read the
+    // mark); `-GATE` is never marked.
+    const auto operandSpec = [&project](Operand const &operand) -> ir::pra::operand_spec {
         if (const auto gate = project.definitionByName.find(operand.name); gate != project.definitionByName.end()) {
             return ir::pra::operand_spec{.event = ir::pra::gate_id(gate->second), .complement = operand.complement};
         }
         return ir::pra::operand_spec{.event = ir::pra::basic_event_id(project.eventByName.at(operand.name)),
                                      .complement = operand.complement,
-                                     .literal = operand.complement && markLiterals};
+                                     .literal = operand.complement};
     };
 
     std::vector<ir::pra::operand_spec> operands;

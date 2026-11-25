@@ -73,8 +73,8 @@ position `i` of the file the writer sets
 | Key | Value |
 |---|---|
 | `compile.query.<i>.negation` | `boolean` for a `probability` query, `monotone_hull` for a hull query |
-| `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set |
-| `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set |
+| `compile.query.<i>.literal_mode` | `target_quantification::literal_mode` (`atom_split`, `omega_l`, `negation`), if set; on hull queries only, so a probability query on the same tensor has none. The reader takes it from the hull query and ignores a probability query's copy |
+| `compile.query.<i>.max_initiators_per_cutset` | int64, the initiator rule already lowered into the target, if set; the FTP compile sets it only on hull queries whose target holds the delete term |
 | `compile.query.<i>.initiator`, `.initiator_frequency` | string and float64: the initiating event a conditioned query sets TRUE, and its frequency (the query's weight in its group), if set |
 | `compile.complement_tensors` | bytes: little-endian `uint32` tensor ids in ascending order, the unnamed `NOT` tensors the writer created for sources used in both polarities; only written when there is at least one |
 | `compile.query.<i>.role` | string `watch` or `projection_anchor`, only for targets that are not primary; files with only primary targets have no such entry |

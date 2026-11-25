@@ -720,9 +720,6 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
     if (vm.count("duplicate-import")) {
         opt.duplicate_import = vm["duplicate-import"].as<std::string>();
     }
-    if (vm.count("complement-events")) {
-        opt.complement_events = vm["complement-events"].as<std::string>();
-    }
     if (vm.count("negation")) {
         opt.negation = vm["negation"].as<std::string>();
     }
@@ -895,14 +892,12 @@ int cmd_compile(int argc, char **argv) {
         "override", po::value<std::vector<std::string>>(), "FTP: force an element, NAME=0 or NAME=1 (repeatable)")(
         "duplicate-import", po::value<std::string>(),
         "FTP: event imported more than once: error|first|last (default last)")(
-        "complement-events", po::value<std::string>(),
-        "FTP: -EVENT operands: atom|negation (default atom: marked literals)")(
         "negation", po::value<std::string>(),
         "FTP: query type of every target: boolean (the probability, default), hull or both")(
         "max-initiators-per-cutset", po::value<std::string>(),
-        "FTP, with --initiator-values probability: at most N initiating events per cut set, or none (default: the "
-        "model's ftp.max_initiators_per_cutset)")("literals", po::value<std::string>(),
-                                                  "FTP hull targets: atom_split|omega_l|negation (default atom_split)")(
+        "FTP hull queries, with --initiator-values probability: delete the cut sets with more than N initiating "
+        "events, or none (default: none)")("literals", po::value<std::string>(),
+                                           "FTP hull targets: atom_split|omega_l|negation (default atom_split)")(
         "initiator-values", po::value<std::string>(),
         "FTP: I values are frequency (default: one conditioned query per initiating event, summed as the target's "
         "frequency) or probability (values up to 1)")(
@@ -984,9 +979,8 @@ int cmd_compile(int argc, char **argv) {
     case fuzzybits::compile::ftp::input_kind::other:
         break;
     }
-    for (const char *flag :
-         {"override", "duplicate-import", "complement-events", "negation", "max-initiators-per-cutset", "literals",
-          "initiator-values", "initiator-unit", "config", "report"}) {
+    for (const char *flag : {"override", "duplicate-import", "negation", "max-initiators-per-cutset", "literals",
+                             "initiator-values", "initiator-unit", "config", "report"}) {
         if (vm.count(flag)) {
             std::cerr << "fzb compile: --" << flag << " applies to CAFTA FTP input only\n";
             return 1;
@@ -1105,9 +1099,6 @@ int inspect_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
     if (vm.count("duplicate-import")) {
         opt.duplicate_import = vm["duplicate-import"].as<std::string>();
     }
-    if (vm.count("complement-events")) {
-        opt.complement_events = vm["complement-events"].as<std::string>();
-    }
     if (const auto problem = ftp::check_options(opt); !problem.empty()) {
         std::cerr << "fzb inspect: " << problem << std::endl;
         return 1;
@@ -1133,8 +1124,6 @@ int cmd_inspect(int argc, char **argv) {
         "exposure", po::value<std::string>(),
         "with --exact: as for fzb run")("duplicate-import", po::value<std::string>(),
                                         "FTP: event imported more than once: error|first|last (default last)")(
-        "complement-events", po::value<std::string>(),
-        "FTP: -EVENT operands: atom|negation (default atom: marked literals)")(
         "strict", "FTP: exit 1 on warnings as well as errors")("counts-only",
                                                                "FTP: print counts without element names")(
         "input-file", po::value<std::vector<std::string>>(),
@@ -1154,7 +1143,7 @@ int cmd_inspect(int argc, char **argv) {
     if (vm.count("help")) {
         std::cout << "Usage: fzb inspect model.pcfb [--validate] [--json] [--exact [--exposure DURATION]]\n"
                      "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
-                     "[--complement-events atom|negation] [--strict] [--counts-only]\n\n"
+                     "[--strict] [--counts-only]\n\n"
                   << desc << std::endl;
         return 0;
     }
@@ -1174,7 +1163,7 @@ int cmd_inspect(int argc, char **argv) {
     case fuzzybits::compile::ftp::input_kind::other:
         break;
     }
-    for (const char *flag : {"duplicate-import", "complement-events", "strict", "counts-only"}) {
+    for (const char *flag : {"duplicate-import", "strict", "counts-only"}) {
         if (vm.count(flag)) {
             std::cerr << "fzb inspect: --" << flag << " applies to CAFTA FTP input only\n";
             return 1;

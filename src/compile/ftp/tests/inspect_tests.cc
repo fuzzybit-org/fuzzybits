@@ -245,8 +245,7 @@ TEST_CASE("inspect: structure counts literal operands, complemented gates, house
         {.path = "s.ftp",
          .text = "**CHAR32\n**DBNAME: sample\nTOP * G -B -H\nG + A B\nH + A B\nENDTREE\nIMPORT\n"
                  "  1.0E-01 A\n  2.0E-01 B\nLIMIT 1.0E-09\n"}};
-    ftp::inspect_options options;
-    const auto atom = ftp::inspect_sources(sources, options);
+    const auto atom = ftp::inspect_sources(sources, {});
     REQUIRE(atom.ok());
     REQUIRE(atom.structure->complemented_edges == 2);
     REQUIRE(atom.structure->complemented_edges_to_basic_events == 1);
@@ -255,13 +254,7 @@ TEST_CASE("inspect: structure counts literal operands, complemented gates, house
     REQUIRE(atom.structure->house_events == 0);
     REQUIRE(atom.structure->limit == 1e-9);
     REQUIRE(atom.conventions.limit == "1.0E-09");
-    REQUIRE(atom.conventions.max_initiators_per_cutset == "1");
     REQUIRE(atom.conventions.header_lines == std::vector<std::string>{"**CHAR32", "**DBNAME: sample"});
-
-    options.complement_events = "negation";
-    const auto negation = ftp::inspect_sources(sources, options);
-    REQUIRE(negation.structure->literal_operands == 0);
-    REQUIRE(negation.structure->complemented_edges == 2);
 }
 
 TEST_CASE("inspect: --counts-only output holds no element, file-content or header text", "[compile][ftp][inspect]") {
@@ -312,7 +305,6 @@ TEST_CASE("inspect: exit status and option checks", "[compile][ftp][inspect]") {
 
     REQUIRE(ftp::check_options({}).empty());
     REQUIRE_FALSE(ftp::check_options({.duplicate_import = "newest"}).empty());
-    REQUIRE_FALSE(ftp::check_options({.complement_events = "both"}).empty());
 }
 
 TEST_CASE("inspect: a diagnostic's position is the reader's, however the path is spelled or the message reads",

@@ -108,8 +108,11 @@ struct target_binding final {
     pc::bool_node_id node;
     negation_set negation;
     literal_mode literals = literal_mode::atom_split;
-    // Invalid unless the config sets max_initiators_per_cutset and the cone
-    // holds more initiating events than it allows.
+    // Invalid unless the config sets max_initiators_per_cutset, the binding
+    // is a monotone-hull query and the cone holds more initiating events than
+    // the rule allows. A domain target asking for both kinds under the rule
+    // then has two bindings: the probability query on `root`, the hull query
+    // on the conjunction.
     pc::bool_node_id initiator_delete_term;
     // Slices of pc_projection::initiator_events() and
     // pc_projection::literal_events(), ascending basic-event ids.

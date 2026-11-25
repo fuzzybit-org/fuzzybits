@@ -178,9 +178,11 @@ TEST_CASE("fzb inspect FTP: usage and option errors", "[compile][ftp][inspect][c
     REQUIRE(run.status == 1);
     REQUIRE(run.err.find("fzb inspect: --duplicate-import must be error, first or last") != std::string::npos);
 
-    run = run_fzb("inspect " + ftp + " --complement-events both", scratch);
+    // Removed: -EVENT is always a marked literal.
+    run = run_fzb("inspect " + ftp + " --complement-events negation", scratch);
     REQUIRE(run.status == 1);
-    REQUIRE(run.err.find("--complement-events must be atom or negation") != std::string::npos);
+    REQUIRE(run.err.find("complement-events") != std::string::npos);
+    REQUIRE(run.out.empty());
 
     run = run_fzb("inspect " + ftp + " --exact", scratch);
     REQUIRE(run.status == 1);

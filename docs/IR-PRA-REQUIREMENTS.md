@@ -202,7 +202,7 @@ builder was removed with #182); `fzb compile` drives it ([`ftp-input.md`](ftp-in
 | FTP construct | `ir::pra` | Class |
 |---|---|---|
 | `NAME + ops`, `NAME * ops`, `NAME k ops` (indented lines continue the operands) | `or` / `and` / `cardinality(k, n)` gate, source file:line | core |
-| `-name` operand | complemented operand; on a basic event also marked `literal` (`io.ftp.complement_events = atom`, default; `negation` leaves it unmarked); on a gate never marked (a negation, i.e. a delete term under hull queries) | core |
+| `-name` operand | complemented operand; on a basic event always also marked `literal` (no reader option); on a gate never marked (a negation, i.e. a delete term under hull queries) | core |
 | `ENDTREE` (the file's tree section comes first and must be closed) | — | `io.ftp.missing-endtree`, `io.ftp.misplaced-gate` |
 | `IMPORT` records `value name [flags]` | basic event, `literal` probability, one source per record | core |
 | `I` flag | initiating event on the basic event; its value is a `frequency` literal, whatever its magnitude (#243) | core |
@@ -212,7 +212,7 @@ builder was removed with #182); `fzb compile` drives it ([`ftp-input.md`](ftp-in
 | `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
 | no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
 | `LIMIT x` | project attribute `ftp.limit` | extension |
-| source conventions | project attribute `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering; the compile driver (#182) maps it to a quantification default. How complements are read is the query type, chosen by the compile request and never recorded (#244) | extension |
+| source conventions | none recorded. The query type (#244) and the initiator rule of hull queries (#262) are chosen by the compile request; the reader records no quantification choice | extension |
 | `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:

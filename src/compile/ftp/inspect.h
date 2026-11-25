@@ -20,8 +20,6 @@ namespace fuzzybits::compile::ftp {
 struct inspect_options final {
     // error | first | last
     std::string duplicate_import = "last";
-    // atom | negation
-    std::string complement_events = "atom";
 };
 
 // Empty when the options are valid, else the message of the first problem.
@@ -41,7 +39,6 @@ struct conventions_summary final {
     std::optional<std::string> limit;
     // The value of the `MAXSIZE` line as read.
     std::optional<std::string> maxsize;
-    std::optional<std::string> max_initiators_per_cutset;
     std::vector<std::string> header_lines;
 };
 

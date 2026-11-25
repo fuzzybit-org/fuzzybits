@@ -668,7 +668,10 @@ class Reader final {
             const auto prefix = "compile.query." + std::to_string(index) + ".";
             target_quantification entry;
             bool present = metadataIndex_.contains(prefix + "negation");
-            if (const auto mode = metadataIndex_.contains(prefix + "literal_mode")
+            // The literal mode belongs to the hull query; a probability query's copy, which earlier
+            // writers recorded, is ignored.
+            if (const auto mode = queryKind_[index] == query_kind::monotone_hull_probability &&
+                                          metadataIndex_.contains(prefix + "literal_mode")
                                       ? metadataText(prefix + "literal_mode")
                                       : std::nullopt) {
                 entry.literal_mode = *mode;
@@ -708,13 +711,17 @@ class Reader final {
             if (recorded[target] == 0) {
                 recorded[target] = 1;
                 output_.options.quantification[id] = entry;
-            } else if (auto const &kept = output_.options.quantification[id];
-                       kept.literal_mode != entry.literal_mode ||
+            } else if (auto &kept = output_.options.quantification[id];
+                       (!kept.literal_mode.empty() && !entry.literal_mode.empty() &&
+                        kept.literal_mode != entry.literal_mode) ||
                        kept.max_initiators_per_cutset != entry.max_initiators_per_cutset ||
                        kept.initiator != entry.initiator || kept.initiator_frequency != entry.initiator_frequency) {
                 diagnostics_.push(
                     warning(diag::quantification_conflict, "queries of target " + std::to_string(target) +
                                                                " record different quantification; the first is kept"));
+            } else if (kept.literal_mode.empty()) {
+                // Only the target's hull query records the literal mode.
+                kept.literal_mode = entry.literal_mode;
             }
         }
     }

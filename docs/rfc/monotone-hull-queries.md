@@ -83,9 +83,8 @@ both $B$ and `-B` (a mutually exclusive event check); list no consensus cut sets
 events in cut sets; and delete cut sets with two or more initiating events (`I`-tagged in `IMPORT`; probability-1
 initiator flags count). Their quantification configuration declares the initiator rule per engine (on for the engine
 used here, off for others). The atom-split hull of §3 reproduces the tools' cut sets on every fixture and every probe
-(§8.8–§8.11, Theorem 10). The FTP reader therefore marks every `-EVENT` as a literal and records the convention
-`ftp.max_initiators_per_cutset = 1` as a model attribute (§7.1). Hull queries are requested, never implied by the
-reader (#244).
+(§8.8–§8.11, Theorem 10). The FTP reader therefore marks every `-EVENT` as a literal. Hull queries and the initiator
+rule are requested, never implied by the reader (#244, #262).
 
 ## 2. Setting and notation
 
@@ -148,8 +147,8 @@ edge into a gate, including a single-input gate, is a *gate complement*.
 
 **Marked literals and atoms.** A *marked literal* is a direct complement that the source marks as an atomic literal of
 the event (`ir::pra` operand flag `literal`, #199); the flag does not change the Boolean meaning, and is allowed only on
-complemented operands that reference basic events. The FTP reader marks every direct complement (`-EVENT`; reader option
-`io.ftp.complement_events = atom | negation`, default `atom`) and no gate complement; other readers mark nothing unless
+complemented operands that reference basic events. The FTP reader marks every direct complement (`-EVENT`; there is no option to leave it
+unmarked) and no gate complement; other readers mark nothing unless
 their format defines such literals. For a target with circuit $C$, let $\Delta$ be the events with a marked literal in
 its cone; unmarked complements are ordinary negations.
 The *atoms* are $\mathcal{A} = V \cup \lbrace \bar v : v \in \Delta \rbrace$. The *split circuit* $\tilde C$ replaces
@@ -544,9 +543,8 @@ Remarks:
 - Under Boolean semantics a probability-1 initiator flag makes the rule remove every world in which another initiator
   occurs; under the hull it removes only the cut sets that contain both (§8.10).
 - The vendor configuration declares the rule per quantification engine (§1), so it is a config option, not a
-  model property. For FTP models the reader records it as an inert model attribute
-  (`ftp.max_initiators_per_cutset = 1`; #199), which the compile driver (#182) turns into a quantification-config
-  default; neither `ir::pra` nor the lowering reads it.
+  model property. It has no default and is never read from the model (#262); the lowering applies it to hull targets
+  only, since under Boolean semantics it changes the target.
 
 ### 4.9 The atom-split hull
 
@@ -835,12 +833,13 @@ modes and list $K_h$ and $\operatorname{MC}_L(g)$ (#190).
   file).
 - Per hull target: the interpretation of marked literals, `atom_split | omega_l | negation`, default `atom_split`
   (§3). `omega_l` and `negation` are explicit overrides, for comparisons.
-- `max_initiators_per_cutset: integer ≥ 0`, default unset: a cut-set rule of the quantification, lowered per target as
-  the delete term of §4.8 over the initiator-tagged events in the target's cone. #185's canonical target is
-  `monotone_hull`, `atom_split`, `max_initiators_per_cutset: 1`.
-- Source conventions reach the config through the reader, not through `ir::pra` semantics (#199): the FTP reader
-  records `ftp.max_initiators_per_cutset = 1` (reader option to disable) as an inert model attribute, next to `LIMIT`,
-  and the compile driver (#182) maps it to a config default.
+- `max_initiators_per_cutset: integer ≥ 0`, default unset: a cut-set rule of hull queries, lowered per hull target as
+  the delete term of §4.8 over the initiator-tagged events in the target's cone. Boolean targets never get it; a
+  target with both kinds gets the Boolean query on the target and the hull query on the conjunction (#262). #185's
+  canonical target is `monotone_hull`, `atom_split`, `max_initiators_per_cutset: 1`.
+- The rule is not a source convention either (#262): an earlier revision had the FTP reader record
+  `ftp.max_initiators_per_cutset = 1` for every project and the compile driver turn it into a default for every
+  target, Boolean ones included.
 - The query type is not a source convention (#244). Every target is a probability query unless the request asks for
   the hull, whatever the model and the target's cone; the compiler then chooses passes by query type (§7.5). An
   earlier revision had the FTP reader record `ftp.negation = delete_term` and made the hull the FTP default.

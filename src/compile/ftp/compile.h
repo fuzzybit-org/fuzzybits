@@ -24,10 +24,9 @@ struct override_spec final {
     bool value = false;
 };
 
-// Settings of one compile. Unset values take, in this order, the `config`
-// document, the model attribute the reader records
-// (`ftp.max_initiators_per_cutset`) and the built-in default. Flags override
-// the document: `targets` and `watch` replace its lists, `negation` and
+// Settings of one compile. Unset values take the `config` document, else the
+// built-in default; nothing is read from the model. Flags override the
+// document: `targets` and `watch` replace its lists, `negation` and
 // `literals` replace every per-target choice in it, `overrides` replace its
 // entries of the same name.
 struct options final {
@@ -39,13 +38,14 @@ struct options final {
     std::vector<override_spec> overrides;
     // error | first | last (default last).
     std::optional<std::string> duplicate_import;
-    // atom | negation (default atom).
-    std::optional<std::string> complement_events;
     // boolean | hull | both: the query type of every target (default
     // boolean, the probability query). Never read from the model.
     std::optional<std::string> negation;
-    // Outer unset: from the document or the model attribute. Inner unset: no
-    // rule (`none`). Only with initiator_values = probability.
+    // The initiator rule of hull queries: every monotone-hull query is ANDed
+    // with not atleast(N + 1; initiating events in its cone); probability
+    // queries never are. Outer unset: from the document, else no rule. Inner
+    // unset: no rule (`none`). Only with initiator_values = probability, and
+    // only when some target requests the hull.
     std::optional<std::optional<std::uint32_t>> max_initiators_per_cutset;
     // frequency | probability (default frequency, #243): how `I` values are
     // quantified. frequency: one conditioned query per initiating event in a
@@ -76,6 +76,7 @@ struct target_summary final {
     bool boolean = true;
     bool monotone_hull = false;
     std::string literals;
+    // The initiator rule lowered into this target; unset when it holds no delete term.
     std::optional<std::uint32_t> max_initiators_per_cutset;
     // A query conditioned on this initiating event (initiator_values =
     // frequency); empty otherwise. Its frequency is the query's weight.

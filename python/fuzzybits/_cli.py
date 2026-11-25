@@ -165,7 +165,7 @@ def _compile_ftp_command(args: argparse.Namespace, flags: Mapping[str, Any]) -> 
         options["watch"] = list(args.watch)
     if overrides:
         options["overrides"] = overrides
-    for key in ("duplicate_import", "complement_events", "negation", "literals", "initiator_values", "initiator_unit"):
+    for key in ("duplicate_import", "negation", "literals", "initiator_values", "initiator_unit"):
         if getattr(args, key) is not None:
             options[key] = getattr(args, key)
     if args.max_initiators_per_cutset is not None:
@@ -290,15 +290,14 @@ def cmd_compile(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--override", action="append", default=[], help="FTP: force an element, NAME=0 or NAME=1 (repeatable)")
     parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
-    parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
     parser.add_argument(
         "--negation",
         help="FTP: query type of every target: boolean (the probability, default), hull or both",
     )
     parser.add_argument(
         "--max-initiators-per-cutset",
-        help="FTP, with --initiator-values probability: at most N initiating events per cut set, or none "
-        "(default: the model's ftp.max_initiators_per_cutset)",
+        help="FTP hull queries, with --initiator-values probability: delete the cut sets with more than N "
+        "initiating events, or none (default: none)",
     )
     parser.add_argument("--literals", help="FTP hull targets: atom_split|omega_l|negation (default atom_split)")
     parser.add_argument(
@@ -364,7 +363,6 @@ def cmd_compile(argv: Sequence[str]) -> int:
     ftp_flags = {
         "override": args.override,
         "duplicate-import": args.duplicate_import,
-        "complement-events": args.complement_events,
         "negation": args.negation,
         "max-initiators-per-cutset": args.max_initiators_per_cutset,
         "literals": args.literals,
@@ -545,7 +543,6 @@ def _inspect_ftp_command(args: argparse.Namespace) -> int:
         document, text = _ftp_inspect_native(
             list(args.input_file),
             args.duplicate_import or "last",
-            args.complement_events or "atom",
             args.counts_only,
         )
     except Exception as exc:
@@ -566,7 +563,7 @@ def cmd_inspect(argv: Sequence[str]) -> int:
         usage=(
             "fzb inspect model.pcfb [--validate] [--json] [--exact [--exposure DURATION]]\n"
             "       fzb inspect a.ftp [b.ftp ...]|DIR [--json] [--duplicate-import error|first|last] "
-            "[--complement-events atom|negation] [--strict] [--counts-only]"
+            "[--strict] [--counts-only]"
         ),
         description="fzb inspect options",
         add_help=False,
@@ -582,7 +579,6 @@ def cmd_inspect(argv: Sequence[str]) -> int:
     )
     parser.add_argument("--exposure", metavar="DURATION", help="with --exact: as for fzb run")
     parser.add_argument("--duplicate-import", help="FTP: event imported more than once: error|first|last (default last)")
-    parser.add_argument("--complement-events", help="FTP: -EVENT operands: atom|negation (default atom: marked literals)")
     parser.add_argument("--strict", action="store_true", help="FTP: exit 1 on warnings as well as errors")
     parser.add_argument("--counts-only", action="store_true", help="FTP: print counts without element names")
     parser.add_argument(
@@ -611,7 +607,6 @@ def cmd_inspect(argv: Sequence[str]) -> int:
         return 1
     for flag, value in (
         ("duplicate-import", args.duplicate_import),
-        ("complement-events", args.complement_events),
         ("strict", args.strict),
         ("counts-only", args.counts_only),
     ):

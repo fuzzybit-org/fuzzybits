@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -42,7 +41,6 @@ namespace pcfb_frequency = io::pcfb_frequency;
 using clock = std::chrono::steady_clock;
 
 constexpr std::string_view source_format = "cafta-ftp";
-constexpr std::string_view max_initiators_attribute = "ftp.max_initiators_per_cutset";
 constexpr std::string_view limit_attribute = "ftp.limit";
 
 [[nodiscard]] auto seconds_since(const clock::time_point start) -> double {
@@ -176,7 +174,6 @@ struct settings_document final {
     std::optional<pra::negation_set> negation;
     std::optional<pra::literal_mode> literals;
     std::optional<std::string> duplicate_import;
-    std::optional<std::string> complement_events;
     std::optional<std::optional<std::uint32_t>> max_initiators;
     std::optional<std::string> initiator_values;
     std::optional<std::string> initiator_unit;
@@ -191,11 +188,15 @@ class document_reader final {
         if (!root.is_object()) {
             return fail("the document must be a JSON object");
         }
-        static constexpr std::array<std::string_view, 11> known{"targets",           "watch",
-                                                                "overrides",         "negation",
-                                                                "literals",          "duplicate_import",
-                                                                "complement_events", "max_initiators_per_cutset",
-                                                                "initiator_values",  "initiator_unit",
+        static constexpr std::array<std::string_view, 10> known{"targets",
+                                                                "watch",
+                                                                "overrides",
+                                                                "negation",
+                                                                "literals",
+                                                                "duplicate_import",
+                                                                "max_initiators_per_cutset",
+                                                                "initiator_values",
+                                                                "initiator_unit",
                                                                 "compilation_level"};
         for (auto const &key : root.keys) {
             if (std::ranges::find(known, std::string_view(key)) == known.end()) {
@@ -220,9 +221,6 @@ class document_reader final {
         }
         if (auto const *value = root.find("duplicate_import")) {
             out.duplicate_import = choice(*value, "duplicate_import", {"error", "first", "last"});
-        }
-        if (auto const *value = root.find("complement_events")) {
-            out.complement_events = choice(*value, "complement_events", {"atom", "negation"});
         }
         if (auto const *value = root.find("max_initiators_per_cutset")) {
             if (value->is(json::value::kind_type::null) || (value->is_string() && value->string == "none")) {
@@ -414,7 +412,6 @@ class document_reader final {
 // The settings that survive merging the flags, the document and the model.
 struct effective final {
     std::string duplicate_import = "last";
-    std::string complement_events = "atom";
     pra::negation_set negation;
     pra::literal_mode literals = pra::literal_mode::atom_split;
     std::optional<std::uint32_t> max_initiators;
@@ -521,11 +518,6 @@ struct lowered_stage final {
         diagnostics.push(option_error("duplicate-import must be error, first or last, not " +
                                       in_quotes(*settings.duplicate_import)));
     }
-    if (settings.complement_events && *settings.complement_events != "atom" &&
-        *settings.complement_events != "negation") {
-        diagnostics.push(
-            option_error("complement-events must be atom or negation, not " + in_quotes(*settings.complement_events)));
-    }
     if (settings.initiator_values && *settings.initiator_values != "frequency" &&
         *settings.initiator_values != "probability") {
         diagnostics.push(option_error("initiator-values must be frequency or probability, not " +
@@ -554,7 +546,6 @@ struct lowered_stage final {
 
     effective merged;
     merged.duplicate_import = settings.duplicate_import.value_or(document.duplicate_import.value_or("last"));
-    merged.complement_events = settings.complement_events.value_or(document.complement_events.value_or("atom"));
     merged.level = settings.level.value_or(document.level.value_or(1));
     if (merged.level != 0 && merged.level != 1) {
         diagnostics.push(option_error("-c must be 0 or 1 for FTP input, not " + std::to_string(merged.level)));
@@ -568,7 +559,6 @@ struct lowered_stage final {
     set = sorted_sources(given);
     api::option_set reader_options;
     reader_options.set(reader::duplicate_import_option(), merged.duplicate_import);
-    reader_options.set(reader::complement_events_option(), merged.complement_events);
     auto project = reader::read_project(std::span<reader::source_text const>(set.sources), reader_options);
     diagnostics.append(project.diagnostics());
     seconds.read = seconds_since(read_start);
@@ -611,33 +601,13 @@ struct lowered_stage final {
         merged.initiator_unit = std::string(pcfb_frequency::default_unit);
     }
 
-    bool initiators_from_attribute = false;
+    // The initiator rule is a cut-set rule of hull queries, requested explicitly; no default (#262). With
+    // frequencies, conditioning on one initiating event at a time already does what it approximates.
     if (frequencies) {
-        // The attribute records the cut-set convention of at most one initiator, which the
-        // conditioning already implies.
     } else if (settings.max_initiators_per_cutset) {
         merged.max_initiators = *settings.max_initiators_per_cutset;
     } else if (document.max_initiators) {
         merged.max_initiators = *document.max_initiators;
-    } else if (const auto attribute = attribute_value(*model, max_initiators_attribute)) {
-        std::uint32_t count = 0;
-        const auto *end = attribute->data() + attribute->size();
-        if (const auto [pointer, status] = std::from_chars(attribute->data(), end, count);
-            status == std::errc{} && pointer == end) {
-            merged.max_initiators = count;
-            initiators_from_attribute = true;
-        } else if (*attribute != "none") {
-            diagnostics.push(api::make_warning("compile.ftp.unknown-attribute",
-                                               "model attribute ftp.max_initiators_per_cutset has the unknown value " +
-                                                   in_quotes(*attribute) + "; applying no initiator rule"));
-        }
-    }
-    if (initiators_from_attribute) {
-        diagnostics.push(
-            api::make_note("compile.ftp.default-initiator-rule",
-                           "at most " + std::to_string(*merged.max_initiators) +
-                               " initiating event(s) per cut set: the model records "
-                               "ftp.max_initiators_per_cutset (--max-initiators-per-cutset none disables the rule)"));
     }
 
     lowering_ns::quantification_config config;
@@ -692,6 +662,18 @@ struct lowered_stage final {
     }
     for (auto const &spec : watch) {
         add(config.watch_targets, spec);
+    }
+    if (merged.max_initiators) {
+        // Under the probability query the rule would remove every assignment with more than N
+        // initiating events, which changes the target: it is a rule of hull queries only.
+        const auto hull = [](lowering_ns::target_request const &request) { return request.negation.monotone_hull; };
+        const bool any_hull =
+            (config.targets.empty() ? merged.negation.monotone_hull : std::ranges::any_of(config.targets, hull)) ||
+            std::ranges::any_of(config.watch_targets, hull);
+        if (!any_hull) {
+            diagnostics.push(option_error("max-initiators-per-cutset applies to hull queries only, and no target "
+                                          "requests one (--negation hull or both)"));
+        }
     }
 
     merged.overrides = document.overrides;
@@ -762,7 +744,11 @@ struct lowered_stage final {
         summary.boolean = binding.negation.boolean;
         summary.monotone_hull = binding.negation.monotone_hull;
         summary.literals = std::string(literals_name(binding.literals));
-        summary.max_initiators_per_cutset = stage.settings.max_initiators;
+        // Only where the lowering put the delete term into this target (a hull query whose cone holds more
+        // initiating events than the rule allows).
+        if (binding.initiator_delete_term.valid()) {
+            summary.max_initiators_per_cutset = stage.settings.max_initiators;
+        }
         summary.initiating_events = stage.lowering.projection.initiators(binding).size();
         summary.literal_events = stage.lowering.projection.literal_events(binding).size();
         if (binding.condition.valid()) {
@@ -786,7 +772,6 @@ struct lowered_stage final {
     root.set("format", json::value::make_string(std::string(source_format)));
     root.set("compilation_level", json::value::make_int(stage.settings.level));
     root.set("duplicate_import", json::value::make_string(stage.settings.duplicate_import));
-    root.set("complement_events", json::value::make_string(stage.settings.complement_events));
     root.set("max_initiators_per_cutset", optional_count(stage.settings.max_initiators));
     root.set("initiator_values", json::value::make_string(stage.settings.initiator_values));
     root.set("initiator_unit", stage.settings.initiator_unit ? json::value::make_string(*stage.settings.initiator_unit)
@@ -869,7 +854,7 @@ struct lowered_stage final {
                     "compile.ftp.hull-literals-unsupported",
                     "monotone-hull targets with marked literal operands (-EVENT) cannot be written until pcfb carries "
                     "literal atoms; each alternative is a different query: --negation boolean (the probability, "
-                    "the default), or the plain hull with --literals negation or --complement-events negation"));
+                    "the default), or the plain hull with --literals negation"));
             }
             return fail(std::move(diagnostics));
         }

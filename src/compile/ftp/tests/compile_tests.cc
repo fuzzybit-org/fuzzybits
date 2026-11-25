@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -114,6 +115,14 @@ constexpr auto simple =
     return entry->value_as_StringValue()->value()->str();
 }
 
+[[nodiscard]] auto int_meta(::pcfb::ir::Circuit const &circuit, char const *key) -> std::optional<std::int64_t> {
+    auto const *entry = circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key);
+    if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::IntValue) {
+        return std::nullopt;
+    }
+    return entry->value_as_IntValue()->value();
+}
+
 [[nodiscard]] auto query_names(::pcfb::ir::Circuit const &circuit) -> std::vector<std::string> {
     std::vector<std::string> out;
     for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
@@ -189,6 +198,7 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
     REQUIRE(root.find("format")->string == "cafta-ftp");
     REQUIRE(root.find("compilation_level")->integer == 1);
     REQUIRE(root.find("max_initiators_per_cutset")->kind == json::value::kind_type::null);
+    REQUIRE(root.find("complement_events") == nullptr);
     REQUIRE(root.find("ftp_limit")->string == "1.000000E-12");
     auto const &targets = root.find("targets")->items;
     REQUIRE(targets.size() == 1);
@@ -249,9 +259,8 @@ TEST_CASE("a hull query is written only when requested, with its metadata", "[co
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.negation") == "monotone_hull");
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "atom_split");
-    auto const *rule = circuit->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset");
-    REQUIRE(rule != nullptr);
-    REQUIRE(rule->value_as_IntValue()->value() == 1);
+    // No initiator rule unless requested: nothing is read from the model.
+    REQUIRE(circuit->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset") == nullptr);
     REQUIRE(compiled.targets[0].monotone_hull);
     REQUIRE_FALSE(compiled.targets[0].boolean);
     REQUIRE(has_code(compile_text(simple, hull_options()).diagnostics(), "pc.pipeline.pass-skipped"));
@@ -338,7 +347,7 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
     // The default query is the probability, which marks do not affect.
     REQUIRE(compile_text(text, frequency_options()));
 
-    // Marked operands read as plain complements: `negation` mode, or no marks.
+    // Marked operands read as plain complements: the `negation` mode, the plain hull.
     auto plain = hull_options();
     plain.literals = "negation";
     const auto negation = compile_ok(text, plain);
@@ -346,41 +355,81 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
     REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "negation");
-    auto unmarked = hull_options();
-    unmarked.complement_events = "negation";
-    REQUIRE(compile_text(text, unmarked));
 
     // Boolean targets are unaffected by marks.
     REQUIRE(compile_text(text, boolean_options()));
 }
 
-TEST_CASE("the initiator rule defaults to the model attribute and flags override it", "[compile][ftp][initiator]") {
+TEST_CASE("the initiator rule is a rule of hull queries, requested explicitly", "[compile][ftp][initiator]") {
     const auto text = read_file(fixture("initiator_rule") / "model.ftp");
 
-    auto none = boolean_options();
-    none.max_initiators_per_cutset = std::optional<std::uint32_t>{};
-    const auto without = compile_ok(text, none);
-    REQUIRE(std::abs(exact(without) - 0.45000000000000007) <= 1e-12);
+    // Probability queries are the probability of the target: no rule from the model, none by default.
+    const auto plain = compile_ok(text, boolean_options());
+    REQUIRE(std::abs(exact(plain) - 0.45000000000000007) <= 1e-12);
+    REQUIRE_FALSE(plain.targets[0].max_initiators_per_cutset);
+    REQUIRE(plain.targets[0].initiating_events == 3);
+    REQUIRE_FALSE(has_code(compile_text(text, boolean_options()).diagnostics(), "compile.ftp.default-initiator-rule"));
+    REQUIRE(view(plain.bytes)->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset") == nullptr);
 
-    const auto by_attribute = compile_ok(text, boolean_options());
-    REQUIRE(std::abs(exact(by_attribute) - 0.28800000000000003) <= 1e-12);
-    REQUIRE(by_attribute.targets[0].max_initiators_per_cutset == 1U);
-    REQUIRE(by_attribute.targets[0].initiating_events == 3);
-    const auto result = compile_text(text, boolean_options());
-    REQUIRE(has_code(result.diagnostics(), "compile.ftp.default-initiator-rule"));
+    // A rule without a hull query would change the probability query: refused.
+    auto boolean_rule = boolean_options();
+    boolean_rule.max_initiators_per_cutset = std::optional<std::uint32_t>{1};
+    const auto refused = compile_text(text, boolean_rule);
+    REQUIRE_FALSE(refused);
+    REQUIRE(has_code(refused.diagnostics(), "compile.ftp.invalid-option"));
+    REQUIRE(render(refused.diagnostics()).find("hull queries only") != std::string::npos);
+    auto document_rule = boolean_options();
+    document_rule.max_initiators_per_cutset.reset();
+    document_rule.config = R"({"max_initiators_per_cutset": 1})";
+    REQUIRE(has_code(compile_text(text, document_rule).diagnostics(), "compile.ftp.invalid-option"));
+    // `none` is no rule and needs no hull query.
+    document_rule.config = R"({"max_initiators_per_cutset": "none"})";
+    REQUIRE(std::abs(exact(compile_ok(text, document_rule)) - 0.45000000000000007) <= 1e-12);
 
-    // SEQ-1 holds two initiators: allowed by 2, deleted by 1.
-    auto two = boolean_options();
-    two.targets = {"SEQ-1"};
-    two.max_initiators_per_cutset = std::optional<std::uint32_t>{2};
-    REQUIRE(std::abs(exact(compile_ok(text, two)) - 0.006000000000000001) <= 1e-12);
-    two.max_initiators_per_cutset = std::optional<std::uint32_t>{1};
-    REQUIRE(exact(compile_ok(text, two)) == 0.0);
+    // A hull query takes the rule; its metadata says so.
+    auto hull_rule = hull_options();
+    hull_rule.literals = "negation";
+    hull_rule.max_initiators_per_cutset = std::optional<std::uint32_t>{1};
+    const auto hull = compile_ok(text, hull_rule);
+    REQUIRE(hull.targets.size() == 1);
+    REQUIRE(hull.targets[0].max_initiators_per_cutset == 1U);
+    REQUIRE(int_meta(view(hull.bytes), "compile.query.0.max_initiators_per_cutset") == 1);
 
-    // The rule is lifted by the reader option too: no attribute, no default.
-    auto flag = boolean_options();
-    flag.config = R"({"max_initiators_per_cutset": "none"})";
-    REQUIRE(std::abs(exact(compile_ok(text, flag)) - 0.45000000000000007) <= 1e-12);
+    // Both kinds: the probability query reads TOP itself, the hull query TOP under the rule, on two
+    // tensors. SEQ-3 holds one initiating event, so its two queries share one tensor and neither has a rule.
+    auto both = hull_rule;
+    both.negation = "both";
+    both.targets = {"TOP", "SEQ-3"};
+    const auto both_kinds = compile_ok(text, both);
+    REQUIRE(both_kinds.targets.size() == 3);
+    REQUIRE(both_kinds.targets[0].boolean);
+    REQUIRE_FALSE(both_kinds.targets[0].monotone_hull);
+    REQUIRE_FALSE(both_kinds.targets[0].max_initiators_per_cutset);
+    REQUIRE(both_kinds.targets[1].monotone_hull);
+    REQUIRE_FALSE(both_kinds.targets[1].boolean);
+    REQUIRE(both_kinds.targets[1].max_initiators_per_cutset == 1U);
+    REQUIRE(both_kinds.targets[2].boolean);
+    REQUIRE(both_kinds.targets[2].monotone_hull);
+    REQUIRE_FALSE(both_kinds.targets[2].max_initiators_per_cutset);
+    const auto circuit = view(both_kinds.bytes);
+    REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP", "TOP", "SEQ-3", "SEQ-3"});
+    auto const *queries = circuit->subcircuits()->Get(0)->queries();
+    REQUIRE(queries->Get(0)->target() != queries->Get(1)->target());
+    REQUIRE(queries->Get(2)->target() == queries->Get(3)->target());
+    REQUIRE(circuit->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset") == nullptr);
+    REQUIRE(int_meta(circuit, "compile.query.1.max_initiators_per_cutset") == 1);
+    REQUIRE(circuit->metadata()->LookupByKey("compile.query.0.literal_mode") == nullptr);
+    REQUIRE(string_meta(circuit, "compile.query.1.literal_mode") == "negation");
+
+    // The lowered probability query is TOP's subject; the hull query is the conjunction with the delete term.
+    const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", text}}), both);
+    REQUIRE(lowered);
+    auto const bindings = lowered.value().projection.target_bindings();
+    REQUIRE(bindings.size() == 3);
+    REQUIRE(bindings[0].node == bindings[0].root);
+    REQUIRE_FALSE(bindings[0].initiator_delete_term.valid());
+    REQUIRE(bindings[1].root == bindings[0].root);
+    REQUIRE(bindings[1].initiator_delete_term.valid());
 }
 
 TEST_CASE("flags override the config document, which overrides the model defaults", "[compile][ftp][config]") {
@@ -408,6 +457,7 @@ TEST_CASE("flags override the config document, which overrides the model default
     auto flags = file_only;
     flags.targets = {"SEQ-4"};
     flags.watch = {};
+    flags.negation = "hull";
     flags.max_initiators_per_cutset = std::optional<std::uint32_t>{1};
     flags.level = 1;
     flags.overrides = {ftp::override_spec{.name = "OPER", .value = false}};
@@ -415,9 +465,12 @@ TEST_CASE("flags override the config document, which overrides the model default
     REQUIRE(from_flags.level == 1);
     // The document's watch list stays: only a non-empty flag list replaces it.
     REQUIRE(query_names(view(from_flags.bytes)) == std::vector<std::string>{"SEQ-4", "SEQ-1"});
-    // SEQ-4 = IE-FLAG and IE-2 and PUMP-A holds two initiators: the rule deletes it.
-    REQUIRE(exact(from_flags) == 0.0);
+    // The flags' rule, not the document's `null`: SEQ-4 = IE-FLAG and IE-2 and PUMP-A holds two initiators,
+    // so its hull query gets the delete term.
+    REQUIRE(from_flags.targets[0].monotone_hull);
+    REQUIRE(from_flags.targets[0].max_initiators_per_cutset == 1U);
 
+    flags.negation = "boolean";
     flags.max_initiators_per_cutset = std::optional<std::uint32_t>{};
     flags.targets = {"SEQ-3"};
     REQUIRE(std::abs(exact(compile_ok(text, flags)) - 0.5) <= 1e-12);
@@ -462,9 +515,6 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     options.duplicate_import = "newest";
     fails(options, "compile.ftp.invalid-option");
     options = boolean_options();
-    options.complement_events = "both";
-    fails(options, "compile.ftp.invalid-option");
-    options = boolean_options();
     options.targets = {"NOPE"};
     fails(options, "compile.ftp.unknown-target");
     options = boolean_options();
@@ -479,7 +529,9 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     }
     for (const char *config :
          {"[]", R"({"typo": 1})", R"({"negation": "maybe"})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
-          R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})"}) {
+          R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})",
+          // Removed: -EVENT is always a marked literal.
+          R"({"complement_events": "negation"})"}) {
         INFO(config);
         options = boolean_options();
         options.config = config;
@@ -528,7 +580,8 @@ TEST_CASE("target and event names survive C1", "[compile][ftp][names]") {
     REQUIRE(after.passes.front().transform == "ir.pc.fold_zero_probability");
 }
 
-TEST_CASE("duplicate-import and complement-events pass through to the reader", "[compile][ftp][reader]") {
+TEST_CASE("duplicate-import passes through to the reader; -EVENT is always a marked literal",
+          "[compile][ftp][reader]") {
     const auto text = read_file(fixture("imports_tags_duplicates") / "model.ftp");
     auto options = boolean_options();
     options.duplicate_import = "error";
@@ -548,15 +601,9 @@ TEST_CASE("duplicate-import and complement-events pass through to the reader", "
     REQUIRE(std::abs(exact(last.value()) - 0.10720000000000002) <= 1e-12);
 
     const auto complement = read_file(fixture("complement_under_negation") / "model.ftp");
-    for (const char *policy : {"atom", "negation"}) {
-        auto marked = boolean_options();
-        marked.complement_events = policy;
-        marked.max_initiators_per_cutset = std::optional<std::uint32_t>{};
-        const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", complement}}), marked);
-        REQUIRE(lowered);
-        const auto events = lowered.value().projection.literal_events().size();
-        REQUIRE((events != 0) == (std::string(policy) == "atom"));
-    }
+    const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", complement}}), boolean_options());
+    REQUIRE(lowered);
+    REQUIRE_FALSE(lowered.value().projection.literal_events().empty());
 }
 
 TEST_CASE("a failed compile reports every diagnostic and a report document", "[compile][ftp][report]") {
