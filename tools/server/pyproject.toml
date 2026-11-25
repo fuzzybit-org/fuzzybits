@@ -37,9 +37,12 @@ build-backend = "hatchling.build"
 # checkout's static pyproject metadata so `uv lock` / `uv sync` never compile
 # the native extension. Install is skipped in CI and Docker
 # (`uv sync --no-install-package fuzzybits`); the runtime image / a locally
-# built wheel supplies the engine.
+# built wheel supplies the engine. `editable = true` matches how the root
+# project's lock sees fuzzybits (uv locks a project root as editable): the root
+# `server` extra resolves this package from tools/server, and the two sources
+# of fuzzybits must agree.
 [tool.uv.sources]
-fuzzybits = { path = "../.." }
+fuzzybits = { path = "../..", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fuzzybits_server"]
