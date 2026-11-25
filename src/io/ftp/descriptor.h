@@ -44,7 +44,6 @@ struct source_text final {
 [[nodiscard]] auto truncation_limit_option() -> api::option_key;
 [[nodiscard]] auto duplicate_import_option() -> api::option_key;
 [[nodiscard]] auto complement_events_option() -> api::option_key;
-[[nodiscard]] auto max_initiators_option() -> api::option_key;
 [[nodiscard]] auto project_reader_descriptor() -> io::reader_descriptor;
 [[nodiscard]] auto writer_descriptor() -> io::writer_descriptor;
 

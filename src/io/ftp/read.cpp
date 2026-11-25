@@ -51,18 +51,6 @@ auto parse_pra_options(api::option_set const &options, api::diagnostic_list &dia
                 "io.ftp.invalid-option", "io.ftp.complement_events must be atom or negation, not '" + *value + "'"));
         }
     }
-    if (const auto value = options.get<std::string>(max_initiators_option()); value && *value != kFtpMaxInitiatorsOne) {
-        if (*value == kFtpMaxInitiatorsNone) {
-            out.maxOneInitiator = false;
-        } else {
-            diagnostics.push(api::make_error(
-                "io.ftp.invalid-option", "io.ftp.max_initiators_per_cutset must be 1 or none, not '" + *value + "'"));
-        }
-    } else if (const auto count = options.get<std::int64_t>(max_initiators_option()); count && *count != 1) {
-        diagnostics.push(
-            api::make_error("io.ftp.invalid-option",
-                            "io.ftp.max_initiators_per_cutset must be 1 or none, not " + std::to_string(*count)));
-    }
     return out;
 }
 
@@ -141,8 +129,6 @@ auto duplicate_import_option() -> api::option_key { return api::option_key("io.f
 
 auto complement_events_option() -> api::option_key { return api::option_key("io.ftp.complement_events"); }
 
-auto max_initiators_option() -> api::option_key { return api::option_key("io.ftp.max_initiators_per_cutset"); }
-
 namespace {
 
 [[nodiscard]] auto duplicateImportSpec() -> api::option_spec {
@@ -182,14 +168,6 @@ auto project_reader_descriptor() -> io::reader_descriptor {
                             .help = "-EVENT operands: atom (default) marks them as literals, each its own "
                                     "atom under hull queries; negation leaves them ordinary complements. "
                                     "-GATE is always a negation.",
-                        },
-                        api::option_spec{
-                            .key = max_initiators_option(),
-                            .name = "Initiators per cut set",
-                            .default_value = std::string(detail::kFtpMaxInitiatorsOne),
-                            .help = "1 (default) records the convention of at most one initiating event "
-                                    "per cut set as the model attribute ftp.max_initiators_per_cutset; "
-                                    "none omits it.",
                         },
                     }},
     };

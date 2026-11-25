@@ -47,6 +47,23 @@
     "probability"` in the config document).
   - The reader marks every `I` value as a frequency, and the `io.ftp.initiator-frequency` warning is gone.
     `compile.pra_to_pc.frequency-as-probability` is now a note.
+- The FTP initiator rule (`--max-initiators-per-cutset N`) applies to hull queries only and has no default (#262).
+  With `--initiator-values probability`, probability queries used to be ANDed with
+  `not atleast(2; initiating events)` by default, because the reader recorded `ftp.max_initiators_per_cutset = 1`
+  for every project. A probability query is now the probability of its target: on the `initiator_rule` fixture
+  `TOP` is 0.45, not 0.288.
+  - The reader no longer records `ftp.max_initiators_per_cutset`, and its option
+    `io.ftp.max_initiators_per_cutset` is gone. `fzb inspect` and `fuzzybits.read_project` drop it from
+    `conventions`. The note `compile.ftp.default-initiator-rule` is gone.
+  - `--max-initiators-per-cutset N` (or `max_initiators_per_cutset` in Python or the config document) without a
+    hull query is `compile.ftp.invalid-option`. To apply the cut-set rule, request the hull:
+    `--negation hull --max-initiators-per-cutset 1`.
+  - A target with both kinds and the rule gets two queries on two tensors: the probability query on the target,
+    the hull query on the target under the rule.
+  - The `.pcfb` metadata records `compile.query.<i>.literal_mode` on hull queries only, and
+    `compile.query.<i>.max_initiators_per_cutset` only on queries whose target holds the delete term. The warning
+    `compile.pra_to_pc.complemented-initiator` is emitted for hull targets only.
+  - There is no opt-out: P(target and at most N initiating events) is no longer a query fzb computes.
 
 ### Changes
 

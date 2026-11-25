@@ -50,12 +50,8 @@ inline constexpr std::string_view kFtpHeaderAttribute = "ftp.header";
 inline constexpr std::string_view kFtpLimitAttribute = "ftp.limit";
 inline constexpr std::string_view kFtpMaxSizeAttribute = "ftp.maxsize";
 inline constexpr std::string_view kFtpImportFlagAttribute = "ftp.import_flag";
-// A source convention, recorded for the compile driver; nothing in `ir::pra`
-// or the lowering reads it. How complements are read is never recorded: it is
-// the query type, which the compile request chooses.
-inline constexpr std::string_view kFtpMaxInitiatorsAttribute = "ftp.max_initiators_per_cutset";
-inline constexpr std::string_view kFtpMaxInitiatorsOne = "1";
-inline constexpr std::string_view kFtpMaxInitiatorsNone = "none";
+// The reader records what the files say. Quantification choices (the query kind, how hull queries read
+// complements, the initiator rule) are never recorded: the compile request makes them.
 
 // FTP names, keywords and import flags are compared without regard to ASCII
 // case: `g1` and `G1` name one element. Other bytes compare exactly.
@@ -178,7 +174,6 @@ struct ParsedProject final {
 
 struct PraOptions final {
     complement_events_policy complementEvents = complement_events_policy::atom;
-    bool maxOneInitiator = true;
 };
 
 [[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics)

@@ -367,6 +367,18 @@ class pc_reference final {
 // For every world of the model's basic events, every PC target equals its
 // domain target's function under the config; and every target probability
 // of the circuit equals the PRA one.
+// The initiator rule as it applies to one binding: hull queries only. A probability query is the
+// subject itself and never holds a delete term.
+[[nodiscard]] inline auto rule_of(pra::target_binding const &target, const std::optional<std::uint32_t> max_initiators)
+    -> std::optional<std::uint32_t> {
+    if (!target.negation.monotone_hull) {
+        REQUIRE_FALSE(target.initiator_delete_term.valid());
+        REQUIRE(target.node == target.root);
+        return std::nullopt;
+    }
+    return max_initiators;
+}
+
 inline void require_equivalent(pra::model const &model, lowering::pra_pc_lowering const &lowered,
                                std::vector<reference_override> const &overrides,
                                const std::optional<std::uint32_t> max_initiators) {
@@ -394,13 +406,14 @@ inline void require_equivalent(pra::model const &model, lowering::pra_pc_lowerin
         for (auto const &target : targets) {
             REQUIRE(lowered.circuit.targets()[target.pc_target.raw()].node == target.node);
             CAPTURE(world, target.pc_target.raw(), model.stable_name(target.subject));
-            REQUIRE((value[target.node.raw()] != 0) == reference.target_value(target.subject, max_initiators, world));
+            REQUIRE((value[target.node.raw()] != 0) ==
+                    reference.target_value(target.subject, rule_of(target, max_initiators), world));
         }
     }
 
     const auto probabilities = circuit.target_probabilities();
     for (auto const &target : targets) {
-        const auto expected = reference.target_probability(target.subject, max_initiators);
+        const auto expected = reference.target_probability(target.subject, rule_of(target, max_initiators));
         CAPTURE(model.stable_name(target.subject), expected, probabilities[target.pc_target.raw()]);
         REQUIRE(std::abs(probabilities[target.pc_target.raw()] - expected) <= 1e-12);
     }

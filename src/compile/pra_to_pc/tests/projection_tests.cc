@@ -42,6 +42,8 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
     lowering::quantification_config config;
     config.watch_targets = {{.name = "R"}, {.name = "L", .element = pra::element_kind::gate}};
     config.overrides = {{.name = "FLAG", .value = false}};
+    config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+    config.default_literals = pra::literal_mode::negation;
     config.max_initiators_per_cutset = 1;
     const auto artifact = require_lower(model, config);
     require_equivalent(model, artifact, {{.element = flag, .value = false}}, 1U);

@@ -111,8 +111,9 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
 
             const pra_reference reference(model, overrides);
             for (std::uint32_t query = 0; query < 2; ++query) {
-                const auto subject = artifact.projection.target_bindings()[query].subject;
-                const auto expected = reference.target_probability(subject, rule);
+                // Probability queries: the rule is never lowered into them.
+                auto const &binding = artifact.projection.target_bindings()[query];
+                const auto expected = reference.target_probability(binding.subject, rule_of(binding, rule));
                 const auto exact = fuzzybits::compile::exact_probability(*circuit, query);
                 CAPTURE(query, expected, exact);
                 CHECK(std::abs(exact - expected) <= 1e-12);
@@ -172,11 +173,9 @@ TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[com
     const auto model = build_model();
     lowering::quantification_config config;
     config.default_negation = pra::negation_set::both();
-    config.max_initiators_per_cutset = 1;
     config.watch_targets = {{.name = "PARITY"}};
     const auto artifact = require_lower(model, config);
     CHECK(artifact.projection.target_bindings()[0].negation == pra::negation_set::both());
-    CHECK(artifact.report.max_initiators_per_cutset == 1);
 
     auto options = lowering::pcfb_write_options(artifact);
     INFO(render(options.diagnostics()));
@@ -203,11 +202,57 @@ TEST_CASE("pra_to_pc write options map negation semantics to query kinds", "[com
     CHECK(string_meta(*circuit, "compile.query.0.negation") == "boolean");
     CHECK(string_meta(*circuit, "compile.query.1.negation") == "monotone_hull");
     CHECK(string_meta(*circuit, "compile.query.2.negation") == "boolean");
+    // The literal mode is a parameter of the hull query only; no rule was asked for.
+    CHECK_FALSE(string_meta(*circuit, "compile.query.0.literal_mode"));
+    CHECK(string_meta(*circuit, "compile.query.1.literal_mode") == "atom_split");
+    CHECK_FALSE(string_meta(*circuit, "compile.query.2.literal_mode"));
     for (const auto index : {0, 1, 2}) {
-        const auto prefix = "compile.query." + std::to_string(index) + ".";
-        CHECK(string_meta(*circuit, prefix + "literal_mode") == "atom_split");
-        CHECK(int_meta(*circuit, prefix + "max_initiators_per_cutset") == 1);
+        CHECK_FALSE(int_meta(*circuit, "compile.query." + std::to_string(index) + ".max_initiators_per_cutset"));
     }
+}
+
+TEST_CASE("pra_to_pc write options put the initiator rule on hull queries only", "[compile][pra_to_pc][pcfb]") {
+    const auto model = build_model();
+    lowering::quantification_config config;
+    config.default_negation = pra::negation_set::both();
+    config.max_initiators_per_cutset = 1;
+    config.watch_targets = {{.name = "PARITY"}};
+    const auto artifact = require_lower(model, config);
+    CHECK(artifact.report.max_initiators_per_cutset == 1);
+    // FT's cone holds two initiating events: its probability query stays on the subject, its hull query
+    // gets the rule on another node. PARITY (watch, probability only) never gets it.
+    auto const bindings = artifact.projection.target_bindings();
+    REQUIRE(bindings.size() == 3);
+    CHECK(bindings[0].negation == pra::negation_set::of(pra::negation_semantics::boolean));
+    CHECK_FALSE(bindings[0].initiator_delete_term.valid());
+    CHECK(bindings[1].negation == pra::negation_set::of(pra::negation_semantics::monotone_hull));
+    CHECK(bindings[1].initiator_delete_term.valid());
+    CHECK_FALSE(bindings[2].initiator_delete_term.valid());
+    require_equivalent(model, artifact, {}, 1U);
+
+    auto options = lowering::pcfb_write_options(artifact);
+    INFO(render(options.diagnostics()));
+    REQUIRE(options);
+    using kind = writer::query_kind;
+    CHECK(options.value().target_kinds.at(pc::target_id(0)) == std::vector<kind>{kind::probability});
+    CHECK(options.value().target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::monotone_hull_probability});
+    CHECK(options.value().target_kinds.at(pc::target_id(2)) == std::vector<kind>{kind::probability});
+
+    auto written = writer::write(artifact.circuit.to_handle(), options.value());
+    INFO(render(written.diagnostics()));
+    REQUIRE(written);
+    auto circuit = ::pcfb::io::from_bytes(written.value().bytes);
+    REQUIRE(circuit);
+    require_valid(*circuit);
+    using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
+    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::PROBABILITY},
+                                          {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY},
+                                          {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    auto const *queries = (*circuit)->subcircuits()->Get(0)->queries();
+    CHECK(queries->Get(0)->target() != queries->Get(1)->target());
+    CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
+    CHECK(int_meta(*circuit, "compile.query.1.max_initiators_per_cutset") == 1);
+    CHECK_FALSE(int_meta(*circuit, "compile.query.2.max_initiators_per_cutset"));
 }
 
 TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule",
@@ -233,7 +278,7 @@ TEST_CASE("pra_to_pc write options record the literal mode and omit an absent in
     CHECK(query_summary(*circuit) ==
           rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
     CHECK(string_meta(*circuit, "compile.query.0.literal_mode") == "omega_l");
-    CHECK(string_meta(*circuit, "compile.query.1.literal_mode") == "atom_split");
+    CHECK_FALSE(string_meta(*circuit, "compile.query.1.literal_mode"));
     CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
 }
 

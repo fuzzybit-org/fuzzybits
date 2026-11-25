@@ -201,7 +201,10 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
         INFO("quantification of target " << target.raw());
         const auto found = read.options.quantification.find(target);
         REQUIRE(found != read.options.quantification.end());
-        REQUIRE(found->second.literal_mode == entry.literal_mode);
+        // The literal mode travels on the target's hull query only.
+        const auto kinds = effectiveKinds(options, target);
+        const bool hull = std::ranges::find(kinds, kind::monotone_hull_probability) != kinds.end();
+        REQUIRE(found->second.literal_mode == (hull ? entry.literal_mode : std::string{}));
         REQUIRE(found->second.max_initiators_per_cutset == entry.max_initiators_per_cutset);
     }
     REQUIRE(read.options.model_name == options.model_name);
@@ -873,7 +876,7 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
 TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][read][negative]") {
     auto options = threeTargetNames();
     options.model_name = "demo";
-    options.target_kinds = {{pc::target_id(0), {kind::probability}}};
+    options.target_kinds = {{pc::target_id(0), {kind::monotone_hull_probability}}};
     options.quantification = {
         {pc::target_id(0), writer::target_quantification{.literal_mode = "omega_l", .max_initiators_per_cutset = 2}}};
     options.source_sha256 = std::array<std::byte, 32>{};

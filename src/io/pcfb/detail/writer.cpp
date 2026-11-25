@@ -529,7 +529,9 @@ class Emitter final {
         const auto negation =
             kind == query_kind::probability ? std::string_view{"boolean"} : std::string_view{"monotone_hull"};
         bool ok = setMetadata(prefix + "negation", builder_.set(prefix + "negation", negation));
-        if (ok && !entry.literal_mode.empty()) {
+        // How marked literals are read is a parameter of the hull query; a probability query on the same
+        // tensor does not carry it.
+        if (ok && kind == query_kind::monotone_hull_probability && !entry.literal_mode.empty()) {
             ok = setMetadata(prefix + "literal_mode",
                              builder_.set(prefix + "literal_mode", std::string_view{entry.literal_mode}));
         }

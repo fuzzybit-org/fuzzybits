@@ -212,9 +212,12 @@ TEST_CASE("pcfb writer: per-target quantification is recorded next to the querie
     CHECK(stringMeta(file.circuit, "compile.query.2.negation") == "monotone_hull");
     for (const auto index : {0, 1}) {
         const auto prefix = "compile.query." + std::to_string(index) + ".";
-        CHECK(stringMeta(file.circuit, prefix + "literal_mode") == "atom_split");
         CHECK(intMeta(file.circuit, prefix + "max_initiators_per_cutset") == 1);
     }
+    // The literal mode is a parameter of the hull query: the probability query on the same tensor does
+    // not carry it.
+    CHECK_FALSE(meta(file.circuit, "compile.query.0.literal_mode"));
+    CHECK(stringMeta(file.circuit, "compile.query.1.literal_mode") == "atom_split");
     CHECK(stringMeta(file.circuit, "compile.query.2.literal_mode") == "omega_l");
     CHECK_FALSE(meta(file.circuit, "compile.query.2.max_initiators_per_cutset"));
     // A target without an entry records nothing.

@@ -900,9 +900,9 @@ int cmd_compile(int argc, char **argv) {
         "negation", po::value<std::string>(),
         "FTP: query type of every target: boolean (the probability, default), hull or both")(
         "max-initiators-per-cutset", po::value<std::string>(),
-        "FTP, with --initiator-values probability: at most N initiating events per cut set, or none (default: the "
-        "model's ftp.max_initiators_per_cutset)")("literals", po::value<std::string>(),
-                                                  "FTP hull targets: atom_split|omega_l|negation (default atom_split)")(
+        "FTP hull queries, with --initiator-values probability: delete the cut sets with more than N initiating "
+        "events, or none (default: none)")("literals", po::value<std::string>(),
+                                           "FTP hull targets: atom_split|omega_l|negation (default atom_split)")(
         "initiator-values", po::value<std::string>(),
         "FTP: I values are frequency (default: one conditioned query per initiating event, summed as the target's "
         "frequency) or probability (values up to 1)")(

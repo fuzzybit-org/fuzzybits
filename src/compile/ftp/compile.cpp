@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -42,7 +41,6 @@ namespace pcfb_frequency = io::pcfb_frequency;
 using clock = std::chrono::steady_clock;
 
 constexpr std::string_view source_format = "cafta-ftp";
-constexpr std::string_view max_initiators_attribute = "ftp.max_initiators_per_cutset";
 constexpr std::string_view limit_attribute = "ftp.limit";
 
 [[nodiscard]] auto seconds_since(const clock::time_point start) -> double {
@@ -611,33 +609,13 @@ struct lowered_stage final {
         merged.initiator_unit = std::string(pcfb_frequency::default_unit);
     }
 
-    bool initiators_from_attribute = false;
+    // The initiator rule is a cut-set rule of hull queries, requested explicitly; no default (#262). With
+    // frequencies, conditioning on one initiating event at a time already does what it approximates.
     if (frequencies) {
-        // The attribute records the cut-set convention of at most one initiator, which the
-        // conditioning already implies.
     } else if (settings.max_initiators_per_cutset) {
         merged.max_initiators = *settings.max_initiators_per_cutset;
     } else if (document.max_initiators) {
         merged.max_initiators = *document.max_initiators;
-    } else if (const auto attribute = attribute_value(*model, max_initiators_attribute)) {
-        std::uint32_t count = 0;
-        const auto *end = attribute->data() + attribute->size();
-        if (const auto [pointer, status] = std::from_chars(attribute->data(), end, count);
-            status == std::errc{} && pointer == end) {
-            merged.max_initiators = count;
-            initiators_from_attribute = true;
-        } else if (*attribute != "none") {
-            diagnostics.push(api::make_warning("compile.ftp.unknown-attribute",
-                                               "model attribute ftp.max_initiators_per_cutset has the unknown value " +
-                                                   in_quotes(*attribute) + "; applying no initiator rule"));
-        }
-    }
-    if (initiators_from_attribute) {
-        diagnostics.push(
-            api::make_note("compile.ftp.default-initiator-rule",
-                           "at most " + std::to_string(*merged.max_initiators) +
-                               " initiating event(s) per cut set: the model records "
-                               "ftp.max_initiators_per_cutset (--max-initiators-per-cutset none disables the rule)"));
     }
 
     lowering_ns::quantification_config config;
@@ -692,6 +670,18 @@ struct lowered_stage final {
     }
     for (auto const &spec : watch) {
         add(config.watch_targets, spec);
+    }
+    if (merged.max_initiators) {
+        // Under the probability query the rule would remove every assignment with more than N
+        // initiating events, which changes the target: it is a rule of hull queries only.
+        const auto hull = [](lowering_ns::target_request const &request) { return request.negation.monotone_hull; };
+        const bool any_hull =
+            (config.targets.empty() ? merged.negation.monotone_hull : std::ranges::any_of(config.targets, hull)) ||
+            std::ranges::any_of(config.watch_targets, hull);
+        if (!any_hull) {
+            diagnostics.push(option_error("max-initiators-per-cutset applies to hull queries only, and no target "
+                                          "requests one (--negation hull or both)"));
+        }
     }
 
     merged.overrides = document.overrides;
@@ -762,7 +752,11 @@ struct lowered_stage final {
         summary.boolean = binding.negation.boolean;
         summary.monotone_hull = binding.negation.monotone_hull;
         summary.literals = std::string(literals_name(binding.literals));
-        summary.max_initiators_per_cutset = stage.settings.max_initiators;
+        // Only where the lowering put the delete term into this target (a hull query whose cone holds more
+        // initiating events than the rule allows).
+        if (binding.initiator_delete_term.valid()) {
+            summary.max_initiators_per_cutset = stage.settings.max_initiators;
+        }
         summary.initiating_events = stage.lowering.projection.initiators(binding).size();
         summary.literal_events = stage.lowering.projection.literal_events(binding).size();
         if (binding.condition.valid()) {

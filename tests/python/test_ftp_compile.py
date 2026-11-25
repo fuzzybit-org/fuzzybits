@@ -65,6 +65,12 @@ def test_conformance_fixtures_match_expected_boolean_values(fixture: Path):
             "overrides": variant.get("overrides"),
             "max_initiators_per_cutset": variant.get("max_initiators_per_cutset"),
         }
+        if variant.get("max_initiators_per_cutset") is not None:
+            # The variant's `boolean` values apply the initiator rule to the probability query, which is
+            # refused: the rule belongs to hull queries (#262).
+            with pytest.raises(RuntimeError, match="invalid-option"):
+                fuzzybits.compile(files, **options)
+            continue
         for target, values in variant["results"].items():
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -151,15 +157,19 @@ def test_targets_watch_overrides_and_levels(tmp_path: Path):
 
 
 @pytest.mark.filterwarnings("ignore:compile.pra_to_pc.unused-override")
-def test_defaults_come_from_the_model_attributes_and_flags_override_the_config():
+def test_the_initiator_rule_is_requested_for_hull_queries_and_flags_override_the_config():
     model = CONFORMANCE / "initiator_rule" / "model.ftp"
-    # ftp.max_initiators_per_cutset = 1 is the default rule: TOP is 0.288, not 0.45.
-    by_attribute = fuzzybits.compile([model], negation="boolean", initiator_values="probability")
-    assert _close(fuzzybits.exact(by_attribute), 0.28800000000000003)
-    without = fuzzybits.compile(
-        [model], negation="boolean", initiator_values="probability", max_initiators_per_cutset="none"
+    # No rule is read from the model: the probability query of TOP is P(TOP).
+    default = fuzzybits.compile([model], negation="boolean", initiator_values="probability")
+    assert _close(fuzzybits.exact(default), 0.45000000000000007)
+    assert "compile.query.0.max_initiators_per_cutset" not in fuzzybits.inspect(default)["metadata"]
+    # A rule on probability queries would change them: refused.
+    with pytest.raises(RuntimeError, match="hull queries only"):
+        fuzzybits.compile([model], negation="boolean", initiator_values="probability", max_initiators_per_cutset=1)
+    hull = fuzzybits.compile(
+        [model], negation="hull", literals="negation", initiator_values="probability", max_initiators_per_cutset=1
     )
-    assert _close(fuzzybits.exact(without), 0.45000000000000007)
+    assert fuzzybits.inspect(hull)["metadata"]["compile.query.0.max_initiators_per_cutset"] in (1, "1")
 
     config = {
         "negation": "boolean",
@@ -176,12 +186,16 @@ def test_defaults_come_from_the_model_attributes_and_flags_override_the_config()
         [model],
         config=json.dumps(config),
         target="SEQ-4",
+        negation="hull",
+        literals="negation",
         max_initiators_per_cutset=1,
         overrides={"OPER": True},
         pdag_c=0,
     )
-    assert fuzzybits.inspect(flagged)["query_names"] == ["SEQ-4"]
-    assert fuzzybits.exact(flagged) == 0.0
+    summary = fuzzybits.inspect(flagged)
+    assert summary["query_names"] == ["SEQ-4"]
+    # The flag's rule, not the document's None: SEQ-4 holds two initiating events.
+    assert summary["metadata"]["compile.query.0.max_initiators_per_cutset"] in (1, "1")
 
 
 def test_config_from_a_file(tmp_path: Path):

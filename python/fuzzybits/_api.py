@@ -581,10 +581,10 @@ def compile(  # noqa: A001 - public API name
         refuses them. A hull target with marked literals is refused unless
         ``literals="negation"``.
     max_initiators_per_cutset:
-        FTP: at most this many initiating events per cut set; ``None`` or
-        ``"none"`` for no rule. Default: the model's
-        ``ftp.max_initiators_per_cutset`` attribute. Only with
-        ``initiator_values="probability"``.
+        FTP hull queries: delete the cut sets with more than this many
+        initiating events; ``None`` or ``"none"`` (the default) for no rule.
+        Only with ``initiator_values="probability"`` and a hull query;
+        probability queries never get the rule.
     literals:
         FTP hull targets: ``"atom_split"`` (default), ``"omega_l"`` or ``"negation"``.
     initiator_values:

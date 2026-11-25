@@ -41,7 +41,6 @@ struct conventions_summary final {
     std::optional<std::string> limit;
     // The value of the `MAXSIZE` line as read.
     std::optional<std::string> maxsize;
-    std::optional<std::string> max_initiators_per_cutset;
     std::vector<std::string> header_lines;
 };
 
