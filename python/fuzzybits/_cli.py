@@ -38,6 +38,7 @@ INSPECT_JSON_KEYS = (
     "opcodes",
     "sample_source",
     "query_names",
+    "query_kinds",
     "metadata",
 )
 
@@ -516,6 +517,9 @@ def _inspect_text(summary: Mapping[str, Any], out: TextIO) -> None:
         out.write("query_names\n")
         for name in names:
             out.write(f"  {name}\n")
+        out.write("query_kinds\n")
+        for kind in summary.get("query_kinds") or []:
+            out.write(f"  {kind}\n")
     metadata = summary.get("metadata") or {}
     if metadata:
         out.write("metadata\n")
