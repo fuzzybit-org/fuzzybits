@@ -255,7 +255,6 @@ TEST_CASE("inspect: structure counts literal operands, complemented gates, house
     REQUIRE(atom.structure->house_events == 0);
     REQUIRE(atom.structure->limit == 1e-9);
     REQUIRE(atom.conventions.limit == "1.0E-09");
-    REQUIRE(atom.conventions.max_initiators_per_cutset == "1");
     REQUIRE(atom.conventions.header_lines == std::vector<std::string>{"**CHAR32", "**DBNAME: sample"});
 
     options.complement_events = "negation";

@@ -117,13 +117,11 @@ TEST_CASE("FTP project reader descriptor produces ir.pra.model", "[io][ftp][proj
     REQUIRE(descriptor.endpoint == ftp::project_reader_endpoint_id());
     REQUIRE(descriptor.input_format == fuzzybits::io::formats::ftp());
     REQUIRE(descriptor.produces.contains(fuzzybits::api::capability_id("ir.pra.model")));
-    REQUIRE(descriptor.options.entries.size() == 3);
+    REQUIRE(descriptor.options.entries.size() == 2);
     REQUIRE(descriptor.options.entries[0].key == ftp::duplicate_import_option());
     REQUIRE(std::get<std::string>(descriptor.options.entries[0].default_value) == "last");
     REQUIRE(descriptor.options.entries[1].key == ftp::complement_events_option());
     REQUIRE(std::get<std::string>(descriptor.options.entries[1].default_value) == "atom");
-    REQUIRE(descriptor.options.entries[2].key == ftp::max_initiators_option());
-    REQUIRE(std::get<std::string>(descriptor.options.entries[2].default_value) == "1");
 }
 
 TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[io][ftp][project]") {
@@ -167,10 +165,10 @@ TEST_CASE("FTP project reader builds gates, events, targets and attributes", "[i
     REQUIRE(attribute(model, model.project_attributes(), "ftp.limit") == std::vector<std::string>{"1.0E-09"});
     REQUIRE(attribute(model, model.project_attributes(), "ftp.header") ==
             std::vector<std::string>{"**CHAR32", "**DBNAME: unit", "**FTITLE: simple", "*XEQ"});
-    // How complements are read is the query type, chosen by the compile request: never a model attribute.
+    // Quantification choices (the query kind, the initiator rule) belong to the compile request: never
+    // model attributes.
     REQUIRE(attribute(model, model.project_attributes(), "ftp.negation").empty());
-    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset") ==
-            std::vector<std::string>{"1"});
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset").empty());
 }
 
 TEST_CASE("FTP -EVENT operands are marked literal, -GATE operands are not", "[io][ftp][project]") {
@@ -227,30 +225,18 @@ IMPORT
     }
 }
 
-TEST_CASE("FTP conventions are recorded as model attributes", "[io][ftp][project]") {
-    const auto initiators = [](fuzzybits::api::option_set const &options) {
-        const auto read = readText(kSimple, options);
-        auto const &model = requireModel(read);
-        REQUIRE(attribute(model, model.project_attributes(), "ftp.negation").empty());
-        return attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset");
-    };
-    fuzzybits::api::option_set options;
-    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
-    options.set(ftp::max_initiators_option(), std::string("1"));
-    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
-    options.set(ftp::max_initiators_option(), std::int64_t{1});
-    REQUIRE(initiators(options) == std::vector<std::string>{"1"});
-    options.set(ftp::max_initiators_option(), std::string("none"));
-    REQUIRE(initiators(options).empty());
+TEST_CASE("FTP project reader records no quantification choice as a model attribute", "[io][ftp][project]") {
+    const auto read = readText(kSimple);
+    auto const &model = requireModel(read);
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.negation").empty());
+    REQUIRE(attribute(model, model.project_attributes(), "ftp.max_initiators_per_cutset").empty());
 
-    for (auto const &value :
-         {fuzzybits::api::option_value{std::string("2")}, fuzzybits::api::option_value{std::int64_t{2}}}) {
-        options.set(ftp::max_initiators_option(), value);
-        const auto read = readText(kSimple, options);
-        REQUIRE_FALSE(read);
-        REQUIRE(count(read.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-option",
-                      "io.ftp.max_initiators_per_cutset") == 1);
-    }
+    // The reader option that recorded the initiator rule is gone: the key is not an option of the reader.
+    fuzzybits::api::option_set options;
+    options.set(fuzzybits::api::option_key("io.ftp.max_initiators_per_cutset"), std::string("1"));
+    const auto read_with_option = readText(kSimple, options);
+    auto const &with_option = requireModel(read_with_option);
+    REQUIRE(attribute(with_option, with_option.project_attributes(), "ftp.max_initiators_per_cutset").empty());
 }
 
 TEST_CASE("FTP project reader reads several files as one model", "[io][ftp][project]") {

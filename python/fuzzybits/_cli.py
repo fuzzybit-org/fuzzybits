@@ -297,8 +297,8 @@ def cmd_compile(argv: Sequence[str]) -> int:
     )
     parser.add_argument(
         "--max-initiators-per-cutset",
-        help="FTP, with --initiator-values probability: at most N initiating events per cut set, or none "
-        "(default: the model's ftp.max_initiators_per_cutset)",
+        help="FTP hull queries, with --initiator-values probability: delete the cut sets with more than N "
+        "initiating events, or none (default: none)",
     )
     parser.add_argument("--literals", help="FTP hull targets: atom_split|omega_l|negation (default atom_split)")
     parser.add_argument(

@@ -153,10 +153,8 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                 INFO("policy " << policy);
                 std::filesystem::remove(pcfb);
                 const auto base = "compile" + inputs +
-                                  " --negation boolean --initiator-values probability --max-initiators-per-cutset none "
-                                  "--duplicate-import " +
-                                  policy + " --no-progress -o " + quoted(pcfb.string()) + " --report " +
-                                  quoted(report.string());
+                                  " --negation boolean --initiator-values probability --duplicate-import " + policy +
+                                  " --no-progress -o " + quoted(pcfb.string()) + " --report " + quoted(report.string());
 
                 if (outcome.find("results")->is(json::value::kind_type::null)) {
                     const auto failed = run_fzb(base, scratch);
@@ -197,10 +195,22 @@ TEST_CASE("fzb compile --negation boolean reproduces the conformance values unde
                                                              std::to_string(overrides->items[index].integer));
                         }
                     }
-                    flags += " --max-initiators-per-cutset ";
-                    flags += variant.find("max_initiators_per_cutset") != nullptr
-                                 ? std::to_string(variant.find("max_initiators_per_cutset")->integer)
-                                 : "none";
+                    if (auto const *rule = variant.find("max_initiators_per_cutset")) {
+                        // The variant's `boolean` values are P(target and at most N initiating events): the
+                        // initiator rule applied to the probability query, which fzb refuses (#262). The rule is
+                        // a rule of hull queries.
+                        const auto refused =
+                            run_fzb("compile" + inputs +
+                                        " --negation boolean --initiator-values probability "
+                                        "--max-initiators-per-cutset " +
+                                        std::to_string(rule->integer) + " --no-progress -o " + quoted(pcfb.string()),
+                                    scratch);
+                        INFO(refused.err);
+                        REQUIRE(refused.status != 0);
+                        REQUIRE(refused.err.find("compile.ftp.invalid-option") != std::string::npos);
+                        ++rejected;
+                        continue;
+                    }
                     auto const &results = variant.find("results");
                     for (std::size_t index = 0; index < results->items.size(); ++index) {
                         const auto &target = results->keys[index];
@@ -360,15 +370,14 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
         REQUIRE(document.find("source")->find("files")->items.size() == 1);
     }
 
-    // Flags override the file: another target, the initiator rule on, the override flipped.
+    // Flags override the file: another target, hull queries with the initiator rule, the override flipped.
     ran = run_fzb("compile " + model + " --config " + quoted(config.string()) +
-                      " --target SEQ-4 --target TOP --max-initiators-per-cutset 1 --override OPER=1 "
-                      "--no-progress -c 0 -o " +
+                      " --target SEQ-4 --target TOP --negation hull --literals negation --max-initiators-per-cutset 1 "
+                      "--override OPER=1 --no-progress -c 0 -o " +
                       quoted(pcfb.string()) + " --report " + quoted(report.string()),
                   scratch);
     INFO(ran.err);
     REQUIRE(ran.status == 0);
-    require_close(exact_of(pcfb, scratch), 0.0);
     {
         const auto document = parse_file(report);
         REQUIRE(document.find("options")->find("max_initiators_per_cutset")->integer == 1);
@@ -393,6 +402,10 @@ TEST_CASE("fzb compile options, config precedence, report and metadata", "[compi
     REQUIRE(names.size() == 2);
     REQUIRE(names[0].string == "SEQ-4");
     REQUIRE(names[1].string == "TOP");
+    // Both cones hold two or more initiating events, so both hull queries carry the rule (`fzb inspect --json`
+    // prints metadata values as text).
+    REQUIRE(metadata->find("compile.query.0.max_initiators_per_cutset")->string == "1");
+    REQUIRE(metadata->find("compile.query.1.max_initiators_per_cutset")->string == "1");
 
     // The text summary prints the counts.
     ran = run_fzb("compile " + model + " --negation boolean --initiator-values probability --no-progress -o " +

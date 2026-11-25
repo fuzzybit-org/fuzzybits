@@ -212,7 +212,7 @@ builder was removed with #182); `fzb compile` drives it ([`ftp-input.md`](ftp-in
 | `PROCESS names` (continued on following name-only lines) | primary `gate` / `basic_event` domain targets | core |
 | no `PROCESS` | the root gates as primary targets | `io.ftp.missing-process` (warning) |
 | `LIMIT x` | project attribute `ftp.limit` | extension |
-| source conventions | project attribute `ftp.max_initiators_per_cutset = 1` (`io.ftp.max_initiators_per_cutset = 1`, default; `none` omits it); inert in `ir::pra` and the lowering; the compile driver (#182) maps it to a quantification default. How complements are read is the query type, chosen by the compile request and never recorded (#244) | extension |
+| source conventions | none recorded. The query type (#244) and the initiator rule of hull queries (#262) are chosen by the compile request; the reader records no quantification choice | extension |
 | `**CHAR32`, `**FTITLE:`, `**DBNAME:`, `*XEQ` and other `*` lines | project attributes `ftp.header` (whole line, in order) | extension |
 
 Implementation gate:

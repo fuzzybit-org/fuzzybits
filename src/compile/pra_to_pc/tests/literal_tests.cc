@@ -282,6 +282,12 @@ TEST_CASE("pra_to_pc warns about complemented initiators under the initiator rul
     CHECK(count(lower_ok(model, config), complemented_initiator) == 0);
 
     config.max_initiators_per_cutset = 1;
+    // Probability queries get no rule, so there is nothing to warn about.
+    CHECK(count(lower_ok(model, config), complemented_initiator) == 0);
+
+    const auto hull = pra::negation_set::of(pra::negation_semantics::monotone_hull);
+    config.targets = {{.name = "T", .negation = hull, .literals = pra::literal_mode::negation},
+                      {.name = "U", .negation = hull, .literals = pra::literal_mode::negation}};
     const auto diagnostics = lower_ok(model, config);
     REQUIRE(count(diagnostics, complemented_initiator) == 1);
     for (auto const &item : diagnostics.items()) {

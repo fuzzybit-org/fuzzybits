@@ -527,8 +527,8 @@ class lowering final {
                 } else if (request.negation.monotone_hull && event_below_stamp[event.raw()] == stamp) {
                     divergent.push_back(event);
                 }
-                if (config_.max_initiators_per_cutset && is_initiator_[event.raw()] != 0 &&
-                    warned_initiator[event.raw()] == 0) {
+                if (request.negation.monotone_hull && config_.max_initiators_per_cutset &&
+                    is_initiator_[event.raw()] != 0 && warned_initiator[event.raw()] == 0) {
                     warned_initiator[event.raw()] = 1;
                     if (initiator_warnings++ < listed_warning_limit) {
                         diagnostics_.push(api::make_warning("compile.pra_to_pc.complemented-initiator",
@@ -570,8 +570,11 @@ class lowering final {
                 .count = static_cast<std::uint32_t>(column.size() - begin)};
     }
 
+    // The initiator rule is a cut-set rule: it is lowered for monotone-hull queries only. Under the
+    // probability query it would remove every assignment with more than k initiating events, which
+    // changes the target (docs/rfc/monotone-hull-queries.md 4.8).
     [[nodiscard]] auto delete_term_size(const std::size_t target) const -> std::uint32_t {
-        if (!config_.max_initiators_per_cutset) {
+        if (!config_.max_initiators_per_cutset || !targets_[target].negation.monotone_hull) {
             return 0;
         }
         const auto count = initiator_ranges_[target].count;
@@ -928,6 +931,26 @@ class lowering final {
                 }
                 continue;
             }
+            const auto size = delete_term_size(index);
+            if (size != 0 && request.negation.boolean) {
+                // The probability query reads the subject itself; only the hull query gets the rule, so
+                // the two queries of this target lie on different nodes.
+                const auto target = pc::target_id(next_target++);
+                pra::target_binding binding{
+                    .domain_target = request.domain_target,
+                    .subject = request.subject,
+                    .pc_target = target,
+                    .role = request.role,
+                    .root = nodes_[request.subject],
+                    .negation = pra::negation_set::of(pra::negation_semantics::boolean),
+                    .literals = request.literals,
+                    .initiators = initiator_ranges_[index],
+                    .literal_events = literal_ranges_[index],
+                };
+                binding.node = binding.root;
+                (void)builder_.add_target(binding.node, binding.role);
+                targets.push_back(binding);
+            }
             const auto target = pc::target_id(next_target++);
             pra::target_binding binding{
                 .domain_target = request.domain_target,
@@ -935,13 +958,14 @@ class lowering final {
                 .pc_target = target,
                 .role = request.role,
                 .root = nodes_[request.subject],
-                .negation = request.negation,
+                .negation =
+                    size != 0 ? pra::negation_set::of(pra::negation_semantics::monotone_hull) : request.negation,
                 .literals = request.literals,
                 .initiators = initiator_ranges_[index],
                 .literal_events = literal_ranges_[index],
             };
             binding.node = binding.root;
-            if (const auto size = delete_term_size(index); size != 0) {
+            if (size != 0) {
                 edges.clear();
                 auto const &range = initiator_ranges_[index];
                 for (std::uint32_t offset = 0; offset < range.count; ++offset) {

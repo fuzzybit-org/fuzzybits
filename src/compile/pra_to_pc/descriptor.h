@@ -72,10 +72,13 @@ struct quantification_config final {
     // Added after `targets`, with pc::observable_role::watch.
     std::vector<target_request> watch_targets;
     std::vector<override_request> overrides;
-    // Unset: no rule. k: every target is ANDed with
-    // not atleast(k + 1; initiating events in its cone), which deletes the
-    // assignments (and, under the monotone hull, exactly the cut sets) with
-    // more than k initiating events.
+    // Unset: no rule. k: every monotone-hull query is ANDed with
+    // not atleast(k + 1; initiating events in its cone), which deletes
+    // exactly the cut sets with more than k initiating events
+    // (docs/rfc/monotone-hull-queries.md 4.8). Probability queries never get
+    // the rule: it would remove assignments and change the target. A target
+    // with both kinds gets two PC targets, the probability query on its
+    // subject and the hull query on the conjunction.
     std::optional<std::uint32_t> max_initiators_per_cutset;
     initiator_values initiators = initiator_values::probability;
     // The unit of every initiating-event frequency, e.g. "per-year". Required under
@@ -96,7 +99,8 @@ struct transform_report final {
     std::uint32_t version = 1;
     // Every PC target computes, on every assignment of the basic events, the
     // Boolean function its domain target has under the config: the subject
-    // with overrides applied, ANDed with the initiator delete term if any.
+    // with overrides applied, ANDed with the initiator delete term for a
+    // monotone-hull query under the initiator rule.
     semantic_class semantics = semantic_class::function_preserving;
 
     // The union of the targets' cones in the PRA model.
@@ -145,7 +149,8 @@ using lowering_result = api::result<pra_pc_lowering>;
 // `.pcfb` writer options naming every query by its domain target (or element), choosing its kind
 // from the target's negation semantics (boolean: probability, monotone_hull: monotone-hull
 // probability; a target with both gets both queries on one tensor) and recording the negation
-// semantics, literal mode and initiator rule of each target. Fails with
+// semantics of each query, the literal mode of each hull query, and the initiator rule of each
+// target whose node holds its delete term. Fails with
 // compile.pra_to_pc.hull-literals-unsupported for an atom_split or omega_l monotone-hull target whose
 // cone has marked literal events: pcfb 1.2 has no per-query literal atoms yet
 // (docs/rfc/monotone-hull-queries.md 7.3). In negation mode marked operands are ordinary

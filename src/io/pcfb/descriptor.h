@@ -38,7 +38,9 @@ enum class query_kind : std::uint8_t {
 // (compile.query.<i>.*, i the position in the file's query list) so that fzb inspect and the
 // runtime can show it. The negation semantics of a query is its kind; this adds the rest.
 struct target_quantification final {
-    // ir::pra::literal_mode as text (atom_split, omega_l, negation); empty: not recorded.
+    // ir::pra::literal_mode as text (atom_split, omega_l, negation); empty: not recorded. Written
+    // on the target's monotone-hull query only; a probability query on the same tensor never
+    // carries it.
     std::string literal_mode;
     // The initiator rule already lowered into the target's logic; unset: no rule.
     std::optional<std::uint32_t> max_initiators_per_cutset;
