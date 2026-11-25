@@ -39,11 +39,20 @@ fzb = "fuzzybits._cli:main"
 # documents the intent; the extra is a no-op until native packages split (#32).
 cuda-sm70 = []
 test = ["pytest>=7", "numpy>=1.26", "pyte>=0.8", "wcwidth>=0.2"]
+# `fzb serve`. Same version as this package: scripts/release.sh and
+# scripts/ci/release-version.sh move and check the pin with `version`.
+server = ["fuzzybits-server==0.18.7"]
 
 [project.urls]
 Homepage = "https://github.com/fuzzybit-org/fuzzybits"
 Issues = "https://github.com/fuzzybit-org/fuzzybits/issues"
 Documentation = "https://github.com/fuzzybit-org/fuzzybits/blob/develop/docs/python.md"
+
+# fuzzybits-server depends on fuzzybits==<version>, so the two form a cycle that
+# pip and uv resolve. Resolve the server from this checkout, as tools/server
+# resolves fuzzybits from here, so `uv lock` never needs an unpublished version.
+[tool.uv.sources]
+fuzzybits-server = { path = "tools/server" }
 
 [tool.scikit-build]
 minimum-version = "0.10"

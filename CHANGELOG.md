@@ -50,6 +50,12 @@
 
 ### Changes
 
+- `fzb serve` starts `fuzzybits-server` from the Python `fzb` (#203). Install both with
+  `pip install 'fuzzybits[server]'`, a new extra pinned to the same version, then run, for example,
+  `fzb serve --data-dir ./models --open`. Its arguments go unchanged to the server's parser, so it
+  takes the `fuzzybits-server` flags (`fzb serve --help`). Without the server it exits 1 with the
+  install command, and it warns if the two versions differ. The native `fzb` lists `serve` as
+  Python-only and refuses it. `fuzzybits_server.app.main` takes `argv` and `prog`.
 - On Windows, a fuzzybits run (the `fzb` CLI, or Python) no longer terminates with `0xC0000409`
   when another fuzzybits process started from the same directory has loaded the same OpenMP kernel.
   AdaptiveCpp is patched to give each process its own kernel library file.

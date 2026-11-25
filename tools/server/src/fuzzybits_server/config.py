@@ -200,9 +200,9 @@ def options_from_env() -> dict[str, Any]:
     return options
 
 
-def parse_server_cli(argv: list[str] | None = None) -> argparse.Namespace:
+def parse_server_cli(argv: list[str] | None = None, *, prog: str | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog="fuzzybits-server",
+        prog=prog or "fuzzybits-server",
         description="Serve the fuzzybits API and playground UI on one port.",
     )
     parser.add_argument("--host", default="127.0.0.1", help="bind address (default: 127.0.0.1)")
@@ -231,9 +231,9 @@ def parse_server_cli(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def apply_server_cli(argv: list[str] | None = None) -> argparse.Namespace:
+def apply_server_cli(argv: list[str] | None = None, *, prog: str | None = None) -> argparse.Namespace:
     """Parse CLI flags and apply them to the process environment."""
-    args = parse_server_cli(argv)
+    args = parse_server_cli(argv, prog=prog)
     os.environ["HOST"] = args.host
     os.environ["PORT"] = str(args.port)
     if args.data_dir:

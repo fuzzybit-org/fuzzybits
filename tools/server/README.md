@@ -26,6 +26,13 @@ CLI defaults to `127.0.0.1:8000`. Flags: `--host`, `--port`, `--data-dir`,
 `--cache-dir` (platformdirs), `--backend auto|cuda|hip|omp|metal`,
 `--engine pcfb|legacy`, `--no-ui`, `--open`.
 
+`fzb serve` (the `fzb` of the `fuzzybits` wheel) starts the same server with
+the same flags: it passes its arguments unchanged to
+`fuzzybits_server.app.main(argv, prog="fzb serve")`, so the parser in
+`fuzzybits_server.config` is the only one. Without this package it exits 1 and
+names the install command, and it warns when the installed `fuzzybits-server`
+version differs from `fuzzybits`. The native `fzb` has no `serve`.
+
 Compile / sampling endpoints need the native module. The published
 `fuzzybits-server` wheel depends on `fuzzybits==0.18.7`. Until that engine
 wheel is on PyPI ([#36](https://github.com/fuzzybit-org/fuzzybits/issues/36)),
@@ -45,9 +52,16 @@ aborting the interpreter.
 ### PyPI wheel
 
 ```bash
-pip install fuzzybits-server
-fuzzybits-server --data-dir ./models
+pip install 'fuzzybits[server]'     # fuzzybits + fuzzybits-server of the same version
+fzb serve --data-dir ./models       # or: fuzzybits-server --data-dir ./models
 ```
+
+The `server` extra of `fuzzybits` pins `fuzzybits-server==<version>`, and
+`fuzzybits-server` pins `fuzzybits==<version>`; pip and uv resolve the cycle.
+`scripts/release.sh` moves both pins with the version, and
+`scripts/ci/release-version.sh check` fails if either disagrees. For `uv lock`,
+the root `pyproject.toml` resolves `fuzzybits-server` from `tools/server`, as
+this project resolves `fuzzybits` from the root.
 
 The wheel is `py3-none-any` and bundles the CSR playground. Build contract
 (from a clean checkout, after the UI is built):

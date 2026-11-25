@@ -123,3 +123,30 @@ def test_supervisor_and_broker_use_spawn() -> None:
     broker = NativeCompileBroker()
     assert broker._ctx.get_start_method() == "spawn"
     assert mp.get_context("spawn").get_start_method() == "spawn"
+
+
+def test_cli_prog_names_the_entry_point(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        parse_server_cli(["--help"], prog="fzb serve")
+    assert exc.value.code == 0
+    assert capsys.readouterr().out.startswith("usage: fzb serve ")
+    with pytest.raises(SystemExit):
+        parse_server_cli(["--help"])
+    assert capsys.readouterr().out.startswith("usage: fuzzybits-server ")
+
+
+def test_main_takes_argv(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``fzb serve`` passes its arguments to ``main``; ``sys.argv`` is not read."""
+    import importlib
+
+    server_app = importlib.import_module("fuzzybits_server.app")
+
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(server_app.uvicorn, "run", lambda *args, **kwargs: calls.append(kwargs))
+    monkeypatch.setattr("sys.argv", ["fuzzybits-server", "--port", "1"])
+    monkeypatch.delenv(SERVER_UI_ENV, raising=False)
+    server_app.main(["--host", "127.0.0.2", "--port", "8765", "--no-ui"], prog="fzb serve")
+    assert len(calls) == 1
+    assert calls[0]["host"] == "127.0.0.2"
+    assert calls[0]["port"] == 8765
+    assert server_ui_enabled() is False

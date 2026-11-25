@@ -198,9 +198,19 @@ fzb compile a.ftp [b.ftp ...]|DIR [--target NAME|@FILE]... [--watch NAME|@FILE].
 fzb export --to nombrilo model.pcfb -o model.safetensors [--strict]
 fzb inspect model.pcfb [--validate] [--json] [--exact]
 fzb run model.pcfb --trials N [--seed S] [--backend auto|cuda|hip|omp|metal] [--json]
+fzb serve [--host H] [--port P] [--data-dir DIR] [--cache-dir DIR] [--backend B] [--engine E] [--no-ui] [--open]
 fzb --help
 fzb --version
 ```
+
+`fzb serve` exists only on the wheel. It needs `fuzzybits-server`
+(`pip install 'fuzzybits[server]'`), passes its arguments unchanged to that
+server's entry point, and so takes exactly the `fuzzybits-server` flags
+(`fzb serve --help`); usage errors exit 2, as `fuzzybits-server`'s do. Without
+the package it exits 1 with the install command; if the installed server's
+version differs from `fuzzybits`, it warns and starts anyway. The native `fzb`
+lists `serve` in its usage and refuses it with the same install hint. See
+[tools/server/README.md](../tools/server/README.md).
 
 `--json` keys match the native `fzb inspect --json` / `fzb run --json`
 payloads. `--seed` is rejected unless it is `372` (the scram-cli default),

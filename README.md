@@ -100,11 +100,15 @@ output. fzb --help lists all options.
 Web UI
 ------
 
-Put your .xml models in a folder and start the server:
+Put your .xml models in a folder, install the server and start it:
 
-    fuzzybits-server --data-dir ./models
+    pip install 'fuzzybits[server]'
+    fzb serve --data-dir ./models --open
 
-Then open http://localhost:8000, pick a model and start sampling.
+--open opens http://localhost:8000 in your browser; pick a model and
+start sampling. fzb serve takes the options of fuzzybits-server, which
+starts the same server (fzb serve --help lists them). Only the fzb of the
+Python package has serve; the native fzb in the Docker images does not.
 The Benchmarks tab (http://localhost:8000/benchmarks) plots published
 release-vs-develop history; see docs/benchmarks.md.
 
