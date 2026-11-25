@@ -84,6 +84,29 @@
 
 namespace scram::mc::queue {
 
+/// The connective whose kernel evaluates `gate`.
+///
+/// The kernels read a gate's Variable and Gate arguments only. The PDAG constant is held apart
+/// (`Gate::constant()`), so a gate that holds it is handled here:
+///
+/// - a constant gate (its only argument is the constant, as `Gate::MakeConstant` leaves it) is evaluated
+///   as an AND (TRUE) or OR (FALSE) over no inputs. The kernels start AND from all ones and OR from all
+///   zeros (`kernel::op::init_bitpack`), so the empty fold is the constant;
+/// - a gate that holds the constant beside other arguments is refused before sampling. Dropping the
+///   constant would silently change the gate's function (#259).
+inline core::Connective kernel_connective(const core::Gate &gate) {
+    if (!gate.constant()) {
+        return gate.type();
+    }
+    if (gate.args().size() != 1 || !gate.args<core::Gate>().empty() || !gate.args<core::Variable>().empty()) {
+        throw std::runtime_error("PDAG gate G" + std::to_string(gate.index()) +
+                                 " holds the Boolean constant beside other arguments; the Monte Carlo kernels "
+                                 "cannot evaluate it");
+    }
+    // The one argument is the constant's index, negative for FALSE.
+    return *gate.args().begin() > 0 ? core::kAnd : core::kOr;
+}
+
 inline range3_description describe_range3(const sycl::range<3> &range) {
     return {
         .x = range[0],

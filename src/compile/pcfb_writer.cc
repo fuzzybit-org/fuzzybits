@@ -577,12 +577,14 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
             const std::string gname = gate->mef_origin_ptr() ? std::string(gate->mef_origin_ptr()->id())
                                                              : ("g" + std::to_string(gate->index()));
 
-            // Constant-folded gate: a single constant argument. Emit ONES or NOT(ONES).
+            // Constant-folded gate: a single constant argument. Emit NO_OP(ONES) for TRUE and NOT(ONES) for
+            // FALSE. FALSE is the complemented constant, so its one argument is the ONES tensor in `inverted`;
+            // NOT reads that tensor uncomplemented (NOT over the inverted input would be TRUE, #259).
             if (gate->constant() && inputs.empty() && inverted.size() == 1 && true_tensor &&
                 inverted.front() == *true_tensor) {
                 auto t =
-                    b.add_op(pcfb::OpCode::BITWISE_NOT, std::span<const std::uint32_t>{},
-                             std::span<const std::uint32_t>{inverted.data(), inverted.size()}, std::nullopt, gname);
+                    b.add_op(pcfb::OpCode::BITWISE_NOT,
+                             std::span<const std::uint32_t>{inverted.data(), inverted.size()}, {}, std::nullopt, gname);
                 if (!t) {
                     return std::unexpected(t.error());
                 }

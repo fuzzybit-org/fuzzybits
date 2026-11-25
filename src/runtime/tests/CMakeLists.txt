@@ -1,7 +1,7 @@
 fuzzybits_ensure_catch2()
 fuzzybits_add_imported_test(
   TARGET fzb_runtime_tests
-  SOURCES runtime_tests.cc session_metal_tests.cc progress_log_tests.cc
+  SOURCES runtime_tests.cc session_metal_tests.cc progress_log_tests.cc pcfb_constant_tests.cc
   LINK_LIBRARIES fuzzybits_runtime fuzzybits_compile fuzzybits_progress_log
   ARGS "~[issue-171]"
 )

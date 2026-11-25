@@ -798,3 +798,60 @@ TEST_CASE("fzb run answers every query of a multi-target file", "[compile][ftp][
     }
     std::filesystem::remove_all(scratch);
 }
+
+TEST_CASE("fzb run agrees with fzb inspect --exact on constants from overrides and folding (#259)",
+          "[compile][ftp][cli][mc][constants]") {
+    // `--override NAME=1` at -c 0 writes a named ONES, which fzb run used to read as FALSE. At the default level a
+    // p = 1 event under an OR folds the whole target to ONES, which read as FALSE too.
+    const auto scratch = scratch_directory("constants");
+    const auto fixture = (fixtures_root() / "success_branch_delete_term" / "model.ftp").string();
+    const auto unit = scratch / "unit.ftp";
+    {
+        std::ofstream out(unit);
+        out << "**CHAR32\nTOP + A B\nENDTREE\nPROCESS TOP\nIMPORT\n  1.000000E+00 A\n  5.000000E-01 B\n"
+               "LIMIT 1.000000E-12\n*XEQ\n";
+        REQUIRE(out);
+    }
+    struct run_case final {
+        std::string input;
+        std::string target;
+        std::string options;
+    };
+    std::vector<run_case> cases;
+    for (const char *target : {"TOP", "SEQ-2", "SEQ-3"}) {
+        cases.push_back({fixture, target, "--override IE=1 -c 0"});
+        cases.push_back({fixture, target, "--initiator-values probability --override P1=1 -c 0"});
+    }
+    cases.push_back({unit.string(), "TOP", ""});
+
+    for (std::size_t index = 0; index < cases.size(); ++index) {
+        auto const &item = cases[index];
+        INFO(item.input << " --target " << item.target << " " << item.options);
+        const auto out = scratch / ("case" + std::to_string(index) + ".pcfb");
+        const auto compiled = run_fzb("compile " + quoted(item.input) + " --target " + item.target + " " +
+                                          item.options + " --no-progress -o " + quoted(out.string()),
+                                      scratch);
+        INFO(compiled.err);
+        REQUIRE(compiled.status == 0);
+        const auto exact = exact_of(out, scratch);
+
+        const auto ran = run_fzb("run " + quoted(out.string()) + " --trials 262144 --json --no-progress" +
+                                     fuzzybits::testing::backend_flag(),
+                                 scratch);
+        INFO(ran.err);
+        REQUIRE(ran.status == 0);
+        auto document = json::parse(ran.out);
+        REQUIRE(document);
+        auto const &query = document.value().find("queries")->items.at(0);
+        const auto n = static_cast<double>(query.find("n")->integer);
+        const auto hits = static_cast<double>(query.find("hits")->integer);
+        INFO("exact " << exact << ", hits " << hits << " of " << n);
+        REQUIRE(n >= 262144.0);
+        if (exact < 1.0e-12 || exact > 1.0 - 1.0e-12) {
+            CHECK(hits == (exact > 0.5 ? n : 0.0));
+        } else {
+            CHECK(std::abs(hits - n * exact) <= 4.0 * std::sqrt(n * exact * (1.0 - exact)) + 1.0);
+        }
+    }
+    std::filesystem::remove_all(scratch);
+}
