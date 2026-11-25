@@ -1,0 +1,85 @@
+AdaptiveCpp at ACPP_REF_WINDOWS: per-process OpenMP kernel libraries, non-throwing atomic_write (#108).
+
+On Windows every process in a working directory shares one kernel cache
+(current_path()/.acpp). The OpenMP backend wrote each kernel library to a path
+derived only from the kernel configuration, loaded it from there and removed it
+on destruction. A second process needing the same kernel renamed its copy onto a
+library the first had loaded; Windows refused, atomic_write's throwing
+fs::rename reached a noexcept frame on the worker thread, and the process
+terminated (0xC0000409, FAST_FAIL_FATAL_APP_EXIT).
+
+- omp_code_object.cpp: the library path carries the process id.
+- filesystem.cpp: atomic_write uses the error_code overload of fs::rename and
+  returns false on failure, removing its temporary file.
+
+Applied by .github/actions/windows-toolchain before AdaptiveCpp is built. Still
+present upstream on develop; drop this patch when ACPP_REF_WINDOWS includes a fix.
+
+diff --git a/src/common/filesystem.cpp b/src/common/filesystem.cpp
+index ed7dcd3..2cc3fdc 100644
+--- a/src/common/filesystem.cpp
++++ b/src/common/filesystem.cpp
+@@ -188,7 +188,16 @@ bool atomic_write(const std::string &filename, const std::string &data) {
+   ostr.write(data.data(), data.size());
+   ostr.close();
+ 
+-  fs::rename(tmp_path, p);
++  // Non-throwing: callers report failure through the return value. On Windows the
++  // rename fails while another process has the target open or mapped, and a throw
++  // from here can reach a noexcept frame on a runtime worker thread.
++  std::error_code ec;
++  fs::rename(tmp_path, p, ec);
++  if(ec) {
++    std::error_code ignored;
++    fs::remove(tmp_path, ignored);
++    return false;
++  }
+ 
+   return true;
+ }
+diff --git a/src/runtime/omp/omp_code_object.cpp b/src/runtime/omp/omp_code_object.cpp
+index 5748d0d..dffe0e8 100644
+--- a/src/runtime/omp/omp_code_object.cpp
++++ b/src/runtime/omp/omp_code_object.cpp
+@@ -14,6 +14,12 @@
+ #include <sstream>
+ #include <string>
+ 
++#ifdef _WIN32
++#include <process.h>
++#else
++#include <unistd.h>
++#endif
++
+ #include "hipSYCL/runtime/backend.hpp"
+ #include "hipSYCL/runtime/omp/omp_code_object.hpp"
+ 
+@@ -31,6 +37,18 @@ namespace rt {
+ 
+ namespace {
+ 
++// The kernel library is a per-process temporary file: it is loaded from this path and
++// removed when the executable object is destroyed. Processes sharing a kernel cache
++// directory must not share the path. On Windows a library that one process has loaded
++// can be neither replaced nor removed by another.
++std::string process_suffix() {
++#ifdef _WIN32
++  return std::to_string(_getpid());
++#else
++  return std::to_string(getpid());
++#endif
++}
++
+ result make_shared_library_from_blob(void *&module, const std::string &blob,
+                                      const std::string &cache_file) {
+   // Write binary image to temporary file
+@@ -67,7 +85,8 @@ omp_sscp_executable_object::omp_sscp_executable_object(
+     const std::vector<std::string> &kernel_names,
+     const kernel_configuration &config)
+     : _hcf{hcf_source}, _id{config.generate_id()}, _module{nullptr},
+-      _kernel_cache_path(kernel_cache::get_persistent_cache_file(_id) + "." + ACPP_SHARED_LIBRARY_EXTENSION) {
++      _kernel_cache_path(kernel_cache::get_persistent_cache_file(_id) + "." + process_suffix() + "." +
++                         ACPP_SHARED_LIBRARY_EXTENSION) {
+   _build_result = build(binary, kernel_names);
+ }
+ 

@@ -318,39 +318,34 @@ jobs:
         id: dumps
         if: failure() && env.FZB_CRASH_DUMPS != ''
         timeout-minutes: 20
+        # The environment run_pytest in scripts/ci/windows-smoke.py gives pytest, including the
+        # module-level ACPP_PERSISTENT_RUNTIME=1 and ACPP_DEBUG_LEVEL=2. fzb run under cdb without
+        # them, from RUNNER_TEMP and from the checkout, did not crash (#108).
         env:
           ACPP_VISIBILITY_MASK: omp
           FUZZYBITS_BACKEND: omp
+          ACPP_PERSISTENT_RUNTIME: "1"
+          ACPP_DEBUG_LEVEL: "2"
         shell: pwsh
         run: |
-          # The smoke's failing `fzb run` (test_cli.py), with the first smoke venv's console
-          # script. Its compile works, so the .pcfb comes from it too.
+          # The failing smoke test after test_api.py, from the checkout as the smoke runs it, with
+          # the first smoke venv: once as is, then under cdb -o, which follows pytest -> fzb.exe ->
+          # python.exe. Alone it passes, with and without cdb (#108). test_api.py is the only
+          # earlier module that runs kernels in the pytest process, whose persistent runtime keeps
+          # its JIT kernel DLLs loaded while the fzb child uses the same kernel cache.
           $venv = Get-ChildItem -Path $env:RUNNER_TEMP -Directory -Filter 'fb-smoke-cp*' |
             Sort-Object Name | Select-Object -First 1
           $run = @()
           if ($venv) {
-            $fzb = Join-Path $venv.FullName 'Scripts\fzb.exe'
-            $work = Join-Path $env:RUNNER_TEMP 'fzb-run-repro'
-            New-Item -ItemType Directory -Force -Path $work | Out-Null
-            $pcfb = Join-Path $work 'chinese.pcfb'
-            & $fzb compile (Join-Path $env:GITHUB_WORKSPACE 'input\Aralia\chinese.xml') -o $pcfb
-            if ($LASTEXITCODE -eq 0) {
-              $run = @($fzb, 'run', $pcfb, '--trials', '1e6', '--backend', 'omp', '--json')
-            } else {
-              Write-Host "::warning::fzb compile exited $LASTEXITCODE; not re-running fzb run under cdb"
-            }
-          }
-          # pytest runs fzb from the checkout, where AdaptiveCpp keeps its JIT kernel cache
-          # (.acpp\apps\global\jit-cache) from the smoke runs. A run in a fresh directory did not
-          # crash (#108), so run there, and list the cache it will load.
-          $cache = Join-Path $env:GITHUB_WORKSPACE '.acpp'
-          if (Test-Path $cache) {
-            Write-Host "===== AdaptiveCpp cache under $cache"
-            Get-ChildItem -Path $cache -Recurse -File |
-              Select-Object @{ n = 'File'; e = { $_.FullName.Substring($cache.Length + 1) } }, Length, LastWriteTime |
-              Format-Table -AutoSize | Out-String -Width 220 | Write-Host
+            $py = Join-Path $venv.FullName 'Scripts\python.exe'
+            $run = @($py, '-m', 'pytest', 'tests/python/test_api.py',
+              'tests/python/test_cli.py::test_fzb_compile_inspect_run_chinese',
+              '-q', '-o', 'pythonpath=', '-p', 'no:cacheprovider')
+            Write-Host "===== without a debugger: $($run -join ' ')"
+            & $run[0] $run[1..($run.Count - 1)] 2>&1 | Out-Host
+            Write-Host "===== pytest exited $LASTEXITCODE"
           } else {
-            Write-Host "===== no AdaptiveCpp cache under $cache"
+            Write-Host '::warning::no fb-smoke-cp* venv under RUNNER_TEMP; nothing to re-run'
           }
           # In this pwsh, not pwsh -File: -SearchRoot and -Run take arrays, which -File passes as strings.
           & ./scripts/ci/windows-crash-dumps.ps1 diagnose `

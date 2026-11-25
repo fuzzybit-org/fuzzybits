@@ -87,6 +87,9 @@
   takes the `fuzzybits-server` flags (`fzb serve --help`). Without the server it exits 1 with the
   install command, and it warns if the two versions differ. The native `fzb` lists `serve` as
   Python-only and refuses it. `fuzzybits_server.app.main` takes `argv` and `prog`.
+- On Windows, a fuzzybits run (the `fzb` CLI, or Python) no longer terminates with `0xC0000409`
+  when another fuzzybits process started from the same directory has loaded the same OpenMP kernel.
+  AdaptiveCpp is patched to give each process its own kernel library file.
 - `scram-cli` no longer crashes on exit on Windows (`0xC0000005` after a complete run). It
   shut libxml2 down before freeing its input schema validator.
 - The Python `fzb` writes UTF-8 to stdout and stderr. On Windows, `fzb --help` and `--json`

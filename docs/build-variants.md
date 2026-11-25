@@ -42,7 +42,7 @@ invoked directly.
 |---|---|---|---|---|---|
 | `generic` | `generic` | `malloc` | Release | ON | `OPTIMIZE_FOR_NATIVE=OFF` |
 | `windows-generic` | `generic` | `malloc` | Release | ON | Windows-only; clang targeting the MSVC ABI; same cache as `generic` |
-| `windows-generic-debuginfo` | `generic` | `malloc` | Release | ON | `windows-generic` plus CodeView debug info and PDBs (`CMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded`, `/DEBUG`); what `windows-omp` builds and tests |
+| `windows-generic-debuginfo` | `generic` | `malloc` | Release | ON | `windows-generic` plus CodeView line tables and PDBs (`-gline-tables-only -gcodeview`, `/DEBUG`); what `windows-omp` builds and tests |
 | `cuda-sm70` | `cuda:sm_70` | `malloc` | Release | ON | `ACPP_USE_ACCELERATED_CPU=off`, `ACPP_STDPAR=off`, `ACPP_EXTRA_COMPILE_OPTIONS=--cuda-include-ptx=sm_70`; Linux-only |
 | `cuda-sm86` | `cuda:sm_86` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_86` |
 | `cuda-sm120` | `cuda:sm_120` | `malloc` | Release | ON | same as `cuda-sm70` with `sm_120` |
@@ -337,12 +337,21 @@ required), and even with the hatch below, AdaptiveCpp's `std::filesystem` config
 FetchContent TUs. CI therefore picks the newest of toolset 14.51 or 14.4x (VS 2022, Clang 19+)
 that vswhere lists, and falls back to the default toolset plus the hatch only
 when neither is installed. The AdaptiveCpp+LLVM install cache is keyed on that
-toolset.
+toolset and on the local AdaptiveCpp patches in
+[`.github/actions/windows-toolchain/patches`](../.github/actions/windows-toolchain/patches),
+which the action applies to `ACPP_REF_WINDOWS` in name order before the build.
+`0001-kernel-library-per-process.patch` stops two processes that share a
+working directory, whose kernel cache AdaptiveCpp places under
+`current_path()/.acpp` on Windows, from terminating on each other's OpenMP
+kernel libraries (#108). Each patch says when to drop it.
 Test failures fail `windows-omp` visibly instead of being hidden by a
 step-level `continue-on-error`. Open Windows problems are tracked in #108.
 
 `windows-omp` builds `windows-generic-debuginfo`: the same `-O3` code with
-CodeView debug info, so crash stacks have symbols. `/DEBUG` makes the linker
+CodeView line tables, so crash stacks have function names and source lines.
+Full debug info (`-g`) crashes AdaptiveCpp's `TargetSeparationPass` while it
+writes the device module of `targets/python/bindings.cpp` (also on Linux, with
+the same AdaptiveCpp), so the preset emits line tables only. `/DEBUG` makes the linker
 keep unreferenced functions, so its binaries are larger than the wheels'. Both
 jobs turn on Windows Error Reporting local dumps before their tests
 ([`scripts/ci/windows-crash-dumps.ps1`](../scripts/ci/windows-crash-dumps.ps1)).
@@ -353,10 +362,10 @@ When a job fails, its *Crash diagnostics* step:
   processes debugged (`-o`), so crashes in `scram-cli` or `fzb` spawned through
   `std::system` are caught even when WER writes no dump for them.
 
-- in `windows-wheel`, lists AdaptiveCpp's JIT kernel cache in the checkout and
-  runs `fzb run` on `chinese.pcfb` there under `cdb`, with the first smoke
-  venv's console script: the command whose crash fails `test_cli.py` and
-  `test_progress_log.py`, in the directory pytest runs it from.
+- in `windows-wheel`, re-runs `test_api.py` and then
+  `test_cli.py::test_fzb_compile_inspect_run_chinese` with the first smoke
+  venv, from the checkout and with the smoke's pytest environment: once as is,
+  then under `cdb -o`, which follows the `fzb` console script's child processes.
 
 The dumps are uploaded as an artifact with `windows-omp`'s PDBs and binaries.
 Wheel modules carry no PDBs, so `windows-wheel` stacks show fuzzybits frames as
