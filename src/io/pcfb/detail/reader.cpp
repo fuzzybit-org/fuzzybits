@@ -667,18 +667,23 @@ class Reader final {
             const auto target = queryTarget_[index];
             const auto prefix = "compile.query." + std::to_string(index) + ".";
             target_quantification entry;
-            bool present = metadataIndex_.contains(prefix + "negation");
-            // The literal mode belongs to the hull query; a probability query's copy, which earlier
-            // writers recorded, is ignored.
-            if (const auto mode = queryKind_[index] == query_kind::monotone_hull_probability &&
-                                          metadataIndex_.contains(prefix + "literal_mode")
+            bool present = false;
+            if (const auto name =
+                    metadataIndex_.contains(prefix + "target") ? metadataText(prefix + "target") : std::nullopt) {
+                entry.target = *name;
+                present = true;
+            }
+            // The hull reading and the initiator rule belong to the hull query; a probability query's copy
+            // is ignored.
+            const bool hull = queryKind_[index] == query_kind::monotone_hull_probability;
+            if (const auto mode = hull && metadataIndex_.contains(prefix + "literal_mode")
                                       ? metadataText(prefix + "literal_mode")
                                       : std::nullopt) {
                 entry.literal_mode = *mode;
                 present = true;
             }
             if (const auto found = metadataIndex_.find(prefix + "max_initiators_per_cutset");
-                found != metadataIndex_.end()) {
+                hull && found != metadataIndex_.end()) {
                 auto const *number = std::get_if<std::int64_t>(&output_.metadata[found->second].second);
                 if (number != nullptr && *number >= 0 && *number <= std::numeric_limits<std::uint32_t>::max()) {
                     entry.max_initiators_per_cutset = static_cast<std::uint32_t>(*number);
@@ -712,16 +717,23 @@ class Reader final {
                 recorded[target] = 1;
                 output_.options.quantification[id] = entry;
             } else if (auto &kept = output_.options.quantification[id];
+                       kept.target != entry.target ||
                        (!kept.literal_mode.empty() && !entry.literal_mode.empty() &&
                         kept.literal_mode != entry.literal_mode) ||
-                       kept.max_initiators_per_cutset != entry.max_initiators_per_cutset ||
+                       (kept.max_initiators_per_cutset && entry.max_initiators_per_cutset &&
+                        kept.max_initiators_per_cutset != entry.max_initiators_per_cutset) ||
                        kept.initiator != entry.initiator || kept.initiator_frequency != entry.initiator_frequency) {
                 diagnostics_.push(
                     warning(diag::quantification_conflict, "queries of target " + std::to_string(target) +
                                                                " record different quantification; the first is kept"));
-            } else if (kept.literal_mode.empty()) {
-                // Only the target's hull query records the literal mode.
-                kept.literal_mode = entry.literal_mode;
+            } else {
+                // Only the target's hull query records the hull parameters.
+                if (kept.literal_mode.empty()) {
+                    kept.literal_mode = entry.literal_mode;
+                }
+                if (!kept.max_initiators_per_cutset) {
+                    kept.max_initiators_per_cutset = entry.max_initiators_per_cutset;
+                }
             }
         }
     }

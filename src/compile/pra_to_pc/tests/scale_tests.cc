@@ -70,9 +70,10 @@ TEST_CASE("pra_to_pc lowers a 1e5-gate DAG in linear time", "[compile][pra_to_pc
     const auto model = seal(std::move(builder));
 
     lowering::quantification_config config;
-    config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
-    config.default_literals = pra::literal_mode::negation;
-    config.max_initiators_per_cutset = 1;
+    config.initiators = lowering::initiator_values::probability;
+    config.default_kinds = {pc::query_kind::monotone_hull};
+    config.default_hull.literals = pra::hull_literals::plain;
+    config.default_hull.max_initiators = 1;
     const auto start = std::chrono::steady_clock::now();
     const auto artifact = require_lower(model, config);
     const auto elapsed = std::chrono::steady_clock::now() - start;

@@ -4,7 +4,7 @@
 //                              [--exclusive P] [--ftp FILE ... --target NAME] [--split-complements]
 //                              [--verify]
 //   fuzzybits_ir_pc_hull_bench --ftp FILE ... --hull [--target NAME ...] [--max-initiators K|none]
-//                              [--literals atom_split|omega_l|negation] [--level 0|1]
+//                              [--literals split|fixed|plain] [--level 0|1]
 //                              [--decompose-initiators [--verify-decomposition]]
 //                              [--check-threads 1|all|both] [--lanes N] [--seed N]
 //
@@ -16,9 +16,9 @@
 // around P (larger residuals). --verify re-decides the candidates by complete
 // search alone and by BDDs alone and fails on any difference.
 //
-// --hull lowers the targets as `fzb compile --negation hull --initiator-values
-// probability` does (the initiator rule from the model attribute unless
-// --max-initiators says otherwise), applies the ir::pc passes of --level, and measures the rule
+// --hull lowers the targets as `fzb compile --kind hull --initiator-values
+// probability` does (with the initiator rule of --max-initiators, none by
+// default), applies the ir::pc passes of --level, and measures the rule
 // as lowered: bounds L and U per lane, the check on the candidates. Results are
 // labelled by target index. With k = 1, --decompose-initiators decides the
 // same lanes by h = ↑g∅ ∨ ⋁ᵢ (xᵢ ∧ ↑gᵢ), where g∅ and gᵢ are g with the
@@ -256,7 +256,7 @@ auto read_sources(std::vector<std::string> const &files) -> std::vector<ftp_lowe
 
 auto read_ftp(std::vector<std::string> const &files, std::string const &target) -> model {
     const auto sources = read_sources(files);
-    auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::boolean_options({target}));
+    auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::probability_options({target}));
     if (!read) {
         std::fprintf(stderr, "FTP read failed (%zu diagnostics)\n", read.diagnostics().size());
         std::exit(1);
@@ -751,7 +751,7 @@ void decide(checkers const &check, std::vector<std::uint64_t> const &rows, std::
 struct hull_options final {
     std::vector<std::string> targets;
     std::optional<std::optional<std::uint32_t>> max_initiators;
-    std::string literals = "atom_split";
+    std::string literals = "split";
     int level = 1;
     bool decompose = false;
     bool verify = false;
@@ -795,12 +795,13 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                  std::size_t index, hull_options const &options, int threads) -> int {
     auto const &binding = lowering.projection.target_bindings()[index];
     std::printf("target %zu:\n", index);
-    const auto literal_mode = binding.literals == pra::literal_mode::atom_split ? hull::event_mode::split
-                              : binding.literals == pra::literal_mode::omega_l  ? hull::event_mode::fixed
-                                                                                : hull::event_mode::down;
+    const auto literals = binding.hull ? binding.hull->literals : pra::hull_literals::plain;
+    const auto literal_mode = literals == pra::hull_literals::split   ? hull::event_mode::split
+                              : literals == pra::hull_literals::fixed ? hull::event_mode::fixed
+                                                                      : hull::event_mode::down;
     std::vector<std::uint8_t> literal(lowering.circuit.node_count(), 0);
     std::vector<std::uint32_t> literal_nodes;
-    if (binding.negation.monotone_hull && binding.literals != pra::literal_mode::negation) {
+    if (literals != pra::hull_literals::plain) {
         for (const auto event : lowering.projection.literal_events(binding)) {
             if (const auto node = lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
                 literal[node.raw()] = 1;
@@ -911,9 +912,9 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                 }
                 auto restricted_part = restrict_cone(lowering.circuit, binding.root, fixed);
                 passes::pipeline_options pipeline;
-                pipeline.semantics.push_back(passes::target_semantics::monotone_hull);
+                pipeline.kinds.push_back(pc::query_kind::monotone_hull);
                 pipeline.atom_events.resize(1);
-                if (binding.literals == pra::literal_mode::atom_split) {
+                if (literals == pra::hull_literals::split) {
                     for (const auto node : literal_nodes) {
                         if (restricted_part.image[node] != outside) {
                             pipeline.atom_events[0].push_back(pc::bool_node_id(restricted_part.image[node]));
@@ -1130,12 +1131,12 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
 auto run_hull(std::vector<std::string> const &files, hull_options const &options) -> int {
     const auto sources = read_sources(files);
     compile_ftp::options settings;
-    settings.negation = "hull";
+    settings.kinds = {"hull"};
     // The initiator rule is the cut-set reading of initiating events, used only when their values are
     // probabilities (#243); this bench measures that rule.
     settings.initiator_values = "probability";
-    settings.literals = options.literals;
-    settings.max_initiators_per_cutset = options.max_initiators;
+    settings.hull_literals = options.literals;
+    settings.hull_max_initiators = options.max_initiators;
     settings.targets = options.targets;
     auto start = clock::now();
     auto lowered = ftp_lowering_test::lower(sources, settings);
@@ -1145,7 +1146,7 @@ auto run_hull(std::vector<std::string> const &files, hull_options const &options
         return 1;
     }
     auto const &lowering = lowered.value();
-    const auto rule = lowering.report.max_initiators_per_cutset;
+    const auto rule = options.max_initiators.value_or(std::nullopt);
     if (options.decompose && rule != std::optional<std::uint32_t>{1}) {
         std::fprintf(stderr, "--decompose-initiators needs an initiator rule with k = 1\n");
         return 2;
@@ -1153,10 +1154,9 @@ auto run_hull(std::vector<std::string> const &files, hull_options const &options
     auto const bindings = lowering.projection.target_bindings();
     passes::pipeline_options pipeline;
     for (auto const &binding : bindings) {
-        pipeline.semantics.push_back(binding.negation.monotone_hull ? passes::target_semantics::monotone_hull
-                                                                    : passes::target_semantics::boolean);
+        pipeline.kinds.push_back(binding.kind);
         auto &atoms = pipeline.atom_events.emplace_back();
-        if (binding.negation.monotone_hull && binding.literals == pra::literal_mode::atom_split) {
+        if (binding.hull && binding.hull->literals == pra::hull_literals::split) {
             for (const auto event : lowering.projection.literal_events(binding)) {
                 if (const auto node = lowering.projection.node_of(pra::domain_ref(event)); node.valid()) {
                     atoms.push_back(node);
@@ -1263,10 +1263,8 @@ auto main(int argc, char **argv) -> int {
 
     if (hull_mode) {
         if (files.empty() || (hull_settings.level != 0 && hull_settings.level != 1) ||
-            (hull_settings.literals != "atom_split" && hull_settings.literals != "omega_l" &&
-             hull_settings.literals != "negation") ||
-            (hull_settings.verify && !hull_settings.decompose)) {
-            std::fprintf(stderr, "--hull needs --ftp, --level 0|1, --literals atom_split|omega_l|negation, and "
+            !pra::parse_hull_literals(hull_settings.literals) || (hull_settings.verify && !hull_settings.decompose)) {
+            std::fprintf(stderr, "--hull needs --ftp, --level 0|1, --literals split|fixed|plain, and "
                                  "--verify-decomposition needs --decompose-initiators\n");
             return 2;
         }

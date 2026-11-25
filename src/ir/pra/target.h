@@ -24,7 +24,7 @@ enum class target_role : std::uint8_t {
     watch,
 };
 
-// A domain query. Result kinds and negation semantics belong to the
+// A domain query. Query kinds and their parameters belong to the
 // quantification config, not to the target.
 struct domain_target final {
     element_id element;

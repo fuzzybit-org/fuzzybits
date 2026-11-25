@@ -1,59 +1,71 @@
 #pragma once
 
 #include "ir/pc/id.h"
+#include "ir/pc/query.h"
 #include "ir/pc/target.h"
 #include "ir/pra/id.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <numeric>
+#include <optional>
 #include <span>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace fuzzybits::ir::pra {
 
-// How a target reads negation: as Boolean complement, or as cut-set
-// deletion through the monotone hull (docs/rfc/monotone-hull-queries.md).
-enum class negation_semantics : std::uint8_t {
-    boolean,
-    monotone_hull,
+// How a monotone-hull query reads a complemented basic-event operand marked
+// `literal` (target_binding::literal_events; docs/rfc/monotone-hull-queries.md
+// §3). Unmarked complements and complemented gates are delete terms under
+// every reading; probability queries have no reading.
+enum class hull_literals : std::uint8_t {
+    // Each marked operand is an atom of its own, sampled as not x_B and
+    // droppable on its own: the plain hull over atoms (the hull check's
+    // `split` mode; the reading of cut-set tools).
+    split,
+    // Rauzy's widening omega_L, with L the positive literals plus not B for
+    // each marked event: those events are fixed (the hull check's `fixed`).
+    fixed,
+    // Marked operands are ordinary complements: the plain hull of the target.
+    plain,
 };
 
-// The result kinds requested for one target; a target may carry both, which
-// the writer emits as two queries on one tensor.
-struct negation_set final {
-    bool boolean = true;
-    bool monotone_hull = false;
-
-    [[nodiscard]] static constexpr auto of(const negation_semantics semantics) noexcept -> negation_set {
-        return semantics == negation_semantics::boolean ? negation_set{.boolean = true, .monotone_hull = false}
-                                                        : negation_set{.boolean = false, .monotone_hull = true};
+// The spelling of the CLI, the config document and the metadata.
+[[nodiscard]] constexpr auto to_string(const hull_literals literals) noexcept -> std::string_view {
+    switch (literals) {
+    case hull_literals::split:
+        return "split";
+    case hull_literals::fixed:
+        return "fixed";
+    case hull_literals::plain:
+        return "plain";
     }
-    [[nodiscard]] static constexpr auto both() noexcept -> negation_set {
-        return negation_set{.boolean = true, .monotone_hull = true};
-    }
-    [[nodiscard]] constexpr auto contains(const negation_semantics semantics) const noexcept -> bool {
-        return semantics == negation_semantics::boolean ? boolean : monotone_hull;
-    }
-    [[nodiscard]] constexpr auto empty() const noexcept -> bool { return !boolean && !monotone_hull; }
+    return "split";
+}
 
-    friend constexpr auto operator==(negation_set const &, negation_set const &) noexcept -> bool = default;
-};
+[[nodiscard]] constexpr auto parse_hull_literals(const std::string_view text) noexcept -> std::optional<hull_literals> {
+    if (text == "split") {
+        return hull_literals::split;
+    }
+    if (text == "fixed") {
+        return hull_literals::fixed;
+    }
+    if (text == "plain") {
+        return hull_literals::plain;
+    }
+    return std::nullopt;
+}
 
-// How a monotone-hull target reads a complemented basic-event operand
-// marked `literal` (see target_binding::literal_events). Unmarked
-// complements and negated gates stay delete terms in every mode; Boolean
-// targets ignore the mode.
-enum class literal_mode : std::uint8_t {
-    // Each marked operand is its own atom, sampled as not x_B; the query is
-    // the plain hull over atoms (the hull check's `split` treatment).
-    atom_split,
-    // The widening omega_L with L the positive literals plus not B for each
-    // event in literal_events (those events fixed in the hull check).
-    omega_l,
-    // Marked operands are ordinary complements: the plain hull.
-    negation,
+// The parameters of one monotone-hull query.
+struct hull_query final {
+    hull_literals literals = hull_literals::split;
+    // The initiator rule: k deletes the cut sets with more than k initiating
+    // events in the target's cone (RFC 4.8); unset: no rule.
+    std::optional<std::uint32_t> max_initiators;
+
+    friend constexpr auto operator==(hull_query const &, hull_query const &) noexcept -> bool = default;
 };
 
 enum class event_binding_kind : std::uint8_t {
@@ -80,8 +92,8 @@ struct override_binding final {
 };
 
 enum class generated_kind : std::uint8_t {
-    // atleast(k + 1; initiating events in the target's cone), for
-    // max_initiators_per_cutset = k.
+    // atleast(k + 1; initiating events in the target's cone), for a hull
+    // query with max_initiators = k.
     initiator_delete_term,
     // The target's subject AND NOT its initiator delete term.
     initiator_rule_conjunction,
@@ -106,13 +118,15 @@ struct target_binding final {
     // conjunction over it.
     pc::bool_node_id root;
     pc::bool_node_id node;
-    negation_set negation;
-    literal_mode literals = literal_mode::atom_split;
-    // Invalid unless the config sets max_initiators_per_cutset, the binding
-    // is a monotone-hull query and the cone holds more initiating events than
-    // the rule allows. A domain target asking for both kinds under the rule
-    // then has two bindings: the probability query on `root`, the hull query
-    // on the conjunction.
+    // One binding, and one PC target, per query: a target asking for both
+    // kinds has two bindings, which share a node unless the hull query holds
+    // the initiator rule.
+    pc::query_kind kind = pc::query_kind::probability;
+    // Set exactly for a monotone-hull query.
+    std::optional<hull_query> hull;
+    // Valid when the hull query's rule is lowered into this target: the cone
+    // holds more initiating events than hull->max_initiators allows. `node`
+    // is then the conjunction of `root` and the complement of this term.
     pc::bool_node_id initiator_delete_term;
     // Slices of pc_projection::initiator_events() and
     // pc_projection::literal_events(), ascending basic-event ids.

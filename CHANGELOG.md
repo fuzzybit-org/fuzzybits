@@ -9,8 +9,8 @@
   models that define CCF groups and were compiled without `--ccf`.
   - Disable it with `--no-ccf` (`fzb compile`), `ccf=False` (Python) or `MCSCRAM_CCF=false` (server).
   - The choice is recorded in the `compile.options` (`--no-ccf`) and `compile.ccf` metadata of the `.pcfb`.
-  - `--ccf` is accepted for one more release as a no-op that prints a deprecation warning;
-    `--ccf` together with `--no-ccf` is an error. `scram-cli` keeps its own `--ccf`.
+  - `fzb compile --ccf`, the earlier opt-in, is gone (an unknown option, #262). `scram-cli` keeps its own
+    `--ccf`.
 - Python `compile(watch="a,b")` no longer splits the string on `,`, `;` or `:`: pass a list.
 - The server's compile cache key now includes the effective `ccf` setting, so blobs cached
   without expansion are not reused.
@@ -26,28 +26,27 @@
   used to write a monotone-hull query for every FTP target, which `fzb run` refuses, because the
   reader recorded `ftp.negation = delete_term` for every project and the driver took the query type
   from it. The query type is now requested, never read from the model:
-  - Without `--negation` (or `negation` in the config document), every target is a `PROBABILITY`
-    query and the file is pcfb minor 1. Results change only where a target's cone has a complement.
-  - To keep the previous default, pass `--negation hull` (`negation="hull"`, or `"negation": "hull"`
-    in the config document). `--negation both` writes both queries.
+  - Without `--kind` (or `kinds` in the config document), every target is a `PROBABILITY` query and
+    the file is pcfb minor 1. Results change only where a target's cone has a complement.
+  - To keep the previous default, pass `--kind hull` (`kind="hull"`, or `"kinds": "hull"` in the config
+    document). `--kind probability --kind hull` writes both queries.
   - The reader no longer records the `ftp.negation` attribute. `fzb inspect` and
     `fuzzybits.read_project` drop it from `conventions`, and the `compile.ftp.default-negation`
     note is gone.
-- FTP `I` values are initiating-event frequencies (#243). By default (`--initiator-values frequency`) a
-  target whose cone holds initiating events becomes one conditioned query per initiator (`<target>|<initiator>`,
-  that initiator TRUE and the others FALSE), and the file gains a query group per target: its frequency
-  `F = Σ f_i · P(target | I_i)` in the unit of `--initiator-unit`.
-  - `--initiator-unit per-year|per-month|per-week|per-day|per-hour` names the unit, `per-year` by default. The
-    unit is recorded in each group and printed with its results.
+- FTP `I` values are initiating-event frequencies (#243). By default a target whose cone holds initiating
+  events becomes one conditioned query per initiator (`<target>|<initiator>`, that initiator TRUE and the
+  others FALSE), and the file gains a query group per target: its frequency `F = Σ f_i · P(target | I_i)`.
+  - `--initiator-values per-year|per-month|per-week|per-day|per-hour` names the unit, `per-year` by default.
+    The unit is recorded in each group and printed with its results.
   - A target that may hold with every initiating event FALSE is an error (`compile.pra_to_pc.mixed-units`).
-  - The initiator rule no longer applies by default: with frequencies `--max-initiators-per-cutset N` is an
-    error (`none` is accepted) and the `ftp.max_initiators_per_cutset` attribute is ignored.
+  - The initiator rule no longer applies by default: with frequencies `--hull-max-initiators N` is an error
+    (`none` is accepted).
   - To keep the previous reading (values up to 1 as probabilities, above 1 rejected, the initiator rule),
     pass `--initiator-values probability` (`initiator_values="probability"`, or `"initiator_values":
     "probability"` in the config document).
   - The reader marks every `I` value as a frequency, and the `io.ftp.initiator-frequency` warning is gone.
     `compile.pra_to_pc.frequency-as-probability` is now a note.
-- The FTP initiator rule (`--max-initiators-per-cutset N`) applies to hull queries only and has no default (#262).
+- The FTP initiator rule (`--hull-max-initiators N`) applies to hull queries only and has no default (#262).
   With `--initiator-values probability`, probability queries used to be ANDed with
   `not atleast(2; initiating events)` by default, because the reader recorded `ftp.max_initiators_per_cutset = 1`
   for every project. A probability query is now the probability of its target: on the `initiator_rule` fixture
@@ -55,9 +54,9 @@
   - The reader no longer records `ftp.max_initiators_per_cutset`, and its option
     `io.ftp.max_initiators_per_cutset` is gone. `fzb inspect` and `fuzzybits.read_project` drop it from
     `conventions`. The note `compile.ftp.default-initiator-rule` is gone.
-  - `--max-initiators-per-cutset N` (or `max_initiators_per_cutset` in Python or the config document) without a
-    hull query is `compile.ftp.invalid-option`. To apply the cut-set rule, request the hull:
-    `--negation hull --max-initiators-per-cutset 1`.
+  - `--hull-max-initiators N` (or `hull_max_initiators` in Python, `"hull": {"max_initiators": N}` in the config
+    document) without a hull query is `compile.ftp.invalid-option`. To apply the cut-set rule, request the hull:
+    `--kind hull --hull-max-initiators 1`.
   - A target with both kinds and the rule gets two queries on two tensors: the probability query on the target,
     the hull query on the target under the rule.
   - The `.pcfb` metadata records `compile.query.<i>.literal_mode` on hull queries only, and
@@ -72,12 +71,34 @@
   - Passing the flag is an unknown-option error, the Python keyword a `TypeError`, and the config key
     `compile.ftp.invalid-config`. The `compile.options` metadata and the `--report` options no longer have
     `complement_events`, and `fzb inspect` always counts every `-EVENT` in `literal_operands`.
-  - Replacement for `negation`: `--literals negation` (`literals="negation"`, or `"literals": "negation"` in the
-    config document) computes the same plain hull. It records `compile.query.<i>.literal_mode = negation`, where the
-    unmarked operands recorded the default `atom_split`, and it warns `compile.pra_to_pc.complement-under-negation`
-    (and, with the initiator rule, `compile.pra_to_pc.complemented-initiator`) for marked events where unmarked
-    ones warned nothing.
+  - Replacement for `negation`: `--hull-literals plain` (`hull_literals="plain"`, or `"hull": {"literals":
+    "plain"}` in the config document) computes the same plain hull. It records
+    `compile.query.<i>.literal_mode = plain`, and it warns `compile.pra_to_pc.complement-under-negation` (and, with
+    the initiator rule, `compile.pra_to_pc.complemented-initiator`) for marked events where unmarked ones warned
+    nothing.
   - `atom` needs no replacement: it was the default.
+- The FTP query options have one name per concept (#262). Replacements, flags first, then Python and the config
+  document:
+  - `--negation boolean|hull|both` becomes `--kind probability|hull`, repeated or comma-separated for both
+    (`kind=` a string or a list; `"kinds"`). `both` and `monotone_hull` are not accepted.
+  - `--literals atom_split|omega_l|negation` becomes `--hull-literals split|fixed|plain` (`hull_literals=`;
+    `"hull": {"literals": ...}`). It is an error when no target asks for the hull.
+  - `--max-initiators-per-cutset N|none` becomes `--hull-max-initiators N|none` (`hull_max_initiators=`;
+    `"hull": {"max_initiators": ...}`).
+  - `--initiator-values frequency --initiator-unit UNIT` becomes `--initiator-values UNIT`; `--initiator-values
+    probability` stays. `--initiator-unit`, `initiator_unit=` and `"initiator_unit"` are gone.
+  - Config targets take `kinds` and `hull` instead of `negation` and `literals`; the removed keys are
+    `compile.ftp.invalid-config`.
+  - `--no-ccf` with FTP input is an error (`ccf=False` a `ValueError`): FTP projects have no common-cause
+    groups. `-c` help names both pipelines, and the FTP error for `-c 2` to `-c 8` says those are the SCRAM
+    preprocessing levels of MEF input.
+  - A target asking for both kinds has one entry per query in `compile.options` and in the report (`kind`,
+    `hull_literals`, `hull_max_initiators`) instead of a `negation` array and `literals`; the top level has
+    `kinds`, `hull` and `initiator_values` instead of `max_initiators_per_cutset` and `initiator_unit`.
+  - The `.pcfb` metadata drops `compile.query.<i>.negation` (the kind is `Query.kind`), adds
+    `compile.query.<i>.target` (the target a query observes, without `|<initiator>`), and spells
+    `compile.query.<i>.literal_mode` `split`, `fixed` or `plain`. `fzb inspect --json` and `fuzzybits.inspect`
+    list `query_kinds` (`probability` or `hull`), and the text summary prints them.
 
 ### Changes
 
@@ -123,7 +144,6 @@
   sequence). A file that is missing, is not a regular file or lists no names is an error.
 - OpenPSA/MEF and nombrilo input take one target; several targets, a repeated name, and
   `--watch` on nombrilo input are errors instead of being ignored.
-- FTP projects accept `--no-ccf` (and the deprecated `--ccf`) as no-ops.
 - The FTP reader accepts the files projects export (#240; rules in `docs/ftp-input.md`, Grammar):
   - names hold any punctuation, such as `%IE`, `G~1`, `SYS.A`, `PUMP#1`, `V(2)` or `$V1`;
   - keywords and the `I` flag in any letter case (`import`, `Endtree`, `i`);

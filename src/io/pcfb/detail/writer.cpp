@@ -526,16 +526,18 @@ class Emitter final {
     [[nodiscard]] auto emitQuantification(const std::size_t index, const query_kind kind,
                                           target_quantification const &entry) -> bool {
         const auto prefix = "compile.query." + std::to_string(index) + ".";
-        const auto negation =
-            kind == query_kind::probability ? std::string_view{"boolean"} : std::string_view{"monotone_hull"};
-        bool ok = setMetadata(prefix + "negation", builder_.set(prefix + "negation", negation));
-        // How marked literals are read is a parameter of the hull query; a probability query on the same
-        // tensor does not carry it.
-        if (ok && kind == query_kind::monotone_hull_probability && !entry.literal_mode.empty()) {
+        // The kind is Query.kind. The hull reading and the initiator rule are parameters of the hull
+        // query; a probability query on the same tensor carries neither.
+        const bool hull = kind == query_kind::monotone_hull_probability;
+        bool ok = true;
+        if (!entry.target.empty()) {
+            ok = setMetadata(prefix + "target", builder_.set(prefix + "target", std::string_view{entry.target}));
+        }
+        if (ok && hull && !entry.literal_mode.empty()) {
             ok = setMetadata(prefix + "literal_mode",
                              builder_.set(prefix + "literal_mode", std::string_view{entry.literal_mode}));
         }
-        if (ok && entry.max_initiators_per_cutset) {
+        if (ok && hull && entry.max_initiators_per_cutset) {
             ok = setMetadata(prefix + "max_initiators_per_cutset",
                              builder_.set(prefix + "max_initiators_per_cutset",
                                           static_cast<std::int64_t>(*entry.max_initiators_per_cutset)));

@@ -28,7 +28,7 @@ constexpr std::string_view complemented_initiator = "compile.pra_to_pc.complemen
 }
 
 [[nodiscard]] auto hull(std::string name) -> lowering::target_request {
-    return {.name = std::move(name), .negation = pra::negation_set::of(pra::negation_semantics::monotone_hull)};
+    return {.name = std::move(name), .kinds = {pc::query_kind::monotone_hull}};
 }
 
 [[nodiscard]] auto lower_ok(pra::model const &model, lowering::quantification_config const &config)
@@ -108,7 +108,7 @@ struct small_model final {
 
 } // namespace
 
-TEST_CASE("pra_to_pc records the literal mode on every target", "[compile][pra_to_pc][literals]") {
+TEST_CASE("pra_to_pc records the hull reading on hull queries only", "[compile][pra_to_pc][literals]") {
     small_model m;
     const auto g =
         m.builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
@@ -117,21 +117,26 @@ TEST_CASE("pra_to_pc records the literal mode on every target", "[compile][pra_t
 
     auto artifact = require_lower(model);
     for (auto const &target : artifact.projection.target_bindings()) {
-        CHECK(target.literals == pra::literal_mode::atom_split);
+        CHECK(target.kind == pc::query_kind::probability);
+        CHECK_FALSE(target.hull);
     }
 
     lowering::quantification_config config;
-    config.default_literals = pra::literal_mode::omega_l;
-    config.targets = {hull("T"), {.name = "U", .literals = pra::literal_mode::negation}};
+    config.default_hull.literals = pra::hull_literals::fixed;
+    config.targets = {hull("T"),
+                      {.name = "U",
+                       .kinds = {pc::query_kind::monotone_hull},
+                       .hull = pra::hull_query{.literals = pra::hull_literals::plain}}};
     config.watch_targets = {{.name = "A", .element = pra::element_kind::basic_event}};
     artifact = require_lower(model, config);
     auto const bindings = artifact.projection.target_bindings();
     REQUIRE(bindings.size() == 3);
-    CHECK(bindings[0].literals == pra::literal_mode::omega_l);
-    CHECK(bindings[0].negation.monotone_hull);
-    CHECK(bindings[1].literals == pra::literal_mode::negation);
-    CHECK_FALSE(bindings[1].negation.monotone_hull);
-    CHECK(bindings[2].literals == pra::literal_mode::omega_l);
+    REQUIRE(bindings[0].hull);
+    CHECK(bindings[0].hull->literals == pra::hull_literals::fixed);
+    REQUIRE(bindings[1].hull);
+    CHECK(bindings[1].hull->literals == pra::hull_literals::plain);
+    CHECK(bindings[2].kind == pc::query_kind::probability);
+    CHECK_FALSE(bindings[2].hull);
 }
 
 TEST_CASE("pra_to_pc warns where the literal modes can differ", "[compile][pra_to_pc][literals]") {
@@ -278,16 +283,17 @@ TEST_CASE("pra_to_pc warns about complemented initiators under the initiator rul
     const auto model = std::move(m).seal_with_target(top);
 
     lowering::quantification_config config;
+    config.initiators = lowering::initiator_values::probability;
     config.targets = {{.name = "T"}, {.name = "U"}};
     CHECK(count(lower_ok(model, config), complemented_initiator) == 0);
 
-    config.max_initiators_per_cutset = 1;
+    config.default_hull.max_initiators = 1;
     // Probability queries get no rule, so there is nothing to warn about.
     CHECK(count(lower_ok(model, config), complemented_initiator) == 0);
 
-    const auto hull = pra::negation_set::of(pra::negation_semantics::monotone_hull);
-    config.targets = {{.name = "T", .negation = hull, .literals = pra::literal_mode::negation},
-                      {.name = "U", .negation = hull, .literals = pra::literal_mode::negation}};
+    const auto ruled = pra::hull_query{.literals = pra::hull_literals::plain, .max_initiators = 1};
+    config.targets = {{.name = "T", .kinds = {pc::query_kind::monotone_hull}, .hull = ruled},
+                      {.name = "U", .kinds = {pc::query_kind::monotone_hull}, .hull = ruled}};
     const auto diagnostics = lower_ok(model, config);
     REQUIRE(count(diagnostics, complemented_initiator) == 1);
     for (auto const &item : diagnostics.items()) {
@@ -310,11 +316,11 @@ TEST_CASE("pra_to_pc keeps gate negations on gates", "[compile][pra_to_pc][liter
         {{.event = m.a}, {.event = g_not}, {.event = single, .complement = true}, {.event = g_nand}});
     const auto model = std::move(m).seal_with_target(top);
 
-    for (const auto negation : {pra::negation_semantics::boolean, pra::negation_semantics::monotone_hull}) {
+    for (const auto kind : {pc::query_kind::probability, pc::query_kind::monotone_hull}) {
         lowering::quantification_config config;
-        config.targets = {{.name = "T", .negation = pra::negation_set::of(negation)}};
+        config.targets = {{.name = "T", .kinds = {kind}}};
         const auto artifact = require_lower(model, config);
-        require_equivalent(model, artifact, {}, std::nullopt);
+        require_equivalent(model, artifact, {});
         auto const &circuit = artifact.circuit;
         auto const &projection = artifact.projection;
         const auto node = [&](const pra::domain_ref element) { return projection.node_of(element); };
@@ -361,8 +367,9 @@ TEST_CASE("pra_to_pc takes literal events only from marked operands", "[compile]
     const auto model = std::move(m).seal_with_target(top);
 
     lowering::quantification_config config;
+    config.initiators = lowering::initiator_values::probability;
     config.targets = {hull("T"), hull("U")};
-    config.max_initiators_per_cutset = 1;
+    config.default_hull.max_initiators = 1;
     auto lowered = lowering::lower(model, config);
     INFO(render(lowered.diagnostics()));
     REQUIRE(lowered);
@@ -389,14 +396,14 @@ TEST_CASE("pra_to_pc rejects literal and unmarked complements of one event in a 
 
     lowering::quantification_config config;
     config.targets = {hull("T")};
-    for (const auto mode : {pra::literal_mode::atom_split, pra::literal_mode::omega_l}) {
-        config.default_literals = mode;
+    for (const auto mode : {pra::hull_literals::split, pra::hull_literals::fixed}) {
+        config.default_hull.literals = mode;
         auto lowered = lowering::lower(model, config);
         REQUIRE_FALSE(lowered);
         CHECK(count(lowered.diagnostics(), "compile.pra_to_pc.mixed-literal") == 1);
     }
 
-    config.default_literals = pra::literal_mode::negation;
+    config.default_hull.literals = pra::hull_literals::plain;
     CHECK(count(lower_ok(model, config), "compile.pra_to_pc.mixed-literal") == 0);
     CHECK(count(lower_ok(model, lowering::quantification_config{}), "compile.pra_to_pc.mixed-literal") == 0);
 }

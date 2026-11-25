@@ -83,7 +83,7 @@ TEST_CASE("hull check reproduces the FTP conformance fixtures", "[ir][pc][hull][
             auto const &target = results->keys[member];
             auto const &values = results->items[member];
             INFO(fixture.filename().string() << " / " << target);
-            auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::boolean_options({target}));
+            auto read = ftp_lowering_test::lower(sources, ftp_lowering_test::probability_options({target}));
             INFO(read.diagnostics().size() << " diagnostics");
             REQUIRE(read);
             auto const *model = &read.value().circuit;

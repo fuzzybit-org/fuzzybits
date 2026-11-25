@@ -1208,6 +1208,7 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
     std::map<std::string, int> opcode_counts;
     std::map<std::string, int> sample_sources;
     py::list query_names;
+    py::list query_kinds;
 
     if (circuit.subcircuits() && circuit.subcircuits()->size() > 0) {
         const auto *sc = circuit.subcircuits()->Get(0);
@@ -1237,6 +1238,18 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
                 }
                 std::string name = q->name() ? q->name()->str() : "";
                 query_names.append(name.empty() ? ("t" + std::to_string(q->target())) : name);
+                // As `fzb compile --kind` spells it.
+                switch (q->kind()) {
+                case pcfb::QueryKind::PROBABILITY:
+                    query_kinds.append("probability");
+                    break;
+                case pcfb::QueryKind::MONOTONE_HULL_PROBABILITY:
+                    query_kinds.append("hull");
+                    break;
+                default:
+                    query_kinds.append("unknown(" + std::to_string(static_cast<unsigned>(q->kind())) + ")");
+                    break;
+                }
             }
         }
     }
@@ -1258,6 +1271,7 @@ py::dict inspect_circuit(const pcfb::ir::Circuit &circuit) {
     }
     result["sample_source"] = std::move(sources);
     result["query_names"] = std::move(query_names);
+    result["query_kinds"] = std::move(query_kinds);
 
     py::dict metadata;
     if (circuit.get() && circuit.get()->metadata()) {
@@ -1627,19 +1641,20 @@ fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
         }
     }
     text({"duplicate_import", "duplicate-import"}, out.duplicate_import);
-    text({"negation"}, out.negation);
-    text({"literals"}, out.literals);
+    if (auto value = get_option(options, {"kind", "kinds"}); value && !value->is_none()) {
+        out.kinds = names_from_py(*value, "kind");
+    }
+    text({"hull_literals", "hull-literals"}, out.hull_literals);
     text({"initiator_values", "initiator-values"}, out.initiator_values);
-    text({"initiator_unit", "initiator-unit"}, out.initiator_unit);
     text({"config"}, out.config);
-    if (auto value = get_option(options, {"max_initiators_per_cutset", "max-initiators-per-cutset"})) {
+    if (auto value = get_option(options, {"hull_max_initiators", "hull-max-initiators"})) {
         if (value->is_none() || (py::isinstance<py::str>(*value) && value->cast<std::string>() == "none")) {
-            out.max_initiators_per_cutset = std::optional<std::uint32_t>{};
+            out.hull_max_initiators = std::optional<std::uint32_t>{};
         } else if (py::isinstance<py::int_>(*value) && !py::isinstance<py::bool_>(*value) &&
                    value->cast<long long>() >= 0 && value->cast<long long>() <= 0xFFFFFFFFLL) {
-            out.max_initiators_per_cutset = std::optional<std::uint32_t>{value->cast<std::uint32_t>()};
+            out.hull_max_initiators = std::optional<std::uint32_t>{value->cast<std::uint32_t>()};
         } else {
-            throw std::invalid_argument("max_initiators_per_cutset must be a non-negative integer or None");
+            throw std::invalid_argument("hull_max_initiators must be a non-negative integer or None");
         }
     }
     if (auto value = get_option(options, {"compilation_level", "compilation-level", "pdag_c", "c"});
@@ -2305,8 +2320,8 @@ Compile a CAFTA FTP project (files or directories of `*.ftp`) into a pcfb buffer
 Args:
     input_files: FTP files or directories, read as one project in sorted path order.
     options: `target`, `watch`, `overrides` (name -> bool), `duplicate_import`,
-        `negation`, `max_initiators_per_cutset`, `literals`, `initiator_values`,
-        `initiator_unit`, `compilation_level` (0 or 1) and `config` (JSON text).
+        `kind` (probability, hull, or a list of them), `hull_literals`, `hull_max_initiators`,
+        `initiator_values`, `compilation_level` (0 or 1) and `config` (JSON text).
 
 Returns:
     `(pcfb bytes, report JSON text)`.

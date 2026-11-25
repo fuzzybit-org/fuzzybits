@@ -398,10 +398,10 @@ _UNSET: Any = object()
 _FTP_ONLY = (
     "overrides",
     "duplicate_import",
-    "negation",
-    "literals",
+    "kind",
+    "hull_literals",
+    "hull_max_initiators",
     "initiator_values",
-    "initiator_unit",
     "config",
 )
 
@@ -444,11 +444,10 @@ def _compile_ftp(
     target: Any,
     overrides: Any,
     duplicate_import: str | None,
-    negation: str | None,
-    max_initiators_per_cutset: Any,
-    literals: str | None,
+    kind: Any,
+    hull_literals: str | None,
+    hull_max_initiators: Any,
     initiator_values: str | None,
-    initiator_unit: str | None,
     config: Any,
     report: bool,
     on_progress: Callable[[ProgressSnapshot], None] | None,
@@ -471,17 +470,17 @@ def _compile_ftp(
             opts["overrides"] = {str(name): value for name, value in overrides.items()}
         else:
             opts["overrides"] = _as_names(overrides, "overrides")
+    if kind is not None:
+        opts["kind"] = _as_names(kind, "kind")
     for key, value in (
         ("duplicate_import", duplicate_import),
-        ("negation", negation),
-        ("literals", literals),
+        ("hull_literals", hull_literals),
         ("initiator_values", initiator_values),
-        ("initiator_unit", initiator_unit),
     ):
         if value is not None:
             opts[key] = str(value)
-    if max_initiators_per_cutset is not _UNSET:
-        opts["max_initiators_per_cutset"] = max_initiators_per_cutset
+    if hull_max_initiators is not _UNSET:
+        opts["hull_max_initiators"] = hull_max_initiators
     if pdag_c is not None:
         opts["compilation_level"] = pdag_c
     if config is not None:
@@ -517,11 +516,10 @@ def compile(  # noqa: A001 - public API name
     target: str | Sequence[str] | None = None,
     overrides: Mapping[str, bool | int] | Sequence[str] | None = None,
     duplicate_import: str | None = None,
-    negation: str | None = None,
-    max_initiators_per_cutset: int | str | None = _UNSET,
-    literals: str | None = None,
+    kind: str | Sequence[str] | None = None,
+    hull_literals: str | None = None,
+    hull_max_initiators: int | str | None = _UNSET,
     initiator_values: str | None = None,
-    initiator_unit: str | None = None,
     config: Mapping[str, Any] | str | os.PathLike[str] | None = None,
     report: bool = False,
     on_progress: Callable[[ProgressSnapshot], None] | None = None,
@@ -551,8 +549,8 @@ def compile(  # noqa: A001 - public API name
     ccf:
         MEF: expand common-cause failure groups (default ``True``; ``False`` is
         ``fzb compile --no-ccf``). Recorded in the ``compile.options`` and
-        ``compile.ccf`` metadata. FTP projects have no such groups: the argument
-        is accepted and ignored.
+        ``compile.ccf`` metadata. FTP projects have no such groups:
+        ``ccf=False`` with FTP input raises :class:`ValueError`.
     watch:
         A name or a sequence of names (MEF also PDAG indices) emitted as
         additional queries so :class:`Session` tallies them. Names are not split
@@ -565,36 +563,38 @@ def compile(  # noqa: A001 - public API name
         (default: every PROCESS target).
     overrides:
         FTP: ``{name: True | False}`` (or ``["NAME=1", ...]``) forcing elements
-        to constants under every negation semantics.
+        to constants under every query kind.
     duplicate_import:
         FTP reader option: ``"error" | "first" | "last"`` (default ``"last"``).
         The reader always marks a complemented basic event (``-EVENT``) as a
-        literal; only hull queries read the mark (see ``literals``).
-    negation:
-        FTP: the query type of every target: ``"boolean"`` (the probability,
-        default), ``"hull"`` (the monotone hull: complements read as delete
-        terms) or ``"both"``. The type is requested, never read from the model.
-        Hull queries are written (pcfb 1.2) but not sampled yet: ``run``
-        refuses them. A hull target with marked literals is refused unless
-        ``literals="negation"``.
-    max_initiators_per_cutset:
+        literal; only hull queries read the mark (see ``hull_literals``).
+    kind:
+        FTP: the query of every target, ``"probability"`` (default) or
+        ``"hull"`` (the monotone hull: complements read as delete terms), or
+        a sequence of both for two queries per target. The kind is requested,
+        never read from the model. Hull queries are written (pcfb 1.2) but not
+        sampled yet: ``run`` refuses them.
+    hull_literals:
+        FTP hull queries: how marked literals (``-EVENT``) are read,
+        ``"split"`` (an atom of its own, default), ``"fixed"`` (Rauzy's
+        omega_L) or ``"plain"`` (an ordinary complement). Until the writer
+        records literal atoms, a hull target with marked literals is refused
+        unless ``hull_literals="plain"``. Only with a hull query.
+    hull_max_initiators:
         FTP hull queries: delete the cut sets with more than this many
         initiating events; ``None`` or ``"none"`` (the default) for no rule.
-        Only with ``initiator_values="probability"`` and a hull query;
+        A count needs a hull query and ``initiator_values="probability"``;
         probability queries never get the rule.
-    literals:
-        FTP hull targets: ``"atom_split"`` (default), ``"omega_l"`` or ``"negation"``.
     initiator_values:
-        FTP: ``"frequency"`` (default) or ``"probability"``. With frequencies every ``I`` value is
-        an initiating-event frequency: a target whose cone holds initiating events becomes one
-        query per initiator (that initiator TRUE, the others FALSE), and the file's query group
-        for the target is its frequency, ``sum_i f_i * P(target | I_i)`` (see :func:`run`). A
-        target that may hold without any initiating event is an error (mixed units).
-        ``"probability"`` reads values up to 1 as probabilities and rejects values above 1.
-    initiator_unit:
-        FTP: the unit of every ``I`` value, ``"per-year"``, ``"per-month"``, ``"per-week"``,
-        ``"per-day"`` or ``"per-hour"``; ``"per-year"`` by default with frequencies, rejected with
-        ``initiator_values="probability"``.
+        FTP: what ``I`` values are. A frequency unit, ``"per-year"``
+        (default), ``"per-month"``, ``"per-week"``, ``"per-day"`` or
+        ``"per-hour"``: a target whose cone holds initiating events becomes one
+        query per initiator (that initiator TRUE, the others FALSE), and the
+        file's query group for the target is its frequency,
+        ``sum_i f_i * P(target | I_i)``, in that unit (see :func:`run`). A
+        target that may hold without any initiating event is an error (mixed
+        units). ``"probability"`` reads values up to 1 as probabilities and
+        rejects values above 1.
     config:
         FTP: a quantification config (mapping, JSON text or a path to a JSON
         file); the other arguments override it.
@@ -628,21 +628,22 @@ def compile(  # noqa: A001 - public API name
     _reject_seed(options.pop("seed", None) if "seed" in options else None, options)
     native = _runtime.native()
     files = _as_input_files(model_xml)
-    kind = native.classify_compile_inputs(files)
-    if kind == "mixed":
+    input_kind = native.classify_compile_inputs(files)
+    if input_kind == "mixed":
         raise ValueError("FTP and non-FTP inputs cannot be combined")
     ftp_only = {
         "overrides": overrides,
         "duplicate_import": duplicate_import,
-        "negation": negation,
-        "literals": literals,
+        "kind": kind,
+        "hull_literals": hull_literals,
         "initiator_values": initiator_values,
-        "initiator_unit": initiator_unit,
         "config": config,
     }
-    if max_initiators_per_cutset is not _UNSET:
-        ftp_only["max_initiators_per_cutset"] = max_initiators_per_cutset
-    if kind == "ftp":
+    if hull_max_initiators is not _UNSET:
+        ftp_only["hull_max_initiators"] = hull_max_initiators
+    if input_kind == "ftp":
+        if not ccf:
+            raise ValueError("ccf applies to MEF input only: FTP projects have no common-cause groups")
         return _compile_ftp(
             files,
             pdag_c=pdag_c,
@@ -650,11 +651,10 @@ def compile(  # noqa: A001 - public API name
             target=target,
             overrides=overrides,
             duplicate_import=duplicate_import,
-            negation=negation,
-            max_initiators_per_cutset=max_initiators_per_cutset,
-            literals=literals,
+            kind=kind,
+            hull_literals=hull_literals,
+            hull_max_initiators=hull_max_initiators,
             initiator_values=initiator_values,
-            initiator_unit=initiator_unit,
             config=config,
             report=report,
             on_progress=on_progress,
@@ -662,7 +662,7 @@ def compile(  # noqa: A001 - public API name
             progress_log=progress_log,
             options=options,
         )
-    unsupported = sorted(key for key, value in ftp_only.items() if value is not None or key == "max_initiators_per_cutset")
+    unsupported = sorted(key for key, value in ftp_only.items() if value is not None or key == "hull_max_initiators")
     if unsupported or report:
         raise ValueError(
             "compile() arguments apply to CAFTA FTP input only: "

@@ -36,11 +36,15 @@ enum class query_kind : std::uint8_t {
 
 // What the caller asked of one target, recorded as pcfb metadata next to its queries
 // (compile.query.<i>.*, i the position in the file's query list) so that fzb inspect and the
-// runtime can show it. The negation semantics of a query is its kind; this adds the rest.
+// runtime can show it. The query's kind is Query.kind; this adds the rest.
 struct target_quantification final {
-    // ir::pra::literal_mode as text (atom_split, omega_l, negation); empty: not recorded. Written
-    // on the target's monotone-hull query only; a probability query on the same tensor never
-    // carries it.
+    // The domain target (or element) the query observes, as named in the model; a conditioned
+    // query is named `<target>|<initiator>`, and this keeps the target apart from the name.
+    // Empty: not recorded.
+    std::string target;
+    // How a hull query reads marked literals: ir::pra::hull_literals as text (split, fixed,
+    // plain); empty: not recorded. Written on monotone-hull queries only; a probability query on
+    // the same tensor never carries it.
     std::string literal_mode;
     // The initiator rule already lowered into the target's logic; unset: no rule.
     std::optional<std::uint32_t> max_initiators_per_cutset;

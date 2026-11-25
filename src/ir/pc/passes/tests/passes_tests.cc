@@ -47,8 +47,7 @@ void require_pipeline(passes::pipeline_result const &result, pc::circuit const &
 }
 
 [[nodiscard]] auto all_hull(pc::circuit const &model) -> passes::pipeline_options {
-    return passes::pipeline_options{.semantics =
-                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull)};
+    return passes::pipeline_options{.kinds = std::vector(model.targets().size(), pc::query_kind::monotone_hull)};
 }
 
 [[nodiscard]] auto single_target(pc::builder &&builder, const pc::bool_node_id node) -> pc::circuit {
@@ -88,7 +87,7 @@ TEST_CASE("Every pass and C1 preserve Boolean probability, images and hull on ra
             const auto result = require_pass(pass, input);
             rewrites[index] += result.report.rewrites;
             require_close(boolean, exact_probabilities(result.output));
-            if (passes::pass_preserves(pass, passes::target_semantics::monotone_hull)) {
+            if (passes::pass_preserves(pass, pc::query_kind::monotone_hull)) {
                 require_close(hull, hull_probabilities(result.output));
             }
             for (auto const &image : result.report.node_map) {
@@ -151,11 +150,11 @@ TEST_CASE("Delete-term pair of p = 1 flags: only fold_unit_probability changes t
         const auto hull = hull_probabilities(result.output)[0];
         if (pass == passes::pass_id::fold_unit_probability) {
             REQUIRE(hull == 0.0);
-            REQUIRE_FALSE(result.report.preserves(passes::target_semantics::monotone_hull));
-            REQUIRE(result.report.preserves(passes::target_semantics::boolean));
+            REQUIRE_FALSE(result.report.preserves(pc::query_kind::monotone_hull));
+            REQUIRE(result.report.preserves(pc::query_kind::probability));
         } else {
             REQUIRE(std::abs(hull - 0.625) <= 1.0e-15);
-            REQUIRE(result.report.preserves(passes::target_semantics::monotone_hull));
+            REQUIRE(result.report.preserves(pc::query_kind::monotone_hull));
         }
     }
 
@@ -514,8 +513,8 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
     require_report(zero_result, input);
     REQUIRE(zero_result.report.transform_id == "ir.pc.fold_zero_probability");
     REQUIRE(zero_result.report.semantics == passes::semantic_class::distribution_preserving);
-    REQUIRE(zero_result.report.preserves(passes::target_semantics::boolean));
-    REQUIRE(zero_result.report.preserves(passes::target_semantics::monotone_hull));
+    REQUIRE(zero_result.report.preserves(pc::query_kind::probability));
+    REQUIRE(zero_result.report.preserves(pc::query_kind::monotone_hull));
     REQUIRE(zero_result.report.rewrites == 1);
     const auto zero_image = zero_result.report.node_map[zero.raw()];
     REQUIRE(zero_result.output.op_codes()[zero_image.edge.source.raw()] == pc::op_code::constant);
@@ -528,7 +527,7 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
     const auto unit_result = passes::fold_unit_probability(input);
     require_report(unit_result, input);
     REQUIRE(unit_result.report.semantics == passes::semantic_class::distribution_preserving);
-    REQUIRE(unit_result.report.preserved_semantics == std::vector{passes::target_semantics::boolean});
+    REQUIRE(unit_result.report.preserved_kinds == std::vector{pc::query_kind::probability});
     REQUIRE(unit_result.report.rewrites == 1);
     REQUIRE(unit_result.output.constant_values()[unit_result.report.node_map[one.raw()].edge.source.raw()] == 1);
 
@@ -536,8 +535,8 @@ TEST_CASE("Folding passes fold only literal p = 0 / p = 1 events and state their
          {passes::pass_id::propagate_constants, passes::pass_id::eliminate_single_input, passes::pass_id::coalesce}) {
         const auto result = passes::run_pass(pass, input);
         REQUIRE(result.report.semantics == passes::semantic_class::function_preserving);
-        REQUIRE(result.report.preserves(passes::target_semantics::boolean));
-        REQUIRE(result.report.preserves(passes::target_semantics::monotone_hull));
+        REQUIRE(result.report.preserves(pc::query_kind::probability));
+        REQUIRE(result.report.preserves(pc::query_kind::monotone_hull));
     }
 }
 
@@ -581,9 +580,8 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
         REQUIRE(one_round.passes.size() == 5);
     }
     SECTION("mixed semantics skip fold_unit_probability in C1 and refuse it explicitly") {
-        passes::pipeline_options options{.semantics =
-                                             std::vector(input.targets().size(), passes::target_semantics::boolean)};
-        options.semantics.back() = passes::target_semantics::monotone_hull;
+        passes::pipeline_options options{.kinds = std::vector(input.targets().size(), pc::query_kind::probability)};
+        options.kinds.back() = pc::query_kind::monotone_hull;
         const auto compiled = passes::compile(input, passes::compile_level::c1, options);
         require_pipeline(compiled, input);
         REQUIRE(has_code(compiled.diagnostics, "pc.pipeline.pass-skipped"));
@@ -597,12 +595,11 @@ TEST_CASE("Pipeline presets, maps and diagnostics", "[ir][pc][passes][pipeline]"
         REQUIRE(has_code(refused.diagnostics, "pc.pipeline.incompatible-pass"));
     }
     SECTION("semantics table must cover every target") {
-        const auto result =
-            passes::compile(input, passes::compile_level::c1,
-                            passes::pipeline_options{.semantics = std::vector(input.targets().size() + 1,
-                                                                              passes::target_semantics::boolean)});
+        const auto result = passes::compile(
+            input, passes::compile_level::c1,
+            passes::pipeline_options{.kinds = std::vector(input.targets().size() + 1, pc::query_kind::probability)});
         REQUIRE_FALSE(result.ok());
-        REQUIRE(has_code(result.diagnostics, "pc.pipeline.target-semantics-mismatch"));
+        REQUIRE(has_code(result.diagnostics, "pc.pipeline.query-kinds-mismatch"));
     }
     SECTION("invalid input and circuits without targets") {
         const auto invalid = passes::coalesce(pc::circuit{});
@@ -644,8 +641,7 @@ using atom_sets = std::vector<std::vector<pc::bool_node_id>>;
 }
 
 [[nodiscard]] auto hull_with_atoms(pc::circuit const &model, atom_sets const &atoms) -> passes::pipeline_options {
-    return passes::pipeline_options{.semantics =
-                                        std::vector(model.targets().size(), passes::target_semantics::monotone_hull),
+    return passes::pipeline_options{.kinds = std::vector(model.targets().size(), pc::query_kind::monotone_hull),
                                     .atom_events = atoms};
 }
 
@@ -687,7 +683,7 @@ TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and
         const auto options = atom_options(input, atoms);
 
         for (const auto pass : all_passes) {
-            if (!passes::pass_preserves(pass, passes::target_semantics::monotone_hull)) {
+            if (!passes::pass_preserves(pass, pc::query_kind::monotone_hull)) {
                 continue;
             }
             INFO("pass " << passes::pass_name(pass));
@@ -708,7 +704,7 @@ TEST_CASE("Every pass and C1 preserve the atom-split hull on random circuits and
             split, split_hull_probabilities(compiled.output, carried_atoms(compiled.output, compiled.node_map, atoms)));
 
         auto mixed = hull_with_atoms(input, atoms);
-        mixed.semantics.front() = passes::target_semantics::boolean;
+        mixed.kinds.front() = pc::query_kind::probability;
         const auto partly = passes::compile(input, passes::compile_level::c1, mixed);
         require_pipeline(partly, input);
         const auto partly_split =

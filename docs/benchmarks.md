@@ -552,17 +552,16 @@ Vendor outputs are not committed.
   only FTP, so they apply the FTP reader's convention: every `-EVENT` is a
   marked literal (the FTP reader always marks it), every `-GATE` a
   negation. Models from sources without such literals get the plain hull.
-  - `--literals split` (default, the FTP convention), the *atom-split hull*:
+  - `--literals split` (default, the FTP convention; `fzb compile --hull-literals split`), the *atom-split hull*:
     every such `-NAME` is
     an atom of its own, valued not x and dropped independently of `NAME`; the
     hull is taken over all atoms on the coupled sample, and cut sets list the
     atom as `-NAME` (a cut set with both `NAME` and `-NAME` has probability 0
     and is not listed).
   - `--literals omega`: those events are *fixed* (a witness keeps their value):
-    Rauzy's $\omega_L g$.
+    Rauzy's $\omega_L g$ (`fzb compile --hull-literals fixed`).
   - `--literals positive`: every event droppable, the plain hull of the literal
-    target (`fzb compile --literals negation`; mode `negation` in the
-    RFC).
+    target (`fzb compile --hull-literals plain`).
 
   A complemented gate, also a single-input one, is a delete term in every mode.
   `split` and `omega` agree wherever no directly complemented event also
@@ -572,7 +571,7 @@ Vendor outputs are not committed.
   matters (T2 below). Droppable variables at p = 1 are not constants;
   variables at p = 0 are constants. The atom `-NAME` of an event at p = 0 is a
   droppable variable at p = 1, not TRUE.
-- **Initiator rule** (#190): `--max-initiators-per-cutset N` conjoins
+- **Initiator rule** (#190; `fzb compile --hull-max-initiators N`, hull queries only): `--max-initiators-per-cutset N` conjoins
   $\neg\,\mathrm{atleast}(N+1;\ I)$, with $I$ the `I`-tagged events in the
   target's cone (p = 1 initiator flags count). Under the hull this deletes the
   minimal cut sets with more than N initiators (the vendor tools use N = 1);

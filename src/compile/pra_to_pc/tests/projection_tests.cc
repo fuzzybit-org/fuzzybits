@@ -40,13 +40,14 @@ TEST_CASE("pra_to_pc projection resolves in both directions", "[compile][pra_to_
     const auto model = seal(std::move(builder));
 
     lowering::quantification_config config;
+    config.initiators = lowering::initiator_values::probability;
     config.watch_targets = {{.name = "R"}, {.name = "L", .element = pra::element_kind::gate}};
     config.overrides = {{.name = "FLAG", .value = false}};
-    config.default_negation = pra::negation_set::of(pra::negation_semantics::monotone_hull);
-    config.default_literals = pra::literal_mode::negation;
-    config.max_initiators_per_cutset = 1;
+    config.default_kinds = {pc::query_kind::monotone_hull};
+    config.default_hull.literals = pra::hull_literals::plain;
+    config.default_hull.max_initiators = 1;
     const auto artifact = require_lower(model, config);
-    require_equivalent(model, artifact, {{.element = flag, .value = false}}, 1U);
+    require_equivalent(model, artifact, {{.element = flag, .value = false}});
     auto const &projection = artifact.projection;
 
     // Every PC node is bound to an element or generated for a target.
