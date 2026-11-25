@@ -1,11 +1,11 @@
 // Instantiates one MC kernel at a bitpack width it does not support. Built only
 // by the mc.compile_fail.* tests, which pass iff compilation fails and every
 // diagnostic is the expected one. Configure with FZB_BITS (128 | 256) and
-// exactly one of FZB_KERNEL_ATLEAST / FZB_KERNEL_TALLY.
+// exactly one of FZB_KERNEL_CARDINALITY / FZB_KERNEL_TALLY.
 
 #include "mc/event/node.h"
 #include "mc/event/sample_shape.h"
-#include "mc/kernel/gate.h"
+#include "mc/kernel/cardinality.h"
 #include "mc/kernel/tally.h"
 
 #include <cstddef>
@@ -87,12 +87,12 @@ using size_t_ = std::size_t;
 
 void instantiate(sycl::queue &queue) {
     const scram::mc::event::sample_shape<size_t_> shape{1, 1};
-#if defined(FZB_KERNEL_ATLEAST)
-    using kernel_t = scram::mc::kernel::op<scram::core::Connective::kAtleast, bitpack_t, size_t_>;
-    const scram::mc::event::atleast_gate_block<bitpack_t, size_t_> block{};
+#if defined(FZB_KERNEL_CARDINALITY)
+    using kernel_t =
+        scram::mc::kernel::cardinality<bitpack_t, size_t_, scram::mc::kernel::cardinality_form::fixed, 4, false>;
+    const scram::mc::event::cardinality_gate_block<bitpack_t, size_t_> block{};
     const kernel_t kernel(block, shape);
-    const auto nd = kernel_t::get_range(1, sycl::range<3>{1, 1, 1}, shape);
-    queue.submit([&](sycl::handler &cgh) { cgh.parallel_for(nd, kernel); });
+    queue.submit([&](sycl::handler &cgh) { cgh.parallel_for(kernel.get_range(), kernel); });
 #elif defined(FZB_KERNEL_TALLY)
     using kernel_t = scram::mc::kernel::tally<double, bitpack_t, size_t_>;
     const scram::mc::event::tally_block<bitpack_t> block{};
@@ -100,6 +100,6 @@ void instantiate(sycl::queue &queue) {
     const auto nd = kernel_t::get_range(1, sycl::range<3>{1, 1, 1}, shape);
     queue.submit([&](sycl::handler &cgh) { cgh.parallel_for(nd, [=](sycl::nd_item<3> item) { kernel(item, 1); }); });
 #else
-#error "define FZB_KERNEL_ATLEAST or FZB_KERNEL_TALLY"
+#error "define FZB_KERNEL_CARDINALITY or FZB_KERNEL_TALLY"
 #endif
 }

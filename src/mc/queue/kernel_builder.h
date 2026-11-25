@@ -64,6 +64,7 @@
 #include "working_set.h"
 
 #include "mc/kernel/basic_event.h"
+#include "mc/kernel/cardinality.h"
 #include "mc/kernel/gate.h"
 #include "mc/kernel/tally.h"
 
@@ -77,10 +78,12 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 namespace scram::mc::queue {
 
@@ -381,6 +384,145 @@ static std::shared_ptr<queueable_base> build_kernel_for_variables(
     return queueable_partition;
 }
 
+template <core::Connective gate_type_, std::uint32_t slots_, bool lanes_form_, typename bitpack_t_, typename size_t_>
+static std::shared_ptr<queueable_base>
+make_gate_queueable(sycl::queue &queue_, const event::gate_block<bitpack_t_, size_t_> &block,
+                    const event::sample_shape<size_t_> &sample_shape_,
+                    const std::set<std::shared_ptr<queueable_base>> &dependencies, sycl::range<3> &global_range,
+                    sycl::range<3> &local_range) {
+    using kernel_type = kernel::op<gate_type_, bitpack_t_, size_t_, slots_, lanes_form_>;
+    const kernel_type typed_kernel(block, sample_shape_, kernel::gate_order_for(queue_.get_device(), slots_ == 0));
+    const auto nd_range = typed_kernel.get_range();
+    global_range = sycl::range<3>{typed_kernel.gates(), 1, typed_kernel.items_per_gate()};
+    local_range = sycl::range<3>{1, 1, nd_range.get_local_range()[0]};
+    return std::make_shared<queueable<kernel_type, 1>>(queue_, typed_kernel, nd_range, dependencies);
+}
+
+/// The fixed-form gate kernel for `slots`, one of kernel::kGateSlots.
+template <core::Connective gate_type_, bool lanes_form_, typename bitpack_t_, typename size_t_, std::size_t... I>
+static std::shared_ptr<queueable_base>
+make_fixed_gate_queueable(sycl::queue &queue_, const event::gate_block<bitpack_t_, size_t_> &block,
+                          const event::sample_shape<size_t_> &sample_shape_,
+                          const std::set<std::shared_ptr<queueable_base>> &dependencies, const std::uint32_t slots,
+                          sycl::range<3> &global_range, sycl::range<3> &local_range, std::index_sequence<I...>) {
+    std::shared_ptr<queueable_base> partition;
+    const auto build_if = [&]<std::uint32_t slots_>() {
+        if (slots == slots_) {
+            partition = make_gate_queueable<gate_type_, slots_, lanes_form_>(queue_, block, sample_shape_, dependencies,
+                                                                             global_range, local_range);
+        }
+    };
+    (build_if.template operator()<kernel::kGateSlots[I]>(), ...);
+    return partition;
+}
+
+/// Gates of one connective and slot count (0: the counted form) in the device's lanes form and order.
+template <core::Connective gate_type_, typename bitpack_t_, typename size_t_>
+static std::shared_ptr<queueable_base>
+make_gate_partition(sycl::queue &queue_, const event::gate_block<bitpack_t_, size_t_> &block,
+                    const event::sample_shape<size_t_> &sample_shape_,
+                    const std::set<std::shared_ptr<queueable_base>> &dependencies, const std::uint32_t slots,
+                    sycl::range<3> &global_range, sycl::range<3> &local_range) {
+    const bool lanes = queue_.get_device().is_cpu();
+    std::shared_ptr<queueable_base> partition;
+    if constexpr (gate_type_ == core::kNot || gate_type_ == core::kNull) {
+        if (slots == 1) {
+            partition = lanes ? make_gate_queueable<gate_type_, 1, true>(queue_, block, sample_shape_, dependencies,
+                                                                         global_range, local_range)
+                              : make_gate_queueable<gate_type_, 1, false>(queue_, block, sample_shape_, dependencies,
+                                                                          global_range, local_range);
+        }
+    } else if (slots == 0) {
+        partition = lanes ? make_gate_queueable<gate_type_, 0, true>(queue_, block, sample_shape_, dependencies,
+                                                                     global_range, local_range)
+                          : make_gate_queueable<gate_type_, 0, false>(queue_, block, sample_shape_, dependencies,
+                                                                      global_range, local_range);
+    } else {
+        constexpr auto each_slot_count = std::make_index_sequence<kernel::kGateSlots.size()>{};
+        partition =
+            lanes ? make_fixed_gate_queueable<gate_type_, true>(queue_, block, sample_shape_, dependencies, slots,
+                                                                global_range, local_range, each_slot_count)
+                  : make_fixed_gate_queueable<gate_type_, false>(queue_, block, sample_shape_, dependencies, slots,
+                                                                 global_range, local_range, each_slot_count);
+    }
+    if (!partition) {
+        throw std::logic_error("unhandled gate slot count " + std::to_string(slots) + " for " +
+                               core::OpName.at(gate_type_));
+    }
+    return partition;
+}
+
+template <kernel::cardinality_form form_, std::uint32_t slots_, bool lanes_form_, typename bitpack_t_, typename size_t_>
+static std::shared_ptr<queueable_base>
+make_cardinality_queueable(sycl::queue &queue_, const event::cardinality_gate_block<bitpack_t_, size_t_> &block,
+                           const event::sample_shape<size_t_> &sample_shape_,
+                           const std::set<std::shared_ptr<queueable_base>> &dependencies, sycl::range<3> &global_range,
+                           sycl::range<3> &local_range) {
+    using kernel_type = kernel::cardinality<bitpack_t_, size_t_, form_, slots_, lanes_form_>;
+    const kernel_type typed_kernel(
+        block, sample_shape_, kernel::gate_order_for(queue_.get_device(), form_ != kernel::cardinality_form::fixed));
+    const auto nd_range = typed_kernel.get_range();
+    global_range = sycl::range<3>{typed_kernel.gates(), 1, typed_kernel.items_per_gate()};
+    local_range = sycl::range<3>{1, 1, nd_range.get_local_range()[0]};
+    return std::make_shared<queueable<kernel_type, 1>>(queue_, typed_kernel, nd_range, dependencies);
+}
+
+/// The fixed-form kernel for `slots`, one of kernel::kCardinalitySlots.
+template <bool lanes_form_, typename bitpack_t_, typename size_t_, std::size_t... I>
+static std::shared_ptr<queueable_base> make_fixed_cardinality_queueable(
+    sycl::queue &queue_, const event::cardinality_gate_block<bitpack_t_, size_t_> &block,
+    const event::sample_shape<size_t_> &sample_shape_, const std::set<std::shared_ptr<queueable_base>> &dependencies,
+    const std::uint32_t slots, sycl::range<3> &global_range, sycl::range<3> &local_range, std::index_sequence<I...>) {
+    std::shared_ptr<queueable_base> partition;
+    const auto build_if = [&]<std::uint32_t slots_>() {
+        if (slots == slots_) {
+            partition = make_cardinality_queueable<kernel::cardinality_form::fixed, slots_, lanes_form_>(
+                queue_, block, sample_shape_, dependencies, global_range, local_range);
+        }
+    };
+    (build_if.template operator()<kernel::kCardinalitySlots[I]>(), ...);
+    return partition;
+}
+
+/// Cardinality gates of one form (and, for the fixed form, one slot count) in the device's lanes form
+/// (CPUs: vectors of bitpacks per work-item).
+template <typename bitpack_t_, typename size_t_>
+static std::shared_ptr<queueable_base>
+make_cardinality_partition(sycl::queue &queue_, const event::cardinality_gate_block<bitpack_t_, size_t_> &block,
+                           const event::sample_shape<size_t_> &sample_shape_,
+                           const std::set<std::shared_ptr<queueable_base>> &dependencies,
+                           const kernel::cardinality_form form, const std::uint32_t slots, sycl::range<3> &global_range,
+                           sycl::range<3> &local_range) {
+    using kernel::cardinality_form;
+    const bool lanes = queue_.get_device().is_cpu();
+    constexpr auto each_slot_count = std::make_index_sequence<kernel::kCardinalitySlots.size()>{};
+    std::shared_ptr<queueable_base> partition;
+    switch (form) {
+    case cardinality_form::fixed:
+        partition = lanes ? make_fixed_cardinality_queueable<true>(queue_, block, sample_shape_, dependencies, slots,
+                                                                   global_range, local_range, each_slot_count)
+                          : make_fixed_cardinality_queueable<false>(queue_, block, sample_shape_, dependencies, slots,
+                                                                    global_range, local_range, each_slot_count);
+        break;
+    case cardinality_form::counter:
+        partition = lanes ? make_cardinality_queueable<cardinality_form::counter, 0, true>(
+                                queue_, block, sample_shape_, dependencies, global_range, local_range)
+                          : make_cardinality_queueable<cardinality_form::counter, 0, false>(
+                                queue_, block, sample_shape_, dependencies, global_range, local_range);
+        break;
+    case cardinality_form::wide:
+        partition = lanes ? make_cardinality_queueable<cardinality_form::wide, 0, true>(
+                                queue_, block, sample_shape_, dependencies, global_range, local_range)
+                          : make_cardinality_queueable<cardinality_form::wide, 0, false>(
+                                queue_, block, sample_shape_, dependencies, global_range, local_range);
+        break;
+    }
+    if (!partition) {
+        throw std::logic_error("unhandled cardinality form or slot count");
+    }
+    return partition;
+}
+
 /**
  * @brief Builds a SYCL kernel for gates of a specific logical operation type
  *
@@ -465,7 +607,7 @@ static std::shared_ptr<queueable_base> build_kernel_for_gates_of_type(
     const std::unordered_map<index_t_, event::basic_event<prob_t_, bitpack_t_> *> &allocated_basic_events_by_index_,
     std::unordered_map<index_t_, event::gate<bitpack_t_, size_t_> *> &allocated_gates_by_index_,
     std::vector<event::gate_block<bitpack_t_, size_t_>> &device_gate_blocks_,
-    std::vector<event::atleast_gate_block<bitpack_t_, size_t_>> &device_atleast_gate_blocks_,
+    std::vector<event::cardinality_gate_block<bitpack_t_, size_t_>> &device_cardinality_gate_blocks_,
     std::vector<kernel_partition_description> &execution_partitions_,
     std::vector<kernel_dependency_edge> &execution_dependency_edges_,
     std::unordered_map<const queueable_base *, std::size_t> &partition_ids_by_queueable_,
@@ -558,8 +700,6 @@ static std::shared_ptr<queueable_base> build_kernel_for_gates_of_type(
 
     // 2) Create a contiguous array for these gates
     const size_t num_events_in_layer = indices.size();
-    const auto local_range =
-        working_set<size_t_, bitpack_t_>(queue_, num_events_in_layer, sample_shape_).compute_optimal_local_range_3d();
     std::vector<std::int32_t> node_indices;
     node_indices.reserve(indices.size());
     for (const auto index : indices) {
@@ -567,23 +707,34 @@ static std::shared_ptr<queueable_base> build_kernel_for_gates_of_type(
     }
     const auto dependency_ids = dependency_partition_ids(layer_dependencies, partition_ids_by_queueable_);
 
-    // 3) Instantiate the appropriate kernel for this gate type, along with the partition
-    using kernel_type = kernel::op<gate_type_, bitpack_t_, size_t_>;
+    // 3) Instantiate the kernel for this gate type and size class, along with the partition. build_kernels_for_gates
+    //    passes gates of one size class (cardinality form and slot count, or gate slot count).
     std::shared_ptr<queueable_base> queueable_partition;
 
     if constexpr (gate_type_ == core::Connective::kAtleast) {
-        auto gate_blk = event::create_atleast_gate_block<bitpack_t_, size_t_>(
-            queue_, inputs_by_gate_with_negated_offset, atleast_args_by_gate, sample_shape_.num_bitpacks());
-        device_atleast_gate_blocks_.push_back(gate_blk);
+        // At least k of n is the cardinality range [k, n]. build_kernels_for_gates passes gates of one form.
+        std::vector<std::pair<size_t_, size_t_>> bounds_by_gate;
+        bounds_by_gate.reserve(num_events_in_layer);
+        for (std::size_t i = 0; i < num_events_in_layer; ++i) {
+            bounds_by_gate.emplace_back(atleast_args_by_gate[i],
+                                        static_cast<size_t_>(inputs_by_gate_with_negated_offset[i].first.size()));
+        }
+        // Fixed-form gates are padded to their slot count, which all gates here share.
+        const auto inputs = inputs_by_gate_with_negated_offset.front().first.size();
+        const auto form = kernel::cardinality_form_for(inputs);
+        const auto slots = kernel::cardinality_slots_for(inputs);
+        auto gate_blk = event::create_cardinality_gate_block<bitpack_t_, size_t_>(
+            queue_, inputs_by_gate_with_negated_offset, bounds_by_gate, sample_shape_.num_bitpacks(), slots);
+        device_cardinality_gate_blocks_.push_back(gate_blk);
 
-        kernel_type typed_kernel(gate_blk, sample_shape_);
-        const auto nd_range = typed_kernel.get_range(num_events_in_layer, local_range, sample_shape_);
-        queueable<kernel_type, 3> partition(queue_, typed_kernel, nd_range, layer_dependencies);
-        queueable_partition = std::make_shared<decltype(partition)>(partition);
+        sycl::range<3> global_range{1, 1, 1};
+        sycl::range<3> card_local_range{1, 1, 1};
+        queueable_partition = make_cardinality_partition(queue_, gate_blk, sample_shape_, layer_dependencies, form,
+                                                         slots, global_range, card_local_range);
         register_kernel_partition(queueable_partition,
                                   make_kernel_partition_description<size_t_, bitpack_t_>(
                                       layer_index_, "gate", core::OpName.at(gate_type_), node_indices, dependency_ids,
-                                      nd_range.get_global_range(), nd_range.get_local_range(), sample_shape_,
+                                      global_range, card_local_range, sample_shape_,
                                       min_fan_in == std::numeric_limits<std::size_t>::max() ? 0 : min_fan_in,
                                       max_fan_in, total_fan_in, positive_input_count, negated_input_count),
                                   execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_);
@@ -594,18 +745,20 @@ static std::shared_ptr<queueable_base> build_kernel_for_gates_of_type(
             queueables_by_index_[indices[i]] = queueable_partition;
         }
     } else {
+        const auto slots = kernel::gate_slots_on(queue_.get_device(), gate_type_,
+                                                 inputs_by_gate_with_negated_offset.front().first.size());
         auto gate_blk = event::create_gate_block<bitpack_t_, size_t_>(queue_, inputs_by_gate_with_negated_offset,
-                                                                      sample_shape_.num_bitpacks());
+                                                                      sample_shape_.num_bitpacks(), slots);
         device_gate_blocks_.push_back(gate_blk);
 
-        kernel_type typed_kernel(gate_blk, sample_shape_);
-        const auto nd_range = typed_kernel.get_range(num_events_in_layer, local_range, sample_shape_);
-        queueable<kernel_type, 3> partition(queue_, typed_kernel, nd_range, layer_dependencies);
-        queueable_partition = std::make_shared<decltype(partition)>(partition);
+        sycl::range<3> global_range{1, 1, 1};
+        sycl::range<3> gate_local_range{1, 1, 1};
+        queueable_partition = make_gate_partition<gate_type_>(queue_, gate_blk, sample_shape_, layer_dependencies,
+                                                              slots, global_range, gate_local_range);
         register_kernel_partition(queueable_partition,
                                   make_kernel_partition_description<size_t_, bitpack_t_>(
                                       layer_index_, "gate", core::OpName.at(gate_type_), node_indices, dependency_ids,
-                                      nd_range.get_global_range(), nd_range.get_local_range(), sample_shape_,
+                                      global_range, gate_local_range, sample_shape_,
                                       min_fan_in == std::numeric_limits<std::size_t>::max() ? 0 : min_fan_in,
                                       max_fan_in, total_fan_in, positive_input_count, negated_input_count),
                                   execution_partitions_, execution_dependency_edges_, partition_ids_by_queueable_);
@@ -727,7 +880,7 @@ static std::vector<std::shared_ptr<queueable_base>> build_kernels_for_gates(
     const std::unordered_map<index_t_, event::basic_event<prob_t_, bitpack_t_> *> &allocated_basic_events_by_index_,
     std::unordered_map<index_t_, event::gate<bitpack_t_, size_t_> *> &allocated_gates_by_index_,
     std::vector<event::gate_block<bitpack_t_, size_t_>> &device_gate_blocks_,
-    std::vector<event::atleast_gate_block<bitpack_t_, size_t_>> &device_atleast_gate_blocks_,
+    std::vector<event::cardinality_gate_block<bitpack_t_, size_t_>> &device_cardinality_gate_blocks_,
     std::vector<kernel_partition_description> &execution_partitions_,
     std::vector<kernel_dependency_edge> &execution_dependency_edges_,
     std::unordered_map<const queueable_base *, std::size_t> &partition_ids_by_queueable_,
@@ -735,70 +888,65 @@ static std::vector<std::shared_ptr<queueable_base>> build_kernels_for_gates(
     std::vector<std::shared_ptr<queueable_base>> kernels;
     kernels.reserve(gates_by_type.size());
 
+    // One partition per kernel: per connective, and per size class within it (gate.h's slot counts on the
+    // device, or cardinality.h's forms and slot counts), so that each kernel is compiled for its input count.
+    const auto build_by_size = [&]<core::Connective gate_type_>(
+                                   const std::vector<std::shared_ptr<core::Gate>> &gates_) {
+        std::map<std::uint64_t, std::vector<std::shared_ptr<core::Gate>>> by_kernel;
+        for (const auto &gate : gates_) {
+            const auto inputs = gate->args<core::Variable>().size() + gate->args<core::Gate>().size();
+            std::uint64_t key = kernel::gate_slots_on(queue_.get_device(), gate_type_, inputs);
+            if constexpr (gate_type_ == core::kAtleast) {
+                key = (static_cast<std::uint64_t>(kernel::cardinality_form_for(inputs)) << 32) |
+                      kernel::cardinality_slots_for(inputs);
+            }
+            by_kernel[key].push_back(gate);
+        }
+        for (const auto &[key, kernel_gates] : by_kernel) {
+            const auto partition = build_kernel_for_gates_of_type<gate_type_, index_t_, prob_t_, bitpack_t_, size_t_>(
+                kernel_gates, queue_, sample_shape_, queueables_, queueables_by_index_,
+                allocated_basic_events_by_index_, allocated_gates_by_index_, device_gate_blocks_,
+                device_cardinality_gate_blocks_, execution_partitions_, execution_dependency_edges_,
+                partition_ids_by_queueable_, layer_index_);
+            if (partition) {
+                kernels.push_back(partition);
+            }
+        }
+    };
+
     for (const auto &[gate_type, gates_] : gates_by_type) {
         if (gates_.empty()) {
             continue;
         }
-
-        std::shared_ptr<queueable_base> kernel = nullptr;
-
         switch (gate_type) {
         case core::kAnd:
-            kernel = build_kernel_for_gates_of_type<core::kAnd, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kAnd>(gates_);
             break;
         case core::kOr:
-            kernel = build_kernel_for_gates_of_type<core::kOr, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kOr>(gates_);
             break;
         case core::kAtleast:
-            kernel = build_kernel_for_gates_of_type<core::kAtleast, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kAtleast>(gates_);
             break;
         case core::kXor:
-            kernel = build_kernel_for_gates_of_type<core::kXor, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kXor>(gates_);
             break;
         case core::kNot:
-            kernel = build_kernel_for_gates_of_type<core::kNot, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kNot>(gates_);
             break;
         case core::kNand:
-            kernel = build_kernel_for_gates_of_type<core::kNand, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kNand>(gates_);
             break;
         case core::kNor:
-            kernel = build_kernel_for_gates_of_type<core::kNor, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kNor>(gates_);
             break;
         case core::kNull:
-            kernel = build_kernel_for_gates_of_type<core::kNull, index_t_, prob_t_, bitpack_t_, size_t_>(
-                gates_, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-                allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
-                execution_dependency_edges_, partition_ids_by_queueable_, layer_index_);
+            build_by_size.template operator()<core::kNull>(gates_);
             break;
         default:
             // clang emits `ud2` for an unhandled Connective; throw instead.
             throw std::runtime_error("unhandled PDAG connective in kernel builder: " +
                                      std::to_string(static_cast<int>(gate_type)));
-        }
-        // Build exactly one kernel for gates of this type in the layer
-        if (kernel) {
-            kernels.push_back(kernel);
         }
     }
 

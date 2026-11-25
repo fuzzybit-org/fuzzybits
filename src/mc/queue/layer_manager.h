@@ -306,7 +306,7 @@ template <typename bitpack_t_, typename prob_t_, typename size_t_> class layer_m
     std::vector<event::gate_block<bitpack_t_, size_t_>> device_gate_blocks_;
 
     /// @brief Map from node index to allocated blocks
-    std::vector<event::atleast_gate_block<bitpack_t_, size_t_>> device_atleast_gate_blocks_;
+    std::vector<event::cardinality_gate_block<bitpack_t_, size_t_>> device_cardinality_gate_blocks_;
 
     /// @brief Map from node index to allocated blocks
     std::vector<event::tally_block<bitpack_t_>> device_tally_blocks_;

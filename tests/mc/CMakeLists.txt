@@ -94,17 +94,33 @@ set_tests_properties(mc.bernoulli_sampler PROPERTIES
   TIMEOUT ${MC_TEST_TIMEOUT}
 )
 
-add_executable(mc_atleast_gate_tests atleast_gate_tests.cc)
-target_link_libraries(mc_atleast_gate_tests PRIVATE Catch2::Catch2WithMain mc)
-target_include_directories(mc_atleast_gate_tests PRIVATE
+add_executable(mc_cardinality_gate_tests cardinality_gate_tests.cc)
+target_link_libraries(mc_cardinality_gate_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_cardinality_gate_tests PRIVATE
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/tests"
 )
-add_sycl_to_target(TARGET mc_atleast_gate_tests SOURCES atleast_gate_tests.cc)
-add_test(NAME mc.atleast_gate COMMAND mc_atleast_gate_tests)
-set_tests_properties(mc.atleast_gate PROPERTIES
+add_sycl_to_target(TARGET mc_cardinality_gate_tests SOURCES cardinality_gate_tests.cc)
+add_test(NAME mc.cardinality_gate COMMAND mc_cardinality_gate_tests)
+# 80 kernels (4 widths x 10 forms and slot counts x 2 lane forms) are JIT-compiled on first launch, and run
+# in both work-group orders.
+set_tests_properties(mc.cardinality_gate PROPERTIES
   LABELS "mc"
-  TIMEOUT ${MC_TEST_TIMEOUT}
+  TIMEOUT 600
+)
+
+add_executable(mc_gate_kernel_tests gate_kernel_tests.cc)
+target_link_libraries(mc_gate_kernel_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_gate_kernel_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_sycl_to_target(TARGET mc_gate_kernel_tests SOURCES gate_kernel_tests.cc)
+add_test(NAME mc.gate_kernel COMMAND mc_gate_kernel_tests)
+# About 100 kernels (connectives x slot counts x lane forms x widths) are JIT-compiled on first launch.
+set_tests_properties(mc.gate_kernel PROPERTIES
+  LABELS "mc"
+  TIMEOUT 600
 )
 
 add_executable(mc_tally_kernel_tests tally_kernel_tests.cc)
@@ -121,15 +137,15 @@ set_tests_properties(mc.tally_kernel PROPERTIES
 )
 
 # 128- and 256-bit bitpacks must be rejected at compile time, and only for the
-# stated reason: the at-least gate's split 32-bit reduction static_asserts on
-# width, and sycl::popcount is constrained to the standard integer types. Each
+# stated reason: the cardinality kernel static_asserts on width, and
+# sycl::popcount is constrained to the standard integer types. Each
 # test builds an EXCLUDE_FROM_ALL object target and passes iff that build fails
 # and every compiler error matches the expected diagnostic.
 # Locations are file:line:col (clang) or file(line,col) (clang-cl).
 set(_compile_fail_loc "[:(][0-9]+[:,][0-9]+\\)?: error: ")
-set(_compile_fail_regex_atleast "gate\\.h${_compile_fail_loc}static assertion failed due to requirement 'sizeof\\(.*\\) == 2 \\* sizeof\\(unsigned int\\)'")
+set(_compile_fail_regex_cardinality "cardinality\\.h${_compile_fail_loc}static assertion failed due to requirement '.*kSupported'.*cardinality gates need an unsigned bitpack of at most 64 bits")
 set(_compile_fail_regex_tally "tally\\.h${_compile_fail_loc}no matching function for call to 'popcount'")
-foreach(_kernel atleast tally)
+foreach(_kernel cardinality tally)
   string(TOUPPER "${_kernel}" _kernel_upper)
   foreach(_bits 128 256)
     set(_target mc_compile_fail_${_kernel}_u${_bits})

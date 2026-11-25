@@ -190,9 +190,9 @@ Source:
 
 - `kernel_builder.h`
 - `kernel::basic_event::get_range()`
-- `kernel::op<...>::get_range()`
+- `kernel::op<...>::get_range()`, `kernel::cardinality<...>::get_range()` (`gate_geometry`, `gate_lanes.h`)
 - `kernel::tally::get_range()`
-- `working_set::compute_optimal_local_range_3d()`
+- `working_set::compute_optimal_local_range_3d()` (tally)
 
 For each kernel partition, C++ computes:
 
@@ -200,7 +200,9 @@ For each kernel partition, C++ computes:
 - global range `(x, y, z)`, rounded up to local multiples
 - logical work dimensions:
   - basic event: `(num_events, batch_size, bitpacks_per_batch)`
-  - gate: `(num_gates, batch_size, bitpacks_per_batch)`
+  - gate: `(num_gates, 1, work-items per gate)`, one bitpack per work-item (8 on CPUs); a layer has one gate
+    partition per connective and size class (slot count or cardinality form; on CPUs, AND, OR, XOR, NAND and
+    NOR take one class)
   - tally: `(num_tallies, batch_size, bitpacks_per_batch)`
 - work-group count
 - over-provisioned work-items

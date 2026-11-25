@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <random>
 #include <span>
@@ -269,4 +270,30 @@ TEST_CASE("fzb run matches exact enumeration on random circuits with constants a
         INFO("round " << round);
         require_matches_exact(b.finish());
     }
+}
+
+TEST_CASE("fzb run evaluates k-of-n gates in every cardinality kernel form", "[runtime][mc][pcfb][cardinality]") {
+    // Repeated operands give gates of up to 331 inputs over three events, which exact enumeration still covers:
+    // up to 8 inputs take the small kernel, 9 to 255 the counter, 256 or more the wide one. Thresholds of 256
+    // and more are past what an 8-bit count holds.
+    circuit_builder b;
+    const auto x0 = b.sample(0.3);
+    const auto x1 = b.sample(0.6);
+    const auto x2 = b.sample(0.45);
+    const auto repeat = [](std::initializer_list<std::pair<tensor, std::size_t>> parts) {
+        std::vector<tensor> out;
+        for (const auto &[t, count] : parts) {
+            out.insert(out.end(), count, t);
+        }
+        return out;
+    };
+    b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = repeat({{x0, 2}, {x1, 3}, {x2, 3}})}, 5));
+    b.query(b.op(OpCode::BITWISE_ATMOST, {.inputs = repeat({{x0, 10}, {x1, 10}})}, 10));
+    b.query(b.op(OpCode::BITWISE_EXACTLY, {.inputs = repeat({{x0, 4}, {x1, 5}})}, 5));
+    b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = repeat({{x0, 150}, {x1, 150}})}, 200));
+    b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = repeat({{x0, 100}, {x1, 200}})}, 300));
+    b.query(
+        b.op(OpCode::BITWISE_EXACTLY, {.inputs = repeat({{x0, 128}, {x1, 200}}), .inverted = repeat({{x2, 3}})}, 131));
+    b.query(b.op(OpCode::BITWISE_ATMOST, {.inputs = repeat({{x0, 300}}), .inverted = repeat({{x1, 20}})}, 280));
+    require_matches_exact(b.finish());
 }

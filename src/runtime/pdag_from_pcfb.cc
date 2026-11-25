@@ -650,30 +650,29 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
             }
             return g;
         }
+        // At most k of n arguments are true iff at least n - k of their complements are, so neither form needs a
+        // NOT gate, which would be a pass of its own.
+        const auto complements_at_least = static_cast<int>(args.size() - std::min<std::size_t>(k, args.size()));
         if (opcode == pcfb::OpCode::BITWISE_ATMOST) {
-            auto inner = make_gate(graph, scram::core::kAtleast);
-            inner->min_number(static_cast<int>(k + 1));
+            auto g = make_gate(graph, scram::core::kAtleast);
+            g->min_number(complements_at_least);
             for (const auto &[b, inv] : args) {
-                add_arg(graph, inner, b, inv);
+                add_arg(graph, g, b, !inv);
             }
-            auto neg = make_gate(graph, scram::core::kNot);
-            neg->AddArg(inner, false);
-            return neg;
+            return g;
         }
         if (opcode == pcfb::OpCode::BITWISE_EXACTLY) {
             auto atleast = make_gate(graph, scram::core::kAtleast);
             atleast->min_number(static_cast<int>(k));
-            auto atleast_next = make_gate(graph, scram::core::kAtleast);
-            atleast_next->min_number(static_cast<int>(k + 1));
+            auto atmost = make_gate(graph, scram::core::kAtleast);
+            atmost->min_number(complements_at_least);
             for (const auto &[b, inv] : args) {
                 add_arg(graph, atleast, b, inv);
-                add_arg(graph, atleast_next, b, inv);
+                add_arg(graph, atmost, b, !inv);
             }
-            auto not_next = make_gate(graph, scram::core::kNot);
-            not_next->AddArg(atleast_next, false);
             auto both = make_gate(graph, scram::core::kAnd);
             both->AddArg(atleast, false);
-            both->AddArg(not_next, false);
+            both->AddArg(atmost, false);
             return both;
         }
 

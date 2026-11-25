@@ -83,29 +83,33 @@ static bitpack_t generate_samples(const sampler_args &args) {
 - **Sample Size**: Bit-packs per batch (configurable: 16, 32, 64 typical)
 - **Dynamic Sizing**: Runtime optimization based on device memory and compute capabilities
 
-### Optimized ATLEAST Gate Implementation
+### Gate kernels
 
-mcSCRAM implements a **direct bit-counting algorithm** for ATLEAST gates (k-out-of-n logic) that significantly outperforms traditional AND/OR expansion methods.
-For example, a 3-out-of-5 ATLEAST gate, if expanded, requires 10 intermediate AND/OR gates. 
-mcSCRAM's implementation uses a single kernel with 5 input reads and parallel bit accumulation.
+A work-item evaluates one bitpack of one gate (CPUs: 8 consecutive bitpacks as one vector, since their JIT
+does not vectorize across work-items), in a one-dimensional range of gates × work-groups per gate whose gate
+comes from the work-group index (`src/mc/kernel/gate_lanes.h`). On NVIDIA GPUs the work-groups run every gate
+at a block of bitpacks before the next block, so gates that share inputs read them from the cache; elsewhere
+they run gate by gate, except on CPUs for kernels whose gates differ in input count: OpenMP gives each thread a
+contiguous run of work-groups, and block by block every thread gets each gate as often. A layer's gates take
+one kernel per connective and size class:
 
-```cpp
-// Per-bit accumulation instead of combinatorial expansion
-sycl::marray<bitpack_t, NUM_BITS> accumulated_counts(0);
-for (auto i = 0; i < num_inputs; ++i) {
-    const bitpack_t val = inputs[i][index];
-    #pragma unroll
-    for (auto bit_idx = 0; bit_idx < NUM_BITS; ++bit_idx) {
-        accumulated_counts[bit_idx] += ((val >> bit_idx) & 1);
-    }
-}
-```
-- **No Combinatorial Explosion**: Traditional ATLEAST implementations expand k-out-of-n into complex trees of AND/OR gates (C(n,k) combinations)
-- **Parallel Bit Processing**: All 64 bits processed simultaneously vs. sequential popcount operations  
-- **Memory Efficiency**: Single pass through inputs vs. multiple intermediate gate evaluations
-- **Optimal GPU Utilization**: Vectorized accumulation operations match GPU SIMD architecture
+- AND, OR, XOR, NAND, NOR, NOT, NULL (`src/mc/kernel/gate.h`): on GPUs, up to 16 inputs, a fixed number of
+  input slots (1, 2, 3, 4, 6, 8, 12 or 16), each a kernel of its own. The kernel builder pads a gate to the
+  smallest that holds it; `gate::input_mask` marks the slots that hold an input, the kernel never reads the
+  others, and an empty slot is the connective's identity (constant gates are AND or OR over no inputs). Above
+  16 inputs the count is read at run time, 8 loads at a time. On CPUs, where the fixed form is no faster,
+  every gate but NOT and NULL reads its count at run time, so that a layer has one kernel per connective and
+  each pass waits at fewer kernel barriers.
+- Cardinality gates (`src/mc/kernel/cardinality.h`): at least k, at most k and exactly k of n are true where
+  the number of true inputs lies in [low, high]. The count is bit-sliced: bit j of a bitpack is trial j, and
+  the per-trial counts are bit planes, so whole-word logic counts all the trials of a bitpack at once. Up to
+  16 inputs the same slot counts; 17 to 255 inputs, carry-save adders over blocks of 8 inputs (Harley-Seal), at
+  most 8 planes, with the input count read at run time; 256 inputs or more, the same with up to 32 planes, in a
+  kernel of its own so that its registers do not lower the occupancy of the others. The planes are compared
+  with low and high through one carry chain each. The PDAG has at-least gates only: `fzb run` reads at most k
+  of n as at least n - k of the complemented inputs, and exactly k as the AND of the two, so neither needs a
+  NOT gate.
 
-**Example**: 
 </details>
 
 ## Build and Installation

@@ -165,7 +165,7 @@ void layer_manager<bitpack_t_, prob_t_, size_t_>::build_kernels_for_layer(
     // Step (3): Build one kernel per gate->type() in this layer
     auto gate_kernels = build_kernels_for_gates<index_t_, prob_t_, bitpack_t_, size_t_>(
         gates_by_type, queue_, sample_shape_, queueables_, queueables_by_index_, allocated_basic_events_by_index_,
-        allocated_gates_by_index_, device_gate_blocks_, device_atleast_gate_blocks_, execution_partitions_,
+        allocated_gates_by_index_, device_gate_blocks_, device_cardinality_gate_blocks_, execution_partitions_,
         execution_dependency_edges_, partition_ids_by_queueable_, layer_index);
 
     // Optionally do something with (be_kernel) and the (gate_kernels) vector.
@@ -544,15 +544,15 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::~layer_manager() {
         for (auto &block : device_gate_blocks_) {
             event::destroy_gate_block(queue_, block);
         }
-        for (auto &block : device_atleast_gate_blocks_) {
-            event::destroy_atleast_gate_block(queue_, block);
+        for (auto &block : device_cardinality_gate_blocks_) {
+            event::destroy_cardinality_gate_block(queue_, block);
         }
         for (auto &block : device_tally_blocks_) {
             event::destroy_tally_block(queue_, block);
         }
         device_basic_event_blocks_.clear();
         device_gate_blocks_.clear();
-        device_atleast_gate_blocks_.clear();
+        device_cardinality_gate_blocks_.clear();
         device_tally_blocks_.clear();
         queue_.throw_asynchronous();
         sycl_async_error_slot().clear();
