@@ -1,3 +1,4 @@
+#include "compile/exact_eval.h"
 #include "compile/pcfb_writer.h"
 #include "io/pcfb/tests/query_guard_files.h"
 #include "pdag.h"
@@ -13,6 +14,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -737,3 +739,107 @@ TEST_CASE("the runtime runs Boolean queries whatever the schema minor", "[runtim
         CHECK(std::abs(results[0].estimate - 0.125) < 0.02);
     }
 }
+
+namespace {
+
+// TOP = <connective>(H, A, B) with house event H: SCRAM's preprocessor folds the root into a constant gate.
+std::filesystem::path constant_root_model(const std::string &connective, const std::string &house) {
+    const auto path =
+        std::filesystem::temp_directory_path() / ("fuzzybits-constant-root-" + connective + "-" + house + ".xml");
+    std::ofstream out(path);
+    out << R"(<?xml version="1.0"?>
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><)"
+        << connective << R"(><house-event name="H"/><basic-event name="A"/><basic-event name="B"/></)" << connective
+        << R"(></define-gate>
+  </define-fault-tree>
+  <model-data>
+    <define-house-event name="H"><constant value=")"
+        << house << R"("/></define-house-event>
+    <define-basic-event name="A"><float value="0.5"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.5"/></define-basic-event>
+  </model-data>
+</opsa-mef>
+)";
+    REQUIRE(out);
+    return path;
+}
+
+} // namespace
+
+TEST_CASE("a constant PDAG root runs in memory and through the pcfb writer (#259)", "[runtime][mc][constants]") {
+    fuzzybits::runtime::RunOptions opt;
+    opt.trials = 1 << 14;
+    opt.backend = fuzzybits::testing::backend();
+    opt.seed = 372;
+    for (const auto &[connective, house, value] : {std::tuple{"or", "true", true}, std::tuple{"and", "false", false}}) {
+        INFO("TOP = " << connective << "(H = " << house << ", A, B)");
+        const auto path = constant_root_model(connective, house);
+        auto live = fuzzybits::compile::compile_to_graph({path.string()}, no_kn());
+        REQUIRE(live);
+        REQUIRE(live->graph);
+        REQUIRE(live->graph->root_ptr()->constant());
+
+        // The kernels used to drop the constant, so the root read FALSE either way (scram-cli included).
+        fuzzybits::runtime::ReconstructedQuery q;
+        q.name = live->target_id;
+        q.node = live->graph->root_ptr();
+        q.node_index = live->graph->root_ptr()->index();
+        const auto in_memory = fuzzybits::runtime::run_graph(*live->graph, {q}, opt);
+        REQUIRE(in_memory.size() == 1);
+        CHECK(in_memory[0].hits == (value ? in_memory[0].n : 0));
+
+        // The writer used to write a FALSE root as NOT over the inverted ONES, which is TRUE.
+        auto compiled = fuzzybits::compile::pdag_to_pcfb(*live->graph, no_kn(), live->model_name, live->target_id, {});
+        REQUIRE(compiled);
+        auto circuit = pcfb::io::from_bytes(*compiled);
+        REQUIRE(circuit);
+        REQUIRE(pcfb::validate(*circuit).empty());
+        CHECK(fuzzybits::compile::exact_probability(*circuit) == (value ? 1.0 : 0.0));
+        const auto from_pcfb = fuzzybits::runtime::run_pcfb(*circuit, opt);
+        REQUIRE(from_pcfb.size() == 1);
+        CHECK(from_pcfb[0].hits == (value ? from_pcfb[0].n : 0));
+        std::filesystem::remove(path);
+    }
+}
+
+#ifdef NDEBUG
+TEST_CASE("the engine refuses a gate that holds the PDAG constant beside other arguments (#259)",
+          "[runtime][mc][constants]") {
+    // Only reachable with SCRAM's assertions compiled out (Gate::AddArg asserts the gate is not constant), which
+    // is how the pcfb reconstruction reached it before #259. The kernels would drop the constant; the engine
+    // refuses before sampling instead.
+    pcfb::builder b;
+    const auto x = b.add_sample(0.5, "X", 1);
+    const auto t = b.add_op(pcfb::OpCode::BITWISE_ONES, {}, {}, std::nullopt, "T");
+    REQUIRE(x);
+    REQUIRE(t);
+    REQUIRE(b.add_query(*t, pcfb::QueryKind::PROBABILITY, "T"));
+    REQUIRE(b.add_query(*x, pcfb::QueryKind::PROBABILITY, "X"));
+    const auto bytes = b.finish();
+    REQUIRE(bytes);
+    const auto circuit = pcfb::io::from_bytes(*bytes);
+    REQUIRE(circuit);
+    auto reconstructed = fuzzybits::runtime::pdag_from_circuit(*circuit);
+    const auto constant = std::dynamic_pointer_cast<scram::core::Gate>(reconstructed.queries.at(0).node);
+    const auto wrap = std::dynamic_pointer_cast<scram::core::Gate>(reconstructed.queries.at(1).node);
+    REQUIRE(constant);
+    REQUIRE(constant->constant());
+    REQUIRE(wrap);
+    REQUIRE(wrap->args<scram::core::Variable>().size() == 1);
+    constant->AddArg(wrap->args<scram::core::Variable>().begin()->second);
+
+    fuzzybits::runtime::RunOptions opt;
+    opt.trials = 1024;
+    opt.backend = fuzzybits::testing::backend();
+    std::string message;
+    try {
+        static_cast<void>(fuzzybits::runtime::run_graph(*reconstructed.graph, reconstructed.queries, opt));
+    } catch (const std::exception &error) {
+        message = error.what();
+    }
+    INFO(message);
+    CHECK(message.find("holds the Boolean constant beside other arguments") != std::string::npos);
+}
+#endif

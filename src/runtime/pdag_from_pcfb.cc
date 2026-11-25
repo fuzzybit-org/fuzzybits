@@ -26,13 +26,14 @@ namespace {
 
 constexpr double kTwoTo32 = 4294967296.0; // 2^32
 
+/// A tensor is a Variable (SAMPLE) or a Gate (every other op, constants included). The PDAG constant
+/// never becomes an argument of a gate that has other arguments (see `constant_gate`).
 struct TensorBinding {
     std::shared_ptr<scram::core::Variable> variable;
     std::shared_ptr<scram::core::Gate> gate;
-    bool is_constant = false;
-    bool constant_true = true;
 
-    [[nodiscard]] bool empty() const { return !variable && !gate && !is_constant; }
+    [[nodiscard]] bool empty() const { return !variable && !gate; }
+    [[nodiscard]] int index() const { return variable ? variable->index() : gate->index(); }
 };
 
 std::string sanitize_name(std::string name, std::uint32_t event_id) {
@@ -364,13 +365,11 @@ scram::core::Connective connective_for(pcfb::OpCode op) {
     }
 }
 
-void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> &parent, const TensorBinding &binding,
-             bool complement) {
-    if (binding.is_constant) {
-        const bool want_false = binding.constant_true ? complement : !complement;
-        parent->AddArg(graph->constant(), want_false);
-        return;
-    }
+std::shared_ptr<scram::core::Gate> make_gate(scram::core::Pdag *graph, scram::core::Connective type) {
+    return std::make_shared<scram::core::Gate>(type, graph);
+}
+
+void append_arg(const std::shared_ptr<scram::core::Gate> &parent, const TensorBinding &binding, bool complement) {
     if (binding.variable) {
         parent->AddArg(binding.variable, complement);
     } else if (binding.gate) {
@@ -380,8 +379,37 @@ void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> 
     }
 }
 
-std::shared_ptr<scram::core::Gate> make_gate(scram::core::Pdag *graph, scram::core::Connective type) {
-    return std::make_shared<scram::core::Gate>(type, graph);
+/// Adds one pcfb operand to `parent`.
+///
+/// `Gate::AddArg` appends only an argument the gate does not hold yet, in either polarity. For a
+/// repeated or complementary argument it rewrites the gate (type, arguments, or a constant), and
+/// that rewrite assumes every other argument is already present, which is not so while a gate is
+/// being built (#259). pcfb operands are a list: XOR and k-of-n count multiplicity, and an XOR-family
+/// op may read one tensor in both polarities (spec §3.1). So an operand whose node the gate already
+/// holds is passed through a NULL gate of its own: AddArg only appends, and the kernels read every
+/// occurrence.
+void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> &parent, const TensorBinding &binding,
+             bool complement) {
+    if (binding.empty()) {
+        throw RuntimeError("pdag_from_circuit: empty tensor binding");
+    }
+    const int index = binding.index();
+    if (parent->args().count(index) == 0 && parent->args().count(-index) == 0) {
+        append_arg(parent, binding, complement);
+        return;
+    }
+    auto pass = make_gate(graph, scram::core::kNull);
+    append_arg(pass, binding, false);
+    parent->AddArg(pass, complement);
+}
+
+/// A pcfb ONES / ZEROS as a gate whose only argument is the PDAG constant (`Gate::MakeConstant`),
+/// which the kernels evaluate (`scram::mc::queue::kernel_connective`). Parents read it like any other
+/// gate, so the constant is never an argument beside others: `Gate::AddArg` of the constant is
+/// constant propagation, and is only right on a gate whose other arguments are all present (#259).
+std::shared_ptr<scram::core::Gate> constant_gate(std::shared_ptr<scram::core::Gate> gate, bool value) {
+    gate->MakeConstant(value);
+    return gate;
 }
 
 /// PDAG XOR is binary. Fold n-ary XOR left-to-right.
@@ -689,19 +717,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         }
         case pcfb::OpCode::BITWISE_ONES:
         case pcfb::OpCode::BITWISE_ZEROS: {
-            const bool is_true = op->opcode() == pcfb::OpCode::BITWISE_ONES;
-            const std::string name = (op->name() && op->name()->size()) ? op->name()->str() : std::string();
-            TensorBinding constant;
-            constant.is_constant = true;
-            constant.constant_true = is_true;
-            // Anonymous ONES ("true") stay as the PDAG Constant. Named fills are
-            // constant-folded gates and must remain addressable DAG nodes.
-            if (name.empty() || name == "true") {
-                bind_output(output, std::move(constant));
-                break;
-            }
-            auto g = place_gate(scram::core::kNull, output);
-            add_arg(graph, g, constant, false);
+            auto g = constant_gate(place_gate(scram::core::kNull, output), op->opcode() == pcfb::OpCode::BITWISE_ONES);
             attach_origin(g, op, output);
             TensorBinding b;
             b.gate = std::move(g);
@@ -738,11 +754,6 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
             // initiator query that the passes reduced to one event) failed with "unknown event".
             auto wrap = make_gate(graph, scram::core::kNull);
             wrap->AddArg(binding.variable, false);
-            rq.node = wrap;
-            rq.node_index = wrap->index();
-        } else if (binding.is_constant) {
-            auto wrap = make_gate(graph, scram::core::kNull);
-            add_arg(graph, wrap, binding, false);
             rq.node = wrap;
             rq.node_index = wrap->index();
         } else {

@@ -74,6 +74,16 @@
   `git submodule update --init extern/pcfb` in existing checkouts.
 - `fzb run` answers every query of a file whose queries are not all in the first query's cone, such as
   an FTP project with several targets; such files failed with `unknown event`.
+- `fzb run`, `fuzzybits.run` and the server evaluate `ONES` / `ZEROS` and repeated operands as pcfb defines
+  them (#259). They gave wrong results with no diagnostic:
+  - a `ONES` that is a query target or is named read as FALSE: `fzb compile -c 0 --override NAME=1`, and at
+    the default level every target that folds to TRUE, such as an OR over a basic event with p = 1;
+  - an unnamed constant or a repeated operand changed the gate it fed, depending on its position among the
+    operands: frequency-mode conditions at `-c 0` (`AND(A, IE, B)` read as `B`), or `AND(A, A, B)`.
+
+  `scram-cli` read a top event that folds to TRUE as FALSE. `fzb compile` wrote an OpenPSA MEF top event that
+  folds to FALSE as TRUE (`fzb inspect --exact` gave 1); recompile such files. A PDAG gate that holds the
+  constant beside other arguments is now refused before sampling.
 - AMD GPUs through AdaptiveCpp's HIP backend (`--backend hip`, `backend="hip"`; `auto` picks
   cuda, then hip, then omp) in the `generic` wheel and images. Needs the ROCm 7 user space and
   access to `/dev/kfd` and a render node (#228).
