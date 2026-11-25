@@ -9,8 +9,10 @@ Results (timings, n, hits) go to a local JSON file; the summary prints timing ra
 Usage: pcfb_ab.py REPO HOST WORKDIR TARGET OUT --base IMG --head IMG --models a b --trials T --warmup W --rounds R
        [--pin-cudart]. REPO is a fuzzybits checkout (for the harness's runner text), HOST an ssh host whose
        docker runs the images, WORKDIR the directory on HOST that holds <model>.pcfb, TARGET gpu:<nvidia-smi
-       index> or cpu. --pin-cudart preloads the image's libcudart
+       index>, hip (the host's AMD GPU, through scripts/ci/amd-docker-args.sh, lock /tmp/gpu-lock-HOST-amd-0) or
+       cpu. --pin-cudart preloads the image's libcudart
        on both sides, so neither re-creates its CUDA context per run (AdaptiveCpp plugin load order).
+       Commands go to HOST's bash on stdin, whatever its login shell.
 """
 import argparse
 import json
@@ -25,12 +27,13 @@ sys.path.insert(0, sys.argv.pop(1))  # fuzzybits checkout, for the harness's run
 from benchmarks.harness.execute import INNER_INPROCESS  # noqa: E402
 
 IMAGES = {}
+AMD_ARGS = []
 CUDART = "/usr/local/lib/python3.12/dist-packages/fuzzybits/lib/libcudart.so.12"
 T_975 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262}
 
 
 def run_one(host, workdir, target, image, model, trials, warmup, timeout, pin_cudart):
-    payload = {"backend": "omp" if target == "cpu" else "cuda", "pcfb": f"/work/{model}.pcfb", "trials": trials,
+    payload = {"backend": {"cpu": "omp", "hip": "hip"}.get(target, "cuda"), "pcfb": f"/work/{model}.pcfb", "trials": trials,
                "warmup_trials": warmup, "timeout": timeout}
     # The harness's container_env (benchmarks/harness/execute.py), as the image's default user.
     env = ["-e", "ACPP_DEBUG_LEVEL=0", "-e", "ACPP_ADAPTIVITY_LEVEL=1", "-e", "ACPP_PERSISTENT_RUNTIME=0",
@@ -39,6 +42,9 @@ def run_one(host, workdir, target, image, model, trials, warmup, timeout, pin_cu
         dev = ["--cpuset-cpus", "0-7", "-e", "OMP_NUM_THREADS=8", "-e", "OMP_PROC_BIND=close", "-e",
                "OMP_PLACES=cores", "-e", "ACPP_VISIBILITY_MASK=omp"]
         lock = ""
+    elif target == "hip":
+        dev = AMD_ARGS + ["-e", "ACPP_VISIBILITY_MASK=hip"]
+        lock = f"flock /tmp/gpu-lock-{host}-amd-0 "
     else:
         gpu = target.split(":")[1]
         dev = ["--gpus", f"device={gpu}", "-e", "ACPP_VISIBILITY_MASK=cuda"]
@@ -49,8 +55,8 @@ def run_one(host, workdir, target, image, model, trials, warmup, timeout, pin_cu
               ["--entrypoint", "python3", image, "-c", INNER_INPROCESS, json.dumps(payload)])
     cmd = lock + " ".join(shlex.quote(a) for a in docker)
     t0 = time.time()
-    proc = subprocess.run(["ssh", "-o", "BatchMode=yes", host, cmd], capture_output=True, text=True,
-                          timeout=timeout + 600)
+    proc = subprocess.run(["ssh", "-o", "BatchMode=yes", host, "bash", "-s"], input=cmd, capture_output=True,
+                          text=True, timeout=timeout + 600)
     out = proc.stdout.strip().splitlines()
     try:
         res = json.loads(out[-1])
@@ -78,6 +84,11 @@ def main():
     ap.add_argument("--pin-cudart", action="store_true")
     a = ap.parse_args()
     IMAGES.update(base=a.base, head=a.head)
+    if a.target == "hip":
+        script = open(sys.path[0] + "/scripts/ci/amd-docker-args.sh").read()
+        proc = subprocess.run(["ssh", "-o", "BatchMode=yes", a.host, "bash", "-s"], input=script, capture_output=True,
+                              text=True, check=True)
+        AMD_ARGS.extend(proc.stdout.split())
     results = {"host": a.host, "target": a.target, "trials": a.trials, "warmup": a.warmup, "images": IMAGES,
                "pin_cudart": a.pin_cudart, "models": {}}
     for model in a.models:
