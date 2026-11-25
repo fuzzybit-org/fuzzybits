@@ -48,7 +48,6 @@ namespace reader = io::backend::fuzzybits::ftp;
 [[nodiscard]] auto read_options(inspect_options const &options) -> api::option_set {
     api::option_set out;
     out.set(reader::duplicate_import_option(), options.duplicate_import);
-    out.set(reader::complement_events_option(), options.complement_events);
     return out;
 }
 
@@ -167,9 +166,6 @@ auto check_options(inspect_options const &options) -> std::string {
     if (options.duplicate_import != "error" && options.duplicate_import != "first" &&
         options.duplicate_import != "last") {
         return "--duplicate-import must be error, first or last, not '" + options.duplicate_import + "'";
-    }
-    if (options.complement_events != "atom" && options.complement_events != "negation") {
-        return "--complement-events must be atom or negation, not '" + options.complement_events + "'";
     }
     return {};
 }

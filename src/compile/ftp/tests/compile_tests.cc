@@ -198,6 +198,7 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
     REQUIRE(root.find("format")->string == "cafta-ftp");
     REQUIRE(root.find("compilation_level")->integer == 1);
     REQUIRE(root.find("max_initiators_per_cutset")->kind == json::value::kind_type::null);
+    REQUIRE(root.find("complement_events") == nullptr);
     REQUIRE(root.find("ftp_limit")->string == "1.000000E-12");
     auto const &targets = root.find("targets")->items;
     REQUIRE(targets.size() == 1);
@@ -346,7 +347,7 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
     // The default query is the probability, which marks do not affect.
     REQUIRE(compile_text(text, frequency_options()));
 
-    // Marked operands read as plain complements: `negation` mode, or no marks.
+    // Marked operands read as plain complements: the `negation` mode, the plain hull.
     auto plain = hull_options();
     plain.literals = "negation";
     const auto negation = compile_ok(text, plain);
@@ -354,9 +355,6 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
     REQUIRE(circuit.schema_version() == minor_2);
     REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     REQUIRE(string_meta(circuit, "compile.query.0.literal_mode") == "negation");
-    auto unmarked = hull_options();
-    unmarked.complement_events = "negation";
-    REQUIRE(compile_text(text, unmarked));
 
     // Boolean targets are unaffected by marks.
     REQUIRE(compile_text(text, boolean_options()));
@@ -517,9 +515,6 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     options.duplicate_import = "newest";
     fails(options, "compile.ftp.invalid-option");
     options = boolean_options();
-    options.complement_events = "both";
-    fails(options, "compile.ftp.invalid-option");
-    options = boolean_options();
     options.targets = {"NOPE"};
     fails(options, "compile.ftp.unknown-target");
     options = boolean_options();
@@ -534,7 +529,9 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     }
     for (const char *config :
          {"[]", R"({"typo": 1})", R"({"negation": "maybe"})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
-          R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})"}) {
+          R"({"compilation_level": 3})", R"({"max_initiators_per_cutset": -1})", R"({"literals": ["x"]})",
+          // Removed: -EVENT is always a marked literal.
+          R"({"complement_events": "negation"})"}) {
         INFO(config);
         options = boolean_options();
         options.config = config;
@@ -583,7 +580,8 @@ TEST_CASE("target and event names survive C1", "[compile][ftp][names]") {
     REQUIRE(after.passes.front().transform == "ir.pc.fold_zero_probability");
 }
 
-TEST_CASE("duplicate-import and complement-events pass through to the reader", "[compile][ftp][reader]") {
+TEST_CASE("duplicate-import passes through to the reader; -EVENT is always a marked literal",
+          "[compile][ftp][reader]") {
     const auto text = read_file(fixture("imports_tags_duplicates") / "model.ftp");
     auto options = boolean_options();
     options.duplicate_import = "error";
@@ -603,15 +601,9 @@ TEST_CASE("duplicate-import and complement-events pass through to the reader", "
     REQUIRE(std::abs(exact(last.value()) - 0.10720000000000002) <= 1e-12);
 
     const auto complement = read_file(fixture("complement_under_negation") / "model.ftp");
-    for (const char *policy : {"atom", "negation"}) {
-        auto marked = boolean_options();
-        marked.complement_events = policy;
-        marked.max_initiators_per_cutset = std::optional<std::uint32_t>{};
-        const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", complement}}), marked);
-        REQUIRE(lowered);
-        const auto events = lowered.value().projection.literal_events().size();
-        REQUIRE((events != 0) == (std::string(policy) == "atom"));
-    }
+    const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", complement}}), boolean_options());
+    REQUIRE(lowered);
+    REQUIRE_FALSE(lowered.value().projection.literal_events().empty());
 }
 
 TEST_CASE("a failed compile reports every diagnostic and a report document", "[compile][ftp][report]") {

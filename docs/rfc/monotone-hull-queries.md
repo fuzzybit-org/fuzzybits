@@ -147,8 +147,8 @@ edge into a gate, including a single-input gate, is a *gate complement*.
 
 **Marked literals and atoms.** A *marked literal* is a direct complement that the source marks as an atomic literal of
 the event (`ir::pra` operand flag `literal`, #199); the flag does not change the Boolean meaning, and is allowed only on
-complemented operands that reference basic events. The FTP reader marks every direct complement (`-EVENT`; reader option
-`io.ftp.complement_events = atom | negation`, default `atom`) and no gate complement; other readers mark nothing unless
+complemented operands that reference basic events. The FTP reader marks every direct complement (`-EVENT`; there is no option to leave it
+unmarked) and no gate complement; other readers mark nothing unless
 their format defines such literals. For a target with circuit $C$, let $\Delta$ be the events with a marked literal in
 its cone; unmarked complements are ordinary negations.
 The *atoms* are $\mathcal{A} = V \cup \lbrace \bar v : v \in \Delta \rbrace$. The *split circuit* $\tilde C$ replaces

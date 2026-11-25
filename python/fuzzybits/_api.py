@@ -398,7 +398,6 @@ _UNSET: Any = object()
 _FTP_ONLY = (
     "overrides",
     "duplicate_import",
-    "complement_events",
     "negation",
     "literals",
     "initiator_values",
@@ -445,7 +444,6 @@ def _compile_ftp(
     target: Any,
     overrides: Any,
     duplicate_import: str | None,
-    complement_events: str | None,
     negation: str | None,
     max_initiators_per_cutset: Any,
     literals: str | None,
@@ -475,7 +473,6 @@ def _compile_ftp(
             opts["overrides"] = _as_names(overrides, "overrides")
     for key, value in (
         ("duplicate_import", duplicate_import),
-        ("complement_events", complement_events),
         ("negation", negation),
         ("literals", literals),
         ("initiator_values", initiator_values),
@@ -520,7 +517,6 @@ def compile(  # noqa: A001 - public API name
     target: str | Sequence[str] | None = None,
     overrides: Mapping[str, bool | int] | Sequence[str] | None = None,
     duplicate_import: str | None = None,
-    complement_events: str | None = None,
     negation: str | None = None,
     max_initiators_per_cutset: int | str | None = _UNSET,
     literals: str | None = None,
@@ -570,9 +566,10 @@ def compile(  # noqa: A001 - public API name
     overrides:
         FTP: ``{name: True | False}`` (or ``["NAME=1", ...]``) forcing elements
         to constants under every negation semantics.
-    duplicate_import, complement_events:
-        FTP reader options: ``"error" | "first" | "last"`` (default ``"last"``)
-        and ``"atom" | "negation"`` (default ``"atom"``).
+    duplicate_import:
+        FTP reader option: ``"error" | "first" | "last"`` (default ``"last"``).
+        The reader always marks a complemented basic event (``-EVENT``) as a
+        literal; only hull queries read the mark (see ``literals``).
     negation:
         FTP: the query type of every target: ``"boolean"`` (the probability,
         default), ``"hull"`` (the monotone hull: complements read as delete
@@ -637,7 +634,6 @@ def compile(  # noqa: A001 - public API name
     ftp_only = {
         "overrides": overrides,
         "duplicate_import": duplicate_import,
-        "complement_events": complement_events,
         "negation": negation,
         "literals": literals,
         "initiator_values": initiator_values,
@@ -654,7 +650,6 @@ def compile(  # noqa: A001 - public API name
             target=target,
             overrides=overrides,
             duplicate_import=duplicate_import,
-            complement_events=complement_events,
             negation=negation,
             max_initiators_per_cutset=max_initiators_per_cutset,
             literals=literals,
@@ -785,7 +780,6 @@ class FtpProjectError(RuntimeError):
 def _ftp_inspect_native(
     paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     duplicate_import: str,
-    complement_events: str,
     counts_only: bool,
 ) -> tuple[dict[str, Any], str]:
     if isinstance(paths, (str, os.PathLike)):
@@ -794,7 +788,7 @@ def _ftp_inspect_native(
         files = [os.fspath(path) for path in paths]
     if not files:
         raise ValueError("read_project() requires at least one FTP path")
-    document, text = _runtime.native().inspect_ftp_project(files, duplicate_import, complement_events, counts_only)
+    document, text = _runtime.native().inspect_ftp_project(files, duplicate_import, counts_only)
     return json.loads(document), str(text)
 
 
@@ -802,7 +796,6 @@ def read_project(
     paths: str | os.PathLike[str] | Sequence[str | os.PathLike[str]],
     *,
     duplicate_import: str = "last",
-    complement_events: str = "atom",
     counts_only: bool = False,
 ) -> dict[str, Any]:
     """Read a CAFTA FTP project without compiling it; the content of ``fzb inspect --json``.
@@ -813,7 +806,7 @@ def read_project(
     :class:`FtpProjectError` (a :class:`RuntimeError`) with the diagnostics, as a list of dicts, in its
     ``diagnostics`` attribute; warnings are in the returned dict only. ``counts_only`` leaves element names and messages out.
     """
-    document, _ = _ftp_inspect_native(paths, duplicate_import, complement_events, counts_only)
+    document, _ = _ftp_inspect_native(paths, duplicate_import, counts_only)
     if document["status"] != "ok":
         errors = [item for item in document["diagnostics"] if item["severity"] == "error"]
         lines = ["read_project:"]

@@ -172,19 +172,16 @@ struct ParsedProject final {
     api::diagnostic_list diagnostics;
 };
 
-struct PraOptions final {
-    complement_events_policy complementEvents = complement_events_policy::atom;
-};
-
 [[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics)
     -> duplicate_import_policy;
-[[nodiscard]] auto parse_pra_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> PraOptions;
 [[nodiscard]] auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<source_text>>;
 // Parses every source in order and resolves names, imports and targets.
 [[nodiscard]] auto parse(std::vector<source_text> sources, duplicate_import_policy policy) -> ParsedProject;
 [[nodiscard]] auto location_text(ParsedProject const &project, Location location) -> std::string;
 
-[[nodiscard]] auto build_pra(ParsedProject const &project, PraOptions const &options) -> ir::pra::finalize_result;
+// Every complemented basic-event operand (`-EVENT`) is marked `literal`; a
+// complemented gate (`-GATE`) never is.
+[[nodiscard]] auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result;
 [[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
     -> io::write_result;
 

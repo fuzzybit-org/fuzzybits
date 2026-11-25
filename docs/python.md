@@ -116,7 +116,7 @@ with fuzzybits.Session(pcfb, backend="auto") as session:
 `compile` / `compile_file` lower OpenPSA/MEF, nombrilo.circuit
 (safetensors, detected from the header) **or** CAFTA FTP projects to a pcfb
 buffer (the same host path as `fzb compile`). FTP input takes `target=`,
-`overrides=`, `duplicate_import=`, `complement_events=`, `negation=`,
+`overrides=`, `duplicate_import=`, `negation=`,
 `initiator_values=`, `initiator_unit=`, `max_initiators_per_cutset=`, `literals=` and `config=`, and `report=True`
 returns `(blob, report)`; see [`ftp-input.md`](ftp-input.md). MEF input expands
 common-cause groups unless `ccf=False` (`fzb compile --no-ccf`); `target=` and

@@ -556,13 +556,12 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
         ftp::options boolean;
         boolean.negation = "boolean";
         variants.push_back({"boolean", boolean});
+        // The default literal mode: refused, and skipped, where -EVENT gives marked literals.
         ftp::options hull;
         hull.negation = "hull";
-        hull.complement_events = "negation";
         variants.push_back({"hull", hull});
         ftp::options both;
-        both.complement_events = "negation";
-        both.config = R"({"negation": "both"})";
+        both.config = R"({"negation": "both", "literals": "negation"})";
         variants.push_back({"both", both});
         ftp::options literals;
         literals.negation = "hull";
