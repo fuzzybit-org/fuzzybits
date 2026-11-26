@@ -196,6 +196,10 @@ counted kernel per connective, 8 bitpacks per work-item, block-major (NOT: one s
   slower, also with a pool 16× smaller (so not the L2's size; the scalar cache cycling through every gate's
   descriptor and pointers is the likelier cause). CPUs do not care.
 - **Fixed slot counts** are 5–21% faster than a runtime count on the V100S up to 16 inputs and tie elsewhere.
+  End to end that gain didn't hold: a kernel per slot count tied the bench models and multiplied kernel
+  launches. On a private model of about 88,000 gates in 147 layers it took 1,001 gate kernels per pass instead
+  of 316, and ran 2.3–2.9× as long as develop on NVIDIA GPUs at the default budget. So #282 uses the counted
+  form for AND, OR, XOR, NAND and NOR on every device, and the GPU rows above are no longer production's.
 - **Typed loads.** Reading lanes through `memcpy` from a byte pointer hides their alignment: 1.4–3.5× slower on
   sm_70.
 - **Lane width.** 64 bits per work-item is best or tied on GPUs: 32-bit lanes are 2–20% slower, aligned 128-bit
@@ -233,7 +237,9 @@ counted kernel per connective, 8 bitpacks per work-item, block-major (NOT: one s
 `cardinality/bench_network.cpp` (the production kernels, forms, lanes and orders): a k-of-n gate against its
 sum of products (OR over the C(n, k) k-subsets of AND) and its product of sums (AND over the C(n, k - 1)
 (n - k + 1)-subsets of OR), each network's bits compared word for word with the cardinality gate's; 16384
-bitpacks per gate, inputs from a pool of 1024 buffers. A network's time is its two launches'.
+bitpacks per gate, inputs from a pool of 1024 buffers. A network's time is its two launches'. These runs used
+the fixed slot counts that production then had for AND and OR gates on GPUs; the bench now takes the counted
+form, as #282 does.
 
 | device | cheaper network / cardinality, 1 < k < n | measured / naive (bytes) | OR, AND / cardinality, k = 1 or n, n ≤ 16 | n = 32, 64 |
 |---|---|---:|---:|---:|

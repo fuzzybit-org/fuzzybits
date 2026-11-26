@@ -344,10 +344,10 @@ int main(int argc, char **argv) {
             const bitpack_t *net_out = nullptr;
             std::size_t net_gates = 0;
             if (one) {
-                first = ev::create_gate_block<bitpack_t, size_t_>(q, card_in, B, kn::gate_slots_on(dev, f.first, n));
+                first = ev::create_gate_block<bitpack_t, size_t_>(q, card_in, B, kn::gate_slots_of(f.first));
                 t1 = f.first == Connective::kOr
-                         ? run_gate_prod<Connective::kOr>(q, first, shape, kn::gate_slots_on(dev, f.first, n))
-                         : run_gate_prod<Connective::kAnd>(q, first, shape, kn::gate_slots_on(dev, f.first, n));
+                         ? run_gate_prod<Connective::kOr>(q, first, shape, kn::gate_slots_of(f.first))
+                         : run_gate_prod<Connective::kAnd>(q, first, shape, kn::gate_slots_of(f.first));
                 net_out = first.buffers;
                 net_gates = G;
             } else {
@@ -362,7 +362,7 @@ int main(int argc, char **argv) {
                         first_in.emplace_back(std::move(ptrs), 0);
                     }
                 }
-                const auto s1 = kn::gate_slots_on(dev, f.first, f.m);
+                const auto s1 = kn::gate_slots_of(f.first);
                 first = ev::create_gate_block<bitpack_t, size_t_>(q, first_in, B, s1);
                 inputs_t second_in;
                 for (std::size_t v = 0; v < G; ++v) {
@@ -372,7 +372,7 @@ int main(int argc, char **argv) {
                     }
                     second_in.emplace_back(std::move(ptrs), 0);
                 }
-                const auto s2 = kn::gate_slots_on(dev, f.second, f.c);
+                const auto s2 = kn::gate_slots_of(f.second);
                 second = ev::create_gate_block<bitpack_t, size_t_>(q, second_in, B, s2);
                 if (f.first == Connective::kAnd) {
                     t1 = run_gate_prod<Connective::kAnd>(q, first, shape, s1);
