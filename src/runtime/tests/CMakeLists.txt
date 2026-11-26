@@ -26,5 +26,9 @@ fuzzybits_add_imported_test(
   SOURCES pcfb_bug_tests.cc
   LINK_LIBRARIES fuzzybits_runtime fuzzybits_compile
   LABELS bug mc
+  ARGS "~[crash]"
 )
 set_tests_properties(fzb_runtime_pcfb_bug_tests PROPERTIES TIMEOUT 120)
+# [crash] cases end the process today (SIGSEGV), so they run as a ctest entry of their own.
+add_test(NAME fzb_runtime_pcfb_bug_tests.crash COMMAND fzb_runtime_pcfb_bug_tests "[crash]")
+set_tests_properties(fzb_runtime_pcfb_bug_tests.crash PROPERTIES LABELS "bug;mc" TIMEOUT 300)

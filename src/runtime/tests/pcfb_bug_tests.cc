@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -85,4 +86,77 @@ TEST_CASE("fzb run accepts a SAMPLE threshold that pcfb::validate accepts", "[bu
     auto bytes = b.finish();
     REQUIRE(bytes);
     require_runs_like_exact(*bytes);
+}
+
+// The loader rebuilds a SCRAM PDAG and names its nodes with MEF rules: a basic-event name has every '.' replaced by
+// '_' (sanitize_name, because a MEF element name cannot hold a '.'), and a gate name is split at its last '.' into
+// a base path and a name. Names from other writers follow no such rule: FTP names may hold any punctuation
+// (docs/ftp-input.md, Grammar), so `SYS.A` and `SYS_A` are two events. Watch names (Session, Python PcfbSession,
+// the server) resolve against the renamed nodes: `SYS.A` matches nothing, and `SYS_A` matches both renamed nodes, so
+// the first one in an unordered map's iteration order wins (in this build the right one). Each name must resolve
+// to its own event (the loader places event ids 1 and 2 at PDAG indices 2 and 3).
+TEST_CASE("watch names resolve to the event of that name, whatever punctuation it holds",
+          "[bug][runtime][mc][pcfb][issue-300]") {
+    pcfb::builder b;
+    auto dotted = b.add_sample(0.1, "SYS.A", 1);
+    auto underscored = b.add_sample(0.9, "SYS_A", 2);
+    REQUIRE(dotted);
+    REQUIRE(underscored);
+    const std::uint32_t inputs[] = {*dotted, *underscored};
+    auto gate = b.add_op(pcfb::OpCode::BITWISE_OR, inputs, {}, std::nullopt, "TOP");
+    REQUIRE(gate);
+    REQUIRE(b.add_query(*gate, pcfb::QueryKind::PROBABILITY, "TOP"));
+    auto bytes = b.finish();
+    REQUIRE(bytes);
+    const auto circuit = fuzzybits::runtime::load_pcfb(*bytes);
+    const auto reconstructed = fuzzybits::runtime::pdag_from_circuit(circuit);
+
+    std::vector<int> dotted_index;
+    try {
+        dotted_index = fuzzybits::runtime::Session::resolve_watch(reconstructed, {"SYS.A"});
+    } catch (std::exception const &error) {
+        FAIL_CHECK("resolve_watch(SYS.A) threw: " << error.what());
+    }
+    CHECK(dotted_index == std::vector<int>{2});
+    CHECK(fuzzybits::runtime::Session::resolve_watch(reconstructed, {"SYS_A"}) == std::vector<int>{3});
+}
+
+// fzb run rebuilds every .pcfb as a SCRAM PDAG, whatever wrote it, and parts of the SCRAM PDAG and kernel set-up
+// recurse once per level of gate depth. A 10^5-deep chain of alternating AND and OR gates (so no pass can flatten
+// it), compiled without error from FTP (-c 0 and -c 1) or imported from nombrilo, ends `fzb run` with SIGSEGV. The
+// FTP reader, the ir::pc passes and the .pcfb writer are iterative and handle the same chain. Expected: the run
+// answers it (P(G0) by the chain recurrence) or refuses it with a diagnostic, never a crash.
+TEST_CASE("fzb run evaluates a 10^5-deep gate chain", "[bug][runtime][mc][pcfb][crash][issue-300]") {
+    constexpr std::uint32_t depth = 100'000;
+    pcfb::builder b;
+    std::vector<std::uint32_t> events;
+    for (std::uint32_t index = 0; index <= depth; ++index) {
+        auto event = b.add_sample(0.5, "E" + std::to_string(index), index + 1);
+        REQUIRE(event);
+        events.push_back(*event);
+    }
+    // G_depth = E_depth; G_i = AND(G_{i+1}, E_i) for even i, OR for odd i.
+    std::uint32_t chain = events[depth];
+    double probability = 0.5;
+    for (std::uint32_t index = depth; index-- > 0;) {
+        const std::uint32_t inputs[] = {chain, events[index]};
+        const bool conjunction = index % 2 == 0;
+        auto gate = b.add_op(conjunction ? pcfb::OpCode::BITWISE_AND : pcfb::OpCode::BITWISE_OR, inputs);
+        REQUIRE(gate);
+        chain = *gate;
+        probability = conjunction ? probability * 0.5 : 1.0 - (1.0 - probability) * 0.5;
+    }
+    REQUIRE(b.add_query(chain, pcfb::QueryKind::PROBABILITY, "G0"));
+    auto bytes = b.finish();
+    REQUIRE(bytes);
+
+    fuzzybits::runtime::RunOptions options;
+    options.trials = kTrials;
+    options.backend = fuzzybits::testing::backend();
+    const auto circuit = fuzzybits::runtime::load_pcfb(*bytes);
+    const auto results = fuzzybits::runtime::run_pcfb(circuit, options);
+    REQUIRE(results.size() == 1);
+    const auto n = static_cast<double>(results[0].n);
+    const double spread = std::sqrt(n * probability * (1.0 - probability));
+    CHECK(std::abs(static_cast<double>(results[0].hits) - n * probability) <= 4.0 * spread + 1.0);
 }

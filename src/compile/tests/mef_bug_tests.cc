@@ -352,6 +352,108 @@ TEST_CASE("fzb compile MEF: --watch on a CCF group member is answered", "[bug][m
     std::filesystem::remove_all(scratch);
 }
 
+// Parts of the SCRAM PDAG construction and preprocessing recurse once per level of gate depth, so a 10^5-deep
+// chain of alternating AND and OR gates (valid MEF, 2e5 elements) ends `fzb compile` with SIGSEGV at -c 0 and at
+// the default level. The same chain compiles from FTP and from nombrilo, whose readers and passes are iterative; the
+// runtime loader has the same recursion (fzb_runtime_pcfb_bug_tests, "[crash]"). Expected: a compile, or a refusal
+// with a diagnostic.
+TEST_CASE("fzb compile MEF: a 10^5-deep gate chain compiles", "[bug][mef][issue-300]") {
+    const auto scratch = scratch_directory("deep");
+    constexpr int depth = 100'000;
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\"?>\n<opsa-mef><define-fault-tree name=\"FT\">\n";
+    for (int index = 0; index < depth; ++index) {
+        const char *kind = index % 2 == 0 ? "and" : "or";
+        xml << "<define-gate name=\"G" << index << "\"><" << kind << "><gate name=\"G" << index + 1
+            << "\"/><basic-event name=\"E" << index << "\"/></" << kind << "></define-gate>\n";
+    }
+    xml << "<define-gate name=\"G" << depth << "\"><basic-event name=\"E" << depth << "\"/></define-gate>\n";
+    for (int index = 0; index <= depth; ++index) {
+        xml << "<define-basic-event name=\"E" << index << "\"><float value=\"0.5\"/></define-basic-event>\n";
+    }
+    xml << "</define-fault-tree></opsa-mef>\n";
+    const auto input = scratch / "chain.xml";
+    std::ofstream(input, std::ios::binary) << xml.str();
+    for (const auto *level : {"-c 0 --keep-null", "-c 2"}) {
+        INFO(level);
+        const auto result = compile(input, std::string("--target G0 ") + level, scratch);
+        INFO("stderr: " << result.run.err);
+        CHECK(result.run.status == 0);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// The .pcfb size limit of #285 reaches the MEF path too, and silently: pcfb::io::from_bytes verifies with
+// flatbuffers::Verifier's default options (at most 10^6 tables, about three per basic event), so a model with
+// 3.5e5 basic events (250 OR gates of 1,400 events each) is written, 88 MB with exit status 0, and then cannot be
+// read by any reader ("FlatBuffer verification failed"). The FTP writer checks its own output; the MEF writer
+// (src/compile/pcfb_writer.cc) does not. Expected: a readable file, or a compile that fails with a diagnostic.
+TEST_CASE("fzb compile MEF of 3.5e5 basic events writes a readable .pcfb or fails (#285)",
+          "[bug][mef][pcfb][scale][issue-285]") {
+    const auto scratch = scratch_directory("size");
+    constexpr int gates = 250;
+    constexpr int fan_in = 1400;
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\"?>\n<opsa-mef><define-fault-tree name=\"FT\">\n<define-gate name=\"TOP\"><or>";
+    for (int gate = 0; gate < gates; ++gate) {
+        xml << "<gate name=\"G" << gate << "\"/>";
+    }
+    xml << "</or></define-gate>\n";
+    for (int gate = 0; gate < gates; ++gate) {
+        xml << "<define-gate name=\"G" << gate << "\"><or>";
+        for (int event = 0; event < fan_in; ++event) {
+            xml << "<basic-event name=\"E" << gate << '_' << event << "\"/>";
+        }
+        xml << "</or></define-gate>\n";
+    }
+    for (int gate = 0; gate < gates; ++gate) {
+        for (int event = 0; event < fan_in; ++event) {
+            xml << "<define-basic-event name=\"E" << gate << '_' << event
+                << "\"><float value=\"1e-6\"/></define-basic-event>\n";
+        }
+    }
+    xml << "</define-fault-tree></opsa-mef>\n";
+    const auto input = scratch / "wide.xml";
+    std::ofstream(input, std::ios::binary) << xml.str();
+    const auto result = compile(input, "-c 0 --keep-null", scratch);
+    INFO("stderr: " << result.run.err);
+    if (result.run.status != 0) {
+        SUCCEED("refused");
+    } else {
+        auto view = pcfb::io::from_bytes(result.bytes);
+        INFO((view ? std::string{} : view.error().message));
+        CHECK(view);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// The MEF path spends time quadratic in a gate's operand count: one OR over 1e4, 2e4 and 4e4 basic events compiles
+// in 0.8 s, 2.2 s and 7.8 s (and 4e5 had not finished after 12 minutes), where the FTP path takes 0.1 to 0.2 s for
+// the same gates. 6e4 operands take about 17 s today; a linear reader takes well under a second.
+TEST_CASE("fzb compile MEF: one gate over 6e4 events compiles in linear time", "[bug][mef][issue-300]") {
+    const auto scratch = scratch_directory("fan-in");
+    constexpr int events = 60'000;
+    std::ostringstream xml;
+    xml << "<?xml version=\"1.0\"?>\n<opsa-mef><define-fault-tree name=\"FT\">\n<define-gate name=\"TOP\"><or>";
+    for (int event = 0; event < events; ++event) {
+        xml << "<basic-event name=\"E" << event << "\"/>";
+    }
+    xml << "</or></define-gate>\n";
+    for (int event = 0; event < events; ++event) {
+        xml << "<define-basic-event name=\"E" << event << "\"><float value=\"1e-6\"/></define-basic-event>\n";
+    }
+    xml << "</define-fault-tree></opsa-mef>\n";
+    const auto input = scratch / "fan_in.xml";
+    std::ofstream(input, std::ios::binary) << xml.str();
+    const auto start = std::chrono::steady_clock::now();
+    const auto result = compile(input, "-c 0", scratch);
+    const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - start;
+    INFO("stderr: " << result.run.err);
+    REQUIRE(result.run.status == 0);
+    CHECK(elapsed.count() < 5.0);
+    std::filesystem::remove_all(scratch);
+}
+
 // --no-kn expands every at-least gate into AND/OR. NormalizeAtleastGate builds new, unshared sub-gates at each
 // step, T(n, k) = 3 + T(n-1, k-1) + T(n-1, k), and later passes merge them again, so the written circuit is
 // small (210 operators for 10 of 20) but the compile time grows like C(n, k): 0.3 s for 8 of 16, 1.9 s for

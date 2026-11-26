@@ -426,3 +426,46 @@ TEST_CASE("names_not_valid_xml_ncname does not count non-ASCII NCNames", "[bug][
     REQUIRE(inspected.ok());
     CHECK(inspected.structure->names_not_ncname == 0);
 }
+
+// Cross-format: the Latin-1 names of an FTP project are copied into the .pcfb unchanged. FlatBuffers strings are
+// UTF-8, and the readers decode them as such: Python fuzzybits.inspect and fuzzybits.run raise UnicodeDecodeError on
+// this file, `fzb run --json` prints invalid UTF-8, and nombrilo export writes a safetensors header that is not
+// UTF-8 JSON. Expected: every string written into the .pcfb is valid UTF-8 (the names transcoded, or the project
+// refused with a diagnostic that names the encoding).
+TEST_CASE("fzb compile writes only UTF-8 strings into the .pcfb", "[bug][ftp][pcfb][utf8][issue-300]") {
+    const std::string text =
+        "**FTITLE: Syst\xE8me\nSYST\xC8ME + POMPE-\xC9 B\nENDTREE\nPROCESS SYST\xC8ME\nIMPORT\n0.1 POMPE-\xC9\n0.2 B\n";
+    const auto compiled = compile_text(text, probability_options());
+    INFO(render(compiled.diagnostics()));
+    if (!compiled) {
+        SUCCEED("refused");
+        return;
+    }
+    auto circuit = ::pcfb::io::from_bytes(compiled.value().bytes);
+    REQUIRE(circuit);
+    auto const *sub = (*circuit)->subcircuits()->Get(0);
+    std::vector<std::string> strings;
+    for (auto const *op : *sub->operators()) {
+        if (op->name() != nullptr) {
+            strings.push_back(op->name()->str());
+        }
+        if (auto const *sample = op->args_as_SampleArgs(); sample != nullptr && sample->name() != nullptr) {
+            strings.push_back(sample->name()->str());
+        }
+    }
+    for (auto const *query : *sub->queries()) {
+        if (query->name() != nullptr) {
+            strings.push_back(query->name()->str());
+        }
+    }
+    for (auto const *entry : *(*circuit)->metadata()) {
+        if (auto const *value = entry->value_as_StringValue(); value != nullptr && value->value() != nullptr) {
+            strings.push_back(value->value()->str());
+        }
+    }
+    REQUIRE_FALSE(strings.empty());
+    for (auto const &string : strings) {
+        INFO(string);
+        CHECK(valid_utf8(string));
+    }
+}

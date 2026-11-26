@@ -216,3 +216,145 @@ TEST_CASE("structurally invalid safetensors files are rejected", "[bug][nombrilo
         CHECK_FALSE(compile::read_nombrilo(bytes));
     }
 }
+
+namespace {
+
+// RFC 3629 well-formedness.
+bool valid_utf8(std::string_view text) {
+    std::size_t index = 0;
+    while (index < text.size()) {
+        const auto lead = static_cast<unsigned char>(text[index]);
+        std::size_t follow = 0;
+        if (lead < 0x80) {
+            ++index;
+            continue;
+        }
+        if (lead >= 0xC2 && lead <= 0xDF) {
+            follow = 1;
+        } else if (lead >= 0xE0 && lead <= 0xEF) {
+            follow = 2;
+        } else if (lead >= 0xF0 && lead <= 0xF4) {
+            follow = 3;
+        } else {
+            return false;
+        }
+        if (index + follow >= text.size()) {
+            return false;
+        }
+        for (std::size_t offset = 1; offset <= follow; ++offset) {
+            if ((static_cast<unsigned char>(text[index + offset]) & 0xC0U) != 0x80U) {
+                return false;
+            }
+        }
+        index += follow + 1;
+    }
+    return true;
+}
+
+// Every string a .pcfb holds: sample, operator, tensor and query names, and string metadata.
+std::vector<std::string> pcfb_strings(std::vector<std::byte> const &bytes) {
+    auto circuit = pcfb::io::from_bytes(bytes);
+    REQUIRE(circuit);
+    std::vector<std::string> out;
+    auto const *sub = (*circuit)->subcircuits()->Get(0);
+    for (auto const *op : *sub->operators()) {
+        if (op->name() != nullptr) {
+            out.push_back(op->name()->str());
+        }
+        if (auto const *sample = op->args_as_SampleArgs(); sample != nullptr && sample->name() != nullptr) {
+            out.push_back(sample->name()->str());
+        }
+    }
+    for (auto const *query : *sub->queries()) {
+        if (query->name() != nullptr) {
+            out.push_back(query->name()->str());
+        }
+    }
+    if ((*circuit)->metadata() != nullptr) {
+        for (auto const *entry : *(*circuit)->metadata()) {
+            if (auto const *value = entry->value_as_StringValue(); value != nullptr && value->value() != nullptr) {
+                out.push_back(value->value()->str());
+            }
+        }
+    }
+    return out;
+}
+
+} // namespace
+
+// The .pcfb size limit of #285 reaches nombrilo import too, and silently. pcfb::io::from_bytes verifies with
+// flatbuffers::Verifier's default options (at most 10^6 tables, about two per tensor), so a 6e5-node circuit cannot
+// be read back by any reader (fzb run, fzb inspect, Python). The FTP writer checks its own output and fails with
+// io.pcfb.invalid-output; nombrilo_to_pcfb does not check, and `fzb compile model.safetensors` writes the
+// unreadable file with exit status 0.
+TEST_CASE("nombrilo import of a 6e5-node circuit writes a readable .pcfb or fails (#285)",
+          "[bug][nombrilo][pcfb][scale][issue-285]") {
+    constexpr std::uint32_t inputs = 300'000;
+    std::vector<std::uint32_t> ops(inputs, compile::kNombriloOr);
+    std::vector<std::vector<std::uint32_t>> kids;
+    kids.reserve(inputs);
+    for (std::uint32_t gate = 0; gate < inputs; ++gate) {
+        // g0 = OR(x1, x1)... g_i = OR(g_{i-1}, x_{i+1}): a chain over every input.
+        const auto previous = gate == 0 ? lit(1) : lit(inputs + gate);
+        kids.push_back({previous, lit(gate + 1)});
+    }
+    const auto c = make_circuit(inputs, std::move(ops), std::move(kids), {{"top", lit(2 * inputs)}},
+                                std::vector<double>(inputs, 1.0e-3));
+    std::array<std::byte, 32> sha{};
+    NombriloCompileOptions options;
+    options.target = "top";
+    auto compiled = compile::nombrilo_to_pcfb(c, options, sha, "big");
+    if (!compiled) {
+        SUCCEED("refused: " << compiled.error().message);
+        return;
+    }
+    auto view = pcfb::io::from_bytes(compiled->bytes);
+    INFO((view ? std::string{} : view.error().message));
+    CHECK(view);
+}
+
+// FlatBuffers strings are UTF-8, and every consumer of a .pcfb's names decodes them as UTF-8: Python
+// fuzzybits.inspect and fuzzybits.run (UnicodeDecodeError), `fzb run --json`, and nombrilo export, whose safetensors
+// header must be UTF-8 JSON. nombrilo names are bytes (a U8 tensor) and FTP names may be Latin-1
+// (docs/ftp-input.md, Grammar: "bytes above 127"), and both are copied into the .pcfb unchanged; nombrilo export then
+// copies .pcfb names into its header unchanged.
+TEST_CASE("names that are not UTF-8 do not reach .pcfb strings or a nombrilo header",
+          "[bug][nombrilo][pcfb][utf8][issue-300]") {
+    SECTION("nombrilo import") {
+        // One input named "POMPE-\xC9" (Latin-1 E-acute), gate g0 = OR(x).
+        const auto c =
+            make_circuit(1, {compile::kNombriloOr}, {{lit(1)}}, {{"POMPE-\xC9", lit(1)}, {"top", lit(2)}}, {0.25});
+        NombriloCompileOptions options;
+        options.target = "top";
+        const auto bytes = to_pcfb(c, options);
+        for (auto const &text : pcfb_strings(bytes)) {
+            INFO(text);
+            CHECK(valid_utf8(text));
+        }
+    }
+    SECTION("nombrilo export") {
+        pcfb::builder b;
+        auto event = b.add_sample(0.25, "POMPE-\xC9", 1);
+        REQUIRE(event);
+        const std::uint32_t inputs[] = {*event};
+        auto gate = b.add_op(pcfb::OpCode::BITWISE_OR, inputs, {}, std::nullopt, "SYST\xC8ME");
+        REQUIRE(gate);
+        REQUIRE(b.add_query(*gate, pcfb::QueryKind::PROBABILITY, "SYST\xC8ME"));
+        const auto bytes = finish(b);
+        auto circuit = pcfb::io::from_bytes(bytes);
+        REQUIRE(circuit);
+        auto exported = compile::pcfb_to_nombrilo(*circuit, NombriloExportOptions{true});
+        if (!exported) {
+            SUCCEED("refused: " << exported.error().message);
+            return;
+        }
+        auto written = compile::write_nombrilo(*exported);
+        REQUIRE(written);
+        std::uint64_t header = 0;
+        for (int i = 0; i < 8; ++i) {
+            header |= static_cast<std::uint64_t>(std::to_integer<std::uint8_t>((*written)[i])) << (8 * i);
+        }
+        const std::string json(reinterpret_cast<const char *>(written->data()) + 8, header);
+        CHECK(valid_utf8(json));
+    }
+}
