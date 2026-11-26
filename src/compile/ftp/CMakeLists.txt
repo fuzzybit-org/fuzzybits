@@ -47,3 +47,14 @@ if(BUILD_TESTING)
     endif()
   endif()
 endif()
+
+# Known bugs (ctest -L bug): these fail until their issues are fixed.
+if(BUILD_TESTING)
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_compile_ftp_bug_tests
+    SOURCES tests/bug_tests.cc
+    LINK_LIBRARIES fuzzybits_compile_ftp fuzzybits_exact_eval pcfb
+    LABELS bug
+  )
+  set_tests_properties(fuzzybits_compile_ftp_bug_tests PROPERTIES TIMEOUT 300)
+endif()

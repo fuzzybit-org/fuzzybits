@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- E = cos(0) = 1, a valid probability. P(TOP) = 1. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><cos><float value="0"/></cos></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

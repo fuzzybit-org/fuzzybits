@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<!-- TOP = H | G1 with the house event H = true, so TOP is TRUE (P = 1); G1 = A & B, so a query on G1 is
+     0.5 * 0.2 = 0.1 whatever TOP folds to. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><or><house-event name="H"/><gate name="G1"/></or></define-gate>
+    <define-gate name="G1"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+    <define-house-event name="H"><constant value="true"/></define-house-event>
+    <define-basic-event name="A"><float value="0.5"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

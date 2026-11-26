@@ -1,0 +1,2 @@
+# Binary fixtures: stored byte for byte.
+*.safetensors binary

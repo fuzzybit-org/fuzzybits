@@ -26,3 +26,13 @@ if(BUILD_TESTING)
     LINK_LIBRARIES fuzzybits_io_ftp fuzzybits_ir_pra fuzzybits_compile_ftp
   )
 endif()
+
+# Known bugs (ctest -L bug): these fail until their issues are fixed.
+if(BUILD_TESTING)
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_io_ftp_bug_tests
+    SOURCES tests/bug_tests.cc
+    LINK_LIBRARIES fuzzybits_io_ftp fuzzybits_ir_pra
+    LABELS bug
+  )
+endif()

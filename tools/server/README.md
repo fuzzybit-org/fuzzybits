@@ -13,6 +13,25 @@ end states are not compiled or sampled ([#92](https://github.com/fuzzybit-org/fu
 Set `FUZZYBITS_SERVER_ENGINE=legacy` for the in-memory `run_compile` path.
 The `MCSCRAM_CONVERGENCE_ENGINE=native` `run_probability` fallback is unchanged.
 
+## Boundary with the engine
+
+The server is Python for what Python is for:
+
+- HTTP routes and request/response schemas;
+- worker and process supervision;
+- configuration, files and the compile cache;
+- the web UI.
+
+Everything it computes or decides about a model is the engine's, through the `fuzzybits` native module:
+
+- reading MEF, FTP, nombrilo and `.pcfb` content;
+- choosing targets and resolving names;
+- estimates, intervals, stopping rules and progress statistics.
+
+That is the rule in [Where code lives](../../docs/python.md#where-code-lives), and it applies here as it does to
+the `fuzzybits` package. A server feature that needs a new computation adds it to the engine first. Server code
+that does not meet the rule yet is listed in [#301](https://github.com/fuzzybit-org/fuzzybits/issues/301).
+
 ## Run
 
 ```bash

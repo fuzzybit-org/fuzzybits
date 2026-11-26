@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- One fault tree with two gates no other gate references: T1 = A | B (0.28), T2 = A & B (0.02). Without a
+     target, a compile must refuse, or query both. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="T1"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+    <define-gate name="T2"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

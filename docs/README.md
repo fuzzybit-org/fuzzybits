@@ -8,7 +8,7 @@ How work is planned, scoped and checked: [planning.md](planning.md).
 
 | Page | Covers |
 |---|---|
-| [python.md](python.md) | Python package, `fzb` on the wheel, API, progress logs, building wheels |
+| [python.md](python.md) | Python package, `fzb` on the wheel, API, progress logs, building wheels; where code lives (C++ engine, thin Python) |
 | [ftp-input.md](ftp-input.md) | CAFTA FTP projects through `fzb compile` |
 | [nombrilo.md](nombrilo.md) | nombrilo circuit files ↔ `.pcfb` |
 | [images.md](images.md) | Runtime container images: tags, pulling, running |

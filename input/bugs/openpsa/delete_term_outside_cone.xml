@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- TOP = A | B = 0.28. The delete term X & Y shares no event with TOP: cut-set deletion and P(TOP | not XY)
+     both give 0.28; TOP & not(X & Y) gives 0.21. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+  </define-fault-tree>
+  <define-substitution name="DT" type="delete-terms">
+    <hypothesis><and><basic-event name="X"/><basic-event name="Y"/></and></hypothesis>
+    <target><constant value="false"/></target>
+  </define-substitution>
+  <model-data>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+    <define-basic-event name="X"><float value="0.5"/></define-basic-event>
+    <define-basic-event name="Y"><float value="0.5"/></define-basic-event>
+  </model-data>
+</opsa-mef>

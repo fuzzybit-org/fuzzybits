@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- P(A) = 1 - exp(-1e-4 T) with T the system mission time, which the model does not give: 0.58355 at
+     T = 8760 h, 2.3971e-3 at T = 24 h. A compile must take T as an input or state the value it used. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+    <define-basic-event name="A"><exponential><float value="1e-4"/><system-mission-time/></exponential></define-basic-event>
+    <define-basic-event name="B"><float value="0"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

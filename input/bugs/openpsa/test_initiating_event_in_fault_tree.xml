@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- E = ite(test-initiating-event IE, 0.9, 0.1) in a fault tree with no event tree. The test has no initiating event
+     to test outside an event tree, so the model is ill-defined there; reading the test as false gives 0.1. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><ite><test-initiating-event name="IE"/><float value="0.9"/><float value="0.1"/></ite></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

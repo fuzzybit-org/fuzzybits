@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- TOP = A, A exponential(1e-4, mission time), alignment with phases P1 (fraction 0.25) and P2 (0.75). Per phase,
+     with the default 8760 h mission: 1 - exp(-0.219) = 0.19668 and 1 - exp(-0.657) = 0.48160. One whole-mission
+     value (0.58355) answers neither phase. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="A"/></define-gate>
+    <define-basic-event name="A"><exponential><float value="1e-4"/><system-mission-time/></exponential></define-basic-event>
+  </define-fault-tree>
+  <define-alignment name="AL">
+    <define-phase name="P1" time-fraction="0.25"/>
+    <define-phase name="P2" time-fraction="0.75"/>
+  </define-alignment>
+</opsa-mef>

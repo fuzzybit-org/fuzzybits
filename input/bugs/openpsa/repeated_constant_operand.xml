@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- TOP = A & true & true = A. P(TOP) = 0.1. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><and><basic-event name="A"/><constant value="true"/><constant value="true"/></and></define-gate>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

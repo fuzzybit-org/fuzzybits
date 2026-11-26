@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- TOP = A & G1 with G1 = B, a one-operand gate. P(TOP) = 0.5 * 0.2 = 0.1, and a query on G1 is P(B) = 0.2. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><and><basic-event name="A"/><gate name="G1"/></and></define-gate>
+    <define-gate name="G1"><basic-event name="B"/></define-gate>
+    <define-basic-event name="A"><float value="0.5"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

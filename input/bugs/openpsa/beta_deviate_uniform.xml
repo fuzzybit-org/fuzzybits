@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- A ~ beta(1, 1), the uniform distribution on [0, 1] (mean 0.5), a valid probability distribution.
+     P(TOP) = 1 - (1 - 0.5)(1 - 0.1) = 0.55 at the mean of A. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+    <define-basic-event name="A"><beta-deviate><float value="1"/><float value="1"/></beta-deviate></define-basic-event>
+    <define-basic-event name="B"><float value="0.1"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

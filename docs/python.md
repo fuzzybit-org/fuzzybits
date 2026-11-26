@@ -30,6 +30,77 @@ Wheels are built with `MALLOC_TYPE=malloc` — no `LD_PRELOAD`.
 Publishing to PyPI is [#36](https://github.com/fuzzybit-org/fuzzybits/issues/36)
 and is gated on a legal review. Until then, install a locally built wheel.
 
+## Where code lives
+
+Every behaviour of fuzzybits has one implementation, in C++. The native `fzb`, the `fuzzybits` package, the
+`fzb` console script on the wheel and `fuzzybits-server` are front ends over it. Two implementations of one
+behaviour drift apart: the Python and native `fzb` then accept different inputs, or compute different numbers,
+from the same arguments, and nothing reports it. This section is the rule for `python/`, `targets/python/` and
+`tools/server/`.
+
+**The C++ side owns:**
+
+- **Formats.** Reading and writing every format (OpenPSA MEF, CAFTA FTP, nombrilo, AIGER, `.pcfb`), and deciding
+  which format an input is.
+- **Compiling.** Lowering and passes, target and name resolution, and the default of every option.
+- **Evaluation.** Monte Carlo, exact evaluation, estimates and intervals, stopping and convergence rules,
+  frequency groups and exposure probabilities.
+- **Options.** The meaning of every option: parsing values (numbers, durations, `NAME=0|1`, `@FILE` lists),
+  validating them, and deciding which options apply to which input.
+- **Outputs.** Diagnostics (ids, messages, severities), summaries such as `fzb inspect` and compile reports, and
+  their JSON.
+
+Each of these must be a function of a C++ library under `src/`, called by both the native CLI (`targets/fzb`)
+and the bindings (`targets/python/bindings.cpp`). Neither of those two implements one itself. The bindings are
+C++, but they follow the same rule as Python: they convert arguments and results and make the call. They hold no
+second pipeline beside the one `fzb` uses: no second compile path, no second `.pcfb` summary, no second name
+lookup.
+
+**Python may only:**
+
+- **Marshal.** Convert Python arguments into the native call, and native results into Python types
+  (dataclasses, exceptions, warnings), one to one. A Python default is the native default. Python checks types,
+  not values.
+- **Bootstrap.** Choose and import the native extension, and set AdaptiveCpp's environment before it
+  initialises (`python/fuzzybits/_runtime.py`). This is the only Python that may probe hardware. It chooses an
+  extension and a visibility mask, and nothing that changes a result.
+- **Enter the process.** The wheel's `fzb` hands its arguments to the native CLI entry point. A subcommand
+  written in Python exists only to start another Python package (`fzb serve`).
+- **Serve.** In `fuzzybits-server`: HTTP routing, request and response schemas, worker and process
+  supervision, configuration, files and caches, and the web UI. Every number it reports was computed by the
+  engine.
+
+**Python must not:**
+
+- **Read file formats.** It must not parse a model or file format, or read the content of `.pcfb`, MEF XML, FTP
+  or safetensors bytes.
+- **Compute.** It must not compute a statistic or a domain value, not even as a fallback: no interval, standard
+  error, stopping decision, group frequency or exposure probability.
+- **Handle options.** It must not parse or validate an option value, choose a default that differs from the
+  native one, or decide which options apply to which input.
+- **Resolve names.** It must not resolve names, choose targets, or split names. Element names are byte
+  strings, so a list of names is a list, never a comma-separated string.
+- **Expose engine internals.** PDAG node indices and SCRAM graph or execution-plan shapes are not API, so that
+  the engine can change ([#146](https://github.com/fuzzybit-org/fuzzybits/issues/146)) without breaking Python callers.
+
+**When Python needs something the engine lacks.** Add it to the C++ library and bind it.
+
+- An exception is listed here, with its issue.
+- A test in `tests/python` checks that the exception agrees with the native path on the cases it covers.
+
+**Checking.**
+
+- **What the existing test covers.** `tests/python/test_cli.py` checks that the wheel's `fzb` takes the same
+  option names as the native one. It does not compare how values are parsed or what is printed, and the
+  differences in [#301](https://github.com/fuzzybit-org/fuzzybits/issues/301) are of that kind.
+- **What a change adds.** Until the console script hands its arguments to the native entry point, a change to
+  an option adds a test that runs both binaries on the same arguments, malformed values included, and compares
+  their output and exit status.
+- **Review.** A change under `python/`, `targets/python/` or `tools/server/` is reviewed against this section.
+
+Existing code that does not meet this section is listed in
+[#301](https://github.com/fuzzybit-org/fuzzybits/issues/301).
+
 ## Install a wheel
 
 ```bash
@@ -39,9 +110,11 @@ fzb --help
 ```
 
 No `PYTHONPATH` or `LD_PRELOAD`. The wheel installs an `fzb` console script
-that matches the native CLI's compile / inspect / run flag surface so scripts
+with the native CLI's compile / inspect / run flag surface, so scripts
 can use either binary. Docker images keep the native `/usr/local/bin/fzb`
-(the pip script is overwritten after install).
+(the pip script is overwritten after install). The console script parses and checks its arguments in Python
+(`python/fuzzybits/_cli.py`), which does not meet [Where code lives](#where-code-lives); the inputs on which it
+and the native `fzb` differ are listed in [#301](https://github.com/fuzzybit-org/fuzzybits/issues/301).
 
 ### Migration from `mcscram_native` / `mcscram_server`
 
@@ -129,8 +202,11 @@ least one occurrence over the period (checked before sampling). `exact_groups(pc
 is the exact counterpart for small models, as `fzb inspect --exact`
 ([initiating-event frequencies](ftp-input.md#initiating-event-frequencies)). `Session` reconstructs the PDAG and streams
 raw per-pass popcounts (`num_one_bits` / `total_bits`, pass index, trials
-per pass) so a host-side convergence loop can replace
-`run_compile` + `layer_manager.single_pass_all` without changing results.
+per pass). Estimates, intervals and stopping decisions over those counts belong in the C++ controller
+([#224](https://github.com/fuzzybit-org/fuzzybits/issues/224)), not in the caller
+([Where code lives](#where-code-lives)). The PDAG indices in `PassResult.nodes` and the shapes returned by
+`graph()`, `kernel_graph()` and `execution_plan()` are those of the current engine and change with
+[#146](https://github.com/fuzzybit-org/fuzzybits/issues/146).
 
 The wheel now links `fuzzybits_compile`, pcfb, and the runtime into the
 native extension (`libmc` already carries `run.cc`). Native `fzb` /

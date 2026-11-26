@@ -1,0 +1,2 @@
+# Stored byte for byte: the crlf_*.aag fixtures have CRLF line endings on purpose.
+*.aag -text

@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- TOP = NAND(A) = not A = 0.9 (input.rng allows one or more arguments). -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><nand><basic-event name="A"/></nand></define-gate>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>
