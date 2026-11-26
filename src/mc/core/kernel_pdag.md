@@ -201,8 +201,7 @@ For each kernel partition, C++ computes:
 - logical work dimensions:
   - basic event: `(num_events, batch_size, bitpacks_per_batch)`
   - gate: `(num_gates, 1, work-items per gate)`, one bitpack per work-item (8 on CPUs); a layer has one gate
-    partition per connective and size class (slot count or cardinality form; on CPUs, AND, OR, XOR, NAND and
-    NOR take one class)
+    partition per connective, and cardinality gates one per form and slot count
   - tally: `(num_tallies, batch_size, bitpacks_per_batch)`
 - work-group count
 - over-provisioned work-items

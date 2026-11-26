@@ -1,8 +1,8 @@
 // Device tests of the AND, OR, XOR, NAND, NOR, NOT and NULL kernels (src/mc/kernel/gate.h) against a host
 // evaluation: every slot count of the fixed form, with and without padding slots, the counted form at every
-// input count (CPUs use it for every gate), both lane forms (GPU, CPU), both work-group orders, gates without
-// inputs (the kernel builder's constants), and 8- to 64-bit bitpacks. Each gate's inputs have a density that
-// leaves both outputs likely.
+// input count (the kernel builder uses it for every AND, OR, XOR, NAND and NOR gate), both lane forms (GPU, CPU),
+// both work-group orders, gates without inputs (the kernel builder's constants), and 8- to 64-bit bitpacks. Each
+// gate's inputs have a density that leaves both outputs likely.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -24,7 +24,7 @@ using size_t_ = std::size_t;
 using scram::core::Connective;
 using scram::mc::kernel::gate_order;
 using scram::mc::kernel::gate_slots_for;
-using scram::mc::kernel::gate_slots_on;
+using scram::mc::kernel::gate_slots_of;
 using scram::mc::kernel::kGateSlots;
 
 struct gate_spec {
@@ -237,14 +237,12 @@ TEST_CASE("gate slot counts by input count", "[mc][gate]") {
     CHECK(gate_slots_for(16) == 16);
     CHECK(gate_slots_for(17) == 0);
 
-    // The kernel builder's choice: one counted kernel per connective on CPUs, the fixed form on GPUs.
-    const sycl::queue queue;
-    const auto device = queue.get_device();
-    const bool cpu = device.is_cpu();
-    INFO("device=" << device.get_info<sycl::info::device::name>());
-    CHECK(gate_slots_on(device, Connective::kAnd, 3) == (cpu ? 0u : 3u));
-    CHECK(gate_slots_on(device, Connective::kOr, 0) == (cpu ? 0u : 1u));
-    CHECK(gate_slots_on(device, Connective::kXor, 40) == 0);
-    CHECK(gate_slots_on(device, Connective::kNot, 1) == 1);
-    CHECK(gate_slots_on(device, Connective::kNull, 1) == 1);
+    // The kernel builder's choice: one counted kernel per connective, one slot for NOT and NULL.
+    CHECK(gate_slots_of(Connective::kAnd) == 0);
+    CHECK(gate_slots_of(Connective::kOr) == 0);
+    CHECK(gate_slots_of(Connective::kXor) == 0);
+    CHECK(gate_slots_of(Connective::kNand) == 0);
+    CHECK(gate_slots_of(Connective::kNor) == 0);
+    CHECK(gate_slots_of(Connective::kNot) == 1);
+    CHECK(gate_slots_of(Connective::kNull) == 1);
 }

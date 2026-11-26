@@ -91,15 +91,14 @@ comes from the work-group index (`src/mc/kernel/gate_lanes.h`). On NVIDIA GPUs t
 at a block of bitpacks before the next block, so gates that share inputs read them from the cache; elsewhere
 they run gate by gate, except on CPUs for kernels whose gates differ in input count: OpenMP gives each thread a
 contiguous run of work-groups, and block by block every thread gets each gate as often. A layer's gates take
-one kernel per connective and size class:
+one kernel per connective, and cardinality gates one per form and slot count:
 
-- AND, OR, XOR, NAND, NOR, NOT, NULL (`src/mc/kernel/gate.h`): on GPUs, up to 16 inputs, a fixed number of
-  input slots (1, 2, 3, 4, 6, 8, 12 or 16), each a kernel of its own. The kernel builder pads a gate to the
-  smallest that holds it; `gate::input_mask` marks the slots that hold an input, the kernel never reads the
-  others, and an empty slot is the connective's identity (constant gates are AND or OR over no inputs). Above
-  16 inputs the count is read at run time, 8 loads at a time. On CPUs, where the fixed form is no faster,
-  every gate but NOT and NULL reads its count at run time, so that a layer has one kernel per connective and
-  each pass waits at fewer kernel barriers.
+- AND, OR, XOR, NAND, NOR, NOT, NULL (`src/mc/kernel/gate.h`): one kernel per connective and layer, with the
+  input count read at run time (GPUs: 8 loads at a time; CPUs: the positive inputs, then the negated ones).
+  NOT and NULL have one input slot, and constant gates are AND or OR over no inputs. The kernel also takes a
+  compile-time slot count, with `gate::input_mask` marking the slots that hold an input, but a kernel per slot
+  count was no faster at the runtime's pass sizes and multiplied kernel launches, which dominate on models with
+  many layers and small passes.
 - Cardinality gates (`src/mc/kernel/cardinality.h`): at least k, at most k and exactly k of n are true where
   the number of true inputs lies in [low, high]. The count is bit-sliced: bit j of a bitpack is trial j, and
   the per-trial counts are bit planes, so whole-word logic counts all the trials of a bitpack at once. Up to

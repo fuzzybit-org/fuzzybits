@@ -8,21 +8,22 @@
  * complemented first. Cardinality gates (at least, at most, exactly k of n) are in cardinality.h.
  *
  * A work-item evaluates one bitpack of one gate on GPUs, and kGateCpuLanes consecutive bitpacks as one vector on
- * CPUs (gate_lanes.h). Two forms, which the host picks per gate and device (`gate_slots_on`):
+ * CPUs (gate_lanes.h). Two forms (`gate_slots_of` gives the kernel builder's choice):
  *
- * - fixed: on GPUs, up to 16 inputs, in a compile-time number of slots (kGateSlots) into which the kernel
- *   builder pads each gate; the gate's input_mask says which slots hold an input, and a slot without one is
- *   the connective's identity. On the V100S this is 5-21% faster than a runtime input count; elsewhere it ties.
- *   NOT and NULL use one slot on every device.
- * - counted: the input count read at run time. GPUs use it above 16 inputs, in blocks of 8 so that 8 loads
- *   are in flight. CPUs use it for every gate, so that a layer has one kernel per connective: there the fixed
- *   form ties, and every kernel is a launch whose barrier waits for the slowest thread (with a kernel per slot
- *   count, a model of 1513 gates took 145 kernels per pass instead of 42, and 1.23x as long on a loaded 8-core
- *   host). CPUs read the positive inputs, then the negated ones, without blocks: blocks of 8 were 6-10% slower
- *   from 32 inputs on an i7-10700, and tied below. Its gates differ in input count, so on CPUs it runs in
- *   block-major order (`gate_order_for`), which balances them across threads.
+ * - counted: the input count read at run time. The kernel builder uses it for every AND, OR, XOR, NAND and NOR
+ *   gate on every device, so that a layer has one kernel per connective. GPUs read it in blocks of 8 so that 8
+ *   loads are in flight; CPUs read the positive inputs, then the negated ones, without blocks (blocks of 8 were
+ *   6-10% slower from 32 inputs on an i7-10700, and tied below). Its gates differ in input count, so on CPUs it
+ *   runs in block-major order (`gate_order_for`), which balances them across threads.
+ * - fixed: a compile-time number of slots (kGateSlots) into which a gate is padded; the gate's input_mask says
+ *   which slots hold an input, and a slot without one is the connective's identity. The kernel builder uses one
+ *   slot for NOT and NULL. More slots were 5-21% faster than a runtime count in the V100S microbenchmark (16,384
+ *   bitpacks per gate) but tied in end-to-end runs, and a kernel per slot count multiplies kernel launches: on a
+ *   model of about 88,000 gates in 147 layers, with passes of 1,024 bitpacks per node, it took 1,001 gate
+ *   kernels per pass instead of 316, and 2.3-2.8x as long on NVIDIA GPUs, whose host spends about 100 us per
+ *   launch. On CPUs every kernel is also a barrier that waits for the slowest thread.
  *
- * Constant gates are AND (TRUE) or OR (FALSE) over no inputs (on GPUs, one slot and an empty mask).
+ * Constant gates are AND (TRUE) or OR (FALSE) over no inputs.
  *
  * @copyright Copyright (C) 2025 Arjun Earthperson
  * This program is free software; you can redistribute it and/or modify
@@ -68,14 +69,10 @@ inline constexpr std::array<std::uint32_t, 8> kGateSlots{1, 2, 3, 4, 6, 8, 12, 1
     return 0;
 }
 
-/// Slots for a gate of connective op with num_inputs inputs on device: NOT and NULL one; on CPUs the counted
-/// form (0) for the other connectives; on GPUs gate_slots_for.
-[[nodiscard]] inline std::uint32_t gate_slots_on(const sycl::device &device, const core::Connective op,
-                                                 const std::size_t num_inputs) {
-    if (op == core::kNot || op == core::kNull) {
-        return 1;
-    }
-    return device.is_cpu() ? 0 : gate_slots_for(num_inputs);
+/// Slots the kernel builder gives a gate of connective op: one for NOT and NULL, the counted form (0) for the
+/// others.
+[[nodiscard]] constexpr std::uint32_t gate_slots_of(const core::Connective op) {
+    return op == core::kNot || op == core::kNull ? 1 : 0;
 }
 
 /**
