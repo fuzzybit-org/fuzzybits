@@ -5,11 +5,13 @@
 // test links no SCRAM code. Fails on develop until its issue is fixed. Labelled `bug`.
 
 #include "compile/exact_eval.h"
+#include "io/pcfb/tests/portable_random.h"
 #include "pcfb.h"
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -19,9 +21,13 @@
 #include <iterator>
 #include <map>
 #include <optional>
+#include <random>
+#include <span>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #ifndef FZB_PATH
@@ -159,6 +165,62 @@ TEST_CASE("fzb compile MEF: --watch on a NOR gate reports the gate", "[bug][mef]
     std::filesystem::remove_all(scratch);
 }
 
+// From -c 3, ancestor processing simplifies a gate with what its parent already fixes (inside TOP = A & G1, A is
+// TRUE, so G1 = B | (A & C) becomes B | C) and keeps the gate's MEF name; a watch on G1 then reads the simplified
+// function: 0.44 instead of 0.32. The OR-parent variant (TOP = A | G1, G1 = B & (A | C), where A is FALSE inside
+// the parent) reads 0.06 instead of 0.13, run by hand.
+TEST_CASE("fzb compile MEF: --watch on a gate simplified in its parent's context reports the gate",
+          "[bug][mef][wrong-answer][issue-290]") {
+    const auto scratch = scratch_directory("watch-context");
+    for (const auto *level : {"-c 2", "-c 3", "-c 5", "-c 8"}) {
+        SECTION(std::string("level ") + level) {
+            require_query(fixture("watch_gate_simplified_in_context.xml"), std::string("--watch G1 ") + level, "TOP",
+                          0.22, scratch);
+            require_query(fixture("watch_gate_simplified_in_context.xml"), std::string("--watch G1 ") + level, "G1",
+                          0.32, scratch);
+        }
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// At -c 7 and 8, a negation on a reference to a gate (TOP = A & not G1) is pushed into the gate, which keeps its
+// MEF name, so a watch on G1 reports its complement: 0.94 instead of 0.06. OR and XOR gates behave the same
+// (0.56 for 0.44, 0.62 for 0.38), run by hand.
+TEST_CASE("fzb compile MEF: --watch on a gate referenced through not reports the gate",
+          "[bug][mef][wrong-answer][issue-290]") {
+    const auto scratch = scratch_directory("watch-complemented");
+    for (const auto *level : {"-c 2", "-c 7", "-c 8"}) {
+        SECTION(std::string("level ") + level) {
+            require_query(fixture("watch_complemented_gate.xml"), std::string("--watch G1 ") + level, "TOP", 0.47,
+                          scratch);
+            require_query(fixture("watch_complemented_gate.xml"), std::string("--watch G1 ") + level, "G1", 0.06,
+                          scratch);
+        }
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// --watch NAME on a gate of the target's cone is refused ("watched node not in compiled PDAG") when the PDAG no
+// longer has a node for it: a one-operand gate is removed by null-gate removal at every level unless --keep-null,
+// and every gate below a target that folds to a constant goes with it. The watched function still exists and has
+// a value (0.2 and 0.1 here); a removed gate is a reference to another node or a constant, so its query can be
+// bound to that image (docs/IR-PC-REQUIREMENTS.md section 12, node maps of transforms).
+TEST_CASE("fzb compile MEF: --watch on a gate that preprocessing removes is answered, not refused",
+          "[bug][mef][issue-290]") {
+    const auto scratch = scratch_directory("watch-removed");
+    for (const auto *level : {"-c 0", "-c 1", "", "-c 8"}) {
+        SECTION(std::string("one-operand gate ") + level) {
+            require_query(fixture("watch_pass_through_gate.xml"), std::string("--watch G1 ") + level, "G1", 0.2,
+                          scratch);
+        }
+        SECTION(std::string("gate under a constant target ") + level) {
+            require_query(fixture("watch_gate_under_constant_top.xml"), std::string("--watch G1 ") + level, "G1", 0.1,
+                          scratch);
+        }
+    }
+    std::filesystem::remove_all(scratch);
+}
+
 // --target matches id, name or full path over a hash table and takes the first hit, so a bare name that two
 // fault trees use for private gates compiles one of them, chosen by hash order, without a diagnostic.
 TEST_CASE("fzb compile MEF: --target with a name two fault trees use is refused as ambiguous",
@@ -210,6 +272,86 @@ TEST_CASE("fzb compile MEF: valid gates and distributions are compiled, not refu
     std::filesystem::remove_all(scratch);
 }
 
+// MEF constructs that change the model are accepted and then dropped without a diagnostic: the PDAG keeps
+// non-declarative substitutions (those with a <source>) for the ZBDD cut-set path only, and pdag_to_pcfb never
+// reads them; alignments and their phases are read by risk_analysis only. The written file answers the model
+// without them (0.02, 0.02, 0.58355). docs/IR-PRA-REQUIREMENTS.md: unsupported constructs "must produce
+// diagnostics ..., not guessed formulas or probabilities". Applying them or refusing them is right; dropping them
+// is not.
+TEST_CASE("fzb compile MEF: substitutions with a source and alignments are applied or refused, never dropped",
+          "[bug][mef][wrong-answer][issue-299]") {
+    const auto scratch = scratch_directory("ignored");
+    const auto applied_or_refused = [&scratch](const char *name, const char *target, const double applied) {
+        INFO(name);
+        const auto result = compile(fixture(name), "", scratch);
+        INFO("stdout: " << result.run.out << "\nstderr: " << result.run.err);
+        if (result.run.status != 0) {
+            SUCCEED("refused");
+            return;
+        }
+        CHECK(exact_by_name(result.bytes).at(target) == Catch::Approx(applied).margin(1e-9));
+    };
+    SECTION("exchange-event substitution") { applied_or_refused("substitution_exchange_event.xml", "TOP", 0.1); }
+    SECTION("recovery rule with a source") { applied_or_refused("substitution_recovery_with_source.xml", "TOP", 0.3); }
+    SECTION("alignment phase setting a house event") {
+        applied_or_refused("alignment_set_house_event.xml", "TOP", 1.0);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// NaN passes the XML number reader (strtod) and the probability range check (NaN < 0 and NaN > 1 are both false);
+// max/min (fmax/fmin) and comparisons then drop it, so max(NaN, 0.3) compiles as 0.3 and ite(NaN > 0, 0.9, 0.1)
+// as 0.1. A NaN in an expression has no value; the model must be refused.
+TEST_CASE("fzb compile MEF: an expression with NaN is refused", "[bug][mef][issue-299]") {
+    const auto scratch = scratch_directory("nan");
+    for (const auto *name : {"nan_through_max.xml", "nan_through_ite.xml"}) {
+        INFO(name);
+        const auto result = compile(fixture(name), "", scratch);
+        INFO("stdout: " << result.run.out << "\nstderr: " << result.run.err);
+        CHECK(result.run.status != 0);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// More valid MEF the compile refuses (each fixture states its value):
+//  - sin(0.5) and cos(0): the interval of sin and cos is taken as [-1, 1] and checked as a probability;
+//  - or, mean and add with one argument (input.rng allows one or more);
+//  - a repeated <constant value="true"/> or a repeated event in one gate (the duplicate-argument check);
+//  - GLM with failure rate 0, which is gamma exp(-mu t);
+//  - an alpha-factor group with only alpha_1, refused as "Expression requires 2 or more arguments".
+TEST_CASE("fzb compile MEF: more valid expressions, gates and CCF groups are compiled, not refused",
+          "[bug][mef][issue-295]") {
+    const auto scratch = scratch_directory("valid-more");
+    SECTION("sin") { require_query(fixture("expression_sin.xml"), "", "TOP", 0.479425538604203, scratch); }
+    SECTION("cos") { require_query(fixture("expression_cos.xml"), "", "TOP", 1.0, scratch); }
+    SECTION("or with one argument") { require_query(fixture("gate_or_one_operand.xml"), "", "TOP", 0.1, scratch); }
+    SECTION("mean with one argument") {
+        require_query(fixture("expression_mean_one_operand.xml"), "", "TOP", 0.3, scratch);
+    }
+    SECTION("add with one argument") {
+        require_query(fixture("expression_add_one_operand.xml"), "", "TOP", 0.3, scratch);
+    }
+    SECTION("a repeated constant") { require_query(fixture("repeated_constant_operand.xml"), "", "TOP", 0.1, scratch); }
+    SECTION("a repeated event") { require_query(fixture("repeated_event_operand.xml"), "", "TOP", 0.1, scratch); }
+    SECTION("GLM with failure rate 0") {
+        require_query(fixture("glm_zero_failure_rate.xml"), "", "TOP", 0.0367879441171442, scratch);
+    }
+    SECTION("alpha-factor group with alpha_1 only") {
+        require_query(fixture("alpha_factor_level_1_only.xml"), "", "TOP", 0.01, scratch);
+    }
+    std::filesystem::remove_all(scratch);
+}
+
+// --watch on a CCF member is refused ("watched node not in compiled PDAG"): CCF expansion replaces the member by a
+// proxy gate (its independent event OR its common events) that is never added to the watched gates. The member
+// has a value, 0.0984 here.
+TEST_CASE("fzb compile MEF: --watch on a CCF group member is answered", "[bug][mef][issue-290]") {
+    const auto scratch = scratch_directory("watch-ccf");
+    require_query(fixture("watch_ccf_member.xml"), "--watch A", "AND2", 0.026272, scratch);
+    require_query(fixture("watch_ccf_member.xml"), "--watch A", "A", 0.0984, scratch);
+    std::filesystem::remove_all(scratch);
+}
+
 // --no-kn expands every at-least gate into AND/OR. NormalizeAtleastGate builds new, unshared sub-gates at each
 // step, T(n, k) = 3 + T(n-1, k-1) + T(n-1, k), and later passes merge them again, so the written circuit is
 // small (210 operators for 10 of 20) but the compile time grows like C(n, k): 0.3 s for 8 of 16, 1.9 s for
@@ -250,5 +392,260 @@ TEST_CASE("fzb compile MEF --no-kn expands a 10-of-20 gate in polynomial time", 
     REQUIRE(result.run.status == 0);
     CHECK(exact_by_name(result.bytes).at("TOP") == Catch::Approx(expected).margin(1e-15));
     CHECK(elapsed.count() < 5.0);
+    std::filesystem::remove_all(scratch);
+}
+
+namespace {
+
+namespace random = pcfb_test_random;
+
+// A random MEF fault tree over 2..6 basic events: gates G0..Gn-1, each over events, house events and gates of a
+// higher index (so the graph is acyclic and G0 can reach any of them), with complemented operands. Only forms
+// share/input.rng and the SCRAM reader accept today, so a refusal here is a finding too.
+struct random_gate final {
+    std::string kind;                                  // and or atleast xor not nand nor iff imply cardinality null
+    std::vector<std::tuple<char, int, bool>> operands; // ('e'|'h'|'g', index, complemented)
+    int low = 0;
+    int high = 0;
+};
+
+struct random_model final {
+    std::vector<double> probabilities;
+    std::vector<bool> houses;
+    std::vector<random_gate> gates;
+};
+
+[[nodiscard]] auto random_fault_tree(std::mt19937_64 &rng) -> random_model {
+    static constexpr std::array<double, 8> kProbabilities{0.0, 0.05, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0};
+    static constexpr std::array<const char *, 11> kKinds{"and", "or",  "atleast", "xor",         "not", "nand",
+                                                         "nor", "iff", "imply",   "cardinality", "null"};
+    random_model model;
+    const auto events = random::uniform(rng, 2, 6);
+    for (std::uint64_t index = 0; index < events; ++index) {
+        model.probabilities.push_back(random::chance(rng, 0.25)
+                                          ? kProbabilities[random::uniform(rng, 0, 7)]
+                                          : 0.1 * static_cast<double>(random::uniform(rng, 1, 6)));
+    }
+    for (std::uint64_t index = random::uniform(rng, 0, 2); index > 0; --index) {
+        model.houses.push_back(random::chance(rng, 0.5));
+    }
+    const auto gates = static_cast<int>(random::uniform(rng, 2, 7));
+    for (int index = 0; index < gates; ++index) {
+        random_gate gate{.kind = kKinds[random::uniform(rng, 0, kKinds.size() - 1)]};
+        std::vector<std::pair<char, int>> pool;
+        for (std::uint64_t event = 0; event < events; ++event) {
+            pool.emplace_back('e', static_cast<int>(event));
+        }
+        for (std::size_t house = 0; house < model.houses.size(); ++house) {
+            pool.emplace_back('h', static_cast<int>(house));
+        }
+        for (int child = index + 1; child < gates; ++child) {
+            pool.emplace_back('g', child);
+        }
+        std::size_t count = 0;
+        if (gate.kind == "not" || gate.kind == "null") {
+            count = 1;
+        } else if (gate.kind == "xor" || gate.kind == "iff" || gate.kind == "imply") {
+            count = 2;
+        } else {
+            count = static_cast<std::size_t>(random::uniform(rng, 2, std::min<std::uint64_t>(5, pool.size())));
+        }
+        random::shuffle(std::span(pool), rng);
+        const bool unary = count == 1;
+        for (std::size_t at = 0; at < count; ++at) {
+            // A complemented operand of a one-operand form would be a nested formula, which the schema refuses.
+            gate.operands.emplace_back(pool[at].first, pool[at].second, !unary && random::chance(rng, 0.25));
+        }
+        const auto n = static_cast<int>(count);
+        if (gate.kind == "atleast") {
+            if (n < 3) {
+                gate.kind = "and";
+            } else {
+                gate.low = static_cast<int>(random::uniform(rng, 2, static_cast<std::uint64_t>(n - 1)));
+            }
+        } else if (gate.kind == "cardinality") {
+            gate.low = static_cast<int>(random::uniform(rng, 0, static_cast<std::uint64_t>(n)));
+            gate.high = static_cast<int>(
+                random::uniform(rng, static_cast<std::uint64_t>(gate.low), static_cast<std::uint64_t>(n)));
+        }
+        model.gates.push_back(std::move(gate));
+    }
+    return model;
+}
+
+[[nodiscard]] auto to_xml(random_model const &model) -> std::string {
+    std::ostringstream out;
+    out << "<?xml version=\"1.0\"?>\n<opsa-mef>\n<define-fault-tree name=\"FT\">\n";
+    const auto reference = [&](char type, int index) {
+        std::ostringstream tag;
+        tag << (type == 'e'   ? "<basic-event name=\"E"
+                : type == 'h' ? "<house-event name=\"H"
+                              : "<gate name=\"G")
+            << index << "\"/>";
+        return tag.str();
+    };
+    for (std::size_t index = 0; index < model.gates.size(); ++index) {
+        auto const &gate = model.gates[index];
+        std::string operands;
+        for (auto const &[type, at, complemented] : gate.operands) {
+            operands += complemented ? "<not>" + reference(type, at) + "</not>" : reference(type, at);
+        }
+        out << "<define-gate name=\"G" << index << "\">";
+        if (gate.kind == "null") {
+            out << operands;
+        } else if (gate.kind == "atleast") {
+            out << "<atleast min=\"" << gate.low << "\">" << operands << "</atleast>";
+        } else if (gate.kind == "cardinality") {
+            out << "<cardinality min=\"" << gate.low << "\" max=\"" << gate.high << "\">" << operands
+                << "</cardinality>";
+        } else {
+            out << '<' << gate.kind << '>' << operands << "</" << gate.kind << '>';
+        }
+        out << "</define-gate>\n";
+    }
+    out.precision(17);
+    for (std::size_t index = 0; index < model.probabilities.size(); ++index) {
+        out << "<define-basic-event name=\"E" << index << "\"><float value=\"" << model.probabilities[index]
+            << "\"/></define-basic-event>\n";
+    }
+    for (std::size_t index = 0; index < model.houses.size(); ++index) {
+        out << "<define-house-event name=\"H" << index << "\"><constant value=\""
+            << (model.houses[index] ? "true" : "false") << "\"/></define-house-event>\n";
+    }
+    out << "</define-fault-tree>\n</opsa-mef>\n";
+    return out.str();
+}
+
+// The probability of every gate, by truth table over the basic events.
+[[nodiscard]] auto truth_table(random_model const &model) -> std::vector<double> {
+    const auto events = model.probabilities.size();
+    std::vector<double> probability(model.gates.size(), 0.0);
+    std::vector<int> value(model.gates.size(), 0);
+    for (std::uint32_t assignment = 0; assignment < (1U << events); ++assignment) {
+        double weight = 1.0;
+        for (std::size_t event = 0; event < events; ++event) {
+            const auto p = model.probabilities[event];
+            weight *= ((assignment >> event) & 1U) != 0 ? p : 1.0 - p;
+        }
+        for (auto index = static_cast<int>(model.gates.size()) - 1; index >= 0; --index) {
+            auto const &gate = model.gates[static_cast<std::size_t>(index)];
+            std::vector<int> in;
+            for (auto const &[type, at, complemented] : gate.operands) {
+                int v = type == 'e'   ? static_cast<int>((assignment >> at) & 1U)
+                        : type == 'h' ? static_cast<int>(model.houses[static_cast<std::size_t>(at)])
+                                      : value[static_cast<std::size_t>(at)];
+                in.push_back(complemented ? 1 - v : v);
+            }
+            const auto n = static_cast<int>(in.size());
+            int ones = 0;
+            for (const int v : in) {
+                ones += v;
+            }
+            int out = 0;
+            if (gate.kind == "and")
+                out = ones == n;
+            else if (gate.kind == "or")
+                out = ones > 0;
+            else if (gate.kind == "xor")
+                out = ones % 2;
+            else if (gate.kind == "not")
+                out = 1 - in[0];
+            else if (gate.kind == "null")
+                out = in[0];
+            else if (gate.kind == "nand")
+                out = ones != n;
+            else if (gate.kind == "nor")
+                out = ones == 0;
+            else if (gate.kind == "iff")
+                out = in[0] == in[1];
+            else if (gate.kind == "imply")
+                out = in[0] == 0 || in[1] == 1;
+            else if (gate.kind == "atleast")
+                out = ones >= gate.low;
+            else if (gate.kind == "cardinality")
+                out = ones >= gate.low && ones <= gate.high;
+            value[static_cast<std::size_t>(index)] = out;
+        }
+        for (std::size_t index = 0; index < model.gates.size(); ++index) {
+            probability[index] += weight * value[index];
+        }
+    }
+    return probability;
+}
+
+} // namespace
+
+// Differential check of the whole MEF path: random fault trees (fixed seeds, portable draws), compiled at every
+// level and with each preprocessing switch, with G0 as the target and every other gate of its cone watched. Every
+// query must equal the truth table of the model as written. Preprocessing levels and switches are documented as
+// optimisations, so they may change the circuit but never a value. This is how the watch cases above were found.
+// On develop 201 of the 336 compiles fail: 183 watches refused at every level, -c 0 included, and 18 watched values
+// wrong from -c 1 (mostly complements). No target is wrong in these 24 models; the at-least case above is rarer.
+TEST_CASE("fzb compile MEF: random fault trees keep their truth-table values at every level",
+          "[bug][mef][wrong-answer][differential][issue-290]") {
+    const auto scratch = scratch_directory("differential");
+    const std::vector<std::string> configurations{"-c 0",
+                                                  "-c 1",
+                                                  "-c 2",
+                                                  "-c 3",
+                                                  "-c 4",
+                                                  "-c 5",
+                                                  "-c 6",
+                                                  "-c 7",
+                                                  "-c 8",
+                                                  "-c 0 --keep-null",
+                                                  "-c 2 --keep-null",
+                                                  "-c 2 --no-kn",
+                                                  "-c 2 --no-xor",
+                                                  "-c 8 --no-kn --no-xor"};
+    std::mt19937_64 rng(290);
+    std::size_t checked = 0;
+    std::size_t failed = 0;
+    for (int round = 0; round < 24; ++round) {
+        const auto model = random_fault_tree(rng);
+        const auto expected = truth_table(model);
+        // The cone of G0.
+        std::vector<bool> reached(model.gates.size(), false);
+        std::vector<int> stack{0};
+        reached[0] = true;
+        while (!stack.empty()) {
+            const auto gate = stack.back();
+            stack.pop_back();
+            for (auto const &[type, at, complemented] : model.gates[static_cast<std::size_t>(gate)].operands) {
+                if (type == 'g' && !reached[static_cast<std::size_t>(at)]) {
+                    reached[static_cast<std::size_t>(at)] = true;
+                    stack.push_back(at);
+                }
+            }
+        }
+        std::string watch;
+        for (std::size_t index = 1; index < model.gates.size(); ++index) {
+            if (reached[index]) {
+                watch += " --watch G" + std::to_string(index);
+            }
+        }
+        const auto input = scratch / ("model_" + std::to_string(round) + ".xml");
+        std::ofstream(input, std::ios::binary) << to_xml(model);
+        for (auto const &configuration : configurations) {
+            INFO("round " << round << ", fzb compile " << configuration << " --target G0" << watch << "\n"
+                          << to_xml(model));
+            const auto result = compile(input, configuration + " --target G0" + watch, scratch);
+            INFO("stderr: " << result.run.err);
+            ++checked;
+            CHECK(result.run.status == 0);
+            if (result.run.status != 0) {
+                ++failed;
+                continue;
+            }
+            for (auto const &[name, value] : exact_by_name(result.bytes)) {
+                const auto gate = static_cast<std::size_t>(std::stoul(name.substr(1)));
+                INFO("query " << name << ": truth table " << expected[gate] << ", compiled " << value);
+                CHECK(value == Catch::Approx(expected[gate]).margin(1e-9));
+                failed += std::abs(value - expected[gate]) > 1e-9 ? 1 : 0;
+            }
+        }
+    }
+    INFO(failed << " of " << checked << " compiles refused or wrong");
+    CHECK(failed == 0);
     std::filesystem::remove_all(scratch);
 }

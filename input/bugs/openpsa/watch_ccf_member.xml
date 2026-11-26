@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<!-- Beta-factor group {A, B}, Q = 0.1, beta = 0.2: independent events A, B at 0.08 and the common event [A B] at
+     0.02. P(AND2) = 1 - 0.98 * (1 - 0.08 * 0.08) = 0.026272. A member is the OR of its independent and common
+     events: a query on A is 1 - 0.92 * 0.98 = 0.0984. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="AND2"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+    <define-CCF-group name="G" model="beta-factor">
+      <members><basic-event name="A"/><basic-event name="B"/></members>
+      <distribution><float value="0.1"/></distribution>
+      <factor level="2"><float value="0.2"/></factor>
+    </define-CCF-group>
+  </define-fault-tree>
+</opsa-mef>

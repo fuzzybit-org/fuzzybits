@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- FT declares a private X (0.1); component FT.C uses X; model-data declares a public X (0.5) and Y (0.2).
+     Lexical scoping (C sees its enclosing fault tree's private X): P(TOP) = 1 - 0.9 * 0.8 = 0.28. Global lookup:
+     1 - 0.5 * 0.8 = 0.6. Which one the MEF means is a decision for the new reader. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-basic-event name="X" role="private"><float value="0.1"/></define-basic-event>
+    <define-component name="C">
+      <define-gate name="TOP"><or><basic-event name="X"/><basic-event name="Y"/></or></define-gate>
+    </define-component>
+  </define-fault-tree>
+  <model-data>
+    <define-basic-event name="X"><float value="0.5"/></define-basic-event>
+    <define-basic-event name="Y"><float value="0.2"/></define-basic-event>
+  </model-data>
+</opsa-mef>

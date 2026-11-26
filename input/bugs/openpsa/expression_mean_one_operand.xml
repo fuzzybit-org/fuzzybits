@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- E = mean(0.3) = 0.3 (input.rng allows one or more arguments). P(TOP) = 0.3. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><mean><float value="0.3"/></mean></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

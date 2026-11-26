@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<!-- E = GLM(gamma 0.1, lambda 0, mu 0.01, t 100). With lambda = 0 the GLM formula
+     (lambda - (lambda - gamma (lambda + mu)) exp(-(lambda + mu) t)) / (lambda + mu) is gamma exp(-mu t)
+     = 0.1 * exp(-1) = 0.0367879441171442. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><GLM><float value="0.1"/><float value="0"/><float value="1e-2"/><float value="100"/></GLM></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

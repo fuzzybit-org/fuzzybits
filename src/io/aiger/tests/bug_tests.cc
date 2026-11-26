@@ -2,7 +2,7 @@
 // on develop until its issue is fixed; the fixtures are in input/bugs/aiger/. Cases tagged [crash]
 // terminate the process today and run as their own ctest entry. This executable is labelled `bug`.
 //
-// AIGER rules cited from the AIGER 1.9 format description (aiger/FORMAT): the ASCII AND gates "can be
+// AIGER rules cited from src/io/aiger/schema/format.md (the AIGER format description): the ASCII AND gates "can be
 // in any order"; the symbol table holds `i<pos>`, `l<pos>` and `o<pos>` entries with `pos` below the
 // count of that kind and at most one symbol per position; the comment section starts with a line `c`.
 
@@ -20,6 +20,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -87,25 +88,35 @@ TEST_CASE("AIGER reader reports a truncated body once", "[bug][aiger][issue-297]
     CHECK(errorCount(result.diagnostics()) <= 2);
 }
 
-// CRLF line ends: every numeric line is read with the CR stripped, but a symbol name keeps it
-// ("x\r"), and the comment header `c\r` is not recognised, so the comment text that follows is read as
-// a symbol line and the read fails.
-TEST_CASE("AIGER reader reads symbol names and comments of a CRLF file", "[bug][aiger][issue-297]") {
-    SECTION("symbol names") {
-        const auto result = readFixture("crlf_symbols.aag");
+// A file with CRLF line ends is not AIGER (src/io/aiger/schema/format.md): "The header line ends with a new
+// line character immediately after the last digit of the number of ands", a symbol is "an arbitrary ASCII
+// string of printable characters excluding the new line character" (CR is not printable), and the comment
+// section "starts with a 'c' character followed by a new line". Both fixtures are therefore malformed at
+// their first line and must be refused with an error, for the same reason.
+//
+// Today the reader trims the CR from numeric lines, so it accepts crlf_symbols.aag and imports the symbol
+// names as "x\r" and "y\r" (writing the circuit back then fails), and it refuses crlf_comment.aag only
+// because `c\r` is not the comment header, with io.aiger.invalid-symbol for the comment text: a diagnostic
+// for the wrong defect, at the wrong line. (Kept out of input/aiger, whose corpus test reads every file.)
+TEST_CASE("AIGER reader refuses a CRLF file with an error, whatever follows the header", "[bug][aiger][issue-297]") {
+    std::vector<std::string> first_errors;
+    for (const auto *name : {"crlf_symbols.aag", "crlf_comment.aag"}) {
+        INFO(name);
+        const auto result = readFixture(name);
         INFO(diagnosticsText(result.diagnostics()));
-        REQUIRE(result);
-        auto const *circuit = fuzzybits::ir::pc::circuit_from(result.value().model);
-        REQUIRE(circuit != nullptr);
-        REQUIRE(circuit->probability_sources().size() == 2);
-        CHECK(circuit->probability_sources()[0].parameter_name == "x");
-        CHECK(circuit->probability_sources()[1].parameter_name == "y");
+        CHECK_FALSE(result);
+        CHECK(errorCount(result.diagnostics()) >= 1);
+        for (auto const &diagnostic : result.diagnostics().items()) {
+            if (diagnostic.severity == fuzzybits::api::diagnostic_severity::error) {
+                first_errors.push_back(diagnostic.code);
+                break;
+            }
+        }
     }
-    SECTION("comment section") {
-        const auto result = readFixture("crlf_comment.aag");
-        INFO(diagnosticsText(result.diagnostics()));
-        CHECK(result);
-    }
+    // One defect, one diagnostic: the line end, found before the body is read.
+    REQUIRE(first_errors.size() == 2);
+    CHECK(first_errors[0] == first_errors[1]);
+    CHECK(first_errors[1] != "io.aiger.invalid-symbol");
 }
 
 // Output and latch symbols are not checked at all: an index beyond the outputs, two symbols for one

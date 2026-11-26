@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<!-- TOP = A & B with an exchange-event substitution: hypothesis A & B, source A, target C. The cut set {A, B}
+     becomes {B, C}: P(TOP) = 0.2 * 0.5 = 0.1. Without the substitution it is 0.1 * 0.2 = 0.02. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+  </define-fault-tree>
+  <model-data>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+    <define-basic-event name="C"><float value="0.5"/></define-basic-event>
+  </model-data>
+  <define-substitution name="S" type="exchange-event">
+    <hypothesis><and><basic-event name="A"/><basic-event name="B"/></and></hypothesis>
+    <source><basic-event name="A"/></source>
+    <target><basic-event name="C"/></target>
+  </define-substitution>
+</opsa-mef>

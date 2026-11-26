@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<!-- L = 1000 with unit fit (failures per 1e9 h) used as an exponential rate over 1000 h. Converted:
+     1 - exp(-1e-6 * 1000) = 9.995e-4. Read as 1000 per hour: 1 - exp(-1e6) = 1. Whether units convert, are only
+     checked, or are refused is a decision for the new reader. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><exponential><parameter name="L"/><float value="1000"/></exponential></define-basic-event>
+    <define-parameter name="L" unit="fit"><float value="1000"/></define-parameter>
+  </define-fault-tree>
+</opsa-mef>

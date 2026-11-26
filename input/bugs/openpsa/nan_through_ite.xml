@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<!-- E = ite(NaN > 0, 0.9, 0.1). The comparison has no truth value; the model must be refused, not read as 0.1. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><ite><gt><float value="NaN"/><float value="0"/></gt><float value="0.9"/><float value="0.1"/></ite></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

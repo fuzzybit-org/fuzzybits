@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!-- TOP = H | A with house event H = false. Alignment AL has one phase P1 (time fraction 1) that sets H to true,
+     so in P1 P(TOP) = 1. Without the alignment, P(TOP) = P(A) = 1 - exp(-1e-4 * 8760) = 0.58355. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><or><house-event name="H"/><basic-event name="A"/></or></define-gate>
+    <define-house-event name="H"><constant value="false"/></define-house-event>
+    <define-basic-event name="A"><exponential><float value="1e-4"/><system-mission-time/></exponential></define-basic-event>
+  </define-fault-tree>
+  <define-alignment name="AL">
+    <define-phase name="P1" time-fraction="1"><set-house-event name="H"><constant value="true"/></set-house-event></define-phase>
+  </define-alignment>
+</opsa-mef>

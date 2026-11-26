@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- E = max(NaN, 0.3). NaN is not a probability or a number of any unit; the expression is invalid and the model
+     must be refused, not read as 0.3. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><basic-event name="E"/></define-gate>
+    <define-basic-event name="E"><max><float value="NaN"/><float value="0.3"/></max></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>
