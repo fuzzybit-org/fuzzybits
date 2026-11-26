@@ -632,6 +632,10 @@ layer_manager<bitpack_t_, prob_t_, size_t_>::layer_manager(core::Pdag *pdag, con
         allocated_gates_by_index_, allocated_tally_events_by_index_, device_tally_blocks_, execution_partitions_,
         execution_dependency_edges_, partition_ids_by_queueable_, pdag_nodes_by_layer_.size());
 
+    // The queue is in order and submissions carry no dependency events, so every kernel must come after the kernels
+    // it reads.
+    check_submission_order(queueables_);
+
     // Log sample_shaper configuration
     LOG(DEBUG2) << sample_shaper_;
 }

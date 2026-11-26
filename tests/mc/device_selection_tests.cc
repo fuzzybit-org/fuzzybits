@@ -6,11 +6,14 @@
 #include <hipSYCL/runtime/settings.hpp>
 
 #include <cstdlib>
+#include <memory>
 #include <optional>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <sycl/sycl.hpp>
+#include <vector>
 
 namespace {
 
@@ -130,4 +133,29 @@ TEST_CASE("runtime::apply_backend_mask (fzb --backend) selects the MC queue's ba
         CHECK(mc_queue_backend() == mask.begin()->first);
     }
     CHECK_THROWS_AS(fuzzybits::runtime::apply_backend_mask("vulkan"), fuzzybits::runtime::RuntimeError);
+}
+
+namespace {
+
+/// A queueable that submits nothing: these tests only look at the order.
+struct no_kernel final : scram::mc::queue::queueable_base {
+    using queueable_base::queueable_base;
+    void handle_submission(sycl::handler &) override {}
+};
+
+} // namespace
+
+TEST_CASE("the MC queue is in order", "[mc][queue]") {
+    CHECK(scram::mc::queue::make_throwing_sycl_queue().is_in_order());
+}
+
+TEST_CASE("every kernel must be submitted after the kernels it depends on", "[mc][queue]") {
+    using scram::mc::queue::check_submission_order;
+    using scram::mc::queue::queueable_base;
+    sycl::queue queue = scram::mc::queue::make_throwing_sycl_queue();
+    const auto a = std::make_shared<no_kernel>(queue);
+    const auto b = std::make_shared<no_kernel>(queue, std::vector<std::shared_ptr<queueable_base>>{a});
+    CHECK_NOTHROW(check_submission_order({a, b}));
+    CHECK_THROWS_AS(check_submission_order({b, a}), std::logic_error);
+    CHECK_THROWS_AS(check_submission_order({b}), std::logic_error);
 }

@@ -124,6 +124,10 @@
   GPUs, 5-117x on a Radeon Pro 5500M and 1.1-6.6x on CPUs. Gates whose inputs other gates of a small layer share
   can be slower than before: 64-input AND gates, 32 per layer, up to 1.4x on an RTX 3070, and 64-input OR gates,
   128 per layer, 1.8x on CPUs (#281).
+- The Monte Carlo queue is in order, and kernels are submitted without dependency events, so AdaptiveCpp submits
+  each kernel directly to the device instead of through its DAG scheduler (#286). On a model of about 88,000
+  gates at the default device-memory budget, `fzb run` is about 2x faster on a Tesla V100S and 1.7-1.8x on an
+  RTX 3070, and unchanged on CPUs. Results are the same for a given seed.
 - `fzb serve` starts `fuzzybits-server` from the Python `fzb` (#203). Install both with
   `pip install 'fuzzybits[server]'`, a new extra pinned to the same version, then run, for example,
   `fzb serve --data-dir ./models --open`. Its arguments go unchanged to the server's parser, so it

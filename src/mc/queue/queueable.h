@@ -33,6 +33,12 @@
 #pragma once
 
 #include <sycl/sycl.hpp>
+
+#include <cstddef>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace scram::mc::queue {
@@ -180,17 +186,13 @@ struct queueable_base {
     /**
      * @brief Submits the queueable computation for execution
      *
-     * @details Resolves all dependencies, submits the kernel to the SYCL queue,
-     * and stores the resulting event for future synchronization. This method
-     * coordinates the entire submission process including dependency management.
+     * @details Submits the kernel to the SYCL queue and stores the resulting event. On an out-of-order queue the
+     * kernel waits for the events of the queueables it depends on. On an in-order queue, which the layer manager
+     * uses, it is submitted without them: the queue runs kernels in submission order, and the layer manager
+     * submits every kernel after the kernels it depends on (check_submission_order). AdaptiveCpp then submits the
+     * kernel directly to the device instead of through its DAG scheduler, which cost 22-33 us per kernel on a
+     * Xeon E5-2697 v2 host, growing with the number of dependency events (#286).
      *
-     * The submission process:
-     * 1. Fetches events from all dependencies
-     * 2. Submits kernel with dependency events
-     * 3. Stores resulting event for future use
-     *
-     * @note This method should be called only once per queueable object
-     * @note Subsequent calls will reuse the stored event
      * @note Dependencies must be submitted before this queueable is submitted
      *
      * @example
@@ -204,10 +206,17 @@ struct queueable_base {
      * @endcode
      */
     sycl::event submit() {
+        if (queue_.is_in_order()) {
+            this->queued_event_ = perform_submission({});
+            return this->queued_event_;
+        }
         const std::vector<sycl::event> dependencies = fetch_dependencies();
         this->queued_event_ = perform_submission(dependencies);
         return this->queued_event_;
     }
+
+    /// The queueables this one depends on.
+    [[nodiscard]] const std::vector<std::shared_ptr<queueable_base>> &dependencies() const { return dependencies_; }
 
   private:
     /// @brief SYCL queue reference for kernel execution
@@ -268,11 +277,36 @@ struct queueable_base {
     sycl::event perform_submission(const std::vector<sycl::event> &dependencies) {
         return queue_.submit(
             [&](sycl::handler &cgh) { // The actual queue submission is done once, here in the base class
-                cgh.depends_on(dependencies);
+                if (!dependencies.empty()) {
+                    cgh.depends_on(dependencies);
+                }
                 handle_submission(cgh); // Defer to the derived class for the actual commands
             });
     }
 };
+
+/**
+ * @brief Throws std::logic_error unless every queueable comes after the queueables it depends on.
+ *
+ * @details The layer manager submits its queueables in this order through an in-order queue, without dependency
+ * events (queueable_base::submit), so this order is what makes each kernel read finished inputs.
+ */
+inline void check_submission_order(const std::vector<std::shared_ptr<queueable_base>> &queueables) {
+    std::unordered_map<const queueable_base *, std::size_t> position;
+    position.reserve(queueables.size());
+    for (std::size_t i = 0; i < queueables.size(); ++i) {
+        position.emplace(queueables[i].get(), i);
+    }
+    for (std::size_t i = 0; i < queueables.size(); ++i) {
+        for (const auto &dependency : queueables[i]->dependencies()) {
+            const auto it = position.find(dependency.get());
+            if (it == position.end() || it->second >= i) {
+                throw std::logic_error("kernel " + std::to_string(i) +
+                                       " is submitted before, or without, a kernel it depends on");
+            }
+        }
+    }
+}
 
 /**
  * @class ranged_kernel

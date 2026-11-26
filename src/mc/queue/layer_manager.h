@@ -92,8 +92,11 @@ inline int visibility_mask_selector(const sycl::device &device) {
     return sycl::default_selector_v(device);
 }
 
+/// The Monte Carlo queue: in order, so that kernels run in submission order and are submitted without dependency
+/// events (queueable_base::submit, check_submission_order).
 inline sycl::queue make_throwing_sycl_queue() {
-    return sycl::queue{visibility_mask_selector, [](sycl::exception_list errors) {
+    return sycl::queue{visibility_mask_selector,
+                       [](sycl::exception_list errors) {
                            if (errors.empty()) {
                                return;
                            }
@@ -120,7 +123,8 @@ inline sycl::queue make_throwing_sycl_queue() {
                                slot += "; ";
                            }
                            slot += msg.empty() ? "SYCL asynchronous error" : msg;
-                       }};
+                       },
+                       sycl::property_list{sycl::property::queue::in_order{}}};
 }
 
 inline void wait_sycl_queue(sycl::queue &queue) {
