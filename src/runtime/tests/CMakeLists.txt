@@ -19,3 +19,12 @@ set_tests_properties(fzb_runtime_tests.metal_step_n PROPERTIES
   TIMEOUT 120
   SKIP_RETURN_CODE 4
 )
+
+# Known bugs of the .pcfb loader (ctest -L bug): these fail until their issues are fixed.
+fuzzybits_add_imported_test(
+  TARGET fzb_runtime_pcfb_bug_tests
+  SOURCES pcfb_bug_tests.cc
+  LINK_LIBRARIES fuzzybits_runtime fuzzybits_compile
+  LABELS bug mc
+)
+set_tests_properties(fzb_runtime_pcfb_bug_tests PROPERTIES TIMEOUT 120)

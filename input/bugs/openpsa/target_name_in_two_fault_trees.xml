@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<!-- Two private gates named TOP: FT1.TOP = A | B (0.28) and FT2.TOP = A & B (0.02). The name TOP alone is
+     ambiguous; FT1.TOP and FT2.TOP are not. -->
+<opsa-mef>
+  <define-fault-tree name="FT1">
+    <define-gate name="TOP" role="private"><or><basic-event name="A"/><basic-event name="B"/></or></define-gate>
+  </define-fault-tree>
+  <define-fault-tree name="FT2">
+    <define-gate name="TOP" role="private"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+  </define-fault-tree>
+  <model-data>
+    <define-basic-event name="A"><float value="0.1"/></define-basic-event>
+    <define-basic-event name="B"><float value="0.2"/></define-basic-event>
+  </model-data>
+</opsa-mef>

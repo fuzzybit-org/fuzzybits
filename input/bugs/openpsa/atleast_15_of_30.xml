@@ -1,0 +1,71 @@
+<?xml version="1.0"?>
+<!-- TOP = atleast 15 of 30 events, each 0.01. The k-of-n gate has C(30, 15) = 1.55e8 minimal cut sets, so an
+     expansion into AND/OR gates must share subterms (O(k (n - k)) gates) or keep the k-of-n operator. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP">
+      <atleast min="15">
+        <basic-event name="E0"/>
+        <basic-event name="E1"/>
+        <basic-event name="E2"/>
+        <basic-event name="E3"/>
+        <basic-event name="E4"/>
+        <basic-event name="E5"/>
+        <basic-event name="E6"/>
+        <basic-event name="E7"/>
+        <basic-event name="E8"/>
+        <basic-event name="E9"/>
+        <basic-event name="E10"/>
+        <basic-event name="E11"/>
+        <basic-event name="E12"/>
+        <basic-event name="E13"/>
+        <basic-event name="E14"/>
+        <basic-event name="E15"/>
+        <basic-event name="E16"/>
+        <basic-event name="E17"/>
+        <basic-event name="E18"/>
+        <basic-event name="E19"/>
+        <basic-event name="E20"/>
+        <basic-event name="E21"/>
+        <basic-event name="E22"/>
+        <basic-event name="E23"/>
+        <basic-event name="E24"/>
+        <basic-event name="E25"/>
+        <basic-event name="E26"/>
+        <basic-event name="E27"/>
+        <basic-event name="E28"/>
+        <basic-event name="E29"/>
+      </atleast>
+    </define-gate>
+    <define-basic-event name="E0"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E1"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E2"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E3"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E4"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E5"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E6"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E7"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E8"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E9"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E10"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E11"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E12"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E13"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E14"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E15"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E16"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E17"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E18"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E19"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E20"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E21"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E22"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E23"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E24"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E25"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E26"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E27"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E28"><float value="0.01"/></define-basic-event>
+    <define-basic-event name="E29"><float value="0.01"/></define-basic-event>
+  </define-fault-tree>
+</opsa-mef>

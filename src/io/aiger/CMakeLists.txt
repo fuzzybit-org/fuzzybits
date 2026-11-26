@@ -24,3 +24,17 @@ if(BUILD_TESTING)
     LINK_LIBRARIES fuzzybits_io_aiger
   )
 endif()
+
+# Known bugs (ctest -L bug): these fail until their issues are fixed. [crash] cases terminate the
+# process today, so they run as a ctest entry of their own and cannot hide the other cases.
+if(BUILD_TESTING)
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_io_aiger_bug_tests
+    SOURCES tests/bug_tests.cc
+    LINK_LIBRARIES fuzzybits_io_aiger
+    LABELS bug
+    ARGS "~[crash]"
+  )
+  add_test(NAME fuzzybits_io_aiger_bug_tests.crash COMMAND fuzzybits_io_aiger_bug_tests "[crash]")
+  set_tests_properties(fuzzybits_io_aiger_bug_tests.crash PROPERTIES LABELS bug)
+endif()

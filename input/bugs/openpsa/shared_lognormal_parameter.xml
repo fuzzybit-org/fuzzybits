@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<!-- A and B share one parameter p ~ lognormal(mean 1e-3, error factor 10 at 0.95), sigma = ln(10) / 1.645.
+     E[P(TOP)] = E[p^2] = mean^2 exp(sigma^2) = 7.0955e-6; P(TOP) at the mean of p is 1e-6. A fixed-probability
+     compile must state which of the two it computes. -->
+<opsa-mef>
+  <define-fault-tree name="FT">
+    <define-gate name="TOP"><and><basic-event name="A"/><basic-event name="B"/></and></define-gate>
+  </define-fault-tree>
+  <model-data>
+    <define-parameter name="p">
+      <lognormal-deviate><float value="1e-3"/><float value="10"/><float value="0.95"/></lognormal-deviate>
+    </define-parameter>
+    <define-basic-event name="A"><parameter name="p"/></define-basic-event>
+    <define-basic-event name="B"><parameter name="p"/></define-basic-event>
+  </model-data>
+</opsa-mef>

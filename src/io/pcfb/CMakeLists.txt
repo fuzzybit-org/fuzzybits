@@ -44,6 +44,20 @@ if(BUILD_TESTING)
     LINK_LIBRARIES fuzzybits_io_pcfb pcfb
   )
 
+  # Known bugs (ctest -L bug): these fail until their issues are fixed. [crash] cases dereference null or
+  # write out of bounds today, so they run as a ctest entry of their own.
+  fuzzybits_add_imported_test(
+    TARGET fuzzybits_io_pcfb_bug_tests
+    SOURCES tests/bug_tests.cc
+    LINK_LIBRARIES fuzzybits_io_pcfb fuzzybits_exact_eval pcfb
+    LABELS bug
+    ARGS "~[crash]"
+  )
+  foreach(_case null-metadata orphan-complement exact-bounds)
+    add_test(NAME fuzzybits_io_pcfb_bug_tests.crash-${_case} COMMAND fuzzybits_io_pcfb_bug_tests "[crash-${_case}]")
+    set_tests_properties(fuzzybits_io_pcfb_bug_tests.crash-${_case} PROPERTIES LABELS bug)
+  endforeach()
+
   # Query-kind guard (#217): header-only check plus the exact evaluator; needs only pcfb.
   fuzzybits_add_imported_test(
     TARGET fuzzybits_io_pcfb_guard_tests
