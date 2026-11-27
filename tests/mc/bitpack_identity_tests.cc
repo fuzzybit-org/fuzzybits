@@ -1,6 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/kernel/basic_event.h"
 #include "mc/prng/bernoulli.h"
 

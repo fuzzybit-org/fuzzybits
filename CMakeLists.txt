@@ -23,7 +23,7 @@ if(WIN32)
   unset(_fb_win_override)
 endif()
 
-project(SCRAM VERSION 0.18.7 LANGUAGES C CXX)
+project(FuzzyBits VERSION 0.18.7 LANGUAGES C CXX)
 include(GNUInstallDirs)
 
 # Find and configure LLVM toolchain BEFORE project() call
@@ -93,7 +93,7 @@ endif()
 ####################### Begin compiler configurations ################### {{{
 
 # Default to C++23.
-set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)
 

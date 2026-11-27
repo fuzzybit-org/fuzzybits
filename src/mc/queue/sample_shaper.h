@@ -42,7 +42,7 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "working_set.h"
 
 #include "logger.h"

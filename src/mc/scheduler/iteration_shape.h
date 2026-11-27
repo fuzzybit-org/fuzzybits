@@ -1,5 +1,5 @@
 #pragma once
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include <cstddef>
 
 namespace scram::mc::scheduler {

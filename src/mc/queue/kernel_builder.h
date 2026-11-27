@@ -60,7 +60,7 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "working_set.h"
 
 #include "mc/kernel/basic_event.h"

@@ -9,7 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/event/sample_shape.h"
 #include "mc/kernel/cardinality.h"
 

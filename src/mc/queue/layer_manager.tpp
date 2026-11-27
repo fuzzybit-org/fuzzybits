@@ -24,7 +24,7 @@
 #include "logger.h"
 #include "preprocessor.h"
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/queue/kernel_builder.h"
 #include "mc/queue/layer_manager.h"
 #include "mc/stats/ci_utils.h"

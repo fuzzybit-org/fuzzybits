@@ -22,7 +22,7 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 
 #include <cstddef>
 #include <sycl/sycl.hpp>

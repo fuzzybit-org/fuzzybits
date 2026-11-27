@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/logger/csv.h"
 #include "mc/logger/log_sample_shaper.h"
 #include "mc/queue/layer_manager.h"

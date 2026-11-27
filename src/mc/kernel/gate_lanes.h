@@ -3,26 +3,12 @@
  * @brief What the gate kernels (gate.h, cardinality.h) share: lanes, their loads and stores, and the launch
  *        geometry with its work-group order
  * @author Arjun Earthperson
- * @date 2025
+ * @date 2026
  *
  * @details A work-item evaluates one bitpack of one gate on GPUs, and kGateCpuLanes consecutive bitpacks as one
  * vector on CPUs, whose JIT does not vectorize across work-items. Wider lanes on GPUs measured no faster (32-bit
  * lanes were 2-20% slower, aligned 128-bit lanes tied). The range is one dimension of gates x work-groups per
  * gate, and the gate comes from the work-group index, so its fields are uniform across the group.
- *
- * @copyright Copyright (C) 2025 Arjun Earthperson
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once

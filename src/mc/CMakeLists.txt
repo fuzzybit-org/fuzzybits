@@ -20,6 +20,9 @@ set(MC_HEADERS
         #
         event/node.h
         event/sample_shape.h
+        event/basic_event.tpp
+        event/gate.tpp
+        event/tally.tpp
         #
         kernel/basic_event.h
         kernel/gate.h

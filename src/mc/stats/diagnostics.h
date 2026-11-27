@@ -6,7 +6,7 @@
 #include <limits>
 #include <ostream>
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/stats/ci_utils.h"
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3

@@ -3,7 +3,7 @@
 // diagnostic is the expected one. Configure with FZB_BITS (128 | 256) and
 // exactly one of FZB_KERNEL_CARDINALITY / FZB_KERNEL_TALLY.
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/event/sample_shape.h"
 #include "mc/kernel/cardinality.h"
 #include "mc/kernel/tally.h"

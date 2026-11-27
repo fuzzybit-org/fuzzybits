@@ -26,7 +26,9 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/basic_event.tpp"
+#include "mc/event/gate.tpp"
+#include "mc/event/tally.tpp"
 #include "mc/queue/queueable.h"
 #include "mc/queue/sample_shaper.h"
 #include "mc/stats/tally_node_map.h"

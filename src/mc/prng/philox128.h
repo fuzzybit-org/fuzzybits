@@ -35,6 +35,7 @@ inline constexpr key64 kEngineKey{382307844u, 293830103u};
 /// Philox4x32-10 of counter `c` under `key`.
 [[gnu::always_inline]] inline state128 generate(state128 c, const key64 key = kEngineKey) {
 #pragma unroll
+    //TODO:: understand why i is declared as 'int', then static-cast to std::uint32_t anyway. Why not just use std::uint32_t?
     for (int i = 0; i < kRounds; ++i) {
         round(c, key.k0 + static_cast<std::uint32_t>(i) * kWeyl0, key.k1 + static_cast<std::uint32_t>(i) * kWeyl1);
     }
@@ -74,6 +75,7 @@ template <int W>
 /// Philox4x32-10 of W lane-wise counters, in place.
 template <int W> [[gnu::always_inline]] inline void generate_lanes(u32xN<W> (&x)[4], const key64 key = kEngineKey) {
 #pragma unroll
+    //TODO:: understand why i is declared as 'int', then static-cast to std::uint32_t anyway. Why not just use std::uint32_t?
     for (int i = 0; i < kRounds; ++i) {
         round_lanes<W>(x, key.k0 + static_cast<std::uint32_t>(i) * kWeyl0,
                        key.k1 + static_cast<std::uint32_t>(i) * kWeyl1);

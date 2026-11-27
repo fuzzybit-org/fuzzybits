@@ -134,6 +134,7 @@ sample_lanes(std::uint64_t *out, const std::uint32_t valid, const std::uint32_t 
              const std::uint32_t event_idx, const std::uint32_t iteration, const std::uint64_t threshold) {
     using V = philox::u32xN<W>;
     V lane;
+    //TODO:: understand why i is declared as 'int', then static-cast to std::uint32_t anyway. Why not just use std::uint32_t?
 #pragma unroll
     for (int i = 0; i < W; ++i) {
         lane[i] = static_cast<std::uint32_t>(i);
@@ -156,12 +157,16 @@ sample_lanes(std::uint64_t *out, const std::uint32_t valid, const std::uint32_t 
         step(lt0, eq0, w[2], t1);
         step(lt1, eq1, w[3], t1);
         rest <<= 2;
+        //TODO:: inspect where `__builtin_reduce_or` is
+        //TODO:: also check if its worth it to just do all the extra work anyway, and clear the extra work after
+        // the loop. i.e. measure the cost vs accuracy of having the conditional inside the loop
         if (__builtin_reduce_or(eq0 | eq1) == 0u || rest == 0) {
             break;
         }
     }
 #pragma unroll
     for (int i = 0; i < W; ++i) {
+        //TODO:: check why i, valid are being checked inside a loop when valid is a constant to this function.
         if (static_cast<std::uint32_t>(i) < valid) {
             out[i] = static_cast<std::uint64_t>(lt0[i]) | (static_cast<std::uint64_t>(lt1[i]) << 32);
         }

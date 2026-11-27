@@ -40,7 +40,7 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include <cstdint>
 #include <sycl/sycl.hpp>
 

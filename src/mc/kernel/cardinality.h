@@ -2,7 +2,7 @@
  * @file cardinality.h
  * @brief SYCL kernels for cardinality gates: true where the number of true inputs lies in [low, high]
  * @author Arjun Earthperson
- * @date 2025
+ * @date 2026
  *
  * @details At least k of n is [k, n], at most k is [0, k] and exactly k is [k, k]. Inputs at or after the
  * gate's negated_inputs_offset count when they are false.
@@ -23,25 +23,11 @@
  *   registers are those of its largest case, and 32 planes would lower the counter's occupancy.
  *
  * Every form writes the same bitpacks on every backend.
- *
- * @copyright Copyright (C) 2025 Arjun Earthperson
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/node.tpp"
 #include "mc/event/sample_shape.h"
 #include "mc/kernel/gate_lanes.h"
 
