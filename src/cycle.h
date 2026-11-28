@@ -69,8 +69,7 @@ inline auto GetNodes(const Formula *connector) {
            boost::adaptors::filtered([](auto *ptr) { return ptr != nullptr; });
 }
 inline auto GetNodes(Expression *connector) {
-    return connector->args() |
-           boost::adaptors::transformed([](Expression *arg) { return dynamic_cast<Parameter *>(arg); }) |
+    return connector->args() | boost::adaptors::transformed([](Expression *arg) { return dynamic_cast<Parameter *>(arg); }) |
            boost::adaptors::filtered([](auto *ptr) { return ptr != nullptr; });
 }
 /// @}
@@ -87,8 +86,7 @@ inline auto GetConnectors(const Formula *connector) {
     return std::array<const Formula *, 0>(); // Empty range.
 }
 inline auto GetConnectors(Expression *connector) {
-    return connector->args() |
-           boost::adaptors::filtered([](Expression *arg) { return dynamic_cast<Parameter *>(arg) == nullptr; });
+    return connector->args() | boost::adaptors::filtered([](Expression *arg) { return dynamic_cast<Parameter *>(arg) == nullptr; });
 }
 /// @}
 
@@ -180,9 +178,7 @@ template <> inline const std::string &GetUniqueName(const Link *node) { return n
 template <class T> std::string PrintCycle(const std::vector<T *> &cycle) {
     assert(cycle.size() > 1);
     assert(cycle.front() == cycle.back() && "No cycle is provided.");
-    return boost::join(boost::adaptors::reverse(cycle) |
-                           boost::adaptors::transformed([](T *node) -> decltype(auto) { return GetUniqueName(node); }),
-                       "->");
+    return boost::join(boost::adaptors::reverse(cycle) | boost::adaptors::transformed([](T *node) -> decltype(auto) { return GetUniqueName(node); }), "->");
 }
 
 /// Checks for cycles in a model constructs.
@@ -198,8 +194,7 @@ template <class T, class SinglePassRange> void CheckCycle(const SinglePassRange 
     std::vector<T *> cycle;
     for (T &node : container) {
         if (DetectCycle(&node, &cycle)) {
-            SCRAM_THROW(CycleError()) << errinfo_element(GetUniqueName(&node), type)
-                                      << errinfo_cycle(PrintCycle(cycle));
+            SCRAM_THROW(CycleError()) << errinfo_element(GetUniqueName(&node), type) << errinfo_cycle(PrintCycle(cycle));
         }
     }
 }

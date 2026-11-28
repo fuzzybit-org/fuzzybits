@@ -50,8 +50,7 @@ auto cone_order(circuit const &input) -> std::vector<std::uint32_t> {
     return order;
 }
 
-emitter::emitter(circuit const &input)
-    : input_(input), source_map_(input.probability_sources().size(), probability_source_id::invalid()) {
+emitter::emitter(circuit const &input) : input_(input), source_map_(input.probability_sources().size(), probability_source_id::invalid()) {
     builder_.reserve_nodes(input.node_count());
 }
 
@@ -98,8 +97,7 @@ auto emitter::constant(const bool value) -> bool_node_id {
     return *slot;
 }
 
-auto emitter::gate(const op_code code, const std::span<edge_ref const> operands, const std::uint32_t low,
-                   const std::uint32_t high) -> bool_node_id {
+auto emitter::gate(const op_code code, const std::span<edge_ref const> operands, const std::uint32_t low, const std::uint32_t high) -> bool_node_id {
     if (code == op_code::cardinality) {
         return counted(builder_.add_cardinality(low, high, operands));
     }
@@ -122,25 +120,21 @@ auto emitter::finish(transform_report report) && -> transform_result {
         } else {
             const auto source = image.edge.source.raw();
             const edge_ref negated[] = {edge_ref{.source = image.edge.source, .complement = true}};
-            node = counted(source < atoms_.size() && atoms_[source] != 0
-                               ? builder_.add_and(negated)
-                               : builder_.add_not(edge_ref{.source = image.edge.source}));
+            node = counted(source < atoms_.size() && atoms_[source] != 0 ? builder_.add_and(negated) : builder_.add_not(edge_ref{.source = image.edge.source}));
             negations.emplace(source, node);
         }
         report.target_map[target.id.raw()] = builder_.add_target(node, target.role);
     }
     report.scratch_bytes += scratch_bytes();
     if (report.skipped > 0) {
-        report.diagnostics.push(api::make_note("pc.pass.atom-split-skipped",
-                                               report.transform_id + " left " + std::to_string(report.skipped) +
-                                                   " rewrite(s) out to preserve atom-split hull targets"));
+        report.diagnostics.push(api::make_note("pc.pass.atom-split-skipped", report.transform_id + " left " + std::to_string(report.skipped) +
+                                                                                 " rewrite(s) out to preserve atom-split hull targets"));
     }
 
     auto sealed = std::move(builder_).seal();
     report.diagnostics.append(std::move(sealed.diagnostics));
     if (!sealed.output.valid()) {
-        report.diagnostics.push(
-            api::make_error("pc.pass.seal-failed", report.transform_id + " produced an invalid circuit"));
+        report.diagnostics.push(api::make_error("pc.pass.seal-failed", report.transform_id + " produced an invalid circuit"));
         return transform_result{.output = {}, .report = std::move(report)};
     }
     report.nodes_after = sealed.output.node_count();
@@ -155,8 +149,7 @@ void emitter::mark_atom(const bool_node_id node) {
     atoms_[node.raw()] = 1;
 }
 
-auto split_context::make(circuit const &input, atom_split const &atoms, transform_report &report)
-    -> std::optional<split_context> {
+auto split_context::make(circuit const &input, atom_split const &atoms, transform_report &report) -> std::optional<split_context> {
     split_context context;
     if (atoms.targets.empty() || atoms.events.empty()) {
         return context;
@@ -166,16 +159,14 @@ auto split_context::make(circuit const &input, atom_split const &atoms, transfor
     for (const auto target : atoms.targets) {
         if (!target.valid() || target.raw() >= targets.size()) {
             report.diagnostics.push(
-                api::make_error("pc.pass.invalid-atom-split", report.transform_id + ": atom-split target " +
-                                                                  std::to_string(target.raw()) + " does not exist"));
+                api::make_error("pc.pass.invalid-atom-split", report.transform_id + ": atom-split target " + std::to_string(target.raw()) + " does not exist"));
             return std::nullopt;
         }
     }
     for (const auto event : atoms.events) {
         if (!event.valid() || event.raw() >= node_count || input.op_codes()[event.raw()] != op_code::basic_event) {
-            report.diagnostics.push(api::make_error("pc.pass.invalid-atom-split",
-                                                    report.transform_id + ": atom event " +
-                                                        std::to_string(event.raw()) + " is not a basic event"));
+            report.diagnostics.push(
+                api::make_error("pc.pass.invalid-atom-split", report.transform_id + ": atom event " + std::to_string(event.raw()) + " is not a basic event"));
             return std::nullopt;
         }
     }
@@ -233,16 +224,14 @@ auto begin_report(circuit const &input, const pass_id pass) -> transform_report 
 
 auto trivial_result(circuit const &input, transform_report &report) -> std::optional<transform_result> {
     if (!input.valid()) {
-        report.diagnostics.push(
-            api::make_error("pc.pass.invalid-input", report.transform_id + " requires a sealed circuit"));
+        report.diagnostics.push(api::make_error("pc.pass.invalid-input", report.transform_id + " requires a sealed circuit"));
         return transform_result{.output = {}, .report = std::move(report)};
     }
     if (!input.targets().empty()) {
         report.node_map.assign(input.node_count(), node_image{});
         return std::nullopt;
     }
-    report.diagnostics.push(
-        api::make_warning("pc.pass.no-targets", report.transform_id + ": circuit has no targets; returned unchanged"));
+    report.diagnostics.push(api::make_warning("pc.pass.no-targets", report.transform_id + ": circuit has no targets; returned unchanged"));
     report.node_map.resize(input.node_count());
     for (std::uint32_t node = 0; node < input.node_count(); ++node) {
         report.node_map[node] = reference(bool_node_id(node));

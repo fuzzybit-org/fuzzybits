@@ -29,8 +29,7 @@ Interval Ite::interval() {
     assert(args().size() == 3);
     Interval then_interval = args()[1]->interval();
     Interval else_interval = args()[2]->interval();
-    return Interval::closed(std::min(then_interval.lower(), else_interval.lower()),
-                            std::max(then_interval.upper(), else_interval.upper()));
+    return Interval::closed(std::min(then_interval.lower(), else_interval.lower()), std::max(then_interval.upper(), else_interval.upper()));
 }
 
 Switch::Switch(std::vector<Case> cases, Expression *default_value)

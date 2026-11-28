@@ -50,8 +50,7 @@ class circuit_builder final {
         return *t;
     }
 
-    auto op(OpCode opcode, operands const &in, std::optional<std::uint32_t> k = std::nullopt,
-            std::string const &name = {}) -> tensor {
+    auto op(OpCode opcode, operands const &in, std::optional<std::uint32_t> k = std::nullopt, std::string const &name = {}) -> tensor {
         auto t = builder_.add_op(opcode, in.inputs, in.inverted, k, name);
         REQUIRE(t);
         return *t;
@@ -120,19 +119,16 @@ struct gate_kind final {
 
 // Four operands: three samples and the constant.
 constexpr std::array kGates{
-    gate_kind{OpCode::BITWISE_AND, std::nullopt}, gate_kind{OpCode::BITWISE_OR, std::nullopt},
-    gate_kind{OpCode::BITWISE_XOR, std::nullopt}, gate_kind{OpCode::BITWISE_NAND, std::nullopt},
-    gate_kind{OpCode::BITWISE_NOR, std::nullopt}, gate_kind{OpCode::BITWISE_XNOR, std::nullopt},
-    gate_kind{OpCode::BITWISE_ATLEAST, 2},        gate_kind{OpCode::BITWISE_ATLEAST, 1},
-    gate_kind{OpCode::BITWISE_ATLEAST, 4},        gate_kind{OpCode::BITWISE_ATMOST, 1},
-    gate_kind{OpCode::BITWISE_ATMOST, 3},         gate_kind{OpCode::BITWISE_EXACTLY, 2},
+    gate_kind{OpCode::BITWISE_AND, std::nullopt},  gate_kind{OpCode::BITWISE_OR, std::nullopt},  gate_kind{OpCode::BITWISE_XOR, std::nullopt},
+    gate_kind{OpCode::BITWISE_NAND, std::nullopt}, gate_kind{OpCode::BITWISE_NOR, std::nullopt}, gate_kind{OpCode::BITWISE_XNOR, std::nullopt},
+    gate_kind{OpCode::BITWISE_ATLEAST, 2},         gate_kind{OpCode::BITWISE_ATLEAST, 1},        gate_kind{OpCode::BITWISE_ATLEAST, 4},
+    gate_kind{OpCode::BITWISE_ATMOST, 1},          gate_kind{OpCode::BITWISE_ATMOST, 3},         gate_kind{OpCode::BITWISE_EXACTLY, 2},
     gate_kind{OpCode::BITWISE_EXACTLY, 0},
 };
 
 } // namespace
 
-TEST_CASE("fzb run evaluates ONES and ZEROS under every opcode, in every position and polarity (#259)",
-          "[runtime][mc][pcfb][constants]") {
+TEST_CASE("fzb run evaluates ONES and ZEROS under every opcode, in every position and polarity (#259)", "[runtime][mc][pcfb][constants]") {
     circuit_builder b;
     const std::array<tensor, 3> x{b.sample(0.3), b.sample(0.6), b.sample(0.45)};
     const auto y = b.sample(0.7);
@@ -216,14 +212,12 @@ TEST_CASE("fzb run counts repeated operands as pcfb does (#259)", "[runtime][mc]
     require_matches_exact(b.finish());
 }
 
-TEST_CASE("fzb run matches exact enumeration on random circuits with constants and repeated operands (#259)",
-          "[runtime][mc][pcfb][constants]") {
+TEST_CASE("fzb run matches exact enumeration on random circuits with constants and repeated operands (#259)", "[runtime][mc][pcfb][constants]") {
     namespace random = pcfb_test_random;
     std::mt19937_64 rng(259);
     constexpr std::array kOpcodes{
-        OpCode::BITWISE_AND,     OpCode::BITWISE_OR,   OpCode::BITWISE_XOR,     OpCode::BITWISE_NAND,
-        OpCode::BITWISE_NOR,     OpCode::BITWISE_XNOR, OpCode::BITWISE_ATLEAST, OpCode::BITWISE_ATMOST,
-        OpCode::BITWISE_EXACTLY, OpCode::BITWISE_NOT,  OpCode::BITWISE_NO_OP,
+        OpCode::BITWISE_AND,     OpCode::BITWISE_OR,     OpCode::BITWISE_XOR,     OpCode::BITWISE_NAND, OpCode::BITWISE_NOR,   OpCode::BITWISE_XNOR,
+        OpCode::BITWISE_ATLEAST, OpCode::BITWISE_ATMOST, OpCode::BITWISE_EXACTLY, OpCode::BITWISE_NOT,  OpCode::BITWISE_NO_OP,
     };
 
     for (int round = 0; round < 4; ++round) {
@@ -257,8 +251,7 @@ TEST_CASE("fzb run matches exact enumeration on random circuits with constants a
                 (inverted ? in.inverted : in.inputs).push_back(source);
             }
             std::optional<std::uint32_t> k;
-            if (opcode == OpCode::BITWISE_ATLEAST || opcode == OpCode::BITWISE_ATMOST ||
-                opcode == OpCode::BITWISE_EXACTLY) {
+            if (opcode == OpCode::BITWISE_ATLEAST || opcode == OpCode::BITWISE_ATMOST || opcode == OpCode::BITWISE_EXACTLY) {
                 k = static_cast<std::uint32_t>(random::uniform(rng, 0, arity));
             }
             const auto output = b.op(opcode, in, k);
@@ -292,8 +285,7 @@ TEST_CASE("fzb run evaluates k-of-n gates in every cardinality kernel form", "[r
     b.query(b.op(OpCode::BITWISE_EXACTLY, {.inputs = repeat({{x0, 4}, {x1, 5}})}, 5));
     b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = repeat({{x0, 150}, {x1, 150}})}, 200));
     b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = repeat({{x0, 100}, {x1, 200}})}, 300));
-    b.query(
-        b.op(OpCode::BITWISE_EXACTLY, {.inputs = repeat({{x0, 128}, {x1, 200}}), .inverted = repeat({{x2, 3}})}, 131));
+    b.query(b.op(OpCode::BITWISE_EXACTLY, {.inputs = repeat({{x0, 128}, {x1, 200}}), .inverted = repeat({{x2, 3}})}, 131));
     b.query(b.op(OpCode::BITWISE_ATMOST, {.inputs = repeat({{x0, 300}}), .inverted = repeat({{x1, 20}})}, 280));
     require_matches_exact(b.finish());
 }

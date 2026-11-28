@@ -38,20 +38,14 @@ namespace writer = fuzzybits::io::backend::fuzzybits::pcfb;
     (void)builder.add_initiating_event({.stable_name = "IE2"}, ie2);
     const auto maintenance = builder.add_house_event({.stable_name = "MAINT"}, true);
     const auto tree = builder.add_fault_tree({.stable_name = "FT"});
-    const auto cooling =
-        builder.add_cardinality({.stable_name = "COOLING"}, {.low = 2, .high = 3},
-                                {{.event = pump}, {.event = valve}, {.event = crew, .complement = true}}, tree);
-    const auto deleted =
-        builder.add_gate({.stable_name = "DEL"}, pra::gate_kind::and_gate, {{.event = flag}, {.event = valve}}, tree);
-    const auto failed =
-        builder.add_gate({.stable_name = "FAILED"}, pra::gate_kind::and_gate,
-                         {{.event = cooling}, {.event = deleted, .complement = true}, {.event = maintenance}}, tree);
-    const auto initiators =
-        builder.add_gate({.stable_name = "INIT"}, pra::gate_kind::or_gate, {{.event = ie}, {.event = ie2}}, tree);
-    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
-                                      {{.event = initiators}, {.event = failed}}, tree);
-    const auto parity =
-        builder.add_gate({.stable_name = "PARITY"}, pra::gate_kind::xor_gate, {{.event = pump}, {.event = ie}}, tree);
+    const auto cooling = builder.add_cardinality({.stable_name = "COOLING"}, {.low = 2, .high = 3},
+                                                 {{.event = pump}, {.event = valve}, {.event = crew, .complement = true}}, tree);
+    const auto deleted = builder.add_gate({.stable_name = "DEL"}, pra::gate_kind::and_gate, {{.event = flag}, {.event = valve}}, tree);
+    const auto failed = builder.add_gate({.stable_name = "FAILED"}, pra::gate_kind::and_gate,
+                                         {{.event = cooling}, {.event = deleted, .complement = true}, {.event = maintenance}}, tree);
+    const auto initiators = builder.add_gate({.stable_name = "INIT"}, pra::gate_kind::or_gate, {{.event = ie}, {.event = ie2}}, tree);
+    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate, {{.event = initiators}, {.event = failed}}, tree);
+    const auto parity = builder.add_gate({.stable_name = "PARITY"}, pra::gate_kind::xor_gate, {{.event = pump}, {.event = ie}}, tree);
     builder.add_fault_tree_top(tree, top);
     (void)builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
     (void)builder.add_target({.stable_name = "PARITY"}, pra::domain_target_kind::gate, parity, pra::target_role::watch);
@@ -106,8 +100,7 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
             REQUIRE(sub->queries()->size() == 2);
             CHECK(sub->queries()->Get(0)->name()->str() == "FT");
             CHECK(sub->queries()->Get(1)->name()->str() == "PARITY");
-            const auto top_tensor =
-                written.value().tensor_by_node[artifact.projection.node_of(model.find_gate("TOP")).raw()];
+            const auto top_tensor = written.value().tensor_by_node[artifact.projection.node_of(model.find_gate("TOP")).raw()];
             CHECK(sub->operators()->Get(top_tensor)->name()->str() == "TOP");
 
             const pra_reference reference(model, overrides);
@@ -125,8 +118,7 @@ TEST_CASE("pra_to_pc lowering writes a valid, named .pcfb with exact probabiliti
 
 namespace {
 
-[[nodiscard]] auto query_summary(::pcfb::ir::Circuit const &circuit)
-    -> std::vector<std::pair<std::string, ::pcfb::QueryKind>> {
+[[nodiscard]] auto query_summary(::pcfb::ir::Circuit const &circuit) -> std::vector<std::pair<std::string, ::pcfb::QueryKind>> {
     std::vector<std::pair<std::string, ::pcfb::QueryKind>> rows;
     for (auto const *query : *circuit->subcircuits()->Get(0)->queries()) {
         rows.emplace_back(query->name()->str(), query->kind());
@@ -134,8 +126,7 @@ namespace {
     return rows;
 }
 
-[[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, std::string const &key)
-    -> std::optional<std::string> {
+[[nodiscard]] auto string_meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::string> {
     auto const *entry = circuit->metadata()->LookupByKey(key.c_str());
     if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
         return std::nullopt;
@@ -159,10 +150,9 @@ namespace {
     const auto y = builder.add_basic_event({.stable_name = "Y"}, pra::expression_spec::literal(0.2));
     const auto z = builder.add_basic_event({.stable_name = "Z"}, pra::expression_spec::literal(0.3));
     const auto tree = builder.add_fault_tree({.stable_name = "FT"});
-    const auto safe = builder.add_gate({.stable_name = "SAFE_GATE"}, pra::gate_kind::and_gate,
-                                       {{.event = x}, {.event = z, .complement = true}}, tree);
-    const auto lit = builder.add_gate({.stable_name = "LIT_GATE"}, pra::gate_kind::and_gate,
-                                      {{.event = x}, {.event = y, .complement = true, .literal = true}}, tree);
+    const auto safe = builder.add_gate({.stable_name = "SAFE_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = z, .complement = true}}, tree);
+    const auto lit =
+        builder.add_gate({.stable_name = "LIT_GATE"}, pra::gate_kind::and_gate, {{.event = x}, {.event = y, .complement = true, .literal = true}}, tree);
     (void)builder.add_target({.stable_name = "SAFE"}, pra::domain_target_kind::gate, safe);
     (void)builder.add_target({.stable_name = "LIT"}, pra::domain_target_kind::gate, lit);
     return seal(std::move(builder));
@@ -200,9 +190,8 @@ TEST_CASE("pra_to_pc write options write one query per binding, of its kind", "[
     require_valid(*circuit);
     CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
     using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::PROBABILITY},
-                                          {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY},
-                                          {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    CHECK(query_summary(*circuit) ==
+          rows{{"FT", ::pcfb::QueryKind::PROBABILITY}, {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
     auto const *queries = (*circuit)->subcircuits()->Get(0)->queries();
     CHECK(queries->Get(0)->target() == queries->Get(1)->target());
 
@@ -255,9 +244,8 @@ TEST_CASE("pra_to_pc write options put the initiator rule on hull queries only",
     REQUIRE(circuit);
     require_valid(*circuit);
     using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::PROBABILITY},
-                                          {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY},
-                                          {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    CHECK(query_summary(*circuit) ==
+          rows{{"FT", ::pcfb::QueryKind::PROBABILITY}, {"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
     auto const *queries = (*circuit)->subcircuits()->Get(0)->queries();
     CHECK(queries->Get(0)->target() != queries->Get(1)->target());
     CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
@@ -265,14 +253,11 @@ TEST_CASE("pra_to_pc write options put the initiator rule on hull queries only",
     CHECK_FALSE(int_meta(*circuit, "compile.query.2.max_initiators_per_cutset"));
 }
 
-TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule",
-          "[compile][pra_to_pc][pcfb]") {
+TEST_CASE("pra_to_pc write options record the literal mode and omit an absent initiator rule", "[compile][pra_to_pc][pcfb]") {
     const auto model = build_model();
     lowering::quantification_config config;
     config.initiators = lowering::initiator_values::probability;
-    config.targets = {{.name = "FT",
-                       .kinds = {pc::query_kind::monotone_hull},
-                       .hull = pra::hull_query{.literals = pra::hull_literals::fixed}},
+    config.targets = {{.name = "FT", .kinds = {pc::query_kind::monotone_hull}, .hull = pra::hull_query{.literals = pra::hull_literals::fixed}},
                       {.name = "PARITY"}};
     const auto artifact = require_lower(model, config);
     auto options = lowering::pcfb_write_options(artifact);
@@ -285,8 +270,7 @@ TEST_CASE("pra_to_pc write options record the literal mode and omit an absent in
     REQUIRE(circuit);
     require_valid(*circuit);
     using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-    CHECK(query_summary(*circuit) ==
-          rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
+    CHECK(query_summary(*circuit) == rows{{"FT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"PARITY", ::pcfb::QueryKind::PROBABILITY}});
     CHECK(string_meta(*circuit, "compile.query.0.literal_mode") == "fixed");
     CHECK_FALSE(string_meta(*circuit, "compile.query.1.literal_mode"));
     CHECK_FALSE(int_meta(*circuit, "compile.query.0.max_initiators_per_cutset"));
@@ -308,8 +292,7 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
                 REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
                 auto options = lowering::pcfb_write_options(artifact);
                 REQUIRE_FALSE(options);
-                CHECK(codes(options.diagnostics()) ==
-                      std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
+                CHECK(codes(options.diagnostics()) == std::vector<std::string>{"compile.pra_to_pc.hull-literals-unsupported"});
                 const auto text = render(options.diagnostics());
                 CHECK(text.find("'LIT'") != std::string::npos);
                 CHECK(text.find("'Y'") != std::string::npos);
@@ -321,8 +304,7 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
         for (auto const &kinds : {monotone, both}) {
             lowering::quantification_config config;
             config.initiators = lowering::initiator_values::probability;
-            config.targets = {
-                {.name = "LIT", .kinds = kinds, .hull = pra::hull_query{.literals = pra::hull_literals::plain}}};
+            config.targets = {{.name = "LIT", .kinds = kinds, .hull = pra::hull_query{.literals = pra::hull_literals::plain}}};
             const auto artifact = require_lower(model, config);
             REQUIRE_FALSE(artifact.projection.literal_events(artifact.projection.target_bindings()[0]).empty());
             auto options = lowering::pcfb_write_options(artifact);
@@ -337,8 +319,7 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
             CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
             const auto rows = query_summary(*circuit);
             REQUIRE_FALSE(rows.empty());
-            CHECK(rows.back() ==
-                  std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+            CHECK(rows.back() == std::pair<std::string, ::pcfb::QueryKind>{"LIT", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
             CHECK(rows.size() == kinds.size());
             const auto hull = "compile.query." + std::to_string(rows.size() - 1) + ".";
             CHECK(string_meta(*circuit, hull + "target") == "LIT");
@@ -377,8 +358,7 @@ TEST_CASE("pra_to_pc write options refuse a monotone-hull target with marked lit
         REQUIRE(circuit);
         require_valid(*circuit);
         using rows = std::vector<std::pair<std::string, ::pcfb::QueryKind>>;
-        CHECK(query_summary(*circuit) ==
-              rows{{"SAFE", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"LIT", ::pcfb::QueryKind::PROBABILITY}});
+        CHECK(query_summary(*circuit) == rows{{"SAFE", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY}, {"LIT", ::pcfb::QueryKind::PROBABILITY}});
         CHECK((*circuit)->schema_version() == ::pcfb::kSchemaVersionV12);
     }
 }

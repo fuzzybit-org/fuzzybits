@@ -66,7 +66,8 @@ descriptor::kernel_dag layer_manager<bitpack_t_, prob_t_, size_t_>::describe_ker
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
 typename layer_manager<bitpack_t_, prob_t_, size_t_>::execution_plan_description layer_manager<bitpack_t_, prob_t_, size_t_>::describe_execution_plan() const {
-    return descriptor::execution_plan_of<bitpack_t_>(program_.plan, queue_.get_device(), sample_shaper_.describe(), node_count(), graph_.describe(program_.plan));
+    return descriptor::execution_plan_of<bitpack_t_>(program_.plan, queue_.get_device(), sample_shaper_.describe(), node_count(),
+                                                     graph_.describe(program_.plan));
 }
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>

@@ -67,8 +67,7 @@ template <std::uint32_t D, typename V> [[gnu::always_inline]] inline void therm_
 
 // Needs lo <= D and (hi >= n or hi < D): the host picks the counted side (ones
 // or zeros) that satisfies this.
-template <std::uint32_t D, typename V>
-[[gnu::always_inline]] inline V therm_range(const V (&s)[D], std::uint32_t lo, std::uint32_t hi) {
+template <std::uint32_t D, typename V> [[gnu::always_inline]] inline V therm_range(const V (&s)[D], std::uint32_t lo, std::uint32_t hi) {
     V r = ~V{};
     V u = ~V{};
 #pragma unroll
@@ -165,8 +164,7 @@ template <int BLK, int Q, typename V> [[gnu::always_inline]] inline void hs(V (&
     }
 }
 
-template <bool NEG, int BLK, typename V>
-[[gnu::always_inline]] inline void load_blk(V (&x)[BLK], const word *const *in, std::size_t w) {
+template <bool NEG, int BLK, typename V> [[gnu::always_inline]] inline void load_blk(V (&x)[BLK], const word *const *in, std::size_t w) {
 #pragma unroll
     for (int j = 0; j < BLK; ++j) {
         const V v = ld<V>(in[j] + w);
@@ -177,8 +175,7 @@ template <bool NEG, int BLK, typename V>
 // Inputs [i, i + BLK) of the gate, complementing those >= neg and zeroing those
 // >= n.
 template <int BLK, typename V>
-[[gnu::always_inline]] inline void load_blk_masked(V (&x)[BLK], const word *const *in, std::size_t w, std::uint32_t i,
-                                                   std::uint32_t neg, std::uint32_t n) {
+[[gnu::always_inline]] inline void load_blk_masked(V (&x)[BLK], const word *const *in, std::size_t w, std::uint32_t i, std::uint32_t neg, std::uint32_t n) {
 #pragma unroll
     for (std::uint32_t j = 0; j < BLK; ++j) {
         const std::uint32_t k = i + j;
@@ -212,8 +209,7 @@ template <int Q, typename V> [[gnu::always_inline]] inline V count_ge(const V (&
     return carry;
 }
 
-template <int Q, typename V>
-[[gnu::always_inline]] inline V count_in(const V (&c)[Q], std::uint32_t lo, std::uint32_t hi, std::uint32_t n) {
+template <int Q, typename V> [[gnu::always_inline]] inline V count_in(const V (&c)[Q], std::uint32_t lo, std::uint32_t hi, std::uint32_t n) {
     V r = count_ge<Q>(c, lo);
     if (hi < n) {
         r &= ~count_ge<Q>(c, std::uint64_t{hi} + 1);
@@ -253,13 +249,9 @@ template <int P, int BLK, typename V> [[gnu::always_inline]] inline V eval_bin(c
     return count_in<Q>(c, g.lo, g.hi, n);
 }
 
-template <int P, typename V> [[gnu::always_inline]] inline V eval_bin16(const gate_desc &g, std::size_t w) {
-    return eval_bin<P, 16, V>(g, w);
-}
+template <int P, typename V> [[gnu::always_inline]] inline V eval_bin16(const gate_desc &g, std::size_t w) { return eval_bin<P, 16, V>(g, w); }
 
-template <int P, typename V> [[gnu::always_inline]] inline V eval_bin8(const gate_desc &g, std::size_t w) {
-    return eval_bin<P, 8, V>(g, w);
-}
+template <int P, typename V> [[gnu::always_inline]] inline V eval_bin8(const gate_desc &g, std::size_t w) { return eval_bin<P, 8, V>(g, w); }
 
 template <int P, typename V> [[gnu::always_inline]] inline V eval_ripple(const gate_desc &g, std::size_t w) {
     V c[P];
@@ -316,37 +308,37 @@ template <typename V> [[gnu::always_inline]] inline V eval_therm_upto4(const gat
     }
 }
 
-#define CARD_PLANES_SWITCH(FN)                                                                                         \
-    switch (planes) {                                                                                                  \
-    case 0:                                                                                                            \
-    case 1:                                                                                                            \
-    case 2:                                                                                                            \
-    case 3:                                                                                                            \
-    case 4:                                                                                                            \
-        return FN<4, V>(g, w);                                                                                         \
-    case 5:                                                                                                            \
-        return FN<5, V>(g, w);                                                                                         \
-    case 6:                                                                                                            \
-        return FN<6, V>(g, w);                                                                                         \
-    case 7:                                                                                                            \
-        return FN<7, V>(g, w);                                                                                         \
-    case 8:                                                                                                            \
-        return FN<8, V>(g, w);                                                                                         \
-    case 9:                                                                                                            \
-        return FN<9, V>(g, w);                                                                                         \
-    case 10:                                                                                                           \
-        return FN<10, V>(g, w);                                                                                        \
-    case 11:                                                                                                           \
-        return FN<11, V>(g, w);                                                                                        \
-    case 12:                                                                                                           \
-        return FN<12, V>(g, w);                                                                                        \
-    case 13:                                                                                                           \
-    case 14:                                                                                                           \
-    case 15:                                                                                                           \
-    case 16:                                                                                                           \
-        return FN<16, V>(g, w);                                                                                        \
-    default:                                                                                                           \
-        return FN<32, V>(g, w);                                                                                        \
+#define CARD_PLANES_SWITCH(FN)                                                                                                                                 \
+    switch (planes) {                                                                                                                                          \
+    case 0:                                                                                                                                                    \
+    case 1:                                                                                                                                                    \
+    case 2:                                                                                                                                                    \
+    case 3:                                                                                                                                                    \
+    case 4:                                                                                                                                                    \
+        return FN<4, V>(g, w);                                                                                                                                 \
+    case 5:                                                                                                                                                    \
+        return FN<5, V>(g, w);                                                                                                                                 \
+    case 6:                                                                                                                                                    \
+        return FN<6, V>(g, w);                                                                                                                                 \
+    case 7:                                                                                                                                                    \
+        return FN<7, V>(g, w);                                                                                                                                 \
+    case 8:                                                                                                                                                    \
+        return FN<8, V>(g, w);                                                                                                                                 \
+    case 9:                                                                                                                                                    \
+        return FN<9, V>(g, w);                                                                                                                                 \
+    case 10:                                                                                                                                                   \
+        return FN<10, V>(g, w);                                                                                                                                \
+    case 11:                                                                                                                                                   \
+        return FN<11, V>(g, w);                                                                                                                                \
+    case 12:                                                                                                                                                   \
+        return FN<12, V>(g, w);                                                                                                                                \
+    case 13:                                                                                                                                                   \
+    case 14:                                                                                                                                                   \
+    case 15:                                                                                                                                                   \
+    case 16:                                                                                                                                                   \
+        return FN<16, V>(g, w);                                                                                                                                \
+    default:                                                                                                                                                   \
+        return FN<32, V>(g, w);                                                                                                                                \
     }
 
 template <typename V, int BLK = 16> [[gnu::always_inline]] inline V eval_bin_any(const gate_desc &g, std::size_t w) {
@@ -380,8 +372,7 @@ template <typename V> [[gnu::always_inline]] inline V eval_auto(const gate_desc 
 // fixed shapes Everything but the complement mask is a compile-time constant,
 // so the compiler folds the thermometer into the minimal network (2-of-3 is one
 // majority).
-template <int N, int LO, int HI, typename V>
-[[gnu::always_inline]] inline V eval_fixed(const gate_desc &g, std::size_t w) {
+template <int N, int LO, int HI, typename V> [[gnu::always_inline]] inline V eval_fixed(const gate_desc &g, std::size_t w) {
     constexpr int H = HI < N ? HI : N;
     constexpr int D1 = H < N ? H + 1 : LO;
     constexpr int D0 = LO > 0 ? N - LO + 1 : N - H;
@@ -444,8 +435,7 @@ template <int N, int D, typename V> [[gnu::always_inline]] inline V eval_fixedND
 
 // Runtime n, inputs loaded in blocks of BLK (predicated tail), so the loads of
 // a block are in flight together.
-template <std::uint32_t D, int BLK, typename V>
-[[gnu::always_inline]] inline V eval_therm_blk(const gate_desc &g, std::size_t w) {
+template <std::uint32_t D, int BLK, typename V> [[gnu::always_inline]] inline V eval_therm_blk(const gate_desc &g, std::size_t w) {
     V s[D];
 #pragma unroll
     for (std::uint32_t j = 0; j < D; ++j) {
@@ -569,8 +559,7 @@ template <typename V> [[gnu::always_inline]] inline V eval_small16_switch(const 
 // Compile-time slot count N; slot j is an input iff bit j of g.mask is set (its
 // pointer is not read otherwise), complemented iff j >= g.neg. Up to 8 slots the
 // count ripples; above, 8-slot blocks go through the Harley-Seal adder.
-template <int N, typename V>
-[[gnu::always_inline]] inline void masked_slot(V &x, const gate_desc &g, std::size_t w, int j) {
+template <int N, typename V> [[gnu::always_inline]] inline void masked_slot(V &x, const gate_desc &g, std::size_t w, int j) {
     x = V{};
     if (((g.mask >> j) & 1u) != 0) {
         x = ld<V>(g.in[j] + w);

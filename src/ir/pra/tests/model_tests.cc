@@ -23,9 +23,7 @@ using pra::test::named;
 using pra::test::render;
 using pra::test::topologically_ordered;
 
-[[nodiscard]] auto contains(std::span<pra::gate_kind const> kinds, const pra::gate_kind kind) -> bool {
-    return std::ranges::find(kinds, kind) != kinds.end();
-}
+[[nodiscard]] auto contains(std::span<pra::gate_kind const> kinds, const pra::gate_kind kind) -> bool { return std::ranges::find(kinds, kind) != kinds.end(); }
 
 } // namespace
 
@@ -39,15 +37,11 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
     const pra::attribute_spec flags[] = {{.name = "ftp.flag", .value = "X"}};
 
     const auto pump =
-        builder.add_basic_event({.stable_name = "PUMP", .label = "Pump fails to start", .sources = {&line_3, 1}},
-                                pra::expression_spec::literal(1e-3));
-    const auto valve =
-        builder.add_basic_event({.stable_name = "VALVE"}, pra::expression_spec::parameter("lambda_valve"));
+        builder.add_basic_event({.stable_name = "PUMP", .label = "Pump fails to start", .sources = {&line_3, 1}}, pra::expression_spec::literal(1e-3));
+    const auto valve = builder.add_basic_event({.stable_name = "VALVE"}, pra::expression_spec::parameter("lambda_valve"));
     const auto crew =
-        builder.add_basic_event({.stable_name = "CREW", .attributes = flags},
-                                pra::expression_spec::unsupported("io.ftp.missing-import", "no IMPORT record"));
-    const auto loss = builder.add_basic_event({.stable_name = "LOSP"},
-                                              pra::expression_spec::literal(2.5, pra::quantity_kind::frequency));
+        builder.add_basic_event({.stable_name = "CREW", .attributes = flags}, pra::expression_spec::unsupported("io.ftp.missing-import", "no IMPORT record"));
+    const auto loss = builder.add_basic_event({.stable_name = "LOSP"}, pra::expression_spec::literal(2.5, pra::quantity_kind::frequency));
     const auto shared = builder.add_expression(pra::expression_spec::literal(0.5));
     const auto left = builder.add_basic_event({.stable_name = "L"}, shared);
     const auto right = builder.add_basic_event({.stable_name = "R"}, shared);
@@ -55,32 +49,21 @@ TEST_CASE("PRA builder seals every R1 entity kind", "[ir][pra][builder]") {
     const auto initiator = builder.add_initiating_event({.stable_name = "LOSP", .qualified_name = "IE.LOSP"}, loss);
 
     const auto tree = builder.add_fault_tree({.stable_name = "FT", .label = "Loss of cooling"});
-    const auto both = builder.add_gate({.stable_name = "G_AND"}, pra::gate_kind::and_gate,
-                                       {{.event = pump}, {.event = valve, .complement = true}}, tree);
-    const auto either = builder.add_gate({.stable_name = "G_OR"}, pra::gate_kind::or_gate,
-                                         {{.event = both}, {.event = maintenance}}, tree);
-    const auto vote = builder.add_cardinality({.stable_name = "G_2OF3"}, {.low = 2, .high = 3},
-                                              {{.event = pump}, {.event = valve}, {.event = crew}}, tree);
+    const auto both = builder.add_gate({.stable_name = "G_AND"}, pra::gate_kind::and_gate, {{.event = pump}, {.event = valve, .complement = true}}, tree);
+    const auto either = builder.add_gate({.stable_name = "G_OR"}, pra::gate_kind::or_gate, {{.event = both}, {.event = maintenance}}, tree);
+    const auto vote = builder.add_cardinality({.stable_name = "G_2OF3"}, {.low = 2, .high = 3}, {{.event = pump}, {.event = valve}, {.event = crew}}, tree);
     const auto negation = builder.add_gate({.stable_name = "G_NOT"}, pra::gate_kind::not_gate, {{.event = vote}}, tree);
-    const auto parity =
-        builder.add_gate({.stable_name = "G_XOR"}, pra::gate_kind::xor_gate, {{.event = left}, {.event = right}}, tree);
-    const auto nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate,
-                                       {{.event = left}, {.event = right, .complement = true}}, tree);
-    const auto nor =
-        builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate, {{.event = left}, {.event = right}}, tree);
-    const auto xnor = builder.add_gate({.stable_name = "G_XNOR"}, pra::gate_kind::xnor_gate,
-                                       {{.event = left}, {.event = right, .complement = true}}, tree);
-    const auto top = builder.add_gate(
-        {.stable_name = "TOP"}, pra::gate_kind::or_gate,
-        {{.event = either}, {.event = negation}, {.event = parity}, {.event = nand}, {.event = nor}, {.event = xnor}},
-        tree);
+    const auto parity = builder.add_gate({.stable_name = "G_XOR"}, pra::gate_kind::xor_gate, {{.event = left}, {.event = right}}, tree);
+    const auto nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate, {{.event = left}, {.event = right, .complement = true}}, tree);
+    const auto nor = builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate, {{.event = left}, {.event = right}}, tree);
+    const auto xnor = builder.add_gate({.stable_name = "G_XNOR"}, pra::gate_kind::xnor_gate, {{.event = left}, {.event = right, .complement = true}}, tree);
+    const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
+                                      {{.event = either}, {.event = negation}, {.event = parity}, {.event = nand}, {.event = nor}, {.event = xnor}}, tree);
     builder.add_fault_tree_top(tree, top);
 
     const auto top_target = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);
-    const auto gate_target =
-        builder.add_target({.stable_name = "G_OR"}, pra::domain_target_kind::gate, either, pra::target_role::watch);
-    const auto event_target = builder.add_target({.stable_name = "PUMP"}, pra::domain_target_kind::basic_event, pump,
-                                                 pra::target_role::watch);
+    const auto gate_target = builder.add_target({.stable_name = "G_OR"}, pra::domain_target_kind::gate, either, pra::target_role::watch);
+    const auto event_target = builder.add_target({.stable_name = "PUMP"}, pra::domain_target_kind::basic_event, pump, pra::target_role::watch);
     builder.add_attribute(top, "note", "added after the gate");
     builder.add_source(top, line_9);
 
@@ -241,19 +224,15 @@ TEST_CASE("PRA builder resolves forward references across source files", "[ir][p
     const pra::source_location sub_line{.file = second_file, .line = 4};
 
     // Everything below refers to names that are only defined later.
-    const auto top_target =
-        builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, pra::reference::named("TOP"));
-    const auto tree_target = builder.add_target({.stable_name = "TREE"}, pra::domain_target_kind::fault_tree_top,
-                                                pra::reference::named("TOP"));
+    const auto top_target = builder.add_target({.stable_name = "TOP"}, pra::domain_target_kind::gate, pra::reference::named("TOP"));
+    const auto tree_target = builder.add_target({.stable_name = "TREE"}, pra::domain_target_kind::fault_tree_top, pra::reference::named("TOP"));
     const auto initiator = builder.add_initiating_event({.stable_name = "X"}, pra::reference::named("X"));
     // The fault tree shares the name TOP with a gate; references resolve by the kinds each use site admits.
     const auto tree = builder.add_fault_tree({.stable_name = "TOP"});
     builder.add_fault_tree_top(tree, pra::reference::named(pra::element_kind::gate, "TOP"));
-    const auto top = builder.add_gate({.stable_name = "TOP", .sources = {&top_line, 1}}, pra::gate_kind::or_gate,
-                                      {named("SUB"), named("X", true)}, tree);
-    const auto sub =
-        builder.add_gate({.stable_name = "SUB", .sources = {&sub_line, 1}}, pra::gate_kind::and_gate,
-                         {named("Y"), {.event = pra::reference::named(pra::element_kind::house_event, "H")}}, tree);
+    const auto top = builder.add_gate({.stable_name = "TOP", .sources = {&top_line, 1}}, pra::gate_kind::or_gate, {named("SUB"), named("X", true)}, tree);
+    const auto sub = builder.add_gate({.stable_name = "SUB", .sources = {&sub_line, 1}}, pra::gate_kind::and_gate,
+                                      {named("Y"), {.event = pra::reference::named(pra::element_kind::house_event, "H")}}, tree);
     const auto house = builder.add_house_event({.stable_name = "H"}, false);
     const auto x = builder.add_basic_event({.stable_name = "X"}, pra::expression_spec::literal(0.1));
     const auto y = builder.add_basic_event({.stable_name = "Y"}, pra::expression_spec::literal(0.2));
@@ -362,8 +341,7 @@ TEST_CASE("PRA literal markers round-trip through the model and its summary", "[
     pra::builder builder;
     const auto a = builder.add_basic_event({.stable_name = "A"}, pra::expression_spec::literal(0.1));
     const auto b = builder.add_basic_event({.stable_name = "B"}, pra::expression_spec::literal(0.2));
-    const auto inner =
-        builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::or_gate, {{.event = a}, {.event = b}});
+    const auto inner = builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::or_gate, {{.event = a}, {.event = b}});
     const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
                                       {{.event = a},
                                        {.event = b, .complement = true, .literal = true},

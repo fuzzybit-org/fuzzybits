@@ -37,9 +37,7 @@ struct DefaultMask {
 };
 const DefaultMask kDefaultMask{};
 
-std::string aralia(const char *name) {
-    return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string();
-}
+std::string aralia(const char *name) { return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string(); }
 
 std::string repo_input(const char *relative) { return (std::filesystem::path(PROJECT_SOURCE_DIR) / relative).string(); }
 
@@ -141,8 +139,7 @@ TEST_CASE("progress::emitter with no sinks is inert", "[runtime][progress][emitt
     CHECK(built == 0);
 }
 
-TEST_CASE("progress::emitter coalesces to the rate but always delivers first and last",
-          "[runtime][progress][emitter]") {
+TEST_CASE("progress::emitter coalesces to the rate but always delivers first and last", "[runtime][progress][emitter]") {
     RecordingSink sink;
     auto now = at_ms(1000);
     fuzzybits::runtime::progress::emitter emitter({&sink}, 10.0, [&now] { return now; });
@@ -191,8 +188,7 @@ TEST_CASE("progress::emitter never swallows a sink exception at finish", "[runti
     sink.throw_on = 0; // the first on_snapshot from finish()
     // The sink's own exception is not rethrown (nothing to rethrow from a destructor-safe path); the
     // emitter raises its own typed signal instead, after every sink got on_finish.
-    CHECK_THROWS_AS(emitter.finish(fuzzybits::runtime::progress::snapshot{}, false),
-                    fuzzybits::runtime::progress::interrupted);
+    CHECK_THROWS_AS(emitter.finish(fuzzybits::runtime::progress::snapshot{}, false), fuzzybits::runtime::progress::interrupted);
     // on_finish still ran, and only once.
     CHECK(sink.finished);
     CHECK_FALSE(sink.interrupted);
@@ -204,8 +200,7 @@ TEST_CASE("progress::finish_guard reports interruption on any unwind, exactly on
         RecordingSink sink;
         fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
         auto run = [&] {
-            fuzzybits::runtime::progress::finish_guard guard(
-                [&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
+            fuzzybits::runtime::progress::finish_guard guard([&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
             emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
             throw std::runtime_error("device failed");
         };
@@ -218,8 +213,7 @@ TEST_CASE("progress::finish_guard reports interruption on any unwind, exactly on
         RecordingSink sink;
         fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
         {
-            fuzzybits::runtime::progress::finish_guard guard(
-                [&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
+            fuzzybits::runtime::progress::finish_guard guard([&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
             emitter.maybe_emit([] { return fuzzybits::runtime::progress::snapshot{}; });
             emitter.finish(fuzzybits::runtime::progress::snapshot{}, false);
             guard.complete();
@@ -233,8 +227,7 @@ TEST_CASE("progress::finish_guard reports interruption on any unwind, exactly on
         sink.throw_on = 0;
         fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
         auto run = [&] {
-            fuzzybits::runtime::progress::finish_guard guard(
-                [&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
+            fuzzybits::runtime::progress::finish_guard guard([&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
             throw std::runtime_error("device failed");
         };
         CHECK_THROWS_AS(run(), std::runtime_error);
@@ -246,8 +239,7 @@ TEST_CASE("progress::finish_guard reports interruption on any unwind, exactly on
         RecordingSink sink;
         fuzzybits::runtime::progress::emitter emitter({&sink}, 0.0);
         {
-            fuzzybits::runtime::progress::finish_guard first(
-                [&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
+            fuzzybits::runtime::progress::finish_guard first([&emitter] { emitter.finish(fuzzybits::runtime::progress::snapshot{}, true); });
             auto second = std::move(first);
             CHECK_FALSE(first.armed());
             CHECK(second.armed());
@@ -454,8 +446,7 @@ TEST_CASE("a non-sink failure inside compile still finishes the sinks once", "[r
 
     // Fail between stages, i.e. from code the sink never sees.
     fuzzybits::compile::testing::fail_next_compile_after_stage("lower");
-    CHECK_THROWS_AS(fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt),
-                    std::runtime_error);
+    CHECK_THROWS_AS(fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt), std::runtime_error);
 
     CHECK(sink.finish_count == 1);
     REQUIRE(sink.finishes.size() == 1);
@@ -472,8 +463,7 @@ TEST_CASE("a compile sink exception on the final snapshot is not swallowed", "[r
     // from `finish()`.
     sink.throw_on = 4;
 
-    CHECK_THROWS_AS(fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt),
-                    fuzzybits::runtime::progress::interrupted);
+    CHECK_THROWS_AS(fuzzybits::compile::compile_files({repo_input("input/SmallTree/SmallTree.xml")}, opt), fuzzybits::runtime::progress::interrupted);
     CHECK(sink.finish_count == 1);
     CHECK_FALSE(sink.interrupted);
 }
@@ -575,8 +565,7 @@ TEST_CASE("Session streams the same first-pass hits as run_graph on chinese", "[
     const auto oneshot = fuzzybits::runtime::run_pcfb(*circuit, opt);
     REQUIRE(oneshot.size() == 1);
 
-    auto session =
-        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
+    auto session = fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
     const auto first = session.step();
     REQUIRE(first.pass_index == 1);
     REQUIRE(first.trials_per_pass >= kTrialsPerPass);
@@ -590,10 +579,8 @@ TEST_CASE("Session::step(n) matches n single steps on chinese", "[runtime][mc][b
     auto compiled = fuzzybits::compile::compile_files({aralia("chinese.xml")}, no_kn());
     REQUIRE(compiled);
 
-    auto batched =
-        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
-    auto single =
-        fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
+    auto batched = fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
+    auto single = fuzzybits::runtime::Session::from_bytes(compiled->bytes, fuzzybits::testing::backend(), kTrialsPerPass);
     const auto once = batched.step(3);
     fuzzybits::runtime::PassResult last;
     for (int i = 0; i < 3; ++i) {
@@ -604,8 +591,7 @@ TEST_CASE("Session::step(n) matches n single steps on chinese", "[runtime][mc][b
     REQUIRE(last.pass_index == 3);
     REQUIRE(once.nodes.size() == last.nodes.size());
     for (const auto &node : once.nodes) {
-        const auto match = std::find_if(last.nodes.begin(), last.nodes.end(),
-                                        [&](const auto &other) { return other.index == node.index; });
+        const auto match = std::find_if(last.nodes.begin(), last.nodes.end(), [&](const auto &other) { return other.index == node.index; });
         REQUIRE(match != last.nodes.end());
         REQUIRE(node.num_one_bits == match->num_one_bits);
         REQUIRE(node.total_bits == match->total_bits);
@@ -629,8 +615,7 @@ TEST_CASE("extra watch queries do not replace the PDAG root", "[runtime][mc][wat
     REQUIRE(watched.size() == 1);
 }
 
-TEST_CASE("fzb run SmallTree.pcfb is bit-identical to the in-memory PDAG path",
-          "[runtime][mc][bit-identity][smalltree]") {
+TEST_CASE("fzb run SmallTree.pcfb is bit-identical to the in-memory PDAG path", "[runtime][mc][bit-identity][smalltree]") {
     check_pcfb_matches_memory(repo_input("input/SmallTree/SmallTree.xml"), 65536);
 }
 
@@ -663,8 +648,7 @@ TEST_CASE("fzb run chinese.pcfb small-N estimate is in (0,1) on CPU", "[runtime]
     const auto tmp = std::filesystem::temp_directory_path() / "fuzzybits-chinese-runtime.pcfb";
     {
         std::ofstream out(tmp, std::ios::binary);
-        out.write(reinterpret_cast<const char *>(compiled->bytes.data()),
-                  static_cast<std::streamsize>(compiled->bytes.size()));
+        out.write(reinterpret_cast<const char *>(compiled->bytes.data()), static_cast<std::streamsize>(compiled->bytes.size()));
     }
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 1 << 16;
@@ -703,24 +687,17 @@ TEST_CASE("the runtime rejects monotone-hull queries before sampling", "[runtime
         query_guard_files::write(tmp, bytes);
         const std::string kind = "MONOTONE_HULL_PROBABILITY";
         const std::string id = "pcfb.unsupported-query-kind";
-        require_unsupported(
-            [&] { static_cast<void>(fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt)); }, id,
-            query_guard_files::hull_name);
+        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt)); }, id, query_guard_files::hull_name);
         require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(tmp, opt)); }, id, kind);
         require_unsupported([&] { static_cast<void>(fuzzybits::runtime::load_pcfb(tmp)); }, id, kind);
-        require_unsupported(
-            [&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, fuzzybits::testing::backend())); },
-            id, query_guard_files::hull_name);
-        require_unsupported(
-            [&] { static_cast<void>(fuzzybits::runtime::Session::from_path(tmp, fuzzybits::testing::backend())); }, id,
-            kind);
+        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_bytes(bytes, fuzzybits::testing::backend())); }, id,
+                            query_guard_files::hull_name);
+        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::Session::from_path(tmp, fuzzybits::testing::backend())); }, id, kind);
         // Callers that hold a circuit and skip load_pcfb (the Python Session does) hit the same check.
         auto circuit = pcfb::io::from_bytes(bytes);
         REQUIRE(circuit);
-        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::pdag_from_circuit(*circuit)); }, id,
-                            query_guard_files::hull_name);
-        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(*circuit, opt)); }, id,
-                            query_guard_files::hull_name);
+        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::pdag_from_circuit(*circuit)); }, id, query_guard_files::hull_name);
+        require_unsupported([&] { static_cast<void>(fuzzybits::runtime::run_pcfb(*circuit, opt)); }, id, query_guard_files::hull_name);
     }
     std::filesystem::remove(tmp);
 }
@@ -729,8 +706,7 @@ TEST_CASE("the runtime runs Boolean queries whatever the schema minor", "[runtim
     fuzzybits::runtime::RunOptions opt;
     opt.trials = 1 << 14;
     opt.backend = fuzzybits::testing::backend();
-    for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2),
-                       query_guard_files::boolean_with_minor(3)}) {
+    for (auto bytes : {query_guard_files::boolean_only(), query_guard_files::boolean_with_minor(2), query_guard_files::boolean_with_minor(3)}) {
         const auto results = fuzzybits::runtime::run_pcfb(std::span<const std::byte>(bytes), opt);
         REQUIRE(results.size() == 1);
         CHECK(results[0].name == query_guard_files::boolean_name);
@@ -742,15 +718,13 @@ namespace {
 
 // TOP = <connective>(H, A, B) with house event H: SCRAM's preprocessor folds the root into a constant gate.
 std::filesystem::path constant_root_model(const std::string &connective, const std::string &house) {
-    const auto path =
-        std::filesystem::temp_directory_path() / ("fuzzybits-constant-root-" + connective + "-" + house + ".xml");
+    const auto path = std::filesystem::temp_directory_path() / ("fuzzybits-constant-root-" + connective + "-" + house + ".xml");
     std::ofstream out(path);
     out << R"(<?xml version="1.0"?>
 <opsa-mef>
   <define-fault-tree name="FT">
     <define-gate name="TOP"><)"
-        << connective << R"(><house-event name="H"/><basic-event name="A"/><basic-event name="B"/></)" << connective
-        << R"(></define-gate>
+        << connective << R"(><house-event name="H"/><basic-event name="A"/><basic-event name="B"/></)" << connective << R"(></define-gate>
   </define-fault-tree>
   <model-data>
     <define-house-event name="H"><constant value=")"
@@ -803,8 +777,7 @@ TEST_CASE("a constant PDAG root runs in memory and through the pcfb writer (#259
 }
 
 #ifdef NDEBUG
-TEST_CASE("the engine refuses a gate that holds the PDAG constant beside other arguments (#259)",
-          "[runtime][mc][constants]") {
+TEST_CASE("the engine refuses a gate that holds the PDAG constant beside other arguments (#259)", "[runtime][mc][constants]") {
     // Only reachable with SCRAM's assertions compiled out (Gate::AddArg asserts the gate is not constant), which
     // is how the pcfb reconstruction reached it before #259. The kernels would drop the constant; the engine
     // refuses before sampling instead.

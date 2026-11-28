@@ -42,9 +42,7 @@ using stage_id = id;
 namespace std {
 
 template <> struct hash<fuzzybits::api::id> {
-    [[nodiscard]] auto operator()(fuzzybits::api::id const &value) const noexcept -> std::size_t {
-        return std::hash<std::string>{}(value.str());
-    }
+    [[nodiscard]] auto operator()(fuzzybits::api::id const &value) const noexcept -> std::size_t { return std::hash<std::string>{}(value.str()); }
 };
 
 } // namespace std

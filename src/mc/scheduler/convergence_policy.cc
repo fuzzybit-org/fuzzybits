@@ -14,13 +14,10 @@
 namespace fuzzybits::mc::stats {
 namespace detail {
 
-using math_policy =
-    boost::math::policies::policy<boost::math::policies::domain_error<boost::math::policies::errno_on_error>,
-                                  boost::math::policies::pole_error<boost::math::policies::errno_on_error>,
-                                  boost::math::policies::overflow_error<boost::math::policies::errno_on_error>,
-                                  boost::math::policies::underflow_error<boost::math::policies::ignore_error>,
-                                  boost::math::policies::denorm_error<boost::math::policies::ignore_error>,
-                                  boost::math::policies::evaluation_error<boost::math::policies::errno_on_error>>;
+using math_policy = boost::math::policies::policy<
+    boost::math::policies::domain_error<boost::math::policies::errno_on_error>, boost::math::policies::pole_error<boost::math::policies::errno_on_error>,
+    boost::math::policies::overflow_error<boost::math::policies::errno_on_error>, boost::math::policies::underflow_error<boost::math::policies::ignore_error>,
+    boost::math::policies::denorm_error<boost::math::policies::ignore_error>, boost::math::policies::evaluation_error<boost::math::policies::errno_on_error>>;
 
 using beta_dist = boost::math::beta_distribution<double, math_policy>;
 using normal_dist = boost::math::normal_distribution<double, math_policy>;
@@ -37,8 +34,7 @@ void mark_not_converged(mc::stats::tally &t, const double rel_margin_error) {
     t.log10.target_trials = t.total_bits;
 }
 
-void store_bayes_interval(mc::stats::tally &t, const double lower, const double upper, const double p_hat,
-                          const double rel_margin_error, const double z) {
+void store_bayes_interval(mc::stats::tally &t, const double lower, const double upper, const double p_hat, const double rel_margin_error, const double z) {
     const double lo = std::clamp(lower, 0.0, 1.0);
     const double hi = std::clamp(upper, 0.0, 1.0);
     const double eps_linear = 0.5 * (hi - lo);
@@ -53,8 +49,7 @@ void store_bayes_interval(mc::stats::tally &t, const double lower, const double 
 
     const double var_term = p * (1.0 - p);
     const double rhs_lin = (z * z * var_term) / (target_eps_linear * target_eps_linear);
-    const double rhs_log =
-        (z * z * (1.0 - p)) / (p * rel_margin_error * rel_margin_error * std::pow(std::log(10.0), 2));
+    const double rhs_log = (z * z * (1.0 - p)) / (p * rel_margin_error * rel_margin_error * std::pow(std::log(10.0), 2));
 
     constexpr double correction = 0.5 + 0.5 + 1.0;
     const auto N_req_linear = static_cast<std::size_t>(std::ceil(std::max(0.0, rhs_lin - correction)));
@@ -119,8 +114,7 @@ double beta_half_quantile(const double p, const double beta) {
 
 namespace {
 
-bool closed_form_boundary_interval(const std::size_t successes, const std::size_t n, const double tail, double &lower,
-                                   double &upper) {
+bool closed_form_boundary_interval(const std::size_t successes, const std::size_t n, const double tail, double &lower, double &upper) {
     if (n == 0) {
         lower = beta_half_quantile(tail, 0.5);
         upper = beta_half_quantile(1.0 - tail, 0.5);

@@ -23,16 +23,11 @@ constexpr std::string_view complemented_initiator = "compile.pra_to_pc.complemen
 
 // A complemented basic-event operand marked as a literal, as the FTP reader
 // writes `-B`.
-[[nodiscard]] auto literal_of(const pra::basic_event_id event) -> pra::operand_spec {
-    return {.event = event, .complement = true, .literal = true};
-}
+[[nodiscard]] auto literal_of(const pra::basic_event_id event) -> pra::operand_spec { return {.event = event, .complement = true, .literal = true}; }
 
-[[nodiscard]] auto hull(std::string name) -> lowering::target_request {
-    return {.name = std::move(name), .kinds = {pc::query_kind::monotone_hull}};
-}
+[[nodiscard]] auto hull(std::string name) -> lowering::target_request { return {.name = std::move(name), .kinds = {pc::query_kind::monotone_hull}}; }
 
-[[nodiscard]] auto lower_ok(pra::model const &model, lowering::quantification_config const &config)
-    -> fuzzybits::api::diagnostic_list {
+[[nodiscard]] auto lower_ok(pra::model const &model, lowering::quantification_config const &config) -> fuzzybits::api::diagnostic_list {
     auto lowered = lowering::lower(model, config);
     INFO(render(lowered.diagnostics()));
     REQUIRE(lowered);
@@ -79,30 +74,23 @@ struct small_model final {
 // T = (A and not(B or E)) or (D and -B), with -B marked or not.
 [[nodiscard]] auto negated_and_direct(const bool marked) -> pra::model {
     small_model m;
-    const auto either =
-        m.builder.add_gate({.stable_name = "B_OR_E"}, pra::gate_kind::or_gate, {{.event = m.b}, {.event = m.e}});
-    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate,
-                                         {{.event = m.a}, {.event = either, .complement = true}});
-    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate,
-                                          {{.event = m.d}, {.event = m.b, .complement = true, .literal = marked}});
-    const auto top =
-        m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+    const auto either = m.builder.add_gate({.stable_name = "B_OR_E"}, pra::gate_kind::or_gate, {{.event = m.b}, {.event = m.e}});
+    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, {.event = either, .complement = true}});
+    const auto right =
+        m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.d}, {.event = m.b, .complement = true, .literal = marked}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
     return std::move(m).seal_with_target(top);
 }
 
 // T = or(and(A, -B), context(B, C)).
-[[nodiscard]] auto with_context(const pra::gate_kind kind,
-                                const std::optional<pra::cardinality_bounds> bounds = std::nullopt) -> pra::model {
+[[nodiscard]] auto with_context(const pra::gate_kind kind, const std::optional<pra::cardinality_bounds> bounds = std::nullopt) -> pra::model {
     small_model m;
-    const auto direct =
-        m.builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
+    const auto direct = m.builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
     const std::vector<pra::operand_spec> operands =
-        kind == pra::gate_kind::not_gate ? std::vector<pra::operand_spec>{{.event = m.b}}
-                                         : std::vector<pra::operand_spec>{{.event = m.b}, {.event = m.c}};
-    const auto context = bounds ? m.builder.add_cardinality({.stable_name = "CONTEXT"}, *bounds, operands)
-                                : m.builder.add_gate({.stable_name = "CONTEXT"}, kind, operands);
-    const auto top =
-        m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = direct}, {.event = context}});
+        kind == pra::gate_kind::not_gate ? std::vector<pra::operand_spec>{{.event = m.b}} : std::vector<pra::operand_spec>{{.event = m.b}, {.event = m.c}};
+    const auto context =
+        bounds ? m.builder.add_cardinality({.stable_name = "CONTEXT"}, *bounds, operands) : m.builder.add_gate({.stable_name = "CONTEXT"}, kind, operands);
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = direct}, {.event = context}});
     return std::move(m).seal_with_target(top);
 }
 
@@ -110,8 +98,7 @@ struct small_model final {
 
 TEST_CASE("pra_to_pc records the hull reading on hull queries only", "[compile][pra_to_pc][literals]") {
     small_model m;
-    const auto g =
-        m.builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
+    const auto g = m.builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
     (void)m.builder.add_target({.stable_name = "U"}, pra::domain_target_kind::gate, g);
     const auto model = std::move(m).seal_with_target(g);
 
@@ -123,10 +110,7 @@ TEST_CASE("pra_to_pc records the hull reading on hull queries only", "[compile][
 
     lowering::quantification_config config;
     config.default_hull.literals = pra::hull_literals::fixed;
-    config.targets = {hull("T"),
-                      {.name = "U",
-                       .kinds = {pc::query_kind::monotone_hull},
-                       .hull = pra::hull_query{.literals = pra::hull_literals::plain}}};
+    config.targets = {hull("T"), {.name = "U", .kinds = {pc::query_kind::monotone_hull}, .hull = pra::hull_query{.literals = pra::hull_literals::plain}}};
     config.watch_targets = {{.name = "A", .element = pra::element_kind::basic_event}};
     artifact = require_lower(model, config);
     auto const bindings = artifact.projection.target_bindings();
@@ -157,41 +141,33 @@ TEST_CASE("pra_to_pc warns where the literal modes can differ", "[compile][pra_t
         CHECK(count(lower_ok(model, {}), divergence) == 0);
     }
 
-    SECTION("the same model with -B unmarked has no literals and does not warn") {
-        CHECK(count(lower_ok(negated_and_direct(false), config), divergence) == 0);
-    }
+    SECTION("the same model with -B unmarked has no literals and does not warn") { CHECK(count(lower_ok(negated_and_direct(false), config), divergence) == 0); }
 
     SECTION("AB or C not B does not warn") {
         small_model m;
-        const auto both =
-            m.builder.add_gate({.stable_name = "AB"}, pra::gate_kind::and_gate, {{.event = m.a}, {.event = m.b}});
-        const auto other =
-            m.builder.add_gate({.stable_name = "C_NOT_B"}, pra::gate_kind::and_gate, {{.event = m.c}, literal_of(m.b)});
-        const auto top =
-            m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = both}, {.event = other}});
+        const auto both = m.builder.add_gate({.stable_name = "AB"}, pra::gate_kind::and_gate, {{.event = m.a}, {.event = m.b}});
+        const auto other = m.builder.add_gate({.stable_name = "C_NOT_B"}, pra::gate_kind::and_gate, {{.event = m.c}, literal_of(m.b)});
+        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = both}, {.event = other}});
         const auto model = std::move(m).seal_with_target(top);
         CHECK(divergent(lower_ok(model, config)).empty());
     }
 
     SECTION("A not(A not B) warns for B") {
         small_model m;
-        const auto inner =
-            m.builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
-        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
-                                            {{.event = m.a}, {.event = inner, .complement = true}});
+        const auto inner = m.builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
+        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate, {{.event = m.a}, {.event = inner, .complement = true}});
         const auto model = std::move(m).seal_with_target(top);
         CHECK(divergent(lower_ok(model, config)) == std::vector<std::string>{"B"});
     }
 
     SECTION("non-monotone gate contexts warn") {
-        for (const auto kind : {pra::gate_kind::not_gate, pra::gate_kind::nand_gate, pra::gate_kind::nor_gate,
-                                pra::gate_kind::xor_gate, pra::gate_kind::xnor_gate}) {
+        for (const auto kind :
+             {pra::gate_kind::not_gate, pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xor_gate, pra::gate_kind::xnor_gate}) {
             CAPTURE(static_cast<int>(kind));
             CHECK(divergent(lower_ok(with_context(kind), config)) == std::vector<std::string>{"B"});
         }
-        CHECK(
-            divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 1, .high = 1}),
-                               config)) == std::vector<std::string>{"B"});
+        CHECK(divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 1, .high = 1}), config)) ==
+              std::vector<std::string>{"B"});
     }
 
     SECTION("monotone gate contexts do not warn") {
@@ -199,41 +175,28 @@ TEST_CASE("pra_to_pc warns where the literal modes can differ", "[compile][pra_t
             CAPTURE(static_cast<int>(kind));
             CHECK(divergent(lower_ok(with_context(kind), config)).empty());
         }
-        CHECK(
-            divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 1, .high = 2}),
-                               config))
-                .empty());
-        CHECK(
-            divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 0, .high = 2}),
-                               config))
-                .empty());
+        CHECK(divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 1, .high = 2}), config)).empty());
+        CHECK(divergent(lower_ok(with_context(pra::gate_kind::cardinality, pra::cardinality_bounds{.low = 0, .high = 2}), config)).empty());
     }
 
     SECTION("a shared gate first reached monotonically is rescanned below a negation") {
         small_model m;
-        const auto shared =
-            m.builder.add_gate({.stable_name = "SHARED"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.b}});
-        const auto direct = m.builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate,
-                                               {{.event = m.a}, literal_of(m.b), {.event = shared}});
-        const auto negated = m.builder.add_gate({.stable_name = "NEG"}, pra::gate_kind::or_gate,
-                                                {{.event = shared, .complement = true}});
-        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                                            {{.event = negated}, {.event = direct}});
+        const auto shared = m.builder.add_gate({.stable_name = "SHARED"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.b}});
+        const auto direct = m.builder.add_gate({.stable_name = "DIRECT"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b), {.event = shared}});
+        const auto negated = m.builder.add_gate({.stable_name = "NEG"}, pra::gate_kind::or_gate, {{.event = shared, .complement = true}});
+        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = negated}, {.event = direct}});
         const auto model = std::move(m).seal_with_target(top);
         CHECK(divergent(lower_ok(model, config)) == std::vector<std::string>{"B"});
     }
 
     SECTION("once per hull target and event; overridden subtrees do not count") {
         small_model m;
-        const auto right =
-            m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.d}, literal_of(m.b)});
-        const auto again =
-            m.builder.add_gate({.stable_name = "R2"}, pra::gate_kind::and_gate, {{.event = m.e}, literal_of(m.b)});
+        const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.d}, literal_of(m.b)});
+        const auto again = m.builder.add_gate({.stable_name = "R2"}, pra::gate_kind::and_gate, {{.event = m.e}, literal_of(m.b)});
         const auto g_not = m.builder.add_gate({.stable_name = "NOT_B"}, pra::gate_kind::not_gate, {{.event = m.b}});
-        const auto g_nor =
-            m.builder.add_gate({.stable_name = "NOR_B"}, pra::gate_kind::nor_gate, {{.event = m.b}, {.event = m.c}});
-        const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                                            {{.event = right}, {.event = again}, {.event = g_not}, {.event = g_nor}});
+        const auto g_nor = m.builder.add_gate({.stable_name = "NOR_B"}, pra::gate_kind::nor_gate, {{.event = m.b}, {.event = m.c}});
+        const auto top =
+            m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = right}, {.event = again}, {.event = g_not}, {.event = g_nor}});
         (void)m.builder.add_target({.stable_name = "U"}, pra::domain_target_kind::gate, top);
         (void)m.builder.add_target({.stable_name = "W"}, pra::domain_target_kind::gate, top);
         const auto model = std::move(m).seal_with_target(top);
@@ -252,15 +215,13 @@ TEST_CASE("pra_to_pc warns where the literal modes can differ", "[compile][pra_t
         std::vector<pra::operand_spec> direct{{.event = a}};
         std::vector<pra::operand_spec> negated;
         for (int index = 0; index < 40; ++index) {
-            const auto event = builder.add_basic_event({.stable_name = "B" + std::to_string(index)},
-                                                       pra::expression_spec::literal(0.5));
+            const auto event = builder.add_basic_event({.stable_name = "B" + std::to_string(index)}, pra::expression_spec::literal(0.5));
             direct.push_back(literal_of(event));
             negated.push_back({.event = event});
         }
         const auto left = builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, direct);
         const auto right = builder.add_gate({.stable_name = "R"}, pra::gate_kind::nor_gate, negated);
-        const auto top =
-            builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+        const auto top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
         (void)builder.add_target({.stable_name = "T"}, pra::domain_target_kind::gate, top);
         const auto model = seal(std::move(builder));
         const auto diagnostics = lower_ok(model, config);
@@ -273,12 +234,9 @@ TEST_CASE("pra_to_pc warns about complemented initiators under the initiator rul
     small_model m;
     (void)m.builder.add_initiating_event({.stable_name = "IE_A"}, m.a);
     (void)m.builder.add_initiating_event({.stable_name = "IE_C"}, m.c);
-    const auto left =
-        m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {literal_of(m.a), {.event = m.b}});
-    const auto right =
-        m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.a}});
-    const auto top =
-        m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {literal_of(m.a), {.event = m.b}});
+    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.a}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
     (void)m.builder.add_target({.stable_name = "U"}, pra::domain_target_kind::gate, left);
     const auto model = std::move(m).seal_with_target(top);
 
@@ -311,9 +269,8 @@ TEST_CASE("pra_to_pc keeps gate negations on gates", "[compile][pra_to_pc][liter
     const auto g_not = m.builder.add_gate({.stable_name = "NOT_B"}, pra::gate_kind::not_gate, {{.event = m.b}});
     const auto single = m.builder.add_gate({.stable_name = "SINGLE"}, pra::gate_kind::or_gate, {{.event = m.c}});
     const auto g_nand = m.builder.add_gate({.stable_name = "NAND_D"}, pra::gate_kind::nand_gate, {{.event = m.d}});
-    const auto top = m.builder.add_gate(
-        {.stable_name = "TOP"}, pra::gate_kind::and_gate,
-        {{.event = m.a}, {.event = g_not}, {.event = single, .complement = true}, {.event = g_nand}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::and_gate,
+                                        {{.event = m.a}, {.event = g_not}, {.event = single, .complement = true}, {.event = g_nand}});
     const auto model = std::move(m).seal_with_target(top);
 
     for (const auto kind : {pc::query_kind::probability, pc::query_kind::monotone_hull}) {
@@ -357,12 +314,10 @@ TEST_CASE("pra_to_pc takes literal events only from marked operands", "[compile]
     (void)m.builder.add_initiating_event({.stable_name = "IE_C"}, m.c);
     // -B marked; -C and -D unmarked; E only below a complemented gate.
     const auto inner = m.builder.add_gate({.stable_name = "INNER"}, pra::gate_kind::or_gate, {{.event = m.e}});
-    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate,
-                                         {{.event = m.a}, literal_of(m.b), {.event = m.c, .complement = true}});
-    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate,
-                                          {{.event = m.d, .complement = true}, {.event = inner, .complement = true}});
-    const auto top =
-        m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b), {.event = m.c, .complement = true}});
+    const auto right =
+        m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.d, .complement = true}, {.event = inner, .complement = true}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
     (void)m.builder.add_target({.stable_name = "U"}, pra::domain_target_kind::gate, right);
     const auto model = std::move(m).seal_with_target(top);
 
@@ -374,8 +329,7 @@ TEST_CASE("pra_to_pc takes literal events only from marked operands", "[compile]
     INFO(render(lowered.diagnostics()));
     REQUIRE(lowered);
     auto const &projection = lowered.value().projection;
-    CHECK(events_of_span(projection.literal_events(projection.target_bindings()[0])) ==
-          std::vector<pra::basic_event_id>{m.b});
+    CHECK(events_of_span(projection.literal_events(projection.target_bindings()[0])) == std::vector<pra::basic_event_id>{m.b});
     CHECK(projection.literal_events(projection.target_bindings()[1]).empty());
     CHECK(events_of_span(projection.literal_events()) == std::vector<pra::basic_event_id>{m.b});
     // C is an initiator with an unmarked complement only.
@@ -383,15 +337,11 @@ TEST_CASE("pra_to_pc takes literal events only from marked operands", "[compile]
     CHECK(count(lowered.diagnostics(), divergence) == 0);
 }
 
-TEST_CASE("pra_to_pc rejects literal and unmarked complements of one event in a hull target",
-          "[compile][pra_to_pc][literals]") {
+TEST_CASE("pra_to_pc rejects literal and unmarked complements of one event in a hull target", "[compile][pra_to_pc][literals]") {
     small_model m;
-    const auto left =
-        m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
-    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate,
-                                          {{.event = m.c}, {.event = m.b, .complement = true}});
-    const auto top =
-        m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
+    const auto left = m.builder.add_gate({.stable_name = "L"}, pra::gate_kind::and_gate, {{.event = m.a}, literal_of(m.b)});
+    const auto right = m.builder.add_gate({.stable_name = "R"}, pra::gate_kind::and_gate, {{.event = m.c}, {.event = m.b, .complement = true}});
+    const auto top = m.builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = left}, {.event = right}});
     const auto model = std::move(m).seal_with_target(top);
 
     lowering::quantification_config config;

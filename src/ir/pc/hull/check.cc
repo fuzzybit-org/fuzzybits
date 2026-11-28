@@ -106,19 +106,17 @@ struct cone final {
 
     [[nodiscard]] auto size() const noexcept -> std::uint32_t { return static_cast<std::uint32_t>(kinds.size()); }
     [[nodiscard]] auto inputs_of(const std::uint32_t position) const noexcept -> std::span<std::uint32_t const> {
-        return std::span<std::uint32_t const>{inputs}.subspan(input_offsets[position],
-                                                              input_offsets[position + 1] - input_offsets[position]);
+        return std::span<std::uint32_t const>{inputs}.subspan(input_offsets[position], input_offsets[position + 1] - input_offsets[position]);
     }
     [[nodiscard]] auto outputs_of(const std::uint32_t position) const noexcept -> std::span<std::uint32_t const> {
-        return std::span<std::uint32_t const>{outputs}.subspan(output_offsets[position],
-                                                               output_offsets[position + 1] - output_offsets[position]);
+        return std::span<std::uint32_t const>{outputs}.subspan(output_offsets[position], output_offsets[position + 1] - output_offsets[position]);
     }
 };
 
 struct workspace final {
     explicit workspace(cone const &shape)
-        : rails(shape.base), touched_flags(shape.size(), 0), dirty((std::size_t{shape.size()} + 63) / 64, 0),
-          event_words(shape.events.size() * block_words, 0), stamps(shape.size(), 0), mapped(shape.size(), 0) {}
+        : rails(shape.base), touched_flags(shape.size(), 0), dirty((std::size_t{shape.size()} + 63) / 64, 0), event_words(shape.events.size() * block_words, 0),
+          stamps(shape.size(), 0), mapped(shape.size(), 0) {}
 
     std::vector<rail> rails;
     std::vector<std::uint8_t> touched_flags;
@@ -156,8 +154,7 @@ constexpr std::size_t no_word = std::numeric_limits<std::size_t>::max();
     // Input value with the edge's complement applied.
     const auto input = [&](const std::uint32_t literal) -> std::pair<std::uint64_t const *, std::uint64_t const *> {
         auto const &source = rails[literal >> 1];
-        return (literal & 1U) != 0 ? std::pair{source.is_false.data(), source.is_true.data()}
-                                   : std::pair{source.is_true.data(), source.is_false.data()};
+        return (literal & 1U) != 0 ? std::pair{source.is_false.data(), source.is_true.data()} : std::pair{source.is_true.data(), source.is_false.data()};
     };
     switch (shape.kinds[position]) {
     case cone_kind::and_gate:
@@ -185,8 +182,7 @@ constexpr std::size_t no_word = std::numeric_limits<std::size_t>::max();
         for (const auto literal : inputs) {
             const auto [input_true, input_false] = input(literal);
             for (std::size_t word = 0; word < block_words; ++word) {
-                const auto next_true =
-                    (out.is_true[word] & input_false[word]) | (out.is_false[word] & input_true[word]);
+                const auto next_true = (out.is_true[word] & input_false[word]) | (out.is_false[word] & input_true[word]);
                 out.is_false[word] = (out.is_true[word] & input_true[word]) | (out.is_false[word] & input_false[word]);
                 out.is_true[word] = next_true;
             }
@@ -249,25 +245,13 @@ struct lane_view final {
         }
         return ((value.is_false[lane / 64] >> (lane % 64)) & 1U) != 0 ? value_false : value_unknown;
     }
-    [[nodiscard]] auto is_variable(const std::uint32_t position) const noexcept -> bool {
-        return shape.kinds[position] == cone_kind::event;
-    }
-    [[nodiscard]] auto kind(const std::uint32_t position) const noexcept -> residual_kind {
-        return to_residual_kind(shape.kinds[position]);
-    }
-    [[nodiscard]] auto negated(const std::uint32_t position) const noexcept -> std::uint32_t {
-        return shape.negated[position];
-    }
+    [[nodiscard]] auto is_variable(const std::uint32_t position) const noexcept -> bool { return shape.kinds[position] == cone_kind::event; }
+    [[nodiscard]] auto kind(const std::uint32_t position) const noexcept -> residual_kind { return to_residual_kind(shape.kinds[position]); }
+    [[nodiscard]] auto negated(const std::uint32_t position) const noexcept -> std::uint32_t { return shape.negated[position]; }
     [[nodiscard]] auto low(const std::uint32_t position) const noexcept -> std::uint32_t { return shape.low[position]; }
-    [[nodiscard]] auto high(const std::uint32_t position) const noexcept -> std::uint32_t {
-        return shape.high[position];
-    }
-    [[nodiscard]] auto inputs(const std::uint32_t position) const noexcept -> std::span<std::uint32_t const> {
-        return shape.inputs_of(position);
-    }
-    [[nodiscard]] auto source(const std::uint32_t position) const noexcept -> std::uint32_t {
-        return shape.sources[position];
-    }
+    [[nodiscard]] auto high(const std::uint32_t position) const noexcept -> std::uint32_t { return shape.high[position]; }
+    [[nodiscard]] auto inputs(const std::uint32_t position) const noexcept -> std::span<std::uint32_t const> { return shape.inputs_of(position); }
+    [[nodiscard]] auto source(const std::uint32_t position) const noexcept -> std::uint32_t { return shape.sources[position]; }
 };
 
 // A residual under a three-valued evaluation.
@@ -276,32 +260,20 @@ struct residual_view final {
     std::span<std::uint8_t const> values;
 
     [[nodiscard]] auto value(const std::uint32_t node) const noexcept -> std::uint8_t { return values[node]; }
-    [[nodiscard]] auto is_variable(const std::uint32_t node) const noexcept -> bool {
-        return circuit.nodes[node].kind == residual_kind::variable;
-    }
-    [[nodiscard]] auto kind(const std::uint32_t node) const noexcept -> residual_kind {
-        return circuit.nodes[node].kind;
-    }
+    [[nodiscard]] auto is_variable(const std::uint32_t node) const noexcept -> bool { return circuit.nodes[node].kind == residual_kind::variable; }
+    [[nodiscard]] auto kind(const std::uint32_t node) const noexcept -> residual_kind { return circuit.nodes[node].kind; }
     [[nodiscard]] static auto negated(std::uint32_t /*node*/) noexcept -> std::uint32_t { return 0; }
     [[nodiscard]] auto low(const std::uint32_t node) const noexcept -> std::uint32_t { return circuit.nodes[node].low; }
-    [[nodiscard]] auto high(const std::uint32_t node) const noexcept -> std::uint32_t {
-        return circuit.nodes[node].high;
-    }
-    [[nodiscard]] auto inputs(const std::uint32_t node) const noexcept -> std::span<std::uint32_t const> {
-        return circuit.inputs(circuit.nodes[node]);
-    }
-    [[nodiscard]] auto source(const std::uint32_t node) const noexcept -> std::uint32_t {
-        return circuit.nodes[node].source;
-    }
+    [[nodiscard]] auto high(const std::uint32_t node) const noexcept -> std::uint32_t { return circuit.nodes[node].high; }
+    [[nodiscard]] auto inputs(const std::uint32_t node) const noexcept -> std::span<std::uint32_t const> { return circuit.inputs(circuit.nodes[node]); }
+    [[nodiscard]] auto source(const std::uint32_t node) const noexcept -> std::uint32_t { return circuit.nodes[node].source; }
 };
 
 // Residual literal of an undetermined node whose undetermined inputs
 // are already mapped. Determined inputs are folded: they are neutral
 // for AND/OR (an absorbing input would have determined the node),
 // flip XOR parity, and shift cardinality bounds.
-template <typename view_type>
-[[nodiscard]] auto emit(view_type const &view, const std::uint32_t node, workspace &space, residual &out)
-    -> std::uint32_t {
+template <typename view_type> [[nodiscard]] auto emit(view_type const &view, const std::uint32_t node, workspace &space, residual &out) -> std::uint32_t {
     if (view.is_variable(node)) {
         const auto index = static_cast<std::uint32_t>(out.nodes.size());
         out.nodes.push_back(residual_node{
@@ -345,9 +317,7 @@ template <typename view_type>
                 low = shifted_low;
             }
             high = count;
-            kind = low == 1       ? residual_kind::or_gate
-                   : low == count ? residual_kind::and_gate
-                                  : residual_kind::cardinality;
+            kind = low == 1 ? residual_kind::or_gate : low == count ? residual_kind::and_gate : residual_kind::cardinality;
         }
     }
     if (count == 1 && kind != residual_kind::cardinality) {
@@ -368,9 +338,7 @@ template <typename view_type>
 // Residual of the undetermined nodes reachable from `root` through
 // undetermined nodes (iterative depth-first search, post-order), or
 // the root's value when it is determined.
-template <typename view_type>
-[[nodiscard]] auto extract(view_type const &view, const std::uint32_t root, workspace &space, residual &out)
-    -> std::uint8_t {
+template <typename view_type> [[nodiscard]] auto extract(view_type const &view, const std::uint32_t root, workspace &space, residual &out) -> std::uint8_t {
     out.clear();
     const auto top = root >> 1;
     if (const auto value = view.value(top); value != value_unknown) {
@@ -408,8 +376,7 @@ template <typename view_type>
     return value_unknown;
 }
 
-[[nodiscard]] auto decide_lane(cone const &shape, workspace &space, const std::uint32_t lane, check_stats &stats)
-    -> bool {
+[[nodiscard]] auto decide_lane(cone const &shape, workspace &space, const std::uint32_t lane, check_stats &stats) -> bool {
     auto const &options = shape.options;
     (void)extract(lane_view{.shape = shape, .space = space, .lane = lane}, shape.root << 1, space, space.current);
     if (options.pure_literals) {
@@ -429,8 +396,7 @@ template <typename view_type>
                 break;
             }
             evaluate_kleene(space.current, space.values);
-            const auto value = extract(residual_view{.circuit = space.current, .values = space.values},
-                                       space.current.root, space, space.next);
+            const auto value = extract(residual_view{.circuit = space.current, .values = space.values}, space.current.root, space, space.next);
             if (value != value_unknown) {
                 ++stats.reduction;
                 return value == value_true;
@@ -506,8 +472,7 @@ void update(cone const &shape, workspace &space, const std::uint32_t position, r
 }
 
 // Event bits of the block's lanes, block_words words per cone event.
-void load_events(cone const &shape, workspace &space, lane_matrix const &lanes, const std::size_t block,
-                 std::array<std::uint64_t, block_words> const &valid) {
+void load_events(cone const &shape, workspace &space, lane_matrix const &lanes, const std::size_t block, std::array<std::uint64_t, block_words> const &valid) {
     const auto first_word = block * block_words;
     if (lanes.layout == lane_layout::event_major) {
         const auto words = (lanes.lane_count + 63) / 64;
@@ -515,8 +480,7 @@ void load_events(cone const &shape, workspace &space, lane_matrix const &lanes, 
             auto const *row = lanes.words.data() + std::size_t{shape.events[ordinal]} * lanes.stride;
             for (std::size_t word = 0; word < block_words; ++word) {
                 const auto sample = first_word + word < words ? row[first_word + word] : 0;
-                space.event_words[ordinal * block_words + word] =
-                    (shape.complemented[ordinal] != 0 ? ~sample : sample) & valid[word];
+                space.event_words[ordinal * block_words + word] = (shape.complemented[ordinal] != 0 ? ~sample : sample) & valid[word];
             }
         }
         return;
@@ -525,15 +489,12 @@ void load_events(cone const &shape, workspace &space, lane_matrix const &lanes, 
         for (std::size_t word = 0; word < block_words; ++word) {
             const auto first_lane = (first_word + word) * 64;
             for (std::size_t lane = 0; lane < 64; ++lane) {
-                space.rows[lane] = first_lane + lane < lanes.lane_count
-                                       ? lanes.words[(first_lane + lane) * lanes.stride + group.word]
-                                       : 0;
+                space.rows[lane] = first_lane + lane < lanes.lane_count ? lanes.words[(first_lane + lane) * lanes.stride + group.word] : 0;
             }
             transpose64(space.rows);
             for (auto ordinal = group.begin; ordinal < group.end; ++ordinal) {
                 const auto sample = space.rows[shape.events[ordinal] & 63U];
-                space.event_words[std::size_t{ordinal} * block_words + word] =
-                    shape.complemented[ordinal] != 0 ? ~sample : sample;
+                space.event_words[std::size_t{ordinal} * block_words + word] = shape.complemented[ordinal] != 0 ? ~sample : sample;
             }
         }
     }
@@ -542,8 +503,7 @@ void load_events(cone const &shape, workspace &space, lane_matrix const &lanes, 
 // Answers for one block of up to block_lanes lanes, written to
 // out[block * block_words + word]. The workspace starts and ends in
 // the base state.
-void run_block(cone const &shape, workspace &space, lane_matrix const &lanes, const std::size_t block,
-               std::span<std::uint64_t> out, check_stats &stats) {
+void run_block(cone const &shape, workspace &space, lane_matrix const &lanes, const std::size_t block, std::span<std::uint64_t> out, check_stats &stats) {
     std::array<std::uint64_t, block_words> valid{};
     for (std::size_t word = 0; word < block_words; ++word) {
         const auto first_lane = (block * block_words + word) * 64;
@@ -644,8 +604,7 @@ void release(cone const &shape, std::unique_ptr<workspace> space) {
     return probability.literal;
 }
 
-[[nodiscard]] auto rule_for(const event_mode mode, std::uint8_t polarity, const bool zero, const bool pure_literals)
-    -> leaf_rule {
+[[nodiscard]] auto rule_for(const event_mode mode, std::uint8_t polarity, const bool zero, const bool pure_literals) -> leaf_rule {
     constexpr leaf_rule same{.true_mask = all_ones, .false_mask = all_ones};
     constexpr leaf_rule always_false{.false_constant = all_ones};
     constexpr leaf_rule always_true{.true_constant = all_ones};
@@ -687,16 +646,14 @@ void check_stats::merge(check_stats const &other) noexcept {
     residual_variables_max = std::max(residual_variables_max, other.residual_variables_max);
 }
 
-auto checker::make(circuit const &model, const bool_node_id target, std::span<event_mode const> modes,
-                   check_options const &options) -> api::result<checker> {
+auto checker::make(circuit const &model, const bool_node_id target, std::span<event_mode const> modes, check_options const &options) -> api::result<checker> {
     using detail::cone_kind;
     if (!model.valid()) {
         return api::result<checker>::fail(api::make_error("pc.hull.invalid-circuit", "circuit is not sealed"));
     }
     const auto node_count = model.node_count();
     if (!target.valid() || target.raw() >= node_count) {
-        return api::result<checker>::fail(
-            api::make_error("pc.hull.invalid-target", "target does not name a node of the circuit"));
+        return api::result<checker>::fail(api::make_error("pc.hull.invalid-target", "target does not name a node of the circuit"));
     }
     const auto op_codes = model.op_codes();
 
@@ -710,9 +667,8 @@ auto checker::make(circuit const &model, const bool_node_id target, std::span<ev
         }
     }
     if (!modes.empty() && modes.size() != shape->event_nodes.size()) {
-        return api::result<checker>::fail(
-            api::make_error("pc.hull.mode-count", "mode vector has " + std::to_string(modes.size()) + " entries for " +
-                                                      std::to_string(shape->event_nodes.size()) + " basic events"));
+        return api::result<checker>::fail(api::make_error("pc.hull.mode-count", "mode vector has " + std::to_string(modes.size()) + " entries for " +
+                                                                                    std::to_string(shape->event_nodes.size()) + " basic events"));
     }
 
     // Cone in post-order (a topological order), by iterative depth-first
@@ -722,8 +678,7 @@ auto checker::make(circuit const &model, const bool_node_id target, std::span<ev
     const auto key_of = [&](edge_ref const &edge) {
         const auto source = edge.source.raw();
         const auto event = event_of[source];
-        return edge.complement && event != detail::no_event && mode_of(event) == event_mode::split ? node_count + event
-                                                                                                   : source;
+        return edge.complement && event != detail::no_event && mode_of(event) == event_mode::split ? node_count + event : source;
     };
     const auto key_count = std::size_t{node_count} + shape->event_nodes.size();
     constexpr auto unplaced = std::numeric_limits<std::uint32_t>::max();
@@ -925,9 +880,7 @@ auto checker::make(circuit const &model, const bool_node_id target, std::span<ev
     return api::result<checker>::ok(checker(std::move(shape)));
 }
 
-auto checker::event_count() const noexcept -> std::uint32_t {
-    return static_cast<std::uint32_t>(cone_->event_nodes.size());
-}
+auto checker::event_count() const noexcept -> std::uint32_t { return static_cast<std::uint32_t>(cone_->event_nodes.size()); }
 
 auto checker::event_node(const std::uint32_t event) const noexcept -> bool_node_id {
     return event < cone_->event_nodes.size() ? cone_->event_nodes[event] : bool_node_id::invalid();
@@ -941,8 +894,7 @@ auto checker::options() const noexcept -> check_options const & { return cone_->
 
 auto checker::check(std::span<std::uint64_t const> sample) const -> bool {
     std::uint64_t out = 0;
-    check(lane_matrix{.words = sample, .lane_count = 1, .stride = sample.size(), .layout = lane_layout::lane_major},
-          std::span<std::uint64_t>{&out, 1});
+    check(lane_matrix{.words = sample, .lane_count = 1, .stride = sample.size(), .layout = lane_layout::lane_major}, std::span<std::uint64_t>{&out, 1});
     return (out & 1U) != 0;
 }
 

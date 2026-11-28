@@ -37,10 +37,10 @@
 #include "parameter.h"
 
 #include "mc/core/direct_eval.h"
+#include "mc/executor/layer_manager.h"
 #include "mc/logger/log_benchmark.h"
 #include "mc/logger/log_layers.h"
 #include "mc/logger/log_settings.h"
-#include "mc/executor/layer_manager.h"
 #include "mc/scheduler/convergence_controller.h"
 #include "mc/stats/tally_node.h"
 #include "mc/stats/tally_node_map.h"
@@ -215,8 +215,7 @@ std::unordered_set<int> ProbabilityAnalyzer<DirectEval>::ObserveNodes(Pdag *pdag
     std::unordered_set<index_t> will_observe;
     // Depth-first traversal collecting every Node
     pdag->Clear<Pdag::kGateMark>();
-    TraverseNodes(pdag->root(), [&will_observe, &observing, &to_observe, &track_convergence,
-                                 &clear_stats](const std::shared_ptr<Node> &n) {
+    TraverseNodes(pdag->root(), [&will_observe, &observing, &to_observe, &track_convergence, &clear_stats](const std::shared_ptr<Node> &n) {
         // we want to observe this node
         // node from pdag is in to_observe set, i.e. we intend to observe this node
         if (const index_t &idx = n->index(); to_observe.contains(idx)) {
@@ -231,8 +230,7 @@ std::unordered_set<int> ProbabilityAnalyzer<DirectEval>::ObserveNodes(Pdag *pdag
             // its state
             if (observing.contains(idx)) {
                 if (observing[idx].node != n) {
-                    LOG(ERROR) << "pdag node with idx [" << idx
-                               << "] points to a different node than observed tally_node_map, will overwrite";
+                    LOG(ERROR) << "pdag node with idx [" << idx << "] points to a different node than observed tally_node_map, will overwrite";
                 }
                 // clear stats if requested
                 temp.tally_stats = clear_stats ? fuzzybits::mc::stats::tally{} : observing[idx].tally_stats;
@@ -290,8 +288,7 @@ std::vector<std::pair<double, double>> ProbabilityAnalyzer<DirectEval>::Calculat
         return p_time;
     }
 
-    if (const std::double_t total_time = ProbabilityAnalysis::mission_time().value();
-        Analysis::settings().mission_time() != total_time) {
+    if (const std::double_t total_time = ProbabilityAnalysis::mission_time().value(); Analysis::settings().mission_time() != total_time) {
         throw std::invalid_argument("cannot compute CalculateProbabilityOverTime(), mission time mismatch");
     }
 

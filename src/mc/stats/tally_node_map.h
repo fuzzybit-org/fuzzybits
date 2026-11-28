@@ -121,9 +121,7 @@ class TallyNodeMap {
     TallyNode &operator[](int key) { return data_[key]; }
     const TallyNode &at(int key) const { return data_.at(key); }
 
-    template <typename TN> auto insert_or_assign(int key, TN &&value) {
-        return data_.insert_or_assign(key, std::forward<TN>(value));
-    }
+    template <typename TN> auto insert_or_assign(int key, TN &&value) { return data_.insert_or_assign(key, std::forward<TN>(value)); }
 };
 
 } // namespace fuzzybits::mc::stats

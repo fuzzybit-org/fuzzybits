@@ -51,8 +51,7 @@ namespace fuzzybits::mc::stats {
  * Information-gain rate (bits per second).
  * @param seconds  Wall-clock time elapsed.  Values ≤0 return NaN.
  */
-[[nodiscard]] double info_gain_bits_per_second(double alpha_prev, double beta_prev, double alpha_new, double beta_new,
-                                               double seconds);
+[[nodiscard]] double info_gain_bits_per_second(double alpha_prev, double beta_prev, double alpha_new, double beta_new, double seconds);
 
 /**
  * Simple accumulator that tracks the Beta parameters

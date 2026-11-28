@@ -44,21 +44,16 @@ template <class Policy> struct ConvergencePolicy; // undefined
 
 // Wald specialization ---------------------------------------------------------------------------
 template <> struct ConvergencePolicy<wald_policy> {
-    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) {
-        detail::update_wald(t, rel_margin_error, z);
-    }
+    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) { detail::update_wald(t, rel_margin_error, z); }
 };
 
 // Bayesian specialization -----------------------------------------------------------------------
 template <> struct ConvergencePolicy<bayes_policy> {
-    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) {
-        detail::update_bayes(t, rel_margin_error, z);
-    }
+    static void update(mc::stats::tally &t, const double rel_margin_error, const double z) { detail::update_bayes(t, rel_margin_error, z); }
 };
 
 // Convenience wrapper – deduces Policy from template argument -----------------------------------
-template <class Policy>
-inline void update_convergence(mc::stats::tally &t, const double rel_margin_error, const double z) {
+template <class Policy> inline void update_convergence(mc::stats::tally &t, const double rel_margin_error, const double z) {
     ConvergencePolicy<Policy>::update(t, rel_margin_error, z);
 }
 

@@ -124,8 +124,7 @@ TEST_CASE("multi-target block is bounded and keeps the slowest", "[progress][uni
     }();
     REQUIRE(joined.find("+15 more") != std::string::npos);
     // The widest interval (CLASS-16, 0.01 * 17) must be listed and marked as the slowest.
-    const auto slowest_row = std::find_if(
-        block.begin(), block.end(), [](const std::string &line) { return line.find("CLASS-16") != std::string::npos; });
+    const auto slowest_row = std::find_if(block.begin(), block.end(), [](const std::string &line) { return line.find("CLASS-16") != std::string::npos; });
     REQUIRE(slowest_row != block.end());
     REQUIRE(slowest_row->find("\u2190") != std::string::npos);
     // Top row is query order.
@@ -144,8 +143,7 @@ TEST_CASE("block height is constant across snapshots", "[progress][unit]") {
         late.queries.push_back(q);
     }
     for (const std::size_t width : kWidths) {
-        REQUIRE(progress::format_block(early, width, utf8_style()).size() ==
-                progress::format_block(late, width, utf8_style()).size());
+        REQUIRE(progress::format_block(early, width, utf8_style()).size() == progress::format_block(late, width, utf8_style()).size());
     }
 }
 
@@ -186,8 +184,7 @@ TEST_CASE("unknown totals and missing estimates degrade cleanly", "[progress][un
     s.trials_done = 0;
     s.trials_total = 0; // unknown
     s.trials_per_second = std::numeric_limits<double>::quiet_NaN();
-    s.queries.push_back(
-        make_query("TOP", std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()));
+    s.queries.push_back(make_query("TOP", std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()));
 
     const auto block = progress::format_block(s, 80, utf8_style());
     REQUIRE(block.size() == 1);

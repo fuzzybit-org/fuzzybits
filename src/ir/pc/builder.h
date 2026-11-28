@@ -76,13 +76,10 @@ class builder final {
     }
 
     [[nodiscard]] auto add_house_event(const bool state) -> bool_node_id {
-        return add_node(op_code::house_event, std::span<edge_ref const>{}, probability_source_id::invalid(), 0, 0,
-                        state);
+        return add_node(op_code::house_event, std::span<edge_ref const>{}, probability_source_id::invalid(), 0, 0, state);
     }
 
-    [[nodiscard]] auto add_gate(const op_code code, const std::span<edge_ref const> operands) -> bool_node_id {
-        return add_node(code, operands);
-    }
+    [[nodiscard]] auto add_gate(const op_code code, const std::span<edge_ref const> operands) -> bool_node_id { return add_node(code, operands); }
 
     // Span is the canonical operand API: it accepts vectors, arrays, and other
     // contiguous storage without implying ownership. This initializer-list
@@ -97,37 +94,30 @@ class builder final {
         return add_gate(op_code::not_gate, operands);
     }
 
-    [[nodiscard]] auto add_and(const std::span<edge_ref const> operands) -> bool_node_id {
-        return add_gate(op_code::and_gate, operands);
-    }
+    [[nodiscard]] auto add_and(const std::span<edge_ref const> operands) -> bool_node_id { return add_gate(op_code::and_gate, operands); }
 
     [[nodiscard]] auto add_and(const std::initializer_list<edge_ref> operands) -> bool_node_id {
         return add_and(std::span<edge_ref const>{operands.begin(), operands.size()});
     }
 
-    [[nodiscard]] auto add_or(const std::span<edge_ref const> operands) -> bool_node_id {
-        return add_gate(op_code::or_gate, operands);
-    }
+    [[nodiscard]] auto add_or(const std::span<edge_ref const> operands) -> bool_node_id { return add_gate(op_code::or_gate, operands); }
 
     [[nodiscard]] auto add_or(const std::initializer_list<edge_ref> operands) -> bool_node_id {
         return add_or(std::span<edge_ref const>{operands.begin(), operands.size()});
     }
 
-    [[nodiscard]] auto add_cardinality(const std::uint32_t low, const std::uint32_t high,
-                                       const std::span<edge_ref const> operands) -> bool_node_id {
+    [[nodiscard]] auto add_cardinality(const std::uint32_t low, const std::uint32_t high, const std::span<edge_ref const> operands) -> bool_node_id {
         return add_node(op_code::cardinality, operands, probability_source_id::invalid(), low, high);
     }
 
     // Cardinality keeps the same overload shape as generic gates: span is the
     // storage-neutral form, initializer-list is a convenience for short tests and
     // import adapters that construct small operand lists inline.
-    [[nodiscard]] auto add_cardinality(const std::uint32_t low, const std::uint32_t high,
-                                       const std::initializer_list<edge_ref> operands) -> bool_node_id {
+    [[nodiscard]] auto add_cardinality(const std::uint32_t low, const std::uint32_t high, const std::initializer_list<edge_ref> operands) -> bool_node_id {
         return add_cardinality(low, high, std::span<edge_ref const>{operands.begin(), operands.size()});
     }
 
-    [[nodiscard]] auto add_target(const bool_node_id node, const observable_role role = observable_role::primary)
-        -> target_id {
+    [[nodiscard]] auto add_target(const bool_node_id node, const observable_role role = observable_role::primary) -> target_id {
         const auto id = target_id(static_cast<target_id::value_type>(storage_.targets.size()));
         storage_.targets.push_back(target_view{
             .id = id,
@@ -159,16 +149,14 @@ class builder final {
 
   private:
     [[nodiscard]] auto add_probability_source(probability_source source) -> probability_source_id {
-        const auto id =
-            probability_source_id(static_cast<probability_source_id::value_type>(storage_.probability_sources.size()));
+        const auto id = probability_source_id(static_cast<probability_source_id::value_type>(storage_.probability_sources.size()));
         storage_.probability_sources.push_back(std::move(source));
         return id;
     }
 
     [[nodiscard]] auto add_node(const op_code code, std::span<edge_ref const> operands,
-                                const probability_source_id probability = probability_source_id::invalid(),
-                                const std::uint32_t cardinality_low = 0, const std::uint32_t cardinality_high = 0,
-                                const bool constant_value = false) -> bool_node_id {
+                                const probability_source_id probability = probability_source_id::invalid(), const std::uint32_t cardinality_low = 0,
+                                const std::uint32_t cardinality_high = 0, const bool constant_value = false) -> bool_node_id {
         const auto id = bool_node_id(static_cast<bool_node_id::value_type>(storage_.op_codes.size()));
         storage_.op_codes.push_back(code);
         storage_.operand_offsets.push_back(static_cast<std::uint32_t>(storage_.edges.size()));
@@ -185,8 +173,7 @@ class builder final {
         api::diagnostic_list diagnostics;
         const auto node_count = storage_.op_codes.size();
         if (node_count == 0) {
-            diagnostics.push(api::make_error(api::diagnostic_code("pc.empty-circuit"),
-                                             "probabilistic circuit must contain at least one node"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.empty-circuit"), "probabilistic circuit must contain at least one node"));
             return diagnostics;
         }
 
@@ -208,21 +195,17 @@ class builder final {
         const auto offset = storage_.operand_offsets[index];
 
         if (is_leaf(code) && count != 0) {
-            diagnostics.push(api::make_error(api::diagnostic_code("pc.leaf-operands"),
-                                             "leaf node " + std::to_string(index) + " must not have operands"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.leaf-operands"), "leaf node " + std::to_string(index) + " must not have operands"));
         }
         if (code == op_code::basic_event && !valid_probability_source(storage_.probability_source_refs[index])) {
-            diagnostics.push(
-                api::make_error(api::diagnostic_code("pc.invalid-probability-source"),
-                                "basic event " + std::to_string(index) + " references an invalid probability source"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-probability-source"),
+                                             "basic event " + std::to_string(index) + " references an invalid probability source"));
         }
         if (code == op_code::not_gate && count != 1) {
-            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-arity"),
-                                             "not gate " + std::to_string(index) + " must have exactly one operand"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-arity"), "not gate " + std::to_string(index) + " must have exactly one operand"));
         }
         if (is_boolean_gate(code) && code != op_code::not_gate && count == 0) {
-            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-arity"),
-                                             "gate " + std::to_string(index) + " must have at least one operand"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-arity"), "gate " + std::to_string(index) + " must have at least one operand"));
         }
         if (code == op_code::cardinality) {
             validate_cardinality(index, diagnostics);
@@ -231,8 +214,7 @@ class builder final {
         for (std::uint32_t operand_index = 0; operand_index < count; ++operand_index) {
             if (const auto [source, complement] = storage_.edges[offset + operand_index]; !valid_node(source)) {
                 endpoints_valid = false;
-                diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-edge"),
-                                                 "node " + std::to_string(index) + " references an invalid operand"));
+                diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-edge"), "node " + std::to_string(index) + " references an invalid operand"));
             }
         }
     }
@@ -242,31 +224,26 @@ class builder final {
         const auto low = storage_.cardinality_low[index];
         const auto high = storage_.cardinality_high[index];
         if (count == 0) {
-            diagnostics.push(
-                api::make_error(api::diagnostic_code("pc.invalid-cardinality"),
-                                "cardinality node " + std::to_string(index) + " must have at least one operand"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-cardinality"),
+                                             "cardinality node " + std::to_string(index) + " must have at least one operand"));
             return;
         }
         if (low > high || high > count) {
-            diagnostics.push(
-                api::make_error(api::diagnostic_code("pc.invalid-cardinality"),
-                                "cardinality node " + std::to_string(index) + " has bounds outside its fan-in"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-cardinality"),
+                                             "cardinality node " + std::to_string(index) + " has bounds outside its fan-in"));
         }
     }
 
     void validate_probability_sources(api::diagnostic_list &diagnostics) const {
         for (std::uint32_t index = 0; index < storage_.probability_sources.size(); ++index) {
             auto const &source = storage_.probability_sources[index];
-            if (source.kind == probability_source_kind::literal &&
-                (!std::isfinite(source.literal) || source.literal < 0.0 || source.literal > 1.0)) {
-                diagnostics.push(
-                    api::make_error(api::diagnostic_code("pc.invalid-literal-probability"),
-                                    "literal probability source " + std::to_string(index) + " is outside [0, 1]"));
+            if (source.kind == probability_source_kind::literal && (!std::isfinite(source.literal) || source.literal < 0.0 || source.literal > 1.0)) {
+                diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-literal-probability"),
+                                                 "literal probability source " + std::to_string(index) + " is outside [0, 1]"));
             }
             if (source.kind == probability_source_kind::parameter && source.parameter_name.empty()) {
-                diagnostics.push(
-                    api::make_error(api::diagnostic_code("pc.invalid-parameter-probability"),
-                                    "parameter probability source " + std::to_string(index) + " must have a name"));
+                diagnostics.push(api::make_error(api::diagnostic_code("pc.invalid-parameter-probability"),
+                                                 "parameter probability source " + std::to_string(index) + " must have a name"));
             }
         }
     }
@@ -275,8 +252,7 @@ class builder final {
         for (target_view const &target : storage_.targets) {
             if (!valid_node(target.node)) {
                 diagnostics.push(
-                    api::make_error(api::diagnostic_code("pc.invalid-target"),
-                                    "target " + std::to_string(target.id.raw()) + " references an invalid node"));
+                    api::make_error(api::diagnostic_code("pc.invalid-target"), "target " + std::to_string(target.id.raw()) + " references an invalid node"));
             }
         }
     }
@@ -333,21 +309,17 @@ class builder final {
         }
 
         if (ready.size() != node_count) {
-            diagnostics.push(api::make_error(api::diagnostic_code("pc.cycle"),
-                                             "probabilistic circuit contains a Boolean dependency cycle"));
+            diagnostics.push(api::make_error(api::diagnostic_code("pc.cycle"), "probabilistic circuit contains a Boolean dependency cycle"));
         }
     }
 
-    [[nodiscard]] auto valid_node(const bool_node_id node) const noexcept -> bool {
-        return node.valid() && node.raw() < storage_.op_codes.size();
-    }
+    [[nodiscard]] auto valid_node(const bool_node_id node) const noexcept -> bool { return node.valid() && node.raw() < storage_.op_codes.size(); }
 
     [[nodiscard]] auto valid_probability_source(const probability_source_id source) const noexcept -> bool {
         return source.valid() && source.raw() < storage_.probability_sources.size();
     }
 
-    [[nodiscard]] static auto summarize(detail::circuit_storage const &storage, ir::form_profile form_profile)
-        -> shape_summary {
+    [[nodiscard]] static auto summarize(detail::circuit_storage const &storage, ir::form_profile form_profile) -> shape_summary {
         shape_summary shape;
         shape.node_count = storage.op_codes.size();
         shape.edge_count = storage.edges.size();

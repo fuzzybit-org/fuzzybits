@@ -135,10 +135,9 @@ void append_csv_double(std::string &out, double value) {
 
 void append_csv_bool(std::string &out, bool value) { out += value ? "true" : "false"; }
 
-constexpr std::string_view kCsvHeader =
-    "record,event,interrupted,schema,phase,step,trials_done,trials_total,passes_done,passes_total,"
-    "elapsed_seconds,trials_per_second,query_index,query_name,hits,trials,estimate,ci_low,ci_high,"
-    "rel_half_width,target_rel_half_width,converged";
+constexpr std::string_view kCsvHeader = "record,event,interrupted,schema,phase,step,trials_done,trials_total,passes_done,passes_total,"
+                                        "elapsed_seconds,trials_per_second,query_index,query_name,hits,trials,estimate,ci_low,ci_high,"
+                                        "rel_half_width,target_rel_half_width,converged";
 
 constexpr std::size_t kCsvColumns = 22;
 
@@ -284,8 +283,7 @@ log_format log_format_from_path(const std::filesystem::path &path) {
     if (ext == kCsvExt) {
         return log_format::csv;
     }
-    throw std::invalid_argument("unsupported progress log extension '" + ext +
-                                "' (expected .jsonl, .ndjson, or .csv): " + path.string());
+    throw std::invalid_argument("unsupported progress log extension '" + ext + "' (expected .jsonl, .ndjson, or .csv): " + path.string());
 }
 
 const char *log_format_name(const log_format format) noexcept { return format == log_format::csv ? "csv" : "jsonl"; }
@@ -339,8 +337,7 @@ void log_sink::write(const snapshot &s, const bool finish, const bool interrupte
     if (failed_ || (finished_ && !finish)) {
         return;
     }
-    const std::string record = format_ == log_format::csv ? csv_records(s, records_, finish, interrupted)
-                                                          : json_record(s, records_, finish, interrupted);
+    const std::string record = format_ == log_format::csv ? csv_records(s, records_, finish, interrupted) : json_record(s, records_, finish, interrupted);
     ++records_;
     out_.write(record.data(), static_cast<std::streamsize>(record.size()));
     out_.flush();

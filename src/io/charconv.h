@@ -62,9 +62,7 @@ namespace fuzzybits::io {
 #if FUZZYBITS_IO_HAS_FROM_CHARS_FALLBACK
 namespace detail {
 
-[[nodiscard]] constexpr auto lower(const char c) noexcept -> char {
-    return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c;
-}
+[[nodiscard]] constexpr auto lower(const char c) noexcept -> char { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; }
 
 [[nodiscard]] constexpr auto is_digit(const char c) noexcept -> bool { return c >= '0' && c <= '9'; }
 
@@ -159,13 +157,9 @@ inline auto from_chars_fallback(const char *first, const char *last, double &val
 #endif
 
 #if FUZZYBITS_IO_STD_FROM_CHARS_DOUBLE
-inline auto from_chars(const char *first, const char *last, double &value) noexcept -> std::from_chars_result {
-    return std::from_chars(first, last, value);
-}
+inline auto from_chars(const char *first, const char *last, double &value) noexcept -> std::from_chars_result { return std::from_chars(first, last, value); }
 #else
-inline auto from_chars(const char *first, const char *last, double &value) -> std::from_chars_result {
-    return detail::from_chars_fallback(first, last, value);
-}
+inline auto from_chars(const char *first, const char *last, double &value) -> std::from_chars_result { return detail::from_chars_fallback(first, last, value); }
 #endif
 
 } // namespace fuzzybits::io

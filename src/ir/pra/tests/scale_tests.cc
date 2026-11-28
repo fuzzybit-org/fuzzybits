@@ -36,8 +36,7 @@ using pra::test::topologically_ordered;
         if (next.empty()) {
             (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate, {pra::test::named("B")});
         } else {
-            (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate,
-                                   {pra::test::named(next), pra::test::named("B")});
+            (void)builder.add_gate({.stable_name = name}, pra::gate_kind::or_gate, {pra::test::named(next), pra::test::named("B")});
         }
     }
     (void)builder.add_basic_event({.stable_name = "B"}, pra::expression_spec::literal(0.5));
@@ -51,9 +50,8 @@ TEST_CASE("PRA builder seals a 1e5-gate DAG of depth >= 200 without recursion", 
     constexpr std::uint32_t layers = 250;
     constexpr std::uint32_t width = 400;
     constexpr std::uint32_t events = 2000;
-    constexpr std::array kinds{pra::gate_kind::or_gate,   pra::gate_kind::and_gate,  pra::gate_kind::cardinality,
-                               pra::gate_kind::xor_gate,  pra::gate_kind::nand_gate, pra::gate_kind::nor_gate,
-                               pra::gate_kind::xnor_gate, pra::gate_kind::not_gate};
+    constexpr std::array kinds{pra::gate_kind::or_gate,   pra::gate_kind::and_gate, pra::gate_kind::cardinality, pra::gate_kind::xor_gate,
+                               pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate,   pra::gate_kind::not_gate};
 
     const auto start = std::chrono::steady_clock::now();
     pra::builder builder;
@@ -94,8 +92,7 @@ TEST_CASE("PRA builder seals a 1e5-gate DAG of depth >= 200 without recursion", 
         }
     }
     for (std::uint32_t event = 0; event < events; ++event) {
-        (void)builder.add_basic_event({.stable_name = "B" + std::to_string(event)},
-                                      pra::expression_spec::literal(1e-3));
+        (void)builder.add_basic_event({.stable_name = "B" + std::to_string(event)}, pra::expression_spec::literal(1e-3));
     }
     builder.add_fault_tree_top(tree, top);
     const auto target = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, tree);

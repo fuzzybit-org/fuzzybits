@@ -337,8 +337,7 @@ TEST_P(RiskAnalysisTest, XorABC) {
     }
 
     if (settings.prime_implicants()) {
-        std::set<std::set<std::string>> pi = {
-            {"A", "B", "C"}, {"A", "not B", "not C"}, {"not A", "B", "not C"}, {"not A", "not B", "C"}};
+        std::set<std::set<std::string>> pi = {{"A", "B", "C"}, {"A", "not B", "not C"}, {"not A", "B", "not C"}, {"not A", "not B", "C"}};
         EXPECT_EQ(4, products().size());
         EXPECT_EQ(pi, products());
     } else {
@@ -361,8 +360,7 @@ TEST_P(RiskAnalysisTest, IffABC) {
     }
 
     if (settings.prime_implicants()) {
-        std::set<std::set<std::string>> pi = {
-            {"A", "B", "C"}, {"A", "not B", "not C"}, {"not A", "B", "not C"}, {"not A", "not B", "C"}};
+        std::set<std::set<std::string>> pi = {{"A", "B", "C"}, {"A", "not B", "not C"}, {"not A", "B", "not C"}, {"not A", "not B", "C"}};
         EXPECT_EQ(4, products().size());
         EXPECT_EQ(pi, products());
     } else {
@@ -407,8 +405,7 @@ TEST_P(RiskAnalysisTest, CardinalityABC) {
     }
 
     if (settings.prime_implicants()) {
-        std::set<std::set<std::string>> pi = {{"B", "not A"}, {"C", "not B"}, {"A", "not C"},
-                                              {"C", "not A"}, {"A", "not B"}, {"B", "not C"}};
+        std::set<std::set<std::string>> pi = {{"B", "not A"}, {"C", "not B"}, {"A", "not C"}, {"C", "not A"}, {"A", "not B"}, {"B", "not C"}};
         EXPECT_EQ(6, products().size());
         EXPECT_EQ(pi, products());
     } else {

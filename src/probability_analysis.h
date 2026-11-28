@@ -54,10 +54,8 @@ struct Sil {
     /// The last boundary is explicit 1.
     /// The range is half open: (lower-bound, upper-bound].
     /// @{
-    std::array<std::pair<const double, double>, 6> pfd_fractions{
-        {{1e-5, 0}, {1e-4, 0}, {1e-3, 0}, {1e-2, 0}, {1e-1, 0}, {1, 0}}};
-    std::array<std::pair<const double, double>, 6> pfh_fractions{
-        {{1e-9, 0}, {1e-8, 0}, {1e-7, 0}, {1e-6, 0}, {1e-5, 0}, {1, 0}}};
+    std::array<std::pair<const double, double>, 6> pfd_fractions{{{1e-5, 0}, {1e-4, 0}, {1e-3, 0}, {1e-2, 0}, {1e-1, 0}, {1, 0}}};
+    std::array<std::pair<const double, double>, 6> pfh_fractions{{{1e-9, 0}, {1e-8, 0}, {1e-7, 0}, {1e-6, 0}, {1e-5, 0}, {1, 0}}};
     /// @}
 };
 
@@ -249,9 +247,7 @@ template <class Calculator> class ProbabilityAnalyzer : public ProbabilityAnalyz
   public:
     using ProbabilityAnalyzerBase::ProbabilityAnalyzerBase;
 
-    double CalculateTotalProbability(const Pdag::IndexMap<double> &p_vars) final {
-        return calc_.Calculate(ProbabilityAnalyzerBase::products(), p_vars);
-    }
+    double CalculateTotalProbability(const Pdag::IndexMap<double> &p_vars) final { return calc_.Calculate(ProbabilityAnalyzerBase::products(), p_vars); }
 
   private:
     Calculator calc_; ///< Provider of the calculation logic.
@@ -333,8 +329,7 @@ template <> class ProbabilityAnalyzer<DirectEval> : public ProbabilityAnalyzerBa
     ///
     /// @copydetails ProbabilityAnalysis::ProbabilityAnalysis
     template <class Algorithm>
-    ProbabilityAnalyzer(const FaultTreeAnalyzer<Algorithm> *fta, mef::MissionTime *mission_time)
-        : ProbabilityAnalyzerBase(fta, mission_time) {
+    ProbabilityAnalyzer(const FaultTreeAnalyzer<Algorithm> *fta, mef::MissionTime *mission_time) : ProbabilityAnalyzerBase(fta, mission_time) {
         LOG(DEBUG2) << "Using PDAG from a different FaultTreeAnalyzer<Algorithm> for ProbabilityAnalyzer";
     }
 
@@ -372,21 +367,16 @@ template <> class ProbabilityAnalyzer<DirectEval> : public ProbabilityAnalyzerBa
     void SanitizeWatchState();
 
   public:
-    void observe(const std::unordered_set<index_t> &node_indices, const bool track_convergence = false,
-                 const bool clear_stats = false) {
-        const auto will_observe =
-            ObserveNodes(this->graph(), this->monitored_, node_indices, track_convergence, clear_stats);
-        LOG(DEBUG3) << "Observing new nodes for " << (track_convergence ? "convergence" : "tallies")
-                    << " :: " << will_observe.size();
+    void observe(const std::unordered_set<index_t> &node_indices, const bool track_convergence = false, const bool clear_stats = false) {
+        const auto will_observe = ObserveNodes(this->graph(), this->monitored_, node_indices, track_convergence, clear_stats);
+        LOG(DEBUG3) << "Observing new nodes for " << (track_convergence ? "convergence" : "tallies") << " :: " << will_observe.size();
     }
 
-    void observe(const std::vector<index_t> &node_indices, const bool track_convergence = false,
-                 const bool clear_stats = false) {
+    void observe(const std::vector<index_t> &node_indices, const bool track_convergence = false, const bool clear_stats = false) {
         observe(std::unordered_set<index_t>{node_indices.begin(), node_indices.end()}, track_convergence, clear_stats);
     }
 
-    void observe(const std::set<index_t> &node_indices, const bool track_convergence = false,
-                 const bool clear_stats = false) {
+    void observe(const std::set<index_t> &node_indices, const bool track_convergence = false, const bool clear_stats = false) {
         observe(std::unordered_set<index_t>{node_indices.begin(), node_indices.end()}, track_convergence, clear_stats);
     }
 

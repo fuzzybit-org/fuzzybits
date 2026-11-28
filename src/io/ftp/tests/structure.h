@@ -10,14 +10,12 @@
 
 namespace ftp_test {
 
-[[nodiscard]] inline auto literal_value(fuzzybits::ir::pra::model const &model,
-                                        const fuzzybits::ir::pra::basic_event_id event) -> double {
+[[nodiscard]] inline auto literal_value(fuzzybits::ir::pra::model const &model, const fuzzybits::ir::pra::basic_event_id event) -> double {
     return model.expressions()[model.basic_events()[event.raw()].expression.raw()].value;
 }
 
 // Exact Boolean probability of a gate by enumerating every basic event (tests only).
-[[nodiscard]] inline auto brute_force_probability(fuzzybits::ir::pra::model const &model,
-                                                  const fuzzybits::ir::pra::domain_ref target) -> double {
+[[nodiscard]] inline auto brute_force_probability(fuzzybits::ir::pra::model const &model, const fuzzybits::ir::pra::domain_ref target) -> double {
     namespace pra = fuzzybits::ir::pra;
     const auto events = model.basic_events().size();
     std::vector<double> probability(events);
@@ -41,8 +39,7 @@ namespace ftp_test {
             const auto operands = model.operands(gate);
             for (auto const &operand : operands) {
                 const auto child = operand.event;
-                const bool value = child.kind() == pra::element_kind::gate ? gateValue[child.raw()] != 0
-                                                                           : eventValue[child.raw()] != 0;
+                const bool value = child.kind() == pra::element_kind::gate ? gateValue[child.raw()] != 0 : eventValue[child.raw()] != 0;
                 trueCount += value != operand.complement ? 1 : 0;
             }
             auto const &row = model.gates()[gate.raw()];
@@ -62,8 +59,7 @@ namespace ftp_test {
             }
             gateValue[gate.raw()] = value ? 1 : 0;
         }
-        const bool observed =
-            target.kind() == pra::element_kind::gate ? gateValue[target.raw()] != 0 : eventValue[target.raw()] != 0;
+        const bool observed = target.kind() == pra::element_kind::gate ? gateValue[target.raw()] != 0 : eventValue[target.raw()] != 0;
         total += observed ? weight : 0.0;
     }
     return total;

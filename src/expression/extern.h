@@ -56,8 +56,7 @@ class ExternLibrary : public Element, public Usage {
     ///
     /// @throws ValidityError  The library path is invalid.
     /// @throws DLError  The library cannot be found.
-    ExternLibrary(std::string name, std::string lib_path, const boost::filesystem::path &reference_dir, bool system,
-                  bool decorate);
+    ExternLibrary(std::string name, std::string lib_path, const boost::filesystem::path &reference_dir, bool system, bool decorate);
 
     /// @tparam F  The C free function type.
     ///
@@ -66,13 +65,11 @@ class ExternLibrary : public Element, public Usage {
     /// @returns The function pointer resolved from the symbol.
     ///
     /// @throws DLError  The symbol is not in the library.
-    template <typename F>
-    std::enable_if_t<std::is_function_v<F>, std::add_pointer_t<F>> get(const std::string &symbol) const {
+    template <typename F> std::enable_if_t<std::is_function_v<F>, std::add_pointer_t<F>> get(const std::string &symbol) const {
         try {
             return lib_handle_.get<F>(symbol);
         } catch (const boost::system::system_error &err) {
-            SCRAM_THROW(DLError(err.what()))
-                << errinfo_value(symbol) << boost::errinfo_nested_exception(boost::current_exception());
+            SCRAM_THROW(DLError(err.what())) << errinfo_value(symbol) << boost::errinfo_nested_exception(boost::current_exception());
         }
     }
 
@@ -147,8 +144,7 @@ template <typename R, typename... Args> class ExternFunction : public ExternFunc
 ///
 /// @tparam R  Numeric return type.
 /// @tparam Args  Numeric argument types.
-template <typename R, typename... Args>
-class ExternExpression : public ExpressionFormula<ExternExpression<R, Args...>> {
+template <typename R, typename... Args> class ExternExpression : public ExpressionFormula<ExternExpression<R, Args...>> {
   public:
     /// @param[in] extern_function  The library function.
     /// @param[in] args  The argument expression for the function.
@@ -161,9 +157,7 @@ class ExternExpression : public ExpressionFormula<ExternExpression<R, Args...>> 
     }
 
     /// Computes the extern function with the given evaluator for arguments.
-    template <typename F> double Compute(F &&eval) {
-        return Marshal(std::forward<F>(eval), std::make_index_sequence<sizeof...(Args)>());
-    }
+    template <typename F> double Compute(F &&eval) { return Marshal(std::forward<F>(eval), std::make_index_sequence<sizeof...(Args)>()); }
 
   private:
     /// Evaluates the argument expressions and marshals the result to function.
@@ -177,15 +171,12 @@ class ExternExpression : public ExpressionFormula<ExternExpression<R, Args...>> 
     /// @returns The result of the function call.
     ///
     /// @pre The number of arguments is exactly the same at runtime.
-    template <typename F, std::size_t... Is> double Marshal(F &&eval, std::index_sequence<Is...>) {
-        return extern_function_(eval(Expression::args()[Is])...);
-    }
+    template <typename F, std::size_t... Is> double Marshal(F &&eval, std::index_sequence<Is...>) { return extern_function_(eval(Expression::args()[Is])...); }
 
     const ExternFunction<R, Args...> &extern_function_; ///< The source function.
 };
 
-template <typename R, typename... Args>
-std::unique_ptr<Expression> ExternFunction<R, Args...>::apply(std::vector<Expression *> args) const {
+template <typename R, typename... Args> std::unique_ptr<Expression> ExternFunction<R, Args...>::apply(std::vector<Expression *> args) const {
     return std::make_unique<ExternExpression<R, Args...>>(this, std::move(args));
 }
 

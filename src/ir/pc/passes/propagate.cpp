@@ -111,9 +111,7 @@ class operand_scratch final {
         return pairs;
     }
 
-    [[nodiscard]] auto bytes() const noexcept -> std::size_t {
-        return detail::bytes_of(stamp_) + detail::bytes_of(first_) + detail::bytes_of(second_);
-    }
+    [[nodiscard]] auto bytes() const noexcept -> std::size_t { return detail::bytes_of(stamp_) + detail::bytes_of(first_) + detail::bytes_of(second_); }
 
   private:
     std::vector<std::uint32_t> stamp_;
@@ -131,8 +129,8 @@ struct simplified final {
 
 // AND (conjunction) or OR over non-constant `edges` plus `absorbing`
 // constant operands (FALSE for AND, TRUE for OR).
-[[nodiscard]] auto reduce_junction(operand_scratch &scratch, std::vector<edge_ref> &edges, const bool conjunction,
-                                   const std::uint32_t absorbing) -> std::optional<bool> {
+[[nodiscard]] auto reduce_junction(operand_scratch &scratch, std::vector<edge_ref> &edges, const bool conjunction, const std::uint32_t absorbing)
+    -> std::optional<bool> {
     const bool absorbed = !conjunction;
     if (absorbing > 0 || scratch.dedupe(edges)) {
         return absorbed;
@@ -151,8 +149,8 @@ struct simplified final {
 }
 
 // Cardinality [low, high] over `edges` plus `trues` TRUE operands.
-[[nodiscard]] auto reduce_cardinality(operand_scratch &scratch, std::vector<edge_ref> &edges, std::uint32_t trues,
-                                      const std::uint32_t low, const std::uint32_t high) -> simplified {
+[[nodiscard]] auto reduce_cardinality(operand_scratch &scratch, std::vector<edge_ref> &edges, std::uint32_t trues, const std::uint32_t low,
+                                      const std::uint32_t high) -> simplified {
     trues += scratch.remove_complement_pairs(edges);
     if (high < trues) {
         return simplified{.constant = false};
@@ -173,12 +171,10 @@ struct simplified final {
         return simplified{.constant = reduce_junction(scratch, edges, false, 0), .code = op_code::or_gate};
     }
     if (shifted_high == 0) {
-        return simplified{.constant = negated(reduce_junction(scratch, edges, false, 0), true),
-                          .code = op_code::nor_gate};
+        return simplified{.constant = negated(reduce_junction(scratch, edges, false, 0), true), .code = op_code::nor_gate};
     }
     if (shifted_low == 0 && shifted_high + 1 == count) {
-        return simplified{.constant = negated(reduce_junction(scratch, edges, true, 0), true),
-                          .code = op_code::nand_gate};
+        return simplified{.constant = negated(reduce_junction(scratch, edges, true, 0), true), .code = op_code::nand_gate};
     }
     return simplified{.code = op_code::cardinality, .low = shifted_low, .high = shifted_high};
 }
@@ -186,20 +182,16 @@ struct simplified final {
 // Edges with source >= atoms are atoms (see propagate_constants). Parity
 // never moves onto an atom or an atom event: negating either edge
 // would read the other variable.
-[[nodiscard]] auto reduce(operand_scratch &scratch, const op_code code, std::vector<edge_ref> &edges,
-                          const std::uint32_t trues, const std::uint32_t falses, const std::uint32_t low,
-                          const std::uint32_t high, const std::uint32_t atoms, detail::split_context const &split,
+[[nodiscard]] auto reduce(operand_scratch &scratch, const op_code code, std::vector<edge_ref> &edges, const std::uint32_t trues, const std::uint32_t falses,
+                          const std::uint32_t low, const std::uint32_t high, const std::uint32_t atoms, detail::split_context const &split,
                           const bool split_gate) -> simplified {
     switch (code) {
     case op_code::and_gate:
     case op_code::nand_gate:
-        return simplified{.constant =
-                              negated(reduce_junction(scratch, edges, true, falses), code == op_code::nand_gate),
-                          .code = code};
+        return simplified{.constant = negated(reduce_junction(scratch, edges, true, falses), code == op_code::nand_gate), .code = code};
     case op_code::or_gate:
     case op_code::nor_gate:
-        return simplified{.constant = negated(reduce_junction(scratch, edges, false, trues), code == op_code::nor_gate),
-                          .code = code};
+        return simplified{.constant = negated(reduce_junction(scratch, edges, false, trues), code == op_code::nor_gate), .code = code};
     case op_code::not_gate:
         return simplified{.constant = edges.empty() ? std::optional<bool>(trues == 0) : std::nullopt, .code = code};
     case op_code::xor_gate:
@@ -220,9 +212,8 @@ struct simplified final {
         if (!parity) {
             return simplified{.code = code};
         }
-        const auto negatable = std::ranges::find_if(edges, [&](edge_ref const &edge) {
-            return edge.source.raw() < atoms && !(split_gate && split.member(edge.source.raw()));
-        });
+        const auto negatable =
+            std::ranges::find_if(edges, [&](edge_ref const &edge) { return edge.source.raw() < atoms && !(split_gate && split.member(edge.source.raw())); });
         if (negatable == edges.end()) {
             return simplified{.code = code == op_code::xor_gate ? op_code::xnor_gate : op_code::xor_gate};
         }
@@ -238,16 +229,14 @@ struct simplified final {
 
 // Whether an atom and its event both occur: the x / not x rules would
 // apply under Boolean semantics.
-[[nodiscard]] auto skips_pair(std::vector<edge_ref> const &edges, const std::uint32_t atoms,
-                              std::vector<std::uint32_t> &present, const std::uint32_t generation) -> bool {
+[[nodiscard]] auto skips_pair(std::vector<edge_ref> const &edges, const std::uint32_t atoms, std::vector<std::uint32_t> &present,
+                              const std::uint32_t generation) -> bool {
     for (auto const &edge : edges) {
         if (edge.source.raw() < atoms) {
             present[edge.source.raw()] = generation;
         }
     }
-    return std::ranges::any_of(edges, [&](edge_ref const &edge) {
-        return edge.source.raw() >= atoms && present[edge.source.raw() - atoms] == generation;
-    });
+    return std::ranges::any_of(edges, [&](edge_ref const &edge) { return edge.source.raw() >= atoms && present[edge.source.raw() - atoms] == generation; });
 }
 
 } // namespace
@@ -335,10 +324,7 @@ auto propagate_constants(circuit const &input, pass_options const &options) -> t
         definition_low[node] = result.low;
         definition_high[node] = result.high;
         for (auto const &edge : edges) {
-            definitions.push_back(
-                edge.source.raw() < atoms
-                    ? edge
-                    : edge_ref{.source = bool_node_id(edge.source.raw() - atoms), .complement = true});
+            definitions.push_back(edge.source.raw() < atoms ? edge : edge_ref{.source = bool_node_id(edge.source.raw() - atoms), .complement = true});
         }
         map[node] = detail::reference(bool_node_id(node));
     }
@@ -375,17 +361,14 @@ auto propagate_constants(circuit const &input, pass_options const &options) -> t
         edges.clear();
         for (std::uint32_t index = 0; index < definition_count[node]; ++index) {
             auto const &operand = definitions[definition_offset[node] + index];
-            edges.push_back(
-                edge_ref{.source = map[operand.source.raw()].edge.source, .complement = operand.complement});
+            edges.push_back(edge_ref{.source = map[operand.source.raw()].edge.source, .complement = operand.complement});
         }
         image.edge.source = emitter.gate(definition_code[node], edges, definition_low[node], definition_high[node]);
     }
 
-    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(edges) + scratch.bytes() + split->bytes() +
-                           detail::bytes_of(present) + detail::bytes_of(definitions) +
-                           detail::bytes_of(definition_offset) + detail::bytes_of(definition_count) +
-                           detail::bytes_of(definition_code) + detail::bytes_of(definition_low) +
-                           detail::bytes_of(definition_high) + detail::bytes_of(live);
+    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(edges) + scratch.bytes() + split->bytes() + detail::bytes_of(present) +
+                           detail::bytes_of(definitions) + detail::bytes_of(definition_offset) + detail::bytes_of(definition_count) +
+                           detail::bytes_of(definition_code) + detail::bytes_of(definition_low) + detail::bytes_of(definition_high) + detail::bytes_of(live);
     return std::move(emitter).finish(std::move(report));
 }
 

@@ -70,9 +70,7 @@ class Glm : public ExpressionFormula<Glm> {
 
     /// Computes the value for GLM expression.
     /// @{
-    template <typename T> double Compute(T &&eval) {
-        return Compute(eval(&gamma_), eval(&lambda_), eval(&mu_), eval(&time_));
-    }
+    template <typename T> double Compute(T &&eval) { return Compute(eval(&gamma_), eval(&lambda_), eval(&mu_), eval(&time_)); }
     double Compute(double gamma, double lambda, double mu, double time);
     /// @}
 
@@ -99,9 +97,7 @@ class Weibull : public ExpressionFormula<Weibull> {
 
     /// Calculates Weibull expression.
     /// @{
-    template <typename T> double Compute(T &&eval) {
-        return Compute(eval(&alpha_), eval(&beta_), eval(&t0_), eval(&time_));
-    }
+    template <typename T> double Compute(T &&eval) { return Compute(eval(&alpha_), eval(&beta_), eval(&t0_), eval(&time_)); }
     double Compute(double alpha, double beta, double t0, double time);
     /// @}
 
@@ -140,9 +136,8 @@ class PeriodicTest : public Expression {
     /// @param[in] available_at_test  Indicator of component availability at test.
     /// @param[in] sigma  The probability of failure detection upon test.
     /// @param[in] omega  The probability of failure at restart after repair/test.
-    PeriodicTest(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau, Expression *theta,
-                 Expression *gamma, Expression *test_duration, Expression *available_at_test, Expression *sigma,
-                 Expression *omega, Expression *time);
+    PeriodicTest(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau, Expression *theta, Expression *gamma, Expression *test_duration,
+                 Expression *available_at_test, Expression *sigma, Expression *omega, Expression *time);
 
     void Validate() const override { flavor_->Validate(); }
     double value() override { return flavor_->value(); }
@@ -166,8 +161,7 @@ class PeriodicTest : public Expression {
     class InstantRepair : public Flavor {
       public:
         /// The same semantics as for 4 argument periodic-test.
-        InstantRepair(Expression *lambda, Expression *tau, Expression *theta, Expression *time)
-            : lambda_(*lambda), tau_(*tau), theta_(*theta), time_(*time) {}
+        InstantRepair(Expression *lambda, Expression *tau, Expression *theta, Expression *time) : lambda_(*lambda), tau_(*tau), theta_(*theta), time_(*time) {}
 
         void Validate() const override;
         double value() override;
@@ -208,11 +202,10 @@ class PeriodicTest : public Expression {
     class Complete : public InstantTest {
       public:
         /// The parameters have the same semantics as 11 argument periodic-test.
-        Complete(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau, Expression *theta,
-                 Expression *gamma, Expression *test_duration, Expression *available_at_test, Expression *sigma,
-                 Expression *omega, Expression *time)
-            : InstantTest(lambda, mu, tau, theta, time), lambda_test_(*lambda_test), gamma_(*gamma),
-              test_duration_(*test_duration), available_at_test_(*available_at_test), sigma_(*sigma), omega_(*omega) {}
+        Complete(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau, Expression *theta, Expression *gamma, Expression *test_duration,
+                 Expression *available_at_test, Expression *sigma, Expression *omega, Expression *time)
+            : InstantTest(lambda, mu, tau, theta, time), lambda_test_(*lambda_test), gamma_(*gamma), test_duration_(*test_duration),
+              available_at_test_(*available_at_test), sigma_(*sigma), omega_(*omega) {}
 
         void Validate() const override;
         double value() override;
@@ -220,8 +213,8 @@ class PeriodicTest : public Expression {
 
       private:
         /// Computes the expression value.
-        double Compute(double lambda, double lambda_test, double mu, double tau, double theta, double gamma,
-                       double test_duration, bool available_at_test, double sigma, double omega, double time);
+        double Compute(double lambda, double lambda_test, double mu, double tau, double theta, double gamma, double test_duration, bool available_at_test,
+                       double sigma, double omega, double time);
 
         Expression &lambda_test_;       ///< The failure rate while under test.
         Expression &gamma_;             ///< The failure probability due to or at test start.

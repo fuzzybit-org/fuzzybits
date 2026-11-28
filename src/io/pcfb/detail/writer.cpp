@@ -87,45 +87,37 @@ template <typename id_type> [[nodiscard]] auto idText(const id_type id) -> std::
     return ::pcfb::OpCode::BITWISE_NO_OP;
 }
 
-void checkProbability(ir::pc::circuit const &model, write_options const &options, const std::uint32_t node,
-                      api::diagnostic_list &diagnostics) {
+void checkProbability(ir::pc::circuit const &model, write_options const &options, const std::uint32_t node, api::diagnostic_list &diagnostics) {
     const auto source = model.probability_source_refs()[node];
     if (!source.valid() || source.raw() >= model.probability_sources().size()) {
         diagnostics.push(
-            api::make_error("io.pcfb.invalid-probability-source",
-                            "basic event " + nodeLabel(options, node) + " references an invalid probability source"));
+            api::make_error("io.pcfb.invalid-probability-source", "basic event " + nodeLabel(options, node) + " references an invalid probability source"));
         return;
     }
     switch (auto const &probability = model.probability_sources()[source.raw()]; probability.kind) {
     case ir::pc::probability_source_kind::literal:
         if (!std::isfinite(probability.literal) || probability.literal < 0.0 || probability.literal > 1.0) {
             diagnostics.push(
-                api::make_error("io.pcfb.invalid-probability", "basic event " + nodeLabel(options, node) +
-                                                                   " has a literal probability outside [0, 1]"));
+                api::make_error("io.pcfb.invalid-probability", "basic event " + nodeLabel(options, node) + " has a literal probability outside [0, 1]"));
         }
         break;
     case ir::pc::probability_source_kind::parameter:
-        diagnostics.push(api::make_error("io.pcfb.parameter-probability",
-                                         "basic event " + nodeLabel(options, node) + " has parameter probability '" +
-                                             probability.parameter_name +
-                                             "'; pcfb SAMPLE requires a literal probability"));
+        diagnostics.push(api::make_error("io.pcfb.parameter-probability", "basic event " + nodeLabel(options, node) + " has parameter probability '" +
+                                                                              probability.parameter_name + "'; pcfb SAMPLE requires a literal probability"));
         break;
     case ir::pc::probability_source_kind::unsupported:
         diagnostics.push(
-            api::make_error("io.pcfb.unsupported-probability",
-                            "basic event " + nodeLabel(options, node) + " has an unsupported probability source" +
-                                (probability.diagnostic.empty() ? std::string{} : ": " + probability.diagnostic)));
+            api::make_error("io.pcfb.unsupported-probability", "basic event " + nodeLabel(options, node) + " has an unsupported probability source" +
+                                                                   (probability.diagnostic.empty() ? std::string{} : ": " + probability.diagnostic)));
         break;
     }
 }
 
-void checkNode(ir::pc::circuit const &model, write_options const &options, const std::uint32_t node,
-               api::diagnostic_list &diagnostics) {
+void checkNode(ir::pc::circuit const &model, write_options const &options, const std::uint32_t node, api::diagnostic_list &diagnostics) {
     const auto code = model.op_codes()[node];
     const auto count = model.operand_counts()[node];
     if (ir::pc::is_leaf(code) && count != 0) {
-        diagnostics.push(
-            api::make_error("io.pcfb.invalid-arity", "leaf " + nodeLabel(options, node) + " has operands"));
+        diagnostics.push(api::make_error("io.pcfb.invalid-arity", "leaf " + nodeLabel(options, node) + " has operands"));
     }
     switch (code) {
     case ir::pc::op_code::basic_event:
@@ -136,8 +128,7 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
         break;
     case ir::pc::op_code::not_gate:
         if (count != 1) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-arity", "not gate " + nodeLabel(options, node) +
-                                                                          " must have exactly one operand"));
+            diagnostics.push(api::make_error("io.pcfb.invalid-arity", "not gate " + nodeLabel(options, node) + " must have exactly one operand"));
         }
         break;
     case ir::pc::op_code::and_gate:
@@ -147,32 +138,27 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
     case ir::pc::op_code::nor_gate:
     case ir::pc::op_code::xnor_gate:
         if (count == 0) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-arity",
-                                             "gate " + nodeLabel(options, node) + " must have at least one operand"));
+            diagnostics.push(api::make_error("io.pcfb.invalid-arity", "gate " + nodeLabel(options, node) + " must have at least one operand"));
         }
         break;
     case ir::pc::op_code::cardinality:
-        if (const auto low = model.cardinality_low()[node], high = model.cardinality_high()[node];
-            count == 0 || low > high || high > count) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-cardinality",
-                                             "cardinality " + nodeLabel(options, node) + " bounds [" +
-                                                 std::to_string(low) + ", " + std::to_string(high) +
-                                                 "] are outside its fan-in " + std::to_string(count)));
+        if (const auto low = model.cardinality_low()[node], high = model.cardinality_high()[node]; count == 0 || low > high || high > count) {
+            diagnostics.push(api::make_error("io.pcfb.invalid-cardinality", "cardinality " + nodeLabel(options, node) + " bounds [" + std::to_string(low) +
+                                                                                ", " + std::to_string(high) + "] are outside its fan-in " +
+                                                                                std::to_string(count)));
         }
         break;
     }
 }
 
-[[nodiscard]] auto validateSerializable(ir::pc::circuit const &model, write_options const &options)
-    -> api::diagnostic_list {
+[[nodiscard]] auto validateSerializable(ir::pc::circuit const &model, write_options const &options) -> api::diagnostic_list {
     api::diagnostic_list diagnostics;
     if (!model.valid()) {
         diagnostics.push(api::make_error("io.pcfb.invalid-ir", "pcfb writer requires a valid PC circuit"));
         return diagnostics;
     }
     if (model.targets().empty()) {
-        diagnostics.push(api::make_error("io.pcfb.no-targets",
-                                         "pcfb core-1.1 requires at least one query; the PC circuit has no targets"));
+        diagnostics.push(api::make_error("io.pcfb.no-targets", "pcfb core-1.1 requires at least one query; the PC circuit has no targets"));
     }
 
     const auto nodeCount = model.node_count();
@@ -181,53 +167,42 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
     }
     for (auto const &target : model.targets()) {
         if (!target.node.valid() || target.node.raw() >= nodeCount) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-target", "target " + std::to_string(target.id.raw()) +
-                                                                           " references an invalid node"));
+            diagnostics.push(api::make_error("io.pcfb.invalid-target", "target " + std::to_string(target.id.raw()) + " references an invalid node"));
         }
     }
 
     for (auto const &[node, name] : options.node_names) {
         if (!node.valid() || node.raw() >= nodeCount) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-name", "node name '" + name + "' refers to node " +
-                                                                         idText(node) +
-                                                                         ", which is not in the circuit"));
+            diagnostics.push(
+                api::make_error("io.pcfb.invalid-name", "node name '" + name + "' refers to node " + idText(node) + ", which is not in the circuit"));
         }
     }
     for (auto const &[target, name] : options.target_names) {
         if (std::ranges::none_of(model.targets(), [&](auto const &view) { return view.id == target; })) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-name", "target name '" + name + "' refers to target " +
-                                                                         idText(target) +
-                                                                         ", which is not in the circuit"));
+            diagnostics.push(
+                api::make_error("io.pcfb.invalid-name", "target name '" + name + "' refers to target " + idText(target) + ", which is not in the circuit"));
         }
     }
-    const auto isTarget = [&](ir::pc::target_id target) {
-        return std::ranges::any_of(model.targets(), [&](auto const &view) { return view.id == target; });
-    };
+    const auto isTarget = [&](ir::pc::target_id target) { return std::ranges::any_of(model.targets(), [&](auto const &view) { return view.id == target; }); };
     for (auto const &[target, kinds] : options.target_kinds) {
         if (!isTarget(target)) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-query-kind", "query kinds are given for target " +
-                                                                               idText(target) +
-                                                                               ", which is not in the circuit"));
+            diagnostics.push(
+                api::make_error("io.pcfb.invalid-query-kind", "query kinds are given for target " + idText(target) + ", which is not in the circuit"));
         } else if (kinds.empty()) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-query-kind",
-                                             "target " + idText(target) + " has an empty list of query kinds"));
-        } else if (std::ranges::any_of(kinds,
-                                       [&](const query_kind kind) { return std::ranges::count(kinds, kind) > 1; })) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-query-kind",
-                                             "target " + idText(target) + " lists a query kind twice"));
+            diagnostics.push(api::make_error("io.pcfb.invalid-query-kind", "target " + idText(target) + " has an empty list of query kinds"));
+        } else if (std::ranges::any_of(kinds, [&](const query_kind kind) { return std::ranges::count(kinds, kind) > 1; })) {
+            diagnostics.push(api::make_error("io.pcfb.invalid-query-kind", "target " + idText(target) + " lists a query kind twice"));
         }
     }
     for (auto const &entry : options.quantification) {
         if (!isTarget(entry.first)) {
             diagnostics.push(api::make_error("io.pcfb.invalid-quantification",
-                                             "quantification metadata is given for target " + idText(entry.first) +
-                                                 ", which is not in the circuit"));
+                                             "quantification metadata is given for target " + idText(entry.first) + ", which is not in the circuit"));
         }
     }
     const auto hasKind = [&](ir::pc::target_id target, query_kind kind) {
         const auto found = options.target_kinds.find(target);
-        return found == options.target_kinds.end() ? kind == options.query
-                                                   : std::ranges::find(found->second, kind) != found->second.end();
+        return found == options.target_kinds.end() ? kind == options.query : std::ranges::find(found->second, kind) != found->second.end();
     };
     for (auto const &group : options.query_groups) {
         const auto label = "query group '" + group.name + "'";
@@ -237,22 +212,17 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
         std::vector<ir::pc::target_id> seen;
         for (auto const &[target, weight] : group.terms) {
             if (!isTarget(target)) {
-                diagnostics.push(
-                    api::make_error("io.pcfb.invalid-query-group",
-                                    label + " names target " + idText(target) + ", which is not in the circuit"));
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group", label + " names target " + idText(target) + ", which is not in the circuit"));
             } else if (!hasKind(target, group.kind)) {
-                diagnostics.push(api::make_error("io.pcfb.invalid-query-group",
-                                                 label + " names target " + idText(target) + ", which has no " +
-                                                     std::string(to_string(group.kind)) + " query"));
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group", label + " names target " + idText(target) + ", which has no " +
+                                                                                    std::string(to_string(group.kind)) + " query"));
             }
             if (std::ranges::find(seen, target) != seen.end()) {
-                diagnostics.push(api::make_error("io.pcfb.invalid-query-group",
-                                                 label + " names target " + idText(target) + " twice"));
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group", label + " names target " + idText(target) + " twice"));
             }
             seen.push_back(target);
             if (!std::isfinite(weight) || weight < 0.0) {
-                diagnostics.push(
-                    api::make_error("io.pcfb.invalid-query-group", label + " has a negative or non-finite weight"));
+                diagnostics.push(api::make_error("io.pcfb.invalid-query-group", label + " has a negative or non-finite weight"));
             }
         }
     }
@@ -263,14 +233,11 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
     api::diagnostic_list diagnostics;
     auto circuit = ::pcfb::io::from_bytes(bytes);
     if (!circuit) {
-        diagnostics.push(
-            api::make_error("io.pcfb.invalid-output", "written pcfb failed verification: " + circuit.error().message));
+        diagnostics.push(api::make_error("io.pcfb.invalid-output", "written pcfb failed verification: " + circuit.error().message));
         return diagnostics;
     }
     for (auto const &diagnostic : ::pcfb::validate(*circuit)) {
-        diagnostics.push(
-            api::make_error("io.pcfb.invalid-output",
-                            "written pcfb failed validation at " + diagnostic.location + ": " + diagnostic.message));
+        diagnostics.push(api::make_error("io.pcfb.invalid-output", "written pcfb failed validation at " + diagnostic.location + ": " + diagnostic.message));
     }
     return diagnostics;
 }
@@ -278,9 +245,8 @@ void checkNode(ir::pc::circuit const &model, write_options const &options, const
 class Emitter final {
   public:
     Emitter(ir::pc::circuit const &model, write_options const &options)
-        : model_(model), options_(options), tensorByNode_(model.node_count(), kNoTensor),
-          eventIdByNode_(model.node_count(), 0), notTensorByNode_(model.node_count(), kNoTensor),
-          positiveEpoch_(model.node_count(), 0) {}
+        : model_(model), options_(options), tensorByNode_(model.node_count(), kNoTensor), eventIdByNode_(model.node_count(), 0),
+          notTensorByNode_(model.node_count(), kNoTensor), positiveEpoch_(model.node_count(), 0) {}
 
     [[nodiscard]] auto run(std::vector<std::uint32_t> const &order) && -> pcfb_write_result {
         assignEventIds();
@@ -298,8 +264,7 @@ class Emitter final {
 
         auto bytes = builder_.finish();
         if (!bytes) {
-            diagnostics_.push(
-                api::make_error("io.pcfb.builder", "pcfb::builder::finish failed: " + bytes.error().message));
+            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder::finish failed: " + bytes.error().message));
             return pcfb_write_result::fail(std::move(diagnostics_));
         }
         if (auto invalid = validateOutput(*bytes); invalid.has_errors()) {
@@ -325,11 +290,9 @@ class Emitter final {
         }
     }
 
-    [[nodiscard]] auto accept(::pcfb::Result<std::uint32_t> const &tensor, const std::uint32_t node)
-        -> std::optional<std::uint32_t> {
+    [[nodiscard]] auto accept(::pcfb::Result<std::uint32_t> const &tensor, const std::uint32_t node) -> std::optional<std::uint32_t> {
         if (!tensor) {
-            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected " + nodeLabel(options_, node) +
-                                                                     ": " + tensor.error().message));
+            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected " + nodeLabel(options_, node) + ": " + tensor.error().message));
             return std::nullopt;
         }
         return *tensor;
@@ -340,14 +303,12 @@ class Emitter final {
             ++tensorCount_;
             return true;
         }
-        diagnostics_.push(api::make_error("io.pcfb.tensor-overflow", "pcfb output for " + nodeLabel(options_, node) +
-                                                                         " exceeds the 32-bit tensor range"));
+        diagnostics_.push(api::make_error("io.pcfb.tensor-overflow", "pcfb output for " + nodeLabel(options_, node) + " exceeds the 32-bit tensor range"));
         return false;
     }
 
-    [[nodiscard]] auto addOp(const std::uint32_t node, const ::pcfb::OpCode opcode,
-                             std::span<std::uint32_t const> inputs, std::span<std::uint32_t const> inverted,
-                             const std::optional<std::uint32_t> k, std::string_view name)
+    [[nodiscard]] auto addOp(const std::uint32_t node, const ::pcfb::OpCode opcode, std::span<std::uint32_t const> inputs,
+                             std::span<std::uint32_t const> inverted, const std::optional<std::uint32_t> k, std::string_view name)
         -> std::optional<std::uint32_t> {
         if (!roomForTensor(node)) {
             return std::nullopt;
@@ -391,8 +352,7 @@ class Emitter final {
         return true;
     }
 
-    [[nodiscard]] auto emitCardinality(const std::uint32_t node, std::string_view name)
-        -> std::optional<std::uint32_t> {
+    [[nodiscard]] auto emitCardinality(const std::uint32_t node, std::string_view name) -> std::optional<std::uint32_t> {
         const auto fanIn = model_.operand_counts()[node];
         const auto low = model_.cardinality_low()[node];
         const auto high = model_.cardinality_high()[node];
@@ -434,16 +394,13 @@ class Emitter final {
             const auto eventId = eventIdByNode_[node];
             const auto probability = model_.probability_sources()[model_.probability_source_refs()[node].raw()].literal;
             const auto sampleName = name.empty() ? "e" + std::to_string(eventId) : std::string(name);
-            tensor =
-                accept(builder_.add_sample(probability, sampleName, eventId, ::pcfb::SampleSource::BASIC_EVENT), node);
+            tensor = accept(builder_.add_sample(probability, sampleName, eventId, ::pcfb::SampleSource::BASIC_EVENT), node);
             break;
         }
         case ir::pc::op_code::constant:
         case ir::pc::op_code::house_event:
-            tensor = addOp(node,
-                           model_.constant_values()[node] != 0 ? ::pcfb::OpCode::BITWISE_ONES
-                                                               : ::pcfb::OpCode::BITWISE_ZEROS,
-                           {}, {}, std::nullopt, name);
+            tensor =
+                addOp(node, model_.constant_values()[node] != 0 ? ::pcfb::OpCode::BITWISE_ONES : ::pcfb::OpCode::BITWISE_ZEROS, {}, {}, std::nullopt, name);
             break;
         case ir::pc::op_code::cardinality:
             tensor = emitCardinality(node, name);
@@ -471,31 +428,24 @@ class Emitter final {
         std::size_t index = 0;
         for (auto const &target : model_.targets()) {
             const auto named = options_.target_names.find(target.id);
-            const auto name = named == options_.target_names.end() || named->second.empty()
-                                  ? "t" + std::to_string(target.id.raw())
-                                  : named->second;
+            const auto name = named == options_.target_names.end() || named->second.empty() ? "t" + std::to_string(target.id.raw()) : named->second;
             const auto kinds = options_.target_kinds.find(target.id);
             const std::vector<query_kind> defaulted{options_.query};
             const auto &list = kinds == options_.target_kinds.end() ? defaulted : kinds->second;
             const auto quantification = options_.quantification.find(target.id);
             for (const auto kind : list) {
                 queryIndex_[{target.id.raw(), static_cast<std::uint8_t>(kind)}] = static_cast<std::uint32_t>(index);
-                if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name);
-                    !added) {
-                    diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected target " +
-                                                                             std::to_string(target.id.raw()) + ": " +
-                                                                             added.error().message));
+                if (auto added = builder_.add_query(tensorByNode_[target.node.raw()], pcfbQueryKind(kind), name); !added) {
+                    diagnostics_.push(
+                        api::make_error("io.pcfb.builder", "pcfb::builder rejected target " + std::to_string(target.id.raw()) + ": " + added.error().message));
                     return false;
                 }
-                if (quantification != options_.quantification.end() &&
-                    !emitQuantification(index, kind, quantification->second)) {
+                if (quantification != options_.quantification.end() && !emitQuantification(index, kind, quantification->second)) {
                     return false;
                 }
                 if (target.role != ir::pc::observable_role::primary) {
                     const auto key = "compile.query." + std::to_string(index) + ".role";
-                    const auto role = target.role == ir::pc::observable_role::watch
-                                          ? std::string_view{"watch"}
-                                          : std::string_view{"projection_anchor"};
+                    const auto role = target.role == ir::pc::observable_role::watch ? std::string_view{"watch"} : std::string_view{"projection_anchor"};
                     if (!setMetadata(key, builder_.set(key, role))) {
                         return false;
                     }
@@ -511,20 +461,17 @@ class Emitter final {
         for (auto const &group : options_.query_groups) {
             terms.clear();
             for (auto const &[target, weight] : group.terms) {
-                terms.push_back(::pcfb::query_term{
-                    .query = queryIndex_.at({target.raw(), static_cast<std::uint8_t>(group.kind)}), .weight = weight});
+                terms.push_back(::pcfb::query_term{.query = queryIndex_.at({target.raw(), static_cast<std::uint8_t>(group.kind)}), .weight = weight});
             }
             if (auto added = builder_.add_query_group(group.name, group.unit, terms); !added) {
-                diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected query group '" +
-                                                                         group.name + "': " + added.error().message));
+                diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected query group '" + group.name + "': " + added.error().message));
                 return false;
             }
         }
         return true;
     }
 
-    [[nodiscard]] auto emitQuantification(const std::size_t index, const query_kind kind,
-                                          target_quantification const &entry) -> bool {
+    [[nodiscard]] auto emitQuantification(const std::size_t index, const query_kind kind, target_quantification const &entry) -> bool {
         const auto prefix = "compile.query." + std::to_string(index) + ".";
         // The kind is Query.kind. The hull reading and the initiator rule are parameters of the hull
         // query; a probability query on the same tensor carries neither.
@@ -534,56 +481,43 @@ class Emitter final {
             ok = setMetadata(prefix + "target", builder_.set(prefix + "target", std::string_view{entry.target}));
         }
         if (ok && hull && !entry.literal_mode.empty()) {
-            ok = setMetadata(prefix + "literal_mode",
-                             builder_.set(prefix + "literal_mode", std::string_view{entry.literal_mode}));
+            ok = setMetadata(prefix + "literal_mode", builder_.set(prefix + "literal_mode", std::string_view{entry.literal_mode}));
         }
         if (ok && hull && entry.max_initiators_per_cutset) {
             ok = setMetadata(prefix + "max_initiators_per_cutset",
-                             builder_.set(prefix + "max_initiators_per_cutset",
-                                          static_cast<std::int64_t>(*entry.max_initiators_per_cutset)));
+                             builder_.set(prefix + "max_initiators_per_cutset", static_cast<std::int64_t>(*entry.max_initiators_per_cutset)));
         }
         if (ok && !entry.initiator.empty()) {
-            ok = setMetadata(prefix + "initiator",
-                             builder_.set(prefix + "initiator", std::string_view{entry.initiator}));
+            ok = setMetadata(prefix + "initiator", builder_.set(prefix + "initiator", std::string_view{entry.initiator}));
         }
         if (ok && entry.initiator_frequency) {
-            ok = setMetadata(prefix + "initiator_frequency",
-                             builder_.set(prefix + "initiator_frequency", *entry.initiator_frequency));
+            ok = setMetadata(prefix + "initiator_frequency", builder_.set(prefix + "initiator_frequency", *entry.initiator_frequency));
         }
         return ok;
     }
 
     [[nodiscard]] auto setMetadata(std::string_view key, ::pcfb::Result<void> const &result) -> bool {
         if (!result) {
-            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected metadata key '" +
-                                                                     std::string(key) +
-                                                                     "': " + result.error().message));
+            diagnostics_.push(api::make_error("io.pcfb.builder", "pcfb::builder rejected metadata key '" + std::string(key) + "': " + result.error().message));
             return false;
         }
         return true;
     }
 
     [[nodiscard]] auto emitMetadata() -> bool {
-        bool ok =
-            setMetadata("general.generator", builder_.set("general.generator", std::string_view{"fuzzybits"})) &&
-            setMetadata("general.generator_version",
-                        builder_.set("general.generator_version", std::string_view{FUZZYBITS_PCFB_GENERATOR_VERSION}));
+        bool ok = setMetadata("general.generator", builder_.set("general.generator", std::string_view{"fuzzybits"})) &&
+                  setMetadata("general.generator_version", builder_.set("general.generator_version", std::string_view{FUZZYBITS_PCFB_GENERATOR_VERSION}));
         if (ok && !options_.model_name.empty()) {
-            ok = setMetadata("general.model_name",
-                             builder_.set("general.model_name", std::string_view{options_.model_name}));
+            ok = setMetadata("general.model_name", builder_.set("general.model_name", std::string_view{options_.model_name}));
         }
         if (ok && !options_.source_format.empty()) {
-            ok = setMetadata("general.source_format",
-                             builder_.set("general.source_format", std::string_view{options_.source_format}));
+            ok = setMetadata("general.source_format", builder_.set("general.source_format", std::string_view{options_.source_format}));
         }
         if (ok && options_.source_sha256) {
-            ok =
-                setMetadata("general.source_sha256",
-                            builder_.set("general.source_sha256", std::span<std::byte const>{*options_.source_sha256}));
+            ok = setMetadata("general.source_sha256", builder_.set("general.source_sha256", std::span<std::byte const>{*options_.source_sha256}));
         }
         if (ok && !options_.compile_options.empty()) {
-            ok = setMetadata("compile.options",
-                             builder_.set("compile.options", std::string_view{options_.compile_options}));
+            ok = setMetadata("compile.options", builder_.set("compile.options", std::string_view{options_.compile_options}));
         }
         if (ok && !complementTensors_.empty()) {
             std::vector<std::byte> packed;
@@ -593,8 +527,7 @@ class Emitter final {
                     packed.push_back(static_cast<std::byte>((tensor >> shift) & 0xFFU));
                 }
             }
-            ok = setMetadata("compile.complement_tensors",
-                             builder_.set("compile.complement_tensors", std::span<std::byte const>{packed}));
+            ok = setMetadata("compile.complement_tensors", builder_.set("compile.complement_tensors", std::span<std::byte const>{packed}));
         }
         return ok;
     }

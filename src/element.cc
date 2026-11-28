@@ -35,8 +35,7 @@ void Element::name(std::string name) {
 
 void Element::AddAttribute(Attribute attr) {
     if (attributes_.insert(std::move(attr)).second == false) {
-        SCRAM_THROW(ValidityError("Duplicate attribute"))
-            << errinfo_element(name_, "element") << errinfo_attribute(attr.name());
+        SCRAM_THROW(ValidityError("Duplicate attribute")) << errinfo_element(name_, "element") << errinfo_attribute(attr.name());
     }
 }
 

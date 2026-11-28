@@ -4,9 +4,7 @@
 #include <cstdio>
 #include <sycl/sycl.hpp>
 using clk = std::chrono::steady_clock;
-static double ms(clk::time_point a, clk::time_point b) {
-    return std::chrono::duration<double, std::milli>(b - a).count();
-}
+static double ms(clk::time_point a, clk::time_point b) { return std::chrono::duration<double, std::milli>(b - a).count(); }
 int main() {
     for (int round = 0; round < 3; ++round) {
         auto t0 = clk::now();

@@ -57,8 +57,7 @@ inline int ParseArguments(int argc, char *argv[], po::variables_map *vm) {
         return 1;
     }
     po::options_description options("All options with positional input files.");
-    options.add(desc).add_options()("input-files", po::value<std::vector<std::string>>(),
-                                    "MEF input files with analysis constructs");
+    options.add(desc).add_options()("input-files", po::value<std::vector<std::string>>(), "MEF input files with analysis constructs");
     po::positional_options_description p;
     p.add("input-files", -1); // All input files are implicit.
     po::store(po::command_line_parser(argc, argv).options(options).positional(p).run(), *vm);

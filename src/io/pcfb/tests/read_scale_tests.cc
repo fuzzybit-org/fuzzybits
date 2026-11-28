@@ -137,8 +137,8 @@ TEST_CASE("pcfb reader reads a 1e5-node circuit in under a second", "[io][pcfb][
         auto read = writer::read(bytes);
         const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         REQUIRE(read);
-        std::cout << "pcfb read scale (" << (shuffled ? "shuffled ids" : "topological ids") << "): nodes "
-                  << read.value().circuit.node_count() << ", file " << bytes.size() << " bytes, " << elapsed << " s\n";
+        std::cout << "pcfb read scale (" << (shuffled ? "shuffled ids" : "topological ids") << "): nodes " << read.value().circuit.node_count() << ", file "
+                  << bytes.size() << " bytes, " << elapsed << " s\n";
         CHECK(read.value().circuit.node_count() >= model.node_count());
         REQUIRE(elapsed < 1.0);
 

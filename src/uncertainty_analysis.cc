@@ -100,8 +100,7 @@ std::vector<std::pair<int, mef::Expression &>> UncertaintyAnalysis::GatherDeviat
     return deviate_expressions;
 }
 
-void UncertaintyAnalysis::SampleExpressions(const std::vector<std::pair<int, mef::Expression &>> &deviate_expressions,
-                                            Pdag::IndexMap<double> *p_vars) {
+void UncertaintyAnalysis::SampleExpressions(const std::vector<std::pair<int, mef::Expression &>> &deviate_expressions, Pdag::IndexMap<double> *p_vars) {
     // Reset distributions.
     for (const auto &expression : deviate_expressions)
         expression.second.Reset();
@@ -125,8 +124,7 @@ void UncertaintyAnalysis::CalculateStatistics(const std::vector<double> &samples
     }
     int num_trials = Analysis::settings().num_trials();
     accumulator_set<double, stats<tag::mean, tag::variance, tag::density, tag::extended_p_square_quantile>> acc(
-        tag::density::num_bins = Analysis::settings().num_bins(), tag::density::cache_size = num_trials,
-        extended_p_square_probabilities = quantiles_);
+        tag::density::num_bins = Analysis::settings().num_bins(), tag::density::cache_size = num_trials, extended_p_square_probabilities = quantiles_);
     for (double sample : samples) {
         acc(sample);
     }

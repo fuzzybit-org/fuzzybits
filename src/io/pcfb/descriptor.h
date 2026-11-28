@@ -116,8 +116,7 @@ using pcfb_write_result = api::result<write_output>;
 [[nodiscard]] auto write(ir::handle const &model, write_options const &options) -> pcfb_write_result;
 
 [[nodiscard]] auto write(ir::handle const &model, std::ostream &output) -> io::write_result;
-[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 // Diagnostic ids of the reader. Errors: no ir::pc circuit is produced.
 namespace diag {

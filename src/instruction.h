@@ -103,8 +103,7 @@ class IfThenElse : public Visitable<IfThenElse> {
     /// @param[in] then_instruction  The required instruction to execute.
     /// @param[in] else_instruction  An optional instruction for the false case.
     IfThenElse(Expression *expression, Instruction *then_instruction, Instruction *else_instruction = nullptr)
-        : expression_(expression), then_instruction_(std::move(then_instruction)),
-          else_instruction_(std::move(else_instruction)) {}
+        : expression_(expression), then_instruction_(std::move(then_instruction)), else_instruction_(std::move(else_instruction)) {}
 
     /// @returns The conditional expression of the ternary instruction.
     Expression *expression() const { return expression_; }
@@ -213,8 +212,6 @@ class NullVisitor : public InstructionVisitor {
     }
 };
 
-template <class T> void Visitable<T>::Accept(InstructionVisitor *visitor) const {
-    visitor->Visit(static_cast<const T *>(this));
-}
+template <class T> void Visitable<T>::Accept(InstructionVisitor *visitor) const { visitor->Visit(static_cast<const T *>(this)); }
 
 } // namespace scram::mef

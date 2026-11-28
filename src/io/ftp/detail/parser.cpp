@@ -28,9 +28,7 @@ namespace {
     return byte <= 0x20 || byte == 0x7F;
 }
 
-[[nodiscard]] constexpr auto isDigit(const char character) noexcept -> bool {
-    return character >= '0' && character <= '9';
-}
+[[nodiscard]] constexpr auto isDigit(const char character) noexcept -> bool { return character >= '0' && character <= '9'; }
 
 constexpr std::string_view kUtf8ByteOrderMark = "\xEF\xBB\xBF";
 
@@ -65,8 +63,7 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
 // that a leading '-' is reserved for complemented references and a lone '+' or '*' is
 // a gate operator.
 [[nodiscard]] auto isName(const std::string_view token) noexcept -> bool {
-    return !token.empty() && token.front() != kFtpComplementToken && token != "+" && token != "*" &&
-           token.find(kFtpCommentToken) == std::string_view::npos;
+    return !token.empty() && token.front() != kFtpComplementToken && token != "+" && token != "*" && token.find(kFtpCommentToken) == std::string_view::npos;
 }
 
 [[nodiscard]] auto isReference(std::string_view token) noexcept -> bool {
@@ -76,13 +73,9 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     return isName(token);
 }
 
-[[nodiscard]] auto isDigits(const std::string_view token) noexcept -> bool {
-    return !token.empty() && std::ranges::all_of(token, isDigit);
-}
+[[nodiscard]] auto isDigits(const std::string_view token) noexcept -> bool { return !token.empty() && std::ranges::all_of(token, isDigit); }
 
-[[nodiscard]] auto isOperator(const std::string_view token) noexcept -> bool {
-    return token == "+" || token == "*" || isDigits(token);
-}
+[[nodiscard]] auto isOperator(const std::string_view token) noexcept -> bool { return token == "+" || token == "*" || isDigits(token); }
 
 [[nodiscard]] constexpr auto isExponentMark(const char character) noexcept -> bool {
     return character == 'E' || character == 'e' || character == 'D' || character == 'd';
@@ -181,14 +174,11 @@ void tokenize(std::string_view line, std::vector<std::string_view> &tokens) {
     return value;
 }
 
-[[nodiscard]] auto isInitiatorFlag(const std::string_view token) noexcept -> bool {
-    return equal_ignoring_case(token, kFtpInitiatorFlag);
-}
+[[nodiscard]] auto isInitiatorFlag(const std::string_view token) noexcept -> bool { return equal_ignoring_case(token, kFtpInitiatorFlag); }
 
 // `value name` outside an IMPORT section; the value cannot be a name.
 [[nodiscard]] auto isStrayRecord(std::vector<std::string_view> const &tokens) noexcept -> bool {
-    return tokens.size() >= 2 && tokens[0].find('.') != std::string_view::npos && isNumber(tokens[0]) &&
-           isName(tokens[1]);
+    return tokens.size() >= 2 && tokens[0].find('.') != std::string_view::npos && isNumber(tokens[0]) && isName(tokens[1]);
 }
 
 [[nodiscard]] auto quoted(const std::string_view name) -> std::string {
@@ -330,16 +320,13 @@ class Parser final {
                 return;
             }
             if (!isGateLine()) {
-                error("io.ftp.invalid-line", where(location) + ": expected 'value name [flags]' in the IMPORT section",
-                      location);
+                error("io.ftp.invalid-line", where(location) + ": expected 'value name [flags]' in the IMPORT section", location);
                 return;
             }
             section_ = Section::none;
         }
         if (isStrayRecord(tokens_)) {
-            error("io.ftp.import-without-header",
-                  where(location) + ": import record for " + quoted(tokens_[1]) +
-                      " outside an IMPORT section is not read",
+            error("io.ftp.import-without-header", where(location) + ": import record for " + quoted(tokens_[1]) + " outside an IMPORT section is not read",
                   location);
             return;
         }
@@ -349,18 +336,14 @@ class Parser final {
         }
         if (openGate_ == kNoGate) {
             error("io.ftp.invalid-line",
-                  where(location) + (isBlank(line.front()) ? ": continuation line without an open gate"
-                                                           : ": expected 'NAME (+|*|k) operands...'"),
-                  location);
+                  where(location) + (isBlank(line.front()) ? ": continuation line without an open gate" : ": expected 'NAME (+|*|k) operands...'"), location);
             return;
         }
         auto &gate = openGate_ == kDiscardedGate ? discarded_ : project_.definitions[openGate_];
         appendOperands(gate, 0, location);
     }
 
-    [[nodiscard]] auto isGateLine() const noexcept -> bool {
-        return tokens_.size() >= 2 && isName(tokens_[0]) && isOperator(tokens_[1]);
-    }
+    [[nodiscard]] auto isGateLine() const noexcept -> bool { return tokens_.size() >= 2 && isName(tokens_[0]) && isOperator(tokens_[1]); }
 
     // Keywords in any case. MAXSIZE is a keyword only outside a tree section, so a gate
     // may still be called MAXSIZE.
@@ -398,8 +381,7 @@ class Parser final {
             ignored += ignored.empty() ? "" : " ";
             ignored += tokens_[index];
         }
-        warning("io.ftp.ignored-tokens",
-                where(location) + ": '" + ignored + "' after " + upper(tokens_[0]) + " is not read", location);
+        warning("io.ftp.ignored-tokens", where(location) + ": '" + ignored + "' after " + upper(tokens_[0]) + " is not read", location);
     }
 
     [[nodiscard]] auto keyword(const Keyword head, const Location location) -> Section {
@@ -415,8 +397,7 @@ class Parser final {
                 if (isName(tokens_[index])) {
                     project_.process.push_back(NamedLocation{.name = tokens_[index], .location = location});
                 } else {
-                    error("io.ftp.invalid-line",
-                          where(location) + ": PROCESS target " + quoted(tokens_[index]) + " is not a name", location);
+                    error("io.ftp.invalid-line", where(location) + ": PROCESS target " + quoted(tokens_[index]) + " is not a name", location);
                 }
             }
             return Section::process;
@@ -440,9 +421,7 @@ class Parser final {
         }
         ignoreTokens(2, location);
         if (project_.limit && *project_.limit != *value) {
-            warning("io.ftp.duplicate-limit",
-                    where(location) + ": LIMIT " + std::string(tokens_[1]) + " replaces LIMIT " +
-                        std::string(project_.limitText),
+            warning("io.ftp.duplicate-limit", where(location) + ": LIMIT " + std::string(tokens_[1]) + " replaces LIMIT " + std::string(project_.limitText),
                     location);
         }
         project_.limit = *value;
@@ -452,19 +431,15 @@ class Parser final {
     // MAXSIZE n: the largest cut-set order a cut-set solver keeps (0: no limit). Recorded
     // as metadata, like LIMIT; nothing in this reader truncates.
     void maxSizeLine(const Location location) {
-        const auto value =
-            tokens_.size() >= 2 && isDigits(tokens_[1]) ? parseThreshold(tokens_[1]) : std::optional<std::uint32_t>{};
+        const auto value = tokens_.size() >= 2 && isDigits(tokens_[1]) ? parseThreshold(tokens_[1]) : std::optional<std::uint32_t>{};
         if (!value) {
-            error("io.ftp.invalid-maxsize", where(location) + ": expected 'MAXSIZE n' with an integer n >= 0",
-                  location);
+            error("io.ftp.invalid-maxsize", where(location) + ": expected 'MAXSIZE n' with an integer n >= 0", location);
             return;
         }
         ignoreTokens(2, location);
         if (project_.maxSize && *project_.maxSize != *value) {
             warning("io.ftp.duplicate-maxsize",
-                    where(location) + ": MAXSIZE " + std::string(tokens_[1]) + " replaces MAXSIZE " +
-                        std::string(project_.maxSizeText),
-                    location);
+                    where(location) + ": MAXSIZE " + std::string(tokens_[1]) + " replaces MAXSIZE " + std::string(project_.maxSizeText), location);
         }
         project_.maxSize = *value;
         project_.maxSizeText = tokens_[1];
@@ -506,9 +481,7 @@ class Parser final {
             definition.threshold = *threshold;
         } else {
             openGate_ = kNoGate;
-            error("io.ftp.invalid-line",
-                  where(location) + ": threshold " + std::string(tokens_[1]) + " of gate " + quoted(tokens_[0]) +
-                      " is out of range",
+            error("io.ftp.invalid-line", where(location) + ": threshold " + std::string(tokens_[1]) + " of gate " + quoted(tokens_[0]) + " is out of range",
                   location);
             return;
         }
@@ -516,10 +489,7 @@ class Parser final {
         appendOperands(definition, 2, location);
 
         if (afterTree_) {
-            error("io.ftp.misplaced-gate",
-                  where(location) + ": gate " + quoted(definition.name) +
-                      " after the tree section of its file is not read",
-                  location);
+            error("io.ftp.misplaced-gate", where(location) + ": gate " + quoted(definition.name) + " after the tree section of its file is not read", location);
             discarded_ = std::move(definition);
             openGate_ = kDiscardedGate;
             return;
@@ -530,8 +500,7 @@ class Parser final {
         const auto index = static_cast<std::uint32_t>(project_.definitions.size());
         if (const auto [found, inserted] = project_.definitionByName.emplace(definition.name, index); !inserted) {
             error("io.ftp.duplicate-gate",
-                  "gate " + quoted(definition.name) + " is defined twice (" +
-                      where(project_.definitions[found->second].location) + ", " + where(location) +
+                  "gate " + quoted(definition.name) + " is defined twice (" + where(project_.definitions[found->second].location) + ", " + where(location) +
                       "); the second definition is not read",
                   location);
             discarded_ = std::move(definition);
@@ -546,10 +515,7 @@ class Parser final {
         for (auto index = first; index < tokens_.size(); ++index) {
             auto token = tokens_[index];
             if (!isReference(token)) {
-                error("io.ftp.invalid-line",
-                      where(location) + ": operand " + quoted(token) + " of gate " + quoted(gate.name) +
-                          " is not a name",
-                      location);
+                error("io.ftp.invalid-line", where(location) + ": operand " + quoted(token) + " of gate " + quoted(gate.name) + " is not a name", location);
                 continue;
             }
             const auto complement = token.front() == kFtpComplementToken;
@@ -561,8 +527,7 @@ class Parser final {
     }
 
     void missingEndtree(const Location start, const std::string &before) {
-        error("io.ftp.missing-endtree",
-              "the tree section starting at " + where(start) + " has no ENDTREE before " + before, start);
+        error("io.ftp.missing-endtree", "the tree section starting at " + where(start) + " has no ENDTREE before " + before, start);
     }
 
     void collectEvents() {
@@ -571,19 +536,16 @@ class Parser final {
         project_.eventByName.reserve(project_.imports.size());
         for (std::uint32_t index = 0; index < project_.imports.size(); ++index) {
             auto const &record = project_.imports[index];
-            if (const auto gate = project_.definitionByName.find(record.name);
-                gate != project_.definitionByName.end()) {
+            if (const auto gate = project_.definitionByName.find(record.name); gate != project_.definitionByName.end()) {
                 if (reported.insert(record.name).second) {
                     error("io.ftp.gate-imported",
-                          quoted(project_.definitions[gate->second].name) + " is both a gate (" +
-                              where(project_.definitions[gate->second].location) + ") and an imported event (" +
-                              where(record.location) + ")",
+                          quoted(project_.definitions[gate->second].name) + " is both a gate (" + where(project_.definitions[gate->second].location) +
+                              ") and an imported event (" + where(record.location) + ")",
                           project_.definitions[gate->second].location);
                 }
                 continue;
             }
-            const auto [found, inserted] =
-                project_.eventByName.emplace(record.name, static_cast<std::uint32_t>(project_.events.size()));
+            const auto [found, inserted] = project_.eventByName.emplace(record.name, static_cast<std::uint32_t>(project_.events.size()));
             if (inserted) {
                 project_.events.push_back(Event{.name = record.name});
             }
@@ -620,16 +582,15 @@ class Parser final {
                 records += " I";
             }
         }
-        auto message = "basic event " + quoted(event.name) + " is imported " + std::to_string(event.records.size()) +
-                       " times" + (differ ? " with different values" : " with the same value") + " (" + records + ")";
+        auto message = "basic event " + quoted(event.name) + " is imported " + std::to_string(event.records.size()) + " times" +
+                       (differ ? " with different values" : " with the same value") + " (" + records + ")";
         if (policy_ == duplicate_import_policy::error) {
-            error("io.ftp.duplicate-import", std::move(message) + "; policy error",
-                  project_.imports[event.records.front()].location);
+            error("io.ftp.duplicate-import", std::move(message) + "; policy error", project_.imports[event.records.front()].location);
             return;
         }
         warning("io.ftp.duplicate-import",
-                std::move(message) + "; policy " + std::string(policyName(policy_)) + " uses " +
-                    where(project_.imports[selected].location) + (event.initiator ? ", initiator tag kept" : ""),
+                std::move(message) + "; policy " + std::string(policyName(policy_)) + " uses " + where(project_.imports[selected].location) +
+                    (event.initiator ? ", initiator tag kept" : ""),
                 project_.imports[event.records.front()].location);
     }
 
@@ -639,20 +600,17 @@ class Parser final {
                 auto const &record = project_.imports[index];
                 if (record.minusOne) {
                     warning("io.ftp.minus-one-value",
-                            where(record.location) + ": value " + std::string(record.valueText) + " of " +
-                                quoted(record.name) + " is read as probability 1",
+                            where(record.location) + ": value " + std::string(record.valueText) + " of " + quoted(record.name) + " is read as probability 1",
                             record.location);
                 }
                 if (!std::isfinite(record.value) || record.value < 0.0 || (record.value > 1.0 && !event.initiator)) {
                     error("io.ftp.invalid-probability",
-                          where(record.location) + ": value " + std::string(record.valueText) + " of " +
-                              quoted(record.name) + " is outside [0, 1]",
+                          where(record.location) + ": value " + std::string(record.valueText) + " of " + quoted(record.name) + " is outside [0, 1]",
                           record.location);
                 }
                 for (const auto flag : record.flags) {
                     warning("io.ftp.unknown-import-flag",
-                            where(record.location) + ": unknown flag " + quoted(flag) + " on the import of " +
-                                quoted(record.name) + " is kept as an attribute",
+                            where(record.location) + ": unknown flag " + quoted(flag) + " on the import of " + quoted(record.name) + " is kept as an attribute",
                             record.location);
                 }
             }
@@ -666,12 +624,11 @@ class Parser final {
         for (auto const &gate : project_.definitions) {
             const auto count = gate.operands.size();
             if (count == 0) {
-                error("io.ftp.invalid-gate",
-                      "gate " + quoted(gate.name) + " at " + where(gate.location) + " has no operands", gate.location);
+                error("io.ftp.invalid-gate", "gate " + quoted(gate.name) + " at " + where(gate.location) + " has no operands", gate.location);
             } else if (gate.kind == DefinitionKind::at_least && (gate.threshold == 0 || gate.threshold > count)) {
                 error("io.ftp.invalid-gate",
-                      "at-least-" + std::to_string(gate.threshold) + " gate " + quoted(gate.name) + " at " +
-                          where(gate.location) + " has " + std::to_string(count) + " operands; k must be in [1, n]",
+                      "at-least-" + std::to_string(gate.threshold) + " gate " + quoted(gate.name) + " at " + where(gate.location) + " has " +
+                          std::to_string(count) + " operands; k must be in [1, n]",
                       gate.location);
             }
         }
@@ -681,13 +638,12 @@ class Parser final {
         NameSet reported;
         for (auto const &gate : project_.definitions) {
             for (auto const &operand : gate.operands) {
-                if (project_.definitionByName.contains(operand.name) || project_.eventByName.contains(operand.name) ||
-                    !reported.insert(operand.name).second) {
+                if (project_.definitionByName.contains(operand.name) || project_.eventByName.contains(operand.name) || !reported.insert(operand.name).second) {
                     continue;
                 }
                 error("io.ftp.undefined-reference",
-                      "gate " + quoted(gate.name) + " at " + where(gate.location) + " references " +
-                          quoted(operand.name) + ", which is neither a gate nor an imported event",
+                      "gate " + quoted(gate.name) + " at " + where(gate.location) + " references " + quoted(operand.name) +
+                          ", which is neither a gate nor an imported event",
                       gate.location);
             }
         }
@@ -739,19 +695,13 @@ class Parser final {
                     continue;
                 }
                 if (const auto gate = project_.definitionByName.find(name); gate != project_.definitionByName.end()) {
-                    project_.targets.push_back(Target{.name = project_.definitions[gate->second].name,
-                                                      .index = gate->second,
-                                                      .gate = true,
-                                                      .location = location});
+                    project_.targets.push_back(
+                        Target{.name = project_.definitions[gate->second].name, .index = gate->second, .gate = true, .location = location});
                 } else if (const auto event = project_.eventByName.find(name); event != project_.eventByName.end()) {
-                    project_.targets.push_back(Target{.name = project_.events[event->second].name,
-                                                      .index = event->second,
-                                                      .gate = false,
-                                                      .location = location});
+                    project_.targets.push_back(
+                        Target{.name = project_.events[event->second].name, .index = event->second, .gate = false, .location = location});
                 } else {
-                    error("io.ftp.undefined-process-target",
-                          where(location) + ": PROCESS target " + quoted(name) +
-                              " is neither a gate nor an imported event",
+                    error("io.ftp.undefined-process-target", where(location) + ": PROCESS target " + quoted(name) + " is neither a gate nor an imported event",
                           location);
                 }
             }
@@ -768,12 +718,10 @@ class Parser final {
         for (std::uint32_t index = 0; index < project_.definitions.size(); ++index) {
             auto const &gate = project_.definitions[index];
             if (!referenced.contains(gate.name)) {
-                project_.targets.push_back(
-                    Target{.name = gate.name, .index = index, .gate = true, .location = gate.location});
+                project_.targets.push_back(Target{.name = gate.name, .index = index, .gate = true, .location = gate.location});
             }
         }
-        warning("io.ftp.missing-process",
-                "no PROCESS targets; the targets are the " + std::to_string(project_.targets.size()) + " root gates");
+        warning("io.ftp.missing-process", "no PROCESS targets; the targets are the " + std::to_string(project_.targets.size()) + " root gates");
     }
 
     ParsedProject &project_;

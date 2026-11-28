@@ -29,9 +29,7 @@ auto read_text(std::filesystem::path const &path) -> std::string {
     return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
 }
 
-auto close(const double left, const double right) -> bool {
-    return std::abs(left - right) <= 1e-12 * std::max(1.0, std::abs(right));
-}
+auto close(const double left, const double right) -> bool { return std::abs(left - right) <= 1e-12 * std::max(1.0, std::abs(right)); }
 
 // The lowering's default for hull targets (#190): directly complemented
 // events are split into an atom and a complement atom.

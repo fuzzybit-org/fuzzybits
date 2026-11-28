@@ -69,9 +69,7 @@ RoleSpecifier GetRole(const std::string_view &s) {
 /// @param[in] parent_role  The role to be inherited.
 ///
 /// @returns The role for the element under consideration.
-RoleSpecifier GetRole(const std::string_view &s, RoleSpecifier parent_role) {
-    return s.empty() ? parent_role : GetRole(s);
-}
+RoleSpecifier GetRole(const std::string_view &s, RoleSpecifier parent_role) { return s.empty() ? parent_role : GetRole(s); }
 
 /// Attaches attributes and a label to the elements of the analysis.
 /// These attributes are not XML attributes
@@ -94,8 +92,8 @@ void AttachLabelAndAttributes(const xml::Element &xml_element, Element *element)
     for (const xml::Element &attribute : attributes->children()) {
         assert(attribute.name() == "attribute");
         try {
-            element->AddAttribute({std::string(attribute.attribute("name")), std::string(attribute.attribute("value")),
-                                   std::string(attribute.attribute("type"))});
+            element->AddAttribute(
+                {std::string(attribute.attribute("name")), std::string(attribute.attribute("value")), std::string(attribute.attribute("type"))});
         } catch (ValidityError &err) {
             err << boost::errinfo_at_line(attribute.line());
             throw;
@@ -104,8 +102,7 @@ void AttachLabelAndAttributes(const xml::Element &xml_element, Element *element)
 }
 
 /// Constructs Element of type T from an XML element.
-template <class T>
-std::enable_if_t<std::is_base_of_v<Element, T>, std::unique_ptr<T>> ConstructElement(const xml::Element &xml_element) {
+template <class T> std::enable_if_t<std::is_base_of_v<Element, T>, std::unique_ptr<T>> ConstructElement(const xml::Element &xml_element) {
     auto element = std::make_unique<T>(std::string(xml_element.attribute("name")));
     AttachLabelAndAttributes(xml_element, element.get());
     return element;
@@ -113,10 +110,9 @@ std::enable_if_t<std::is_base_of_v<Element, T>, std::unique_ptr<T>> ConstructEle
 
 /// Constructs Element of type T with a role from an XML element.
 template <class T>
-std::enable_if_t<std::is_base_of_v<Role, T>, std::unique_ptr<T>>
-ConstructElement(const xml::Element &xml_element, const std::string &base_path, RoleSpecifier base_role) {
-    auto element = std::make_unique<T>(std::string(xml_element.attribute("name")), base_path,
-                                       GetRole(xml_element.attribute("role"), base_role));
+std::enable_if_t<std::is_base_of_v<Role, T>, std::unique_ptr<T>> ConstructElement(const xml::Element &xml_element, const std::string &base_path,
+                                                                                  RoleSpecifier base_role) {
+    auto element = std::make_unique<T>(std::string(xml_element.attribute("name")), base_path, GetRole(xml_element.attribute("role"), base_role));
     AttachLabelAndAttributes(xml_element, element.get());
     return element;
 }
@@ -136,8 +132,7 @@ auto GetNonAttributeElements(const xml::Element &xml_element) {
 template <> std::unique_ptr<Phase> ConstructElement<Phase>(const xml::Element &xml_element) {
     std::unique_ptr<Phase> element;
     try {
-        element = std::make_unique<Phase>(std::string(xml_element.attribute("name")),
-                                          *xml_element.attribute<double>("time-fraction"));
+        element = std::make_unique<Phase>(std::string(xml_element.attribute("name")), *xml_element.attribute<double>("time-fraction"));
     } catch (ValidityError &err) {
         err << boost::errinfo_at_line(xml_element.line());
         throw;
@@ -148,8 +143,7 @@ template <> std::unique_ptr<Phase> ConstructElement<Phase>(const xml::Element &x
 
 } // namespace
 
-Initializer::Initializer(const std::vector<std::string> &xml_files, core::Settings settings, bool allow_extern,
-                         xml::Validator *extra_validator)
+Initializer::Initializer(const std::vector<std::string> &xml_files, core::Settings settings, bool allow_extern, xml::Validator *extra_validator)
     : settings_(std::move(settings)), allow_extern_(allow_extern), extra_validator_(extra_validator) {
     BLOG(WARNING, allow_extern_) << "Enabling external dynamic libraries";
     ProcessInputFiles(xml_files);
@@ -310,8 +304,7 @@ template <class T> void Initializer::Register(std::unique_ptr<T> element, const 
 
 /// Specializations for element registrations.
 /// @{
-template <>
-Gate *Initializer::Register(const xml::Element &gate_node, const std::string &base_path, RoleSpecifier container_role) {
+template <> Gate *Initializer::Register(const xml::Element &gate_node, const std::string &base_path, RoleSpecifier container_role) {
     std::unique_ptr<Gate> ptr = ConstructElement<Gate>(gate_node, base_path, container_role);
     auto *gate = ptr.get();
     Register(std::move(ptr), gate_node);
@@ -320,9 +313,7 @@ Gate *Initializer::Register(const xml::Element &gate_node, const std::string &ba
     return gate;
 }
 
-template <>
-BasicEvent *Initializer::Register(const xml::Element &event_node, const std::string &base_path,
-                                  RoleSpecifier container_role) {
+template <> BasicEvent *Initializer::Register(const xml::Element &event_node, const std::string &base_path, RoleSpecifier container_role) {
     std::unique_ptr<BasicEvent> ptr = ConstructElement<BasicEvent>(event_node, base_path, container_role);
     auto *basic_event = ptr.get();
     Register(std::move(ptr), event_node);
@@ -331,9 +322,7 @@ BasicEvent *Initializer::Register(const xml::Element &event_node, const std::str
     return basic_event;
 }
 
-template <>
-HouseEvent *Initializer::Register(const xml::Element &event_node, const std::string &base_path,
-                                  RoleSpecifier container_role) {
+template <> HouseEvent *Initializer::Register(const xml::Element &event_node, const std::string &base_path, RoleSpecifier container_role) {
     std::unique_ptr<HouseEvent> ptr = ConstructElement<HouseEvent>(event_node, base_path, container_role);
     auto *house_event = ptr.get();
     Register(std::move(ptr), event_node);
@@ -346,9 +335,7 @@ HouseEvent *Initializer::Register(const xml::Element &event_node, const std::str
     return house_event;
 }
 
-template <>
-Parameter *Initializer::Register(const xml::Element &param_node, const std::string &base_path,
-                                 RoleSpecifier container_role) {
+template <> Parameter *Initializer::Register(const xml::Element &param_node, const std::string &base_path, RoleSpecifier container_role) {
     std::unique_ptr<Parameter> ptr = ConstructElement<Parameter>(param_node, base_path, container_role);
     auto *parameter = ptr.get();
     Register(std::move(ptr), param_node);
@@ -365,9 +352,7 @@ Parameter *Initializer::Register(const xml::Element &param_node, const std::stri
     return parameter;
 }
 
-template <>
-CcfGroup *Initializer::Register(const xml::Element &ccf_node, const std::string &base_path,
-                                RoleSpecifier container_role) {
+template <> CcfGroup *Initializer::Register(const xml::Element &ccf_node, const std::string &base_path, RoleSpecifier container_role) {
     auto ptr = [&]() -> std::unique_ptr<CcfGroup> {
         std::string_view model = ccf_node.attribute("model");
         if (model == "beta-factor")
@@ -388,9 +373,7 @@ CcfGroup *Initializer::Register(const xml::Element &ccf_node, const std::string 
     return ccf_group;
 }
 
-template <>
-Sequence *Initializer::Register(const xml::Element &xml_node, const std::string & /*base_path*/,
-                                RoleSpecifier /*container_role*/) {
+template <> Sequence *Initializer::Register(const xml::Element &xml_node, const std::string & /*base_path*/, RoleSpecifier /*container_role*/) {
     std::unique_ptr<Sequence> ptr = ConstructElement<Sequence>(xml_node);
     auto *sequence = ptr.get();
     Register(std::move(ptr), xml_node);
@@ -630,8 +613,7 @@ void Initializer::ProcessTbdElements() {
         const auto &tbd_element = tbd_pair.first;
         const auto &xml_element = tbd_pair.second;
         try {
-            std::visit([this, &xml_element](auto *tbd_construct) { this->Define(xml_element, tbd_construct); },
-                       tbd_element);
+            std::visit([this, &xml_element](auto *tbd_construct) { this->Define(xml_element, tbd_construct); }, tbd_element);
         } catch (ValidityError &err) {
             err << boost::errinfo_file_name(xml_element.filename());
             throw;
@@ -671,15 +653,13 @@ void Initializer::DefineFaultTree(const xml::Element &ft_node) {
     Register(std::move(fault_tree), ft_node);
 }
 
-std::unique_ptr<Component> Initializer::DefineComponent(const xml::Element &component_node,
-                                                        const std::string &base_path, RoleSpecifier container_role) {
+std::unique_ptr<Component> Initializer::DefineComponent(const xml::Element &component_node, const std::string &base_path, RoleSpecifier container_role) {
     std::unique_ptr<Component> component = ConstructElement<Component>(component_node, base_path, container_role);
     RegisterFaultTreeData(component_node, base_path + "." + component->name(), component.get());
     return component;
 }
 
-void Initializer::RegisterFaultTreeData(const xml::Element &ft_node, const std::string &base_path,
-                                        Component *component) {
+void Initializer::RegisterFaultTreeData(const xml::Element &ft_node, const std::string &base_path, Component *component) {
     for (const xml::Element &node : ft_node.children()) {
         if (node.name() == "define-basic-event") {
             component->Add(Register<BasicEvent>(node, base_path, component->role()));
@@ -787,8 +767,7 @@ std::unique_ptr<Formula> Initializer::GetFormula(const xml::Element &formula_nod
     }
 
     try {
-        return std::make_unique<Formula>(formula_type, std::move(arg_set), formula_node.attribute<int>("min"),
-                                         formula_node.attribute<int>("max"));
+        return std::make_unique<Formula>(formula_type, std::move(arg_set), formula_node.attribute<int>("min"), formula_node.attribute<int>("max"));
     } catch (ValidityError &err) {
         err << boost::errinfo_at_line(formula_node.line());
         throw;
@@ -830,8 +809,7 @@ void Initializer::DefineBranchTarget(const xml::Element &target_node, EventTree 
     }
 }
 
-template <class SinglePassRange>
-void Initializer::DefineBranch(const SinglePassRange &xml_nodes, EventTree *event_tree, Branch *branch) {
+template <class SinglePassRange> void Initializer::DefineBranch(const SinglePassRange &xml_nodes, EventTree *event_tree, Branch *branch) {
     assert(!xml_nodes.empty() && "At least the branch target must be defined.");
 
     std::vector<Instruction *> instructions;
@@ -908,11 +886,9 @@ Instruction *Initializer::GetInstruction(const xml::Element &xml_element) {
     if (node_name == "set-house-event") {
         std::string_view name = xml_element.attribute("name");
         if (!model_->house_events().count(name)) {
-            SCRAM_THROW(UndefinedElement())
-                << errinfo_element(std::string(name), "house event") << boost::errinfo_at_line(xml_element.line());
+            SCRAM_THROW(UndefinedElement()) << errinfo_element(std::string(name), "house event") << boost::errinfo_at_line(xml_element.line());
         }
-        return register_instruction(
-            std::make_unique<SetHouseEvent>(std::string(name), *xml_element.child()->attribute<bool>("value")));
+        return register_instruction(std::make_unique<SetHouseEvent>(std::string(name), *xml_element.child()->attribute<bool>("value")));
     }
 
     LOG(ERROR) << "Unknown instruction type.";
@@ -950,8 +926,8 @@ template <class T, int N> struct Initializer::Extractor {
     ///
     /// @pre The XML container has enough arguments.
     template <class... Ts>
-    std::unique_ptr<T> operator()(xml::Element::Range::iterator it, xml::Element::Range::iterator it_end,
-                                  const std::string &base_path, Initializer *init, Ts &&...expressions) {
+    std::unique_ptr<T> operator()(xml::Element::Range::iterator it, xml::Element::Range::iterator it_end, const std::string &base_path, Initializer *init,
+                                  Ts &&...expressions) {
         static_assert(N >= 0);
 
         if constexpr (N == 0) {
@@ -961,8 +937,7 @@ template <class T, int N> struct Initializer::Extractor {
 
         } else {
             assert(it != it_end && "Not enough arguments in the args container.");
-            return Extractor<T, N - 1>()(std::next(it), it_end, base_path, init, std::forward<Ts>(expressions)...,
-                                         init->GetExpression(*it, base_path));
+            return Extractor<T, N - 1>()(std::next(it), it_end, base_path, init, std::forward<Ts>(expressions)..., init->GetExpression(*it, base_path));
         }
     }
 };
@@ -1009,16 +984,12 @@ template <class T> constexpr std::enable_if_t<std::is_base_of_v<Expression, T>, 
 
 } // namespace
 
-template <class T>
-std::unique_ptr<Expression> Initializer::Extract(const xml::Element::Range &args, const std::string &base_path,
-                                                 Initializer *init) {
+template <class T> std::unique_ptr<Expression> Initializer::Extract(const xml::Element::Range &args, const std::string &base_path, Initializer *init) {
     return Extractor<T, num_args<T>()>()(args, base_path, init);
 }
 
 /// Specialization for Extractor of Histogram expressions.
-template <>
-std::unique_ptr<Expression> Initializer::Extract<Histogram>(const xml::Element::Range &args,
-                                                            const std::string &base_path, Initializer *init) {
+template <> std::unique_ptr<Expression> Initializer::Extract<Histogram>(const xml::Element::Range &args, const std::string &base_path, Initializer *init) {
     auto it = args.begin();
     std::vector<Expression *> boundaries = {init->GetExpression(*it, base_path)};
     std::vector<Expression *> weights;
@@ -1035,17 +1006,14 @@ std::unique_ptr<Expression> Initializer::Extract<Histogram>(const xml::Element::
 
 /// Specialization due to overloaded constructors.
 template <>
-std::unique_ptr<Expression> Initializer::Extract<LognormalDeviate>(const xml::Element::Range &args,
-                                                                   const std::string &base_path, Initializer *init) {
+std::unique_ptr<Expression> Initializer::Extract<LognormalDeviate>(const xml::Element::Range &args, const std::string &base_path, Initializer *init) {
     if (args.size() == 3)
         return Extractor<LognormalDeviate, 3>()(args, base_path, init);
     return Extractor<LognormalDeviate, 2>()(args, base_path, init);
 }
 
 /// Specialization due to overloaded constructors and un-fixed number of args.
-template <>
-std::unique_ptr<Expression> Initializer::Extract<PeriodicTest>(const xml::Element::Range &args,
-                                                               const std::string &base_path, Initializer *init) {
+template <> std::unique_ptr<Expression> Initializer::Extract<PeriodicTest>(const xml::Element::Range &args, const std::string &base_path, Initializer *init) {
     switch (args.size()) {
     case 4:
         return Extractor<PeriodicTest, 4>()(args, base_path, init);
@@ -1059,9 +1027,7 @@ std::unique_ptr<Expression> Initializer::Extract<PeriodicTest>(const xml::Elemen
 }
 
 /// Specialization for Switch-Case operation extraction.
-template <>
-std::unique_ptr<Expression> Initializer::Extract<Switch>(const xml::Element::Range &args, const std::string &base_path,
-                                                         Initializer *init) {
+template <> std::unique_ptr<Expression> Initializer::Extract<Switch>(const xml::Element::Range &args, const std::string &base_path, Initializer *init) {
     assert(!args.empty());
     Expression *default_value = nullptr;
     std::vector<Switch::Case> cases;
@@ -1080,54 +1046,53 @@ std::unique_ptr<Expression> Initializer::Extract<Switch>(const xml::Element::Ran
     return std::make_unique<Switch>(std::move(cases), default_value);
 }
 
-const Initializer::ExtractorMap Initializer::kExpressionExtractors_ = {
-    {"exponential", &Extract<Exponential>},
-    {"GLM", &Extract<Glm>},
-    {"Weibull", &Extract<Weibull>},
-    {"periodic-test", &Extract<PeriodicTest>},
-    {"uniform-deviate", &Extract<UniformDeviate>},
-    {"normal-deviate", &Extract<NormalDeviate>},
-    {"lognormal-deviate", &Extract<LognormalDeviate>},
-    {"gamma-deviate", &Extract<GammaDeviate>},
-    {"beta-deviate", &Extract<BetaDeviate>},
-    {"histogram", &Extract<Histogram>},
-    {"neg", &Extract<Neg>},
-    {"add", &Extract<Add>},
-    {"sub", &Extract<Sub>},
-    {"mul", &Extract<Mul>},
-    {"div", &Extract<Div>},
-    {"abs", &Extract<Abs>},
-    {"acos", &Extract<Acos>},
-    {"asin", &Extract<Asin>},
-    {"atan", &Extract<Atan>},
-    {"cos", &Extract<Cos>},
-    {"sin", &Extract<Sin>},
-    {"tan", &Extract<Tan>},
-    {"cosh", &Extract<Cosh>},
-    {"sinh", &Extract<Sinh>},
-    {"tanh", &Extract<Tanh>},
-    {"exp", &Extract<Exp>},
-    {"log", &Extract<Log>},
-    {"log10", &Extract<Log10>},
-    {"mod", &Extract<Mod>},
-    {"pow", &Extract<Pow>},
-    {"sqrt", &Extract<Sqrt>},
-    {"ceil", &Extract<Ceil>},
-    {"floor", &Extract<Floor>},
-    {"min", &Extract<Min>},
-    {"max", &Extract<Max>},
-    {"mean", &Extract<Mean>},
-    {"not", &Extract<Not>},
-    {"and", &Extract<And>},
-    {"or", &Extract<Or>},
-    {"eq", &Extract<Eq>},
-    {"df", &Extract<Df>},
-    {"lt", &Extract<Lt>},
-    {"gt", &Extract<Gt>},
-    {"leq", &Extract<Leq>},
-    {"geq", &Extract<Geq>},
-    {"ite", &Extract<Ite>},
-    {"switch", &Extract<Switch>}};
+const Initializer::ExtractorMap Initializer::kExpressionExtractors_ = {{"exponential", &Extract<Exponential>},
+                                                                       {"GLM", &Extract<Glm>},
+                                                                       {"Weibull", &Extract<Weibull>},
+                                                                       {"periodic-test", &Extract<PeriodicTest>},
+                                                                       {"uniform-deviate", &Extract<UniformDeviate>},
+                                                                       {"normal-deviate", &Extract<NormalDeviate>},
+                                                                       {"lognormal-deviate", &Extract<LognormalDeviate>},
+                                                                       {"gamma-deviate", &Extract<GammaDeviate>},
+                                                                       {"beta-deviate", &Extract<BetaDeviate>},
+                                                                       {"histogram", &Extract<Histogram>},
+                                                                       {"neg", &Extract<Neg>},
+                                                                       {"add", &Extract<Add>},
+                                                                       {"sub", &Extract<Sub>},
+                                                                       {"mul", &Extract<Mul>},
+                                                                       {"div", &Extract<Div>},
+                                                                       {"abs", &Extract<Abs>},
+                                                                       {"acos", &Extract<Acos>},
+                                                                       {"asin", &Extract<Asin>},
+                                                                       {"atan", &Extract<Atan>},
+                                                                       {"cos", &Extract<Cos>},
+                                                                       {"sin", &Extract<Sin>},
+                                                                       {"tan", &Extract<Tan>},
+                                                                       {"cosh", &Extract<Cosh>},
+                                                                       {"sinh", &Extract<Sinh>},
+                                                                       {"tanh", &Extract<Tanh>},
+                                                                       {"exp", &Extract<Exp>},
+                                                                       {"log", &Extract<Log>},
+                                                                       {"log10", &Extract<Log10>},
+                                                                       {"mod", &Extract<Mod>},
+                                                                       {"pow", &Extract<Pow>},
+                                                                       {"sqrt", &Extract<Sqrt>},
+                                                                       {"ceil", &Extract<Ceil>},
+                                                                       {"floor", &Extract<Floor>},
+                                                                       {"min", &Extract<Min>},
+                                                                       {"max", &Extract<Max>},
+                                                                       {"mean", &Extract<Mean>},
+                                                                       {"not", &Extract<Not>},
+                                                                       {"and", &Extract<And>},
+                                                                       {"or", &Extract<Or>},
+                                                                       {"eq", &Extract<Eq>},
+                                                                       {"df", &Extract<Df>},
+                                                                       {"lt", &Extract<Lt>},
+                                                                       {"gt", &Extract<Gt>},
+                                                                       {"leq", &Extract<Leq>},
+                                                                       {"geq", &Extract<Geq>},
+                                                                       {"ite", &Extract<Ite>},
+                                                                       {"switch", &Extract<Switch>}};
 
 Expression *Initializer::GetExpression(const xml::Element &expr_element, const std::string &base_path) {
     std::string_view expr_type = expr_element.name();
@@ -1152,13 +1117,11 @@ Expression *Initializer::GetExpression(const xml::Element &expr_element, const s
         return &ConstantExpression::kPi;
 
     if (expr_type == "test-initiating-event") {
-        return register_expression(
-            std::make_unique<TestInitiatingEvent>(std::string(expr_element.attribute("name")), model_->context()));
+        return register_expression(std::make_unique<TestInitiatingEvent>(std::string(expr_element.attribute("name")), model_->context()));
     }
     if (expr_type == "test-functional-event") {
         return register_expression(std::make_unique<TestFunctionalEvent>(std::string(expr_element.attribute("name")),
-                                                                         std::string(expr_element.attribute("state")),
-                                                                         model_->context()));
+                                                                         std::string(expr_element.attribute("state")), model_->context()));
     }
 
     if (expr_type == "extern-function") {
@@ -1190,8 +1153,7 @@ Expression *Initializer::GetExpression(const xml::Element &expr_element, const s
         return expression;
 
     try {
-        Expression *expression =
-            register_expression(kExpressionExtractors_.at(expr_type)(expr_element.children(), base_path, this));
+        Expression *expression = register_expression(kExpressionExtractors_.at(expr_type)(expr_element.children(), base_path, this));
         // Register for late validation after ensuring no cycles.
         expressions_.emplace_back(expression, expr_element);
         return expression;
@@ -1201,8 +1163,7 @@ Expression *Initializer::GetExpression(const xml::Element &expr_element, const s
     }
 }
 
-Expression *Initializer::GetParameter(const std::string_view &expr_type, const xml::Element &expr_element,
-                                      const std::string &base_path) {
+Expression *Initializer::GetParameter(const std::string_view &expr_type, const xml::Element &expr_element, const std::string &base_path) {
     auto check_units = [&expr_element](const auto &parameter) {
         std::string_view unit = expr_element.attribute("unit");
         const char *param_unit = scram::mef::kUnitsToString[parameter.unit()];
@@ -1233,8 +1194,7 @@ Expression *Initializer::GetParameter(const std::string_view &expr_type, const x
 void Initializer::ProcessCcfMembers(const xml::Element &members_node, CcfGroup *ccf_group) {
     for (const xml::Element &event_node : members_node.children()) {
         assert("basic-event" == event_node.name());
-        auto basic_event = std::make_unique<BasicEvent>(std::string(event_node.attribute("name")),
-                                                        ccf_group->base_path(), ccf_group->role());
+        auto basic_event = std::make_unique<BasicEvent>(std::string(event_node.attribute("name")), ccf_group->base_path(), ccf_group->role());
         try {
             ccf_group->AddMember(basic_event.get());
         } catch (DuplicateElementError &err) {
@@ -1273,8 +1233,8 @@ Gate *Initializer::GetGate(std::string_view entity_reference, const std::string 
 }
 
 template <class P, class T>
-T *Initializer::GetEntity(std::string_view entity_reference, const std::string &base_path,
-                          const TableRange<IdTable<P>> &container, const TableRange<PathTable<T>> &path_container) {
+T *Initializer::GetEntity(std::string_view entity_reference, const std::string &base_path, const TableRange<IdTable<P>> &container,
+                          const TableRange<PathTable<T>> &path_container) {
     assert(!entity_reference.empty());
     if (!base_path.empty()) { // Check the local scope.
         std::string full_path = base_path + ".";
@@ -1286,8 +1246,8 @@ T *Initializer::GetEntity(std::string_view entity_reference, const std::string &
     auto at = [&entity_reference, &base_path](const auto &reference_container) {
         if (auto it = ext::find(reference_container, entity_reference))
             return &*it;
-        SCRAM_THROW(UndefinedElement()) << errinfo_reference(std::string(entity_reference))
-                                        << errinfo_base_path(base_path) << errinfo_element_type(T::kTypeString);
+        SCRAM_THROW(UndefinedElement()) << errinfo_reference(std::string(entity_reference)) << errinfo_base_path(base_path)
+                                        << errinfo_element_type(T::kTypeString);
     };
 
     if (entity_reference.find('.') == std::string_view::npos) // Public entity.
@@ -1297,14 +1257,14 @@ T *Initializer::GetEntity(std::string_view entity_reference, const std::string &
 }
 
 /// Helper macro for Initializer::GetEvent event discovery.
-#define GET_EVENT(gates, basic_events, house_events, path_reference)                                                   \
-    do {                                                                                                               \
-        if (auto it = ext::find(gates, path_reference))                                                                \
-            return &*it;                                                                                               \
-        if (auto it = ext::find(basic_events, path_reference))                                                         \
-            return &*it;                                                                                               \
-        if (auto it = ext::find(house_events, path_reference))                                                         \
-            return &*it;                                                                                               \
+#define GET_EVENT(gates, basic_events, house_events, path_reference)                                                                                           \
+    do {                                                                                                                                                       \
+        if (auto it = ext::find(gates, path_reference))                                                                                                        \
+            return &*it;                                                                                                                                       \
+        if (auto it = ext::find(basic_events, path_reference))                                                                                                 \
+            return &*it;                                                                                                                                       \
+        if (auto it = ext::find(house_events, path_reference))                                                                                                 \
+            return &*it;                                                                                                                                       \
     } while (false)
 
 Formula::ArgEvent Initializer::GetEvent(std::string_view entity_reference, const std::string &base_path) {
@@ -1321,11 +1281,9 @@ Formula::ArgEvent Initializer::GetEvent(std::string_view entity_reference, const
     if (entity_reference.find('.') == std::string_view::npos) { // Public entity.
         GET_EVENT(model_->table<Gate>(), model_->table<BasicEvent>(), model_->table<HouseEvent>(), entity_reference);
     } else { // Direct access.
-        GET_EVENT(TableRange(path_gates_), TableRange(path_basic_events_), TableRange(path_house_events_),
-                  entity_reference);
+        GET_EVENT(TableRange(path_gates_), TableRange(path_basic_events_), TableRange(path_house_events_), entity_reference);
     }
-    SCRAM_THROW(UndefinedElement()) << errinfo_reference(std::string(entity_reference)) << errinfo_base_path(base_path)
-                                    << errinfo_element_type("event");
+    SCRAM_THROW(UndefinedElement()) << errinfo_reference(std::string(entity_reference)) << errinfo_base_path(base_path) << errinfo_element_type("event");
 }
 
 #undef GET_EVENT
@@ -1337,10 +1295,9 @@ void Initializer::DefineExternLibraries(const xml::Element &xml_node) {
     };
     auto library = [&xml_node, &optional_bool] {
         try {
-            return std::make_unique<ExternLibrary>(std::string(xml_node.attribute("name")),
-                                                   std::string(xml_node.attribute("path")),
-                                                   boost::filesystem::path(xml_node.filename()).parent_path(),
-                                                   optional_bool("system"), optional_bool("decorate"));
+            return std::make_unique<ExternLibrary>(std::string(xml_node.attribute("name")), std::string(xml_node.attribute("path")),
+                                                   boost::filesystem::path(xml_node.filename()).parent_path(), optional_bool("system"),
+                                                   optional_bool("decorate"));
         } catch (DLError &err) {
             err << boost::errinfo_file_name(xml_node.filename()) << boost::errinfo_at_line(xml_node.line());
             throw;
@@ -1422,11 +1379,9 @@ template <int N, typename... Ts> void GenerateExternFunctionExtractor(ExternFunc
     static_assert(sizeof...(Ts));
 
     if constexpr (N == 0) {
-        function_map->emplace(
-            Encode<Ts...>(),
-            [](std::string name, const std::string &symbol, const ExternLibrary &library) -> ExternFunctionPtr {
-                return std::make_unique<ExternFunction<Ts...>>(std::move(name), symbol, library);
-            });
+        function_map->emplace(Encode<Ts...>(), [](std::string name, const std::string &symbol, const ExternLibrary &library) -> ExternFunctionPtr {
+            return std::make_unique<ExternFunction<Ts...>>(std::move(name), symbol, library);
+        });
     } else {
         GenerateExternFunctionExtractor<0, Ts...>(function_map);
         GenerateExternFunctionExtractor<N - 1, Ts..., int>(function_map);
@@ -1463,15 +1418,13 @@ void Initializer::DefineExternFunction(const xml::Element &xml_element) {
         /// @todo Optimize extern-function num args violation detection.
         int num_args = std::distance(args.begin(), args.end()) - /*return*/ 1;
         if (num_args > kMaxNumParam) {
-            SCRAM_THROW(ValidityError("The number of function parameters '" + std::to_string(num_args) +
-                                      "' exceeds the number of allowed parameters '" + std::to_string(kMaxNumParam) +
-                                      "'"))
+            SCRAM_THROW(ValidityError("The number of function parameters '" + std::to_string(num_args) + "' exceeds the number of allowed parameters '" +
+                                      std::to_string(kMaxNumParam) + "'"))
                 << boost::errinfo_at_line(xml_element.line());
         }
         int encoding = Encode(args);
         try {
-            return function_extractors.at(encoding)(std::string(xml_element.attribute("name")),
-                                                    std::string(xml_element.attribute("symbol")), library);
+            return function_extractors.at(encoding)(std::string(xml_element.attribute("name")), std::string(xml_element.attribute("symbol")), library);
         } catch (Error &err) {
             err << boost::errinfo_at_line(xml_element.line());
             throw;
@@ -1543,14 +1496,12 @@ void Initializer::CheckFunctionalEventOrder(const Branch &branch) {
         void operator()(Fork *fork) const {
             if (functional_event.order() == fork->functional_event().order()) {
                 assert(&functional_event == &fork->functional_event());
-                SCRAM_THROW(ValidityError("Functional event " + functional_event.name() +
-                                          " is duplicated in event tree fork paths."));
+                SCRAM_THROW(ValidityError("Functional event " + functional_event.name() + " is duplicated in event tree fork paths."));
             }
 
             if (functional_event.order() > fork->functional_event().order())
-                SCRAM_THROW(ValidityError("Functional event " + functional_event.name() +
-                                          " must appear after functional event " + fork->functional_event().name() +
-                                          " in event tree fork paths."));
+                SCRAM_THROW(ValidityError("Functional event " + functional_event.name() + " must appear after functional event " +
+                                          fork->functional_event().name() + " in event tree fork paths."));
         }
 
         const FunctionalEvent &functional_event;
@@ -1573,10 +1524,7 @@ void Initializer::CheckFunctionalEventOrder(const Branch &branch) {
 
 void Initializer::EnsureLinksOnlyInSequences(const Branch &branch) {
     struct Validator : public NullVisitor {
-        void Visit(const Link *link) override {
-            SCRAM_THROW(
-                ValidityError("Link " + link->event_tree().name() + " can only be used in end-state sequences."));
-        }
+        void Visit(const Link *link) override { SCRAM_THROW(ValidityError("Link " + link->event_tree().name() + " can only be used in end-state sequences.")); }
     };
 
     struct {
@@ -1649,9 +1597,7 @@ void Initializer::EnsureHomogeneousEventTree(const Branch &branch) {
 }
 
 void Initializer::EnsureNoSubstitutionConflicts() {
-    auto substitutions = model_->substitutions() | boost::adaptors::filtered([](const auto &substitution) {
-                             return !substitution.declarative();
-                         });
+    auto substitutions = model_->substitutions() | boost::adaptors::filtered([](const auto &substitution) { return !substitution.declarative(); });
     for (const Substitution &origin : substitutions) {
         const auto *target_ptr = std::get_if<BasicEvent *>(&origin.target());
         for (const Substitution &substitution : substitutions) {
@@ -1662,9 +1608,7 @@ void Initializer::EnsureNoSubstitutionConflicts() {
             if (&origin == &substitution)
                 continue;
             auto in_hypothesis = [&substitution](const BasicEvent *source) {
-                return ext::any_of(substitution.hypothesis().args(), [source](const Formula::Arg &arg) {
-                    return std::get<BasicEvent *>(arg.event) == source;
-                });
+                return ext::any_of(substitution.hypothesis().args(), [source](const Formula::Arg &arg) { return std::get<BasicEvent *>(arg.event) == source; });
             };
             if (target_ptr && in_hypothesis(*target_ptr))
                 SCRAM_THROW(ValidityError("Non-declarative substitution target event should "
@@ -1679,12 +1623,9 @@ void Initializer::EnsureNoSubstitutionConflicts() {
 }
 
 void Initializer::EnsureNoCcfSubstitutions() {
-    auto substitutions = model_->substitutions() | boost::adaptors::filtered([](const auto &substitution) {
-                             return !substitution.declarative();
-                         });
+    auto substitutions = model_->substitutions() | boost::adaptors::filtered([](const auto &substitution) { return !substitution.declarative(); });
     auto is_ccf = [](const Substitution &substitution) {
-        if (ext::any_of(substitution.hypothesis().args(),
-                        [](const Formula::Arg &arg) { return std::get<BasicEvent *>(arg.event)->HasCcf(); }))
+        if (ext::any_of(substitution.hypothesis().args(), [](const Formula::Arg &arg) { return std::get<BasicEvent *>(arg.event)->HasCcf(); }))
             return true;
 
         const auto *target_ptr = std::get_if<BasicEvent *>(&substitution.target());
@@ -1699,8 +1640,7 @@ void Initializer::EnsureNoCcfSubstitutions() {
 
     for (const Substitution &substitution : substitutions) {
         if (is_ccf(substitution))
-            SCRAM_THROW(ValidityError("Non-declarative substitution '" + substitution.name() +
-                                      "' events cannot be in a CCF group."));
+            SCRAM_THROW(ValidityError("Non-declarative substitution '" + substitution.name() + "' events cannot be in a CCF group."));
     }
 }
 
@@ -1708,8 +1648,7 @@ void Initializer::EnsureSubstitutionsWithApproximations() {
     if (settings_.approximation() != core::Approximation::kNone)
         return;
 
-    if (ext::any_of(model_->substitutions(),
-                    [](const Substitution &substitution) { return !substitution.declarative(); }))
+    if (ext::any_of(model_->substitutions(), [](const Substitution &substitution) { return !substitution.declarative(); }))
         SCRAM_THROW(ValidityError("Non-declarative substitutions do not apply to exact analyses."));
 }
 
@@ -1723,8 +1662,7 @@ void Initializer::ValidateExpressions() {
         try {
             expression.first->Validate();
         } catch (ValidityError &err) {
-            err << boost::errinfo_file_name(expression.second.filename())
-                << boost::errinfo_at_line(expression.second.line());
+            err << boost::errinfo_file_name(expression.second.filename()) << boost::errinfo_at_line(expression.second.line());
             throw;
         }
     }

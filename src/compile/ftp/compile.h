@@ -145,14 +145,11 @@ enum class input_kind : std::uint8_t {
 // Files and directories (all `*.ftp`) form one project, read in sorted path
 // order. Reader, config, lowering, passes and `.pcfb` writer; every
 // diagnostic of every stage is on the result, errors only on failure.
-[[nodiscard]] auto compile_project(std::span<std::filesystem::path const> inputs, options const &settings = {})
-    -> compile_result;
-[[nodiscard]] auto compile_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources,
-                                   options const &settings = {}) -> compile_result;
+[[nodiscard]] auto compile_project(std::span<std::filesystem::path const> inputs, options const &settings = {}) -> compile_result;
+[[nodiscard]] auto compile_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources, options const &settings = {}) -> compile_result;
 
 // Reader and lowering only, under the same settings; no passes, no writer.
-[[nodiscard]] auto lower_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources,
-                                 options const &settings = {})
+[[nodiscard]] auto lower_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources, options const &settings = {})
     -> api::result<backend::fuzzybits::pra_to_pc::pra_pc_lowering>;
 
 // JSON: effective settings, the lowering report, the pass reports, circuit

@@ -33,14 +33,13 @@ using namespace std::string_literals;
     return output.str();
 }
 
-[[nodiscard]] auto readText(std::string_view text, fuzzybits::api::option_set const &options = {})
-    -> fuzzybits::io::read_result {
+[[nodiscard]] auto readText(std::string_view text, fuzzybits::api::option_set const &options = {}) -> fuzzybits::io::read_result {
     const std::vector<ftp::source_text> sources{ftp::source_text{.path = "m.ftp", .text = std::string(text)}};
     return ftp::read_project(sources, options);
 }
 
-[[nodiscard]] auto count(fuzzybits::api::diagnostic_list const &diagnostics, const diagnostic_severity severity,
-                         std::string_view code, std::string_view fragment = {}) -> std::size_t {
+[[nodiscard]] auto count(fuzzybits::api::diagnostic_list const &diagnostics, const diagnostic_severity severity, std::string_view code,
+                         std::string_view fragment = {}) -> std::size_t {
     return static_cast<std::size_t>(std::ranges::count_if(diagnostics.items(), [&](auto const &item) {
         return item.severity == severity && item.code == code && item.message.find(fragment) != std::string::npos;
     }));
@@ -92,8 +91,8 @@ using namespace std::string_literals;
         auto const &gate = model.gates()[index];
         out << 'G' << static_cast<int>(gate.kind) << '/' << gate.bounds.low << ':';
         for (auto const &operand : model.operands(pra::gate_id(index))) {
-            out << ' ' << (operand.event.kind() == pra::element_kind::gate ? 'g' : 'e') << operand.event.raw()
-                << (operand.complement ? "-" : "") << (operand.literal ? "L" : "");
+            out << ' ' << (operand.event.kind() == pra::element_kind::gate ? 'g' : 'e') << operand.event.raw() << (operand.complement ? "-" : "")
+                << (operand.literal ? "L" : "");
         }
         out << '\n';
     }
@@ -116,9 +115,8 @@ void replaceAll(std::string &text, std::string_view from, std::string_view to) {
 }
 
 // Initiating-event names with a '%' prefix, and '~' inside gate names (#240), CRLF.
-constexpr std::string_view kPercentTilde =
-    "T + G~1 B-%IE\r\nG~1 * %IE A\r\nB-%IE * %IE -%IE2\r\nENDTREE\r\nPROCESS T\r\n"
-    "IMPORT\r\n0.1 %IE I\r\n0.2 %IE2 I\r\n0.5 A\r\n";
+constexpr std::string_view kPercentTilde = "T + G~1 B-%IE\r\nG~1 * %IE A\r\nB-%IE * %IE -%IE2\r\nENDTREE\r\nPROCESS T\r\n"
+                                           "IMPORT\r\n0.1 %IE I\r\n0.2 %IE2 I\r\n0.5 A\r\n";
 
 } // namespace
 
@@ -157,8 +155,7 @@ TEST_CASE("FTP names are any token except a lone operator, a leading '-' or ';'"
     for (const char character : "$#.()[]:@!?'\"=<>,|\\^{}*&+%~`/_\xE9"s) {
         const std::string c(1, character);
         // As the middle of a name, and as its first character (not at the start of a line).
-        const auto text =
-            "TOP + A" + c + "B " + c + "C\nENDTREE\nPROCESS TOP\nIMPORT\n  0.1 A" + c + "B\n  0.2 " + c + "C\n";
+        const auto text = "TOP + A" + c + "B " + c + "C\nENDTREE\nPROCESS TOP\nIMPORT\n  0.1 A" + c + "B\n  0.2 " + c + "C\n";
         INFO(text);
         const auto read = readText(text);
         auto const &model = requireModel(read);
@@ -219,18 +216,15 @@ TEST_CASE("FTP names ignore ASCII case and keep their declared spelling", "[io][
     INFO(diagnosticsText(diagnostics));
     REQUIRE(diagnostics.size() == 5);
     REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "'a' is read as 'A' (m.ftp:7)") == 1);
-    REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "'g1' is read as 'G1' (m.ftp:2)") ==
-            1);
+    REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "'g1' is read as 'G1' (m.ftp:2)") == 1);
     REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "'c' is read as 'C' (m.ftp:8)") == 1);
-    REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "m.ftp:5: 'top' is read as 'TOP'") ==
-            1);
+    REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "m.ftp:5: 'top' is read as 'TOP'") == 1);
     REQUIRE(count(diagnostics, diagnostic_severity::warning, "io.ftp.name-case", "'G2' is read as 'g2'") == 1);
 
     SECTION("spellings of one name are one gate, one event or a clash") {
         const auto gates = readText("TOP + G1\nG1 * A\ng1 + A\nENDTREE\nPROCESS TOP\nIMPORT\n  0.1 A\n");
         REQUIRE_FALSE(gates);
-        REQUIRE(count(gates.diagnostics(), diagnostic_severity::error, "io.ftp.duplicate-gate", "(m.ftp:2, m.ftp:3)") ==
-                1);
+        REQUIRE(count(gates.diagnostics(), diagnostic_severity::error, "io.ftp.duplicate-gate", "(m.ftp:2, m.ftp:3)") == 1);
 
         const auto imported = readText("TOP + G1\nG1 + A\nENDTREE\nPROCESS TOP\nIMPORT\n  0.1 A\n  0.2 g1\n");
         REQUIRE_FALSE(imported);
@@ -240,8 +234,7 @@ TEST_CASE("FTP names ignore ASCII case and keep their declared spelling", "[io][
         auto const &last = requireModel(twice);
         REQUIRE(value(last, "A") == 0.3);
         REQUIRE(count(twice.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-import", "'A'") == 1);
-        REQUIRE(count(twice.diagnostics(), diagnostic_severity::warning, "io.ftp.name-case", "'a' is read as 'A'") ==
-                1);
+        REQUIRE(count(twice.diagnostics(), diagnostic_severity::warning, "io.ftp.name-case", "'a' is read as 'A'") == 1);
     }
     SECTION("only ASCII letters fold") {
         const auto read = readText("TOP * \xE9 \xC9\nENDTREE\nPROCESS TOP\nIMPORT\n  0.1 \xE9\n  0.2 \xC9\n");
@@ -285,21 +278,18 @@ TEST_CASE("FTP indentation does not decide between a gate line and a continuatio
     SECTION("a line that is neither, with no open gate, is an error") {
         const auto stray = readText("ENDTREE\n  A B\nPROCESS TOP\n");
         REQUIRE_FALSE(stray);
-        REQUIRE(count(stray.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-line",
-                      "continuation line without an open gate") == 1);
+        REQUIRE(count(stray.diagnostics(), diagnostic_severity::error, "io.ftp.invalid-line", "continuation line without an open gate") == 1);
     }
 }
 
 TEST_CASE("FTP values take every decimal form, including a D exponent", "[io][ftp][grammar]") {
     const std::vector<std::pair<std::string_view, double>> accepted{
-        {"1.", 1.0},      {".5", 0.5},   {"5.E-1", 0.5},  {"5.e-1", 0.5},         {"1.0D-01", 0.1},
-        {"1.0d-01", 0.1}, {"+.5", 0.5},  {"5E-01", 0.5},  {"000.5", 0.5},         {"1", 1.0},
-        {"0", 0.0},       {"-0.0", 0.0}, {"1E-400", 0.0}, {"1.000000E-02", 0.01},
+        {"1.", 1.0},    {".5", 0.5},    {"5.E-1", 0.5}, {"5.e-1", 0.5}, {"1.0D-01", 0.1}, {"1.0d-01", 0.1}, {"+.5", 0.5},
+        {"5E-01", 0.5}, {"000.5", 0.5}, {"1", 1.0},     {"0", 0.0},     {"-0.0", 0.0},    {"1E-400", 0.0},  {"1.000000E-02", 0.01},
     };
     for (auto const &[text, expected] : accepted) {
         INFO(text);
-        const auto read = readText("TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  " + std::string(text) + " A\nLIMIT " +
-                                   std::string(text) + "\n");
+        const auto read = readText("TOP + A\nENDTREE\nPROCESS TOP\nIMPORT\n  " + std::string(text) + " A\nLIMIT " + std::string(text) + "\n");
         auto const &model = requireModel(read);
         REQUIRE(read.diagnostics().empty());
         REQUIRE(value(model, "A") == expected);
@@ -354,12 +344,10 @@ TEST_CASE("FTP MAXSIZE outside the tree section is recorded like LIMIT", "[io][f
         const auto twice = readText(std::string(tree) + "MAXSIZE 1\nmaxsize 0\n");
         auto const &last = requireModel(twice);
         REQUIRE(projectAttribute(last, "ftp.maxsize") == std::vector<std::string>{"0"});
-        REQUIRE(count(twice.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-maxsize",
-                      "MAXSIZE 0 replaces MAXSIZE 1") == 1);
+        REQUIRE(count(twice.diagnostics(), diagnostic_severity::warning, "io.ftp.duplicate-maxsize", "MAXSIZE 0 replaces MAXSIZE 1") == 1);
     }
     SECTION("its value is a non-negative integer") {
-        for (const auto *line :
-             {"MAXSIZE\n", "MAXSIZE 1.5\n", "MAXSIZE -1\n", "MAXSIZE x\n", "MAXSIZE 99999999999\n"}) {
+        for (const auto *line : {"MAXSIZE\n", "MAXSIZE 1.5\n", "MAXSIZE -1\n", "MAXSIZE x\n", "MAXSIZE 99999999999\n"}) {
             INFO(line);
             const auto bad = readText(std::string(tree) + line);
             REQUIRE_FALSE(bad);
@@ -377,19 +365,14 @@ TEST_CASE("FTP MAXSIZE outside the tree section is recorded like LIMIT", "[io][f
 }
 
 TEST_CASE("FTP tokens after ENDTREE, IMPORT, LIMIT x and MAXSIZE n are ignored with a warning", "[io][ftp][grammar]") {
-    const auto read =
-        readText("TOP + A\nENDTREE now\nPROCESS TOP\nIMPORT records\n  0.1 A\nLIMIT 1E-5 junk\nMAXSIZE 2 more junk\n");
+    const auto read = readText("TOP + A\nENDTREE now\nPROCESS TOP\nIMPORT records\n  0.1 A\nLIMIT 1E-5 junk\nMAXSIZE 2 more junk\n");
     auto const &model = requireModel(read);
     REQUIRE(projectAttribute(model, "ftp.limit") == std::vector<std::string>{"1E-5"});
     REQUIRE(read.diagnostics().size() == 4);
-    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens",
-                  "m.ftp:2: 'now' after ENDTREE is not read") == 1);
-    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens",
-                  "'records' after IMPORT") == 1);
-    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens", "'junk' after LIMIT") ==
-            1);
-    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens",
-                  "'more junk' after MAXSIZE") == 1);
+    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens", "m.ftp:2: 'now' after ENDTREE is not read") == 1);
+    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens", "'records' after IMPORT") == 1);
+    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens", "'junk' after LIMIT") == 1);
+    REQUIRE(count(read.diagnostics(), diagnostic_severity::warning, "io.ftp.ignored-tokens", "'more junk' after MAXSIZE") == 1);
 }
 
 TEST_CASE("FTP control bytes are blanks and a UTF-8 byte-order mark is skipped", "[io][ftp][grammar]") {

@@ -145,9 +145,7 @@ class Logger : private boost::noncopyable {
 template <LogLevel Level> class Timer {
   public:
     /// @param[in] process_name  The process being logged.
-    explicit Timer(const char *process_name) : process_name_(process_name), process_time_(TIME_STAMP()) {
-        LOG(Level) << process_name_ << "...";
-    }
+    explicit Timer(const char *process_name) : process_name_(process_name), process_time_(TIME_STAMP()) { LOG(Level) << process_name_ << "..."; }
 
     /// Puts the accumulated time into the logs.
     ~Timer() { LOG(Level) << "Finished " << process_name_ << " in " << DUR(process_time_); }

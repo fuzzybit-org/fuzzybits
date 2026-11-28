@@ -123,9 +123,8 @@ void CustomPreprocessor<DirectEval>::Run() {
                     while (CoalesceGates(/*common=*/false))
                         continue;
                 },
-                [this](Pdag *) { MergeCommonArgs(); }, [this](Pdag *) { DetectDistributivity(); },
-                [this](Pdag *) { DetectModules(); }, [this](Pdag *) { BooleanOptimization(); },
-                [this](Pdag *) { DecomposeCommonNodes(); }, [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) { MergeCommonArgs(); }, [this](Pdag *) { DetectDistributivity(); }, [this](Pdag *) { DetectModules(); },
+                [this](Pdag *) { BooleanOptimization(); }, [this](Pdag *) { DecomposeCommonNodes(); }, [this](Pdag *) { DetectModules(); },
                 [this](Pdag *) {
                     while (CoalesceGates(/*common=*/false))
                         continue;

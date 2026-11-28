@@ -40,8 +40,7 @@ TEST_F(RiskAnalysisTest, GasLeakReactive) {
 /// @todo Expand
 TEST_F(RiskAnalysisTest, GasLeak) {
     settings.probability_analysis(true);
-    ASSERT_NO_THROW(ProcessInputFiles(
-        {"input/EventTrees/gas_leak/gas_leak_reactive.xml", "input/EventTrees/gas_leak/gas_leak.xml"}));
+    ASSERT_NO_THROW(ProcessInputFiles({"input/EventTrees/gas_leak/gas_leak_reactive.xml", "input/EventTrees/gas_leak/gas_leak.xml"}));
     ASSERT_NO_THROW(analysis->Analyze());
     EXPECT_EQ(2, analysis->event_tree_results().size());
 }

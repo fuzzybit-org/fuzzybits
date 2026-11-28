@@ -61,9 +61,7 @@ void recordsFormHierarchy() {
 
     auto const &circuit = result.output;
     const auto form_strings = circuit.satisfied_form_strings();
-    const auto has_form_string = [&form_strings](std::string const &form) {
-        return std::ranges::find(form_strings, form) != form_strings.end();
-    };
+    const auto has_form_string = [&form_strings](std::string const &form) { return std::ranges::find(form_strings, form) != form_strings.end(); };
 
     REQUIRE(circuit.form_profile().is_robdd());
     REQUIRE(circuit.form_profile().is_bdd());
@@ -71,8 +69,7 @@ void recordsFormHierarchy() {
     REQUIRE_FALSE(circuit.form_profile().is_cnf());
     REQUIRE(circuit.satisfies_form(fuzzybits::ir::forms::bdd()));
     REQUIRE(fuzzybits::ir::descriptor_satisfies_form(circuit.descriptor(), fuzzybits::ir::forms::bdd()));
-    REQUIRE(fuzzybits::ir::descriptor_satisfies_form(circuit.descriptor(),
-                                                     fuzzybits::ir::forms::probabilistic_boolean_dag()));
+    REQUIRE(fuzzybits::ir::descriptor_satisfies_form(circuit.descriptor(), fuzzybits::ir::forms::probabilistic_boolean_dag()));
     REQUIRE(has_form_string("ir.bool_dag"));
     REQUIRE(has_form_string("ir.bdd"));
     REQUIRE(has_form_string("ir.robdd"));

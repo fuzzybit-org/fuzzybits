@@ -83,9 +83,7 @@ auto sat_solver::value(const std::uint32_t literal) const noexcept -> std::uint8
     return assigned == unassigned ? unassigned : static_cast<std::uint8_t>(assigned ^ (literal & 1U));
 }
 
-auto sat_solver::decision_level() const noexcept -> std::uint32_t {
-    return static_cast<std::uint32_t>(trail_limits_.size());
-}
+auto sat_solver::decision_level() const noexcept -> std::uint32_t { return static_cast<std::uint32_t>(trail_limits_.size()); }
 
 void sat_solver::assign(const std::uint32_t literal, const std::uint32_t reason) {
     const auto variable = literal >> 1;
@@ -135,8 +133,7 @@ void sat_solver::add_clause(std::span<std::uint32_t const> literals) {
         return;
     }
     const auto index = static_cast<std::uint32_t>(clauses_.size());
-    clauses_.push_back(
-        clause{.begin = static_cast<std::uint32_t>(arena_.size()), .size = static_cast<std::uint32_t>(buffer_.size())});
+    clauses_.push_back(clause{.begin = static_cast<std::uint32_t>(arena_.size()), .size = static_cast<std::uint32_t>(buffer_.size())});
     arena_.insert(arena_.end(), buffer_.begin(), buffer_.end());
     attach(index);
 }
@@ -355,8 +352,7 @@ auto sat_solver::solve() -> bool {
                 assign(learnt_[0], no_clause);
             } else {
                 const auto index = static_cast<std::uint32_t>(clauses_.size());
-                clauses_.push_back(clause{.begin = static_cast<std::uint32_t>(arena_.size()),
-                                          .size = static_cast<std::uint32_t>(learnt_.size())});
+                clauses_.push_back(clause{.begin = static_cast<std::uint32_t>(arena_.size()), .size = static_cast<std::uint32_t>(learnt_.size())});
                 arena_.insert(arena_.end(), learnt_.begin(), learnt_.end());
                 attach(index);
                 assign(learnt_[0], index);

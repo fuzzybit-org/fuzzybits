@@ -75,8 +75,7 @@ struct CompiledGraph {
 void apply_options(scram::core::Settings &settings, const Options &options);
 
 /// OpenPSA/MEF XML → preprocessed PDAG. Used by compile and by the bit-identity test.
-[[nodiscard]] pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &input_files,
-                                                           const Options &options);
+[[nodiscard]] pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &input_files, const Options &options);
 
 /// OpenPSA/MEF XML → preprocessed PDAG → pcfb core-1.1 buffer.
 [[nodiscard]] pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files, const Options &options);
@@ -84,10 +83,10 @@ void apply_options(scram::core::Settings &settings, const Options &options);
 /// Lower an already-preprocessed PDAG. `event_id` of each SAMPLE is the PDAG index.
 /// `source_path` / `input_files` / `target_name` are written to `fuzzybits.*`
 /// metadata so `Session.graph()` can round-trip the server DAG views.
-[[nodiscard]] pcfb::Result<std::vector<std::byte>>
-pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name, std::string_view query_name,
-             std::span<const std::byte> source_sha256, std::string_view source_path = {},
-             std::span<const std::string> input_files = {}, std::string_view target_name = {});
+[[nodiscard]] pcfb::Result<std::vector<std::byte>> pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name,
+                                                                std::string_view query_name, std::span<const std::byte> source_sha256,
+                                                                std::string_view source_path = {}, std::span<const std::string> input_files = {},
+                                                                std::string_view target_name = {});
 
 namespace testing {
 

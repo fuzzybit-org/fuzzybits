@@ -90,8 +90,7 @@ inline double two_sided_p_value(const double z) {
 //  Accuracy metrics
 //---------------------------------------------------------------------
 
-template <typename tally_t_>
-[[nodiscard]] AccuracyMetrics compute_accuracy_metrics(const tally_t_ &tally, const double p_true) {
+template <typename tally_t_> [[nodiscard]] AccuracyMetrics compute_accuracy_metrics(const tally_t_ &tally, const double p_true) {
     AccuracyMetrics m;
     m.bias = tally.mean - p_true;
     m.abs_error = std::fabs(m.bias);
@@ -111,8 +110,7 @@ template <typename tally_t_>
 //---------------------------------------------------------------------
 
 template <typename tally_t_>
-[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true,
-                                                               const double confidence, const double eps_target) {
+[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true, const double confidence, const double eps_target) {
     SamplingDiagnostics d;
 
     if (tally.std_err > 0.0) {
@@ -135,9 +133,7 @@ template <typename tally_t_>
     return d;
 }
 
-template <typename tally_t_>
-[[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true,
-                                                               const ci &targets) {
+template <typename tally_t_> [[nodiscard]] SamplingDiagnostics compute_sampling_diagnostics(const tally_t_ &tally, const double p_true, const ci &targets) {
     return compute_sampling_diagnostics(tally, p_true, targets.two_sided_confidence_level, targets.half_width_epsilon);
 }
 

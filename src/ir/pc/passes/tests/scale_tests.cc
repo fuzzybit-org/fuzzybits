@@ -34,9 +34,7 @@ constexpr std::uint32_t scale_layers = 160;
 // OR, AND and at-least gates, some single-input gates, complements and
 // p in {0, 1} events.
 [[nodiscard]] auto layered_dag(std::mt19937_64 &rng) -> pc::circuit {
-    const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-        return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
-    };
+    const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) { return std::uniform_int_distribution<std::uint32_t>(low, high)(rng); };
     pc::builder builder;
     builder.reserve_nodes(scale_nodes + 1);
     std::vector<pc::bool_node_id> nodes;
@@ -94,8 +92,7 @@ void require_same_targets(pc::circuit const &input, passes::pipeline_result cons
             const auto p = literal(input, in.events()[slot]);
             input_words[slot] = p == 0.0 ? 0 : p == 1.0 ? all_lanes : rng();
             auto const &image = result.node_map[in.events()[slot]];
-            if (image.kind == passes::image_kind::reference &&
-                result.output.op_codes()[image.edge.source.raw()] == pc::op_code::basic_event) {
+            if (image.kind == passes::image_kind::reference && result.output.op_codes()[image.edge.source.raw()] == pc::op_code::basic_event) {
                 output_words[out.slot(image.edge.source.raw())] = input_words[slot];
             }
         }
@@ -110,8 +107,7 @@ void require_same_targets(pc::circuit const &input, passes::pipeline_result cons
 
 } // namespace
 
-TEST_CASE("C1 on a 1e5-node DAG of depth > 140 is fast, never adds edges and keeps every target",
-          "[ir][pc][passes][scale]") {
+TEST_CASE("C1 on a 1e5-node DAG of depth > 140 is fast, never adds edges and keeps every target", "[ir][pc][passes][scale]") {
     std::mt19937_64 rng(223);
     const auto input = layered_dag(rng);
     REQUIRE(input.node_count() >= scale_nodes - scale_layers);
@@ -122,9 +118,8 @@ TEST_CASE("C1 on a 1e5-node DAG of depth > 140 is fast, never adds edges and kee
     const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     INFO(diagnostics_text(result.diagnostics));
     REQUIRE(result.ok());
-    std::cout << "C1 scale: nodes " << result.nodes_before << " -> " << result.nodes_after << ", edges "
-              << result.edges_before << " -> " << result.edges_after << ", passes " << result.passes.size() << ", "
-              << elapsed << " s\n";
+    std::cout << "C1 scale: nodes " << result.nodes_before << " -> " << result.nodes_after << ", edges " << result.edges_before << " -> " << result.edges_after
+              << ", passes " << result.passes.size() << ", " << elapsed << " s\n";
     REQUIRE(result.edges_after <= result.edges_before);
     for (auto const &report : result.passes) {
         REQUIRE(report.edges_after <= report.edges_before);
@@ -134,8 +129,7 @@ TEST_CASE("C1 on a 1e5-node DAG of depth > 140 is fast, never adds edges and kee
 #endif
     require_same_targets(input, result, rng);
 
-    for (const auto pass :
-         {passes::pass_id::propagate_constants, passes::pass_id::eliminate_single_input, passes::pass_id::coalesce}) {
+    for (const auto pass : {passes::pass_id::propagate_constants, passes::pass_id::eliminate_single_input, passes::pass_id::coalesce}) {
         const auto pass_start = std::chrono::steady_clock::now();
         const auto single = passes::run_pass(pass, input);
         const auto pass_elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - pass_start).count();

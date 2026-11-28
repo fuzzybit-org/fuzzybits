@@ -44,8 +44,7 @@ class diagnostic_list final {
     }
 
     void append(diagnostic_list other) {
-        items_.insert(items_.end(), std::make_move_iterator(other.items_.begin()),
-                      std::make_move_iterator(other.items_.end()));
+        items_.insert(items_.end(), std::make_move_iterator(other.items_.begin()), std::make_move_iterator(other.items_.end()));
     }
 
   private:

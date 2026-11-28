@@ -100,8 +100,7 @@ std::size_t closest_power_of_2(std::size_t n) {
     return best;
 }
 
-sycl::range<3> prod_local_range(std::size_t gates, std::size_t bitpacks, std::size_t max_wg,
-                                const sycl::range<3> &max_items) {
+sycl::range<3> prod_local_range(std::size_t gates, std::size_t bitpacks, std::size_t max_wg, const sycl::range<3> &max_items) {
     auto budget = static_cast<int>(std::log2(max_wg));
     const int lx = std::min(static_cast<int>(std::log2(closest_power_of_2(std::min(gates, max_items[0])))), budget);
     budget -= lx;
@@ -135,9 +134,7 @@ struct gdesc {
     std::uint64_t mask; // fixed-count kernels: bit j set iff slot j holds an input
 };
 
-template <int OP, typename V> [[gnu::always_inline]] inline V ident() {
-    return (OP == o_and || OP == o_nand) ? static_cast<V>(~V{}) : V{};
-}
+template <int OP, typename V> [[gnu::always_inline]] inline V ident() { return (OP == o_and || OP == o_nand) ? static_cast<V>(~V{}) : V{}; }
 template <int OP, typename V> [[gnu::always_inline]] inline void comb(V &a, const V &x) {
     if constexpr (OP == o_and || OP == o_nand) {
         a &= x;
@@ -161,18 +158,15 @@ struct decode {
     std::uint32_t gate;
     std::uint32_t idx;
 };
-[[gnu::always_inline]] inline decode decode_group(const sycl::nd_item<1> &it, std::uint32_t groups,
-                                                  std::uint32_t ngates, bool block_major) {
+[[gnu::always_inline]] inline decode decode_group(const sycl::nd_item<1> &it, std::uint32_t groups, std::uint32_t ngates, bool block_major) {
     const auto group = static_cast<std::uint32_t>(it.get_group(0));
     const std::uint32_t gate = block_major ? group % ngates : group / groups;
     const std::uint32_t block = block_major ? group / ngates : group - gate * groups;
-    return {gate,
-            block * static_cast<std::uint32_t>(it.get_local_range(0)) + static_cast<std::uint32_t>(it.get_local_id(0))};
+    return {gate, block * static_cast<std::uint32_t>(it.get_local_range(0)) + static_cast<std::uint32_t>(it.get_local_id(0))};
 }
 
 template <typename V> [[gnu::always_inline]] inline V ldv_a(const word *base, std::size_t i) {
-    return *static_cast<const V *>(
-        __builtin_assume_aligned(reinterpret_cast<const char *>(base) + i * sizeof(V), sizeof(V)));
+    return *static_cast<const V *>(__builtin_assume_aligned(reinterpret_cast<const char *>(base) + i * sizeof(V), sizeof(V)));
 }
 
 template <int OP, typename V, bool ALIGNED = false> struct k_loop {
@@ -326,18 +320,13 @@ template <typename V, typename A> struct k_card {
     }
 };
 template <int N> struct a_fixedM {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_fixedM<N, V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_fixedM<N, V>(g, w); }
 };
 struct a_bin8m {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_bin8_mid<V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_bin8_mid<V>(g, w); }
 };
 
-template <typename K>
-sycl::event launch1(sycl::queue &q, std::size_t gates, std::size_t groups, std::size_t wg, const K &k) {
+template <typename K> sycl::event launch1(sycl::queue &q, std::size_t gates, std::size_t groups, std::size_t wg, const K &k) {
     return q.parallel_for(sycl::nd_range<1>({gates * groups * wg}, {wg}), k);
 }
 
@@ -393,9 +382,8 @@ bool has(const std::string &list, const std::string &v) {
 }
 
 const char *kDefaultShapes[] = {
-    "and:2",  "and:3",  "and:4", "and:8", "and:16", "and:32",     "and:64",    "or:2",
-    "or:3",   "or:4",   "or:8",  "or:16", "or:32",  "or:64",      "xor:2",     "xor:4",
-    "xor:16", "nand:3", "nor:3", "not:1", "null:1", "and:2:4096", "or:3:4096", "not:1:4096",
+    "and:2", "and:3", "and:4", "and:8", "and:16", "and:32", "and:64", "or:2",  "or:3",   "or:4",       "or:8",      "or:16",
+    "or:32", "or:64", "xor:2", "xor:4", "xor:16", "nand:3", "nor:3",  "not:1", "null:1", "and:2:4096", "or:3:4096", "not:1:4096",
 };
 
 std::uint32_t fixed_class(std::uint32_t n) {
@@ -455,8 +443,8 @@ int main(int argc, char **argv) {
     }
     const std::size_t max_wg = dev.get_info<sycl::info::device::max_work_group_size>();
     const auto max_items = dev.get_info<sycl::info::device::max_work_item_sizes<3>>();
-    std::printf("# device: %s | cpu=%d | B=%zu pool=%zu target=%zu wg=%zu\n",
-                dev.get_info<sycl::info::device::name>().c_str(), cpu ? 1 : 0, B, pool_n, target, wg);
+    std::printf("# device: %s | cpu=%d | B=%zu pool=%zu target=%zu wg=%zu\n", dev.get_info<sycl::info::device::name>().c_str(), cpu ? 1 : 0, B, pool_n, target,
+                wg);
     std::printf("R\tshape\tn\tlo\thi\tG\tB\tvariant\tms\tGBps\tok\treps\n");
 
     word *pool = sycl::malloc_device<word>(pool_n * B, q);
@@ -478,8 +466,7 @@ int main(int argc, char **argv) {
             std::fprintf(stderr, "bad shape %s\n", spec.c_str());
             return 2;
         }
-        const std::size_t G =
-            c2 == std::string::npos ? std::clamp<std::size_t>(target / n, 4, 8192) : std::stoul(spec.substr(c2 + 1));
+        const std::size_t G = c2 == std::string::npos ? std::clamp<std::size_t>(target / n, 4, 8192) : std::stoul(spec.substr(c2 + 1));
         const std::uint32_t npos = n - n / 2;
         const std::uint32_t nneg = n / 2;
 
@@ -511,8 +498,7 @@ int main(int argc, char **argv) {
         std::vector<std::uint32_t> idx(G * n);
         for (std::size_t g = 0; g < G; ++g) {
             for (std::uint32_t j = 0; j < n; ++j) {
-                idx[g * n + j] = j < npos ? static_cast<std::uint32_t>(rng() % half)
-                                          : static_cast<std::uint32_t>(half + rng() % (pool_n - half));
+                idx[g * n + j] = j < npos ? static_cast<std::uint32_t>(rng() % half) : static_cast<std::uint32_t>(half + rng() % (pool_n - half));
             }
         }
         word *out = sycl::malloc_device<word>(G * B, q);
@@ -570,8 +556,8 @@ int main(int argc, char **argv) {
                 }
             }
             const timing t = time_it(q, launch, reps, budget_ms);
-            std::printf("R\t%s\t%u\t0\t0\t%zu\t%zu\t%s\t%.5f\t%.1f\t%s\t%d\n", spec.c_str(), n, G, B, variant, t.ms,
-                        bytes / (t.ms * 1e6), bad == 0 ? "ok" : "WRONG", t.reps);
+            std::printf("R\t%s\t%u\t0\t0\t%zu\t%zu\t%s\t%.5f\t%.1f\t%s\t%d\n", spec.c_str(), n, G, B, variant, t.ms, bytes / (t.ms * 1e6),
+                        bad == 0 ? "ok" : "WRONG", t.reps);
             std::fflush(stdout);
         };
 
@@ -590,10 +576,7 @@ int main(int argc, char **argv) {
             const sycl::nd_range<3> range({round_up(G, lr[0]), 1, round_up(B, lr[2])}, lr);
             const auto count = static_cast<std::uint32_t>(G);
             const auto bp = static_cast<std::uint32_t>(B);
-            auto go = [&]<int OP>() {
-                report("prod",
-                       [&]() { return std::vector<sycl::event>{q.parallel_for(range, prod_op<OP>{dg, count, bp})}; });
-            };
+            auto go = [&]<int OP>() { report("prod", [&]() { return std::vector<sycl::event>{q.parallel_for(range, prod_op<OP>{dg, count, bp})}; }); };
             switch (op) {
             case o_and:
                 go.template operator()<o_and>();
@@ -632,8 +615,7 @@ int main(int argc, char **argv) {
                 for (std::uint32_t i = 0; i < n; ++i) {
                     p[g * width + i] = pool + static_cast<std::size_t>(idx[g * n + i]) * B;
                 }
-                d[g] = {dp + g * width, out + g * B, n, npos,
-                        n >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << n) - 1};
+                d[g] = {dp + g * width, out + g * B, n, npos, n >= 64 ? ~std::uint64_t{0} : (std::uint64_t{1} << n) - 1};
             }
             q.memcpy(dp, p.data(), p.size() * sizeof(const word *)).wait();
             gdesc *dd = sycl::malloc_device<gdesc>(G, q);
@@ -654,11 +636,9 @@ int main(int argc, char **argv) {
             auto go = [&]<int OP>() {
                 report(name, [&]() {
                     if constexpr (B8 > 0) {
-                        return std::vector<sycl::event>{
-                            launch1(q, G, groups, l, k_blk8<OP, V, B8>{d_plain, items, groups, ng, BM})};
+                        return std::vector<sycl::event>{launch1(q, G, groups, l, k_blk8<OP, V, B8>{d_plain, items, groups, ng, BM})};
                     } else {
-                        return std::vector<sycl::event>{
-                            launch1(q, G, groups, l, k_loop<OP, V, AL>{d_plain, items, groups, ng, BM})};
+                        return std::vector<sycl::event>{launch1(q, G, groups, l, k_loop<OP, V, AL>{d_plain, items, groups, ng, BM})};
                     }
                 });
             };
@@ -696,11 +676,9 @@ int main(int argc, char **argv) {
             auto go = [&]<int OP, int N>() {
                 report(name, [&]() {
                     if constexpr (GATHER) {
-                        return std::vector<sycl::event>{
-                            launch1(q, G, groups, l, k_gather<OP, N, V>{d_fixed, items, groups, ng, BM})};
+                        return std::vector<sycl::event>{launch1(q, G, groups, l, k_gather<OP, N, V>{d_fixed, items, groups, ng, BM})};
                     } else {
-                        return std::vector<sycl::event>{
-                            launch1(q, G, groups, l, k_fixed<OP, N, V>{d_fixed, items, groups, ng, BM})};
+                        return std::vector<sycl::event>{launch1(q, G, groups, l, k_fixed<OP, N, V>{d_fixed, items, groups, ng, BM})};
                     }
                 });
             };
@@ -821,10 +799,7 @@ int main(int argc, char **argv) {
             const std::size_t l = std::min<std::size_t>(wg, items);
             const auto groups = static_cast<std::uint32_t>((items + l - 1) / l);
             auto go = [&]<typename A>() {
-                report(name, [&]() {
-                    return std::vector<sycl::event>{
-                        launch1(q, G, groups, l, k_card<V, A>{dd, words_per_gate, groups, ng, BM})};
-                });
+                report(name, [&]() { return std::vector<sycl::event>{launch1(q, G, groups, l, k_card<V, A>{dd, words_per_gate, groups, ng, BM})}; });
             };
             switch (slots) {
             case 1:

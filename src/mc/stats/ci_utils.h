@@ -39,14 +39,12 @@ struct ci {
     static constexpr double a[] = {-3.969683028665376e+01, 2.209460984245205e+02,  -2.759285104469687e+02,
                                    1.383577518672690e+02,  -3.066479806614716e+01, 2.506628277459239e+00};
 
-    static constexpr double b[] = {-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
-                                   6.680131188771972e+01, -1.328068155288572e+01};
+    static constexpr double b[] = {-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02, 6.680131188771972e+01, -1.328068155288572e+01};
 
     static constexpr double c[] = {-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
                                    -2.549732539343734e+00, 4.374664141464968e+00,  2.938163982698783e+00};
 
-    static constexpr double d[] = {7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
-                                   3.754408661907416e+00};
+    static constexpr double d[] = {7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00, 3.754408661907416e+00};
 
     // Define break-points.
     constexpr double plow = 0.02425;
@@ -56,27 +54,22 @@ struct ci {
     if (q < plow) {
         // Rational approximation for lower region
         const double u = std::sqrt(-2.0 * std::log(q));
-        x = (((((c[0] * u + c[1]) * u + c[2]) * u + c[3]) * u + c[4]) * u + c[5]) /
-            ((((d[0] * u + d[1]) * u + d[2]) * u + d[3]) * u + 1.0);
+        x = (((((c[0] * u + c[1]) * u + c[2]) * u + c[3]) * u + c[4]) * u + c[5]) / ((((d[0] * u + d[1]) * u + d[2]) * u + d[3]) * u + 1.0);
     } else if (phigh < q) {
         // Rational approximation for upper region
         const double u = std::sqrt(-2.0 * std::log(1.0 - q));
-        x = -(((((c[0] * u + c[1]) * u + c[2]) * u + c[3]) * u + c[4]) * u + c[5]) /
-            ((((d[0] * u + d[1]) * u + d[2]) * u + d[3]) * u + 1.0);
+        x = -(((((c[0] * u + c[1]) * u + c[2]) * u + c[3]) * u + c[4]) * u + c[5]) / ((((d[0] * u + d[1]) * u + d[2]) * u + d[3]) * u + 1.0);
     } else {
         // Rational approximation for central region
         const double u = q - 0.5;
         const double t = u * u;
-        x = (((((a[0] * t + a[1]) * t + a[2]) * t + a[3]) * t + a[4]) * t + a[5]) * u /
-            (((((b[0] * t + b[1]) * t + b[2]) * t + b[3]) * t + b[4]) * t + 1.0);
+        x = (((((a[0] * t + a[1]) * t + a[2]) * t + a[3]) * t + a[4]) * t + a[5]) * u / (((((b[0] * t + b[1]) * t + b[2]) * t + b[3]) * t + b[4]) * t + 1.0);
     }
     return x;
 }
 
 // Backwards-compatibility wrapper (to be removed).
-[[deprecated("Use normal_quantile_two_sided")]] [[nodiscard]] inline double z_score(const double confidence) {
-    return normal_quantile_two_sided(confidence);
-}
+[[deprecated("Use normal_quantile_two_sided")]] [[nodiscard]] inline double z_score(const double confidence) { return normal_quantile_two_sided(confidence); }
 
 /**
  * Sample-size formula for a Bernoulli proportion.
@@ -94,9 +87,8 @@ struct ci {
  *   N ≥ z² · p(1-p) / ε²
  * where ε is the desired half-width (margin of error).
  */
-[[nodiscard]] inline std::size_t
-required_trials_from_normal_quantile_two_sided(const std::double_t &p, const std::double_t &epsilon,
-                                               const std::double_t &normal_quantile_two_sided) {
+[[nodiscard]] inline std::size_t required_trials_from_normal_quantile_two_sided(const std::double_t &p, const std::double_t &epsilon,
+                                                                                const std::double_t &normal_quantile_two_sided) {
     const std::double_t &z = normal_quantile_two_sided;
     const double pq = p * (1.0 - p);
     return static_cast<std::size_t>(std::ceil((z * z * pq) / (epsilon * epsilon)));
@@ -105,17 +97,14 @@ required_trials_from_normal_quantile_two_sided(const std::double_t &p, const std
 // Return the half-width (margin of error) of the confidence interval for a
 // given Z-score.  Call this after `populate_point_estimates` so that `std_err`
 // has been initialized.
-template <typename tally_t_> [[nodiscard]] inline double half_width(const tally_t_ &tally, const double z) {
-    return z * tally.std_err;
-}
+template <typename tally_t_> [[nodiscard]] inline double half_width(const tally_t_ &tally, const double z) { return z * tally.std_err; }
 
 template <typename tally_t_> inline double half_width_log10(const tally_t_ &tally, const double z) {
     const double p = std::max(tally.mean, DELTA_EPSILON);
     return z * tally.std_err / (p * std::log(10.0));
 }
 
-inline std::size_t required_trials_log10_from_normal_quantile_two_sided(const double p, const double eps_log10,
-                                                                        const double z) {
+inline std::size_t required_trials_log10_from_normal_quantile_two_sided(const double p, const double eps_log10, const double z) {
     const double denom = p * eps_log10 * eps_log10 * std::log(10.0) * std::log(10.0);
     return static_cast<std::size_t>(std::ceil(z * z * (1.0 - p) / denom));
 }
@@ -126,8 +115,7 @@ inline std::size_t required_trials_log10_from_normal_quantile_two_sided(const do
  *   ε = z · √[p(1-p) / N]
  * This tells you the best possible half-width you can achieve with N trials.
  */
-[[nodiscard]] inline std::double_t epsilon_from_trials(const std::double_t p, const std::size_t N,
-                                                       const std::double_t z) {
+[[nodiscard]] inline std::double_t epsilon_from_trials(const std::double_t p, const std::size_t N, const std::double_t z) {
     if (N == 0)
         return std::numeric_limits<std::double_t>::infinity();
     const std::double_t pq = p * (1.0 - p);

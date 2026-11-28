@@ -79,16 +79,14 @@ class Initializer : private boost::noncopyable {
     /// @warning Processing external libraries from XML input is **UNSAFE**.
     ///          It allows loading and executing arbitrary code during analysis.
     ///          Enable this feature for trusted input files and libraries only.
-    Initializer(const std::vector<std::string> &xml_files, core::Settings settings, bool allow_extern = false,
-                xml::Validator *extra_validator = nullptr);
+    Initializer(const std::vector<std::string> &xml_files, core::Settings settings, bool allow_extern = false, xml::Validator *extra_validator = nullptr);
 
     /// @returns The model built from the input files.
     std::unique_ptr<Model> model() && { return std::move(model_); }
 
   private:
     /// Convenience alias for expression extractor function types.
-    using ExtractorFunction = std::unique_ptr<Expression> (*)(const xml::Element::Range &, const std::string &,
-                                                              Initializer *);
+    using ExtractorFunction = std::unique_ptr<Expression> (*)(const xml::Element::Range &, const std::string &, Initializer *);
     /// Map of expression names and their extractor functions.
     using ExtractorMap = std::unordered_map<std::string_view, ExtractorFunction>;
     /// Container for late defined constructs.
@@ -97,10 +95,9 @@ class Initializer : private boost::noncopyable {
     ///
     /// @tparam T  The element type.
     template <typename T>
-    using PathTable = boost::multi_index_container<
-        T *,
-        boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
-            boost::multi_index::const_mem_fun<Id, std::string_view, &Id::full_path>, std::hash<std::string_view>>>>;
+    using PathTable =
+        boost::multi_index_container<T *, boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
+                                              boost::multi_index::const_mem_fun<Id, std::string_view, &Id::full_path>, std::hash<std::string_view>>>>;
 
     /// @tparam T  Type of an expression.
     /// @tparam N  The number of arguments for the expression.
@@ -121,9 +118,7 @@ class Initializer : private boost::noncopyable {
     /// @param[in,out] init  The host Initializer.
     ///
     /// @returns The new extracted expression.
-    template <class T>
-    static std::unique_ptr<Expression> Extract(const xml::Element::Range &args, const std::string &base_path,
-                                               Initializer *init);
+    template <class T> static std::unique_ptr<Expression> Extract(const xml::Element::Range &args, const std::string &base_path, Initializer *init);
 
   public:
     /// Expands wildcard patterns in file paths to a list of matching files.
@@ -258,8 +253,7 @@ class Initializer : private boost::noncopyable {
     /// @throws ValidityError  There are issues with registering and defining
     ///                        the component and its data
     ///                        like gates and events.
-    std::unique_ptr<Component> DefineComponent(const xml::Element &component_node, const std::string &base_path,
-                                               RoleSpecifier container_role);
+    std::unique_ptr<Component> DefineComponent(const xml::Element &component_node, const std::string &base_path, RoleSpecifier container_role);
 
     /// Registers fault tree and component data
     /// like gates, events, parameters.
@@ -300,8 +294,7 @@ class Initializer : private boost::noncopyable {
     /// @post All forks in the event tree get registered.
     ///
     /// @throws ValidityError  Errors in instruction or target definitions.
-    template <class SinglePassRange>
-    void DefineBranch(const SinglePassRange &xml_nodes, EventTree *event_tree, Branch *branch);
+    template <class SinglePassRange> void DefineBranch(const SinglePassRange &xml_nodes, EventTree *event_tree, Branch *branch);
 
     /// Processes the last element of the branch node as target.
     void DefineBranchTarget(const xml::Element &target_node, EventTree *event_tree, Branch *branch);
@@ -337,8 +330,7 @@ class Initializer : private boost::noncopyable {
     /// @returns nullptr if the expression type is not a parameter.
     ///
     /// @throws ValidityError  The parameter variable is not reachable.
-    Expression *GetParameter(const std::string_view &expr_type, const xml::Element &expr_element,
-                             const std::string &base_path);
+    Expression *GetParameter(const std::string_view &expr_type, const xml::Element &expr_element, const std::string &base_path);
 
     /// Processes common cause failure group members as defined basic events.
     ///
@@ -393,8 +385,8 @@ class Initializer : private boost::noncopyable {
     ///
     /// @throws UndefinedElement  The entity cannot be found.
     template <class P, class T = typename P::element_type>
-    T *GetEntity(std::string_view entity_reference, const std::string &base_path,
-                 const TableRange<IdTable<P>> &container, const TableRange<PathTable<T>> &path_container);
+    T *GetEntity(std::string_view entity_reference, const std::string &base_path, const TableRange<IdTable<P>> &container,
+                 const TableRange<PathTable<T>> &path_container);
 
     /// Defines and loads extern libraries.
     ///
@@ -510,9 +502,7 @@ class Initializer : private boost::noncopyable {
     /// Substitutions depend on basic events.
     ///
     /// Elements are assumed to be unique.
-    TbdContainer<Parameter, BasicEvent, Gate, CcfGroup, Sequence, EventTree, InitiatingEvent, Rule, Alignment,
-                 Substitution>
-        tbd_;
+    TbdContainer<Parameter, BasicEvent, Gate, CcfGroup, Sequence, EventTree, InitiatingEvent, Rule, Alignment, Substitution> tbd_;
 
     /// Container of defined expressions for later validation due to cycles.
     std::vector<std::pair<Expression *, xml::Element>> expressions_;

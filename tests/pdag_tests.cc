@@ -152,22 +152,22 @@ class GateTest {
 /// @param short_type  Short name of the gate, i.e., 'And'.
 ///                    It must have the same root in Connective, i.e., 'kAnd'.
 /// @param num_vars  The number of variables to initialize the gate.
-#define ADD_ARG_IGNORE_TEST(short_type, num_vars)                                                                      \
-    DefineGate(k##short_type, num_vars);                                                                               \
-    g->AddArg(var_one);                                                                                                \
-    REQUIRE_FALSE(g->constant());                                                                                      \
-    CHECK(g->args().size() == num_vars);                                                                               \
-    CHECK(g->args<Variable>().size() == num_vars);                                                                     \
+#define ADD_ARG_IGNORE_TEST(short_type, num_vars)                                                                                                              \
+    DefineGate(k##short_type, num_vars);                                                                                                                       \
+    g->AddArg(var_one);                                                                                                                                        \
+    REQUIRE_FALSE(g->constant());                                                                                                                              \
+    CHECK(g->args().size() == num_vars);                                                                                                                       \
+    CHECK(g->args<Variable>().size() == num_vars);                                                                                                             \
     CHECK(g->args<Gate>().empty())
 
 /// Tests addition of an existing argument to PDAG gates
 /// that do not change the type of the gate.
 ///
 /// @param short_type  Short name of the gate type, i.e., 'And'.
-#define TEST_DUP_ARG_IGNORE(short_type)                                                                                \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(DuplicateArgIgnore##short_type), "[pdag]") {                                \
-        ADD_ARG_IGNORE_TEST(short_type, 2);                                                                            \
-        CHECK(g->type() == k##short_type);                                                                             \
+#define TEST_DUP_ARG_IGNORE(short_type)                                                                                                                        \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(DuplicateArgIgnore##short_type), "[pdag]") {                                                                        \
+        ADD_ARG_IGNORE_TEST(short_type, 2);                                                                                                                    \
+        CHECK(g->type() == k##short_type);                                                                                                                     \
     }
 
 TEST_DUP_ARG_IGNORE(And)
@@ -182,10 +182,10 @@ TEST_DUP_ARG_IGNORE(Nor)
 ///
 /// @param init_type  Short name of the initial type of the gate, i.e., 'And'.
 /// @param final_type  The resulting type of addition operation.
-#define TEST_DUP_ARG_TYPE_CHANGE(init_type, final_type)                                                                \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(DuplicateArgChange##init_type##Type), "[pdag]") {                           \
-        ADD_ARG_IGNORE_TEST(init_type, 1);                                                                             \
-        CHECK(g->type() == k##final_type);                                                                             \
+#define TEST_DUP_ARG_TYPE_CHANGE(init_type, final_type)                                                                                                        \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(DuplicateArgChange##init_type##Type), "[pdag]") {                                                                   \
+        ADD_ARG_IGNORE_TEST(init_type, 1);                                                                                                                     \
+        CHECK(g->type() == k##final_type);                                                                                                                     \
     }
 
 TEST_DUP_ARG_TYPE_CHANGE(Or, Null)
@@ -300,15 +300,15 @@ TEST_CASE_METHOD(GateTest, "pdag.DuplicateArgAtleastToOrWithTwoClones", "[pdag]"
 /// @param short_type  Short name of the gate, i.e., 'And'.
 ///                    It must have the same root in Connective, i.e., 'kAnd'.
 /// @param const_state  The notion of Boolean constant in the gate (TRUE/FALSE).
-#define TEST_ADD_COMPLEMENT_ARG(short_type, const_state)                                                               \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(ComplementArg##short_type), "[pdag]") {                                     \
-        DefineGate(k##short_type, 1);                                                                                  \
-        g->AddArg(var_one, true);                                                                                      \
-        REQUIRE(g->constant());                                                                                        \
-        REQUIRE(g->args().size() == 1);                                                                                \
-        ASSERT_##const_state(*g->args().begin() > 0);                                                                  \
-        CHECK(g->args<Variable>().empty());                                                                            \
-        CHECK(g->args<Gate>().empty());                                                                                \
+#define TEST_ADD_COMPLEMENT_ARG(short_type, const_state)                                                                                                       \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(ComplementArg##short_type), "[pdag]") {                                                                             \
+        DefineGate(k##short_type, 1);                                                                                                                          \
+        g->AddArg(var_one, true);                                                                                                                              \
+        REQUIRE(g->constant());                                                                                                                                \
+        REQUIRE(g->args().size() == 1);                                                                                                                        \
+        ASSERT_##const_state(*g->args().begin() > 0);                                                                                                          \
+        CHECK(g->args<Variable>().empty());                                                                                                                    \
+        CHECK(g->args<Gate>().empty());                                                                                                                        \
     }
 
 TEST_ADD_COMPLEMENT_ARG(And, FALSE)
@@ -325,17 +325,17 @@ TEST_ADD_COMPLEMENT_ARG(Xor, TRUE)
 /// @param num_vars  Initial number of variables.
 /// @param v_num  Initial K number of the gate.
 /// @param final_type  Short name of the final type of the gate, i.e., 'And'.
-#define TEST_ADD_COMPLEMENT_ARG_KN(num_vars, v_num, final_type)                                                        \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(ComplementArgAtleastTo##final_type), "[pdag]") {                            \
-        DefineGate(kAtleast, num_vars);                                                                                \
-        g->min_number(v_num);                                                                                          \
-        g->AddArg(var_one, true);                                                                                      \
-        REQUIRE_FALSE(g->constant());                                                                                  \
-        CHECK(g->type() == k##final_type);                                                                             \
-        CHECK(g->args().size() == (num_vars - 1));                                                                     \
-        CHECK(g->args<Variable>().size() == (num_vars - 1));                                                           \
-        CHECK(g->min_number() == (v_num - 1));                                                                         \
-        CHECK(g->args<Gate>().empty());                                                                                \
+#define TEST_ADD_COMPLEMENT_ARG_KN(num_vars, v_num, final_type)                                                                                                \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(ComplementArgAtleastTo##final_type), "[pdag]") {                                                                    \
+        DefineGate(kAtleast, num_vars);                                                                                                                        \
+        g->min_number(v_num);                                                                                                                                  \
+        g->AddArg(var_one, true);                                                                                                                              \
+        REQUIRE_FALSE(g->constant());                                                                                                                          \
+        CHECK(g->type() == k##final_type);                                                                                                                     \
+        CHECK(g->args().size() == (num_vars - 1));                                                                                                             \
+        CHECK(g->args<Variable>().size() == (num_vars - 1));                                                                                                   \
+        CHECK(g->min_number() == (v_num - 1));                                                                                                                 \
+        CHECK(g->args<Gate>().empty());                                                                                                                        \
     }
 
 TEST_ADD_COMPLEMENT_ARG_KN(2, 2, Null) // Join operation.
@@ -351,15 +351,15 @@ TEST_ADD_COMPLEMENT_ARG_KN(3, 3, And)  // Join operation.
 /// @param num_vars  The initial number of gate arguments.
 /// @param init_type  The initial type of the gate.
 /// @param const_state  The notion of Boolean constant in the gate (TRUE/FALSE).
-#define TEST_CONSTANT_ARG_STATE(arg_state, num_vars, init_type, const_state)                                           \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(arg_state##ConstantArg##init_type), "[pdag]") {                             \
-        DefineGate(k##init_type, num_vars);                                                                            \
-        g->ProcessConstantArg(var_one, arg_state);                                                                     \
-        REQUIRE(g->constant());                                                                                        \
-        REQUIRE(g->args().size() == 1);                                                                                \
-        ASSERT_##const_state(*g->args().begin() > 0);                                                                  \
-        CHECK(g->args<Variable>().empty());                                                                            \
-        CHECK(g->args<Gate>().empty());                                                                                \
+#define TEST_CONSTANT_ARG_STATE(arg_state, num_vars, init_type, const_state)                                                                                   \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(arg_state##ConstantArg##init_type), "[pdag]") {                                                                     \
+        DefineGate(k##init_type, num_vars);                                                                                                                    \
+        g->ProcessConstantArg(var_one, arg_state);                                                                                                             \
+        REQUIRE(g->constant());                                                                                                                                \
+        REQUIRE(g->args().size() == 1);                                                                                                                        \
+        ASSERT_##const_state(*g->args().begin() > 0);                                                                                                          \
+        CHECK(g->args<Variable>().empty());                                                                                                                    \
+        CHECK(g->args<Gate>().empty());                                                                                                                        \
     }
 
 TEST_CONSTANT_ARG_STATE(true, 1, Null, TRUE)
@@ -381,17 +381,17 @@ TEST_CONSTANT_ARG_STATE(false, 2, Nand, TRUE)
 /// @param v_num  The initial min number of the gate.
 /// @param init_type  The initial type of the gate.
 /// @param final_type  The final type of the gate.
-#define TEST_CONSTANT_ARG_VNUM(arg_state, num_vars, v_num, init_type, final_type)                                      \
-    TEST_CASE_METHOD(GateTest, "pdag." STR(arg_state##ConstantArg##init_type##To##final_type), "[pdag]") {             \
-        DefineGate(k##init_type, num_vars);                                                                            \
-        if (v_num)                                                                                                     \
-            g->min_number(v_num);                                                                                      \
-        g->ProcessConstantArg(var_one, arg_state);                                                                     \
-        REQUIRE_FALSE(g->constant());                                                                                  \
-        CHECK(g->type() == k##final_type);                                                                             \
-        CHECK(g->args<Variable>().size() == (num_vars - 1));                                                           \
-        CHECK(g->args().size() == (num_vars - 1));                                                                     \
-        CHECK(g->args<Gate>().empty());                                                                                \
+#define TEST_CONSTANT_ARG_VNUM(arg_state, num_vars, v_num, init_type, final_type)                                                                              \
+    TEST_CASE_METHOD(GateTest, "pdag." STR(arg_state##ConstantArg##init_type##To##final_type), "[pdag]") {                                                     \
+        DefineGate(k##init_type, num_vars);                                                                                                                    \
+        if (v_num)                                                                                                                                             \
+            g->min_number(v_num);                                                                                                                              \
+        g->ProcessConstantArg(var_one, arg_state);                                                                                                             \
+        REQUIRE_FALSE(g->constant());                                                                                                                          \
+        CHECK(g->type() == k##final_type);                                                                                                                     \
+        CHECK(g->args<Variable>().size() == (num_vars - 1));                                                                                                   \
+        CHECK(g->args().size() == (num_vars - 1));                                                                                                             \
+        CHECK(g->args<Gate>().empty());                                                                                                                        \
     }
 
 TEST_CONSTANT_ARG_VNUM(true, 3, 2, Atleast, Or)
@@ -401,8 +401,7 @@ TEST_CONSTANT_ARG_VNUM(false, 4, 2, Atleast, Atleast)
 
 /// The same tests as TEST_CONSTANT_ARG_VNUM
 /// but with no min number initialization.
-#define TEST_CONSTANT_ARG(arg_state, num_vars, init_type, final_type)                                                  \
-    TEST_CONSTANT_ARG_VNUM(arg_state, num_vars, false, init_type, final_type)
+#define TEST_CONSTANT_ARG(arg_state, num_vars, init_type, final_type) TEST_CONSTANT_ARG_VNUM(arg_state, num_vars, false, init_type, final_type)
 
 TEST_CONSTANT_ARG(false, 2, Or, Null)
 TEST_CONSTANT_ARG(false, 3, Or, Or)

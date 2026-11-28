@@ -155,12 +155,10 @@ class pc_projection final {
   public:
     pc_projection() = default;
 
-    pc_projection(std::vector<target_binding> targets, std::vector<event_binding> events,
-                  std::vector<override_binding> overrides, std::vector<generated_binding> generated,
-                  std::vector<basic_event_id> initiator_events, std::vector<basic_event_id> literal_events)
-        : targets_(std::move(targets)), events_(std::move(events)), overrides_(std::move(overrides)),
-          generated_(std::move(generated)), initiator_events_(std::move(initiator_events)),
-          literal_events_(std::move(literal_events)) {
+    pc_projection(std::vector<target_binding> targets, std::vector<event_binding> events, std::vector<override_binding> overrides,
+                  std::vector<generated_binding> generated, std::vector<basic_event_id> initiator_events, std::vector<basic_event_id> literal_events)
+        : targets_(std::move(targets)), events_(std::move(events)), overrides_(std::move(overrides)), generated_(std::move(generated)),
+          initiator_events_(std::move(initiator_events)), literal_events_(std::move(literal_events)) {
         std::ranges::stable_sort(targets_, {}, &target_binding::pc_target);
         std::ranges::stable_sort(events_, {}, &event_binding::node);
         std::ranges::stable_sort(generated_, {}, &generated_binding::node);
@@ -176,9 +174,7 @@ class pc_projection final {
     [[nodiscard]] auto override_bindings() const noexcept -> std::span<override_binding const> { return overrides_; }
     // Ordered by PC node id.
     [[nodiscard]] auto generated_bindings() const noexcept -> std::span<generated_binding const> { return generated_; }
-    [[nodiscard]] auto initiator_events() const noexcept -> std::span<basic_event_id const> {
-        return initiator_events_;
-    }
+    [[nodiscard]] auto initiator_events() const noexcept -> std::span<basic_event_id const> { return initiator_events_; }
     [[nodiscard]] auto literal_events() const noexcept -> std::span<basic_event_id const> { return literal_events_; }
 
     [[nodiscard]] auto initiators(target_binding const &target) const noexcept -> std::span<basic_event_id const> {
@@ -195,10 +191,8 @@ class pc_projection final {
 
     // The first binding, in PC target order, of a domain target.
     [[nodiscard]] auto find_target(const domain_target_id target) const noexcept -> target_binding const * {
-        const auto found = std::ranges::lower_bound(
-            targets_by_domain_, target, {}, [this](const std::uint32_t row) { return targets_[row].domain_target; });
-        return found != targets_by_domain_.end() && targets_[*found].domain_target == target ? &targets_[*found]
-                                                                                             : nullptr;
+        const auto found = std::ranges::lower_bound(targets_by_domain_, target, {}, [this](const std::uint32_t row) { return targets_[row].domain_target; });
+        return found != targets_by_domain_.end() && targets_[*found].domain_target == target ? &targets_[*found] : nullptr;
     }
 
     [[nodiscard]] auto find_event(const pc::bool_node_id node) const noexcept -> event_binding const * {
@@ -207,8 +201,7 @@ class pc_projection final {
     }
 
     [[nodiscard]] auto find_event(const domain_ref element) const noexcept -> event_binding const * {
-        const auto found = std::ranges::lower_bound(events_by_element_, element, {},
-                                                    [this](const std::uint32_t row) { return events_[row].element; });
+        const auto found = std::ranges::lower_bound(events_by_element_, element, {}, [this](const std::uint32_t row) { return events_[row].element; });
         return found != events_by_element_.end() && events_[*found].element == element ? &events_[*found] : nullptr;
     }
 
@@ -225,16 +218,14 @@ class pc_projection final {
 
   private:
     template <typename row_type, typename key_type>
-    [[nodiscard]] static auto order_by(std::vector<row_type> const &rows, key_type row_type::*key)
-        -> std::vector<std::uint32_t> {
+    [[nodiscard]] static auto order_by(std::vector<row_type> const &rows, key_type row_type::*key) -> std::vector<std::uint32_t> {
         std::vector<std::uint32_t> order(rows.size());
         std::iota(order.begin(), order.end(), 0U);
         std::ranges::stable_sort(order, {}, [&rows, key](const std::uint32_t row) { return rows[row].*key; });
         return order;
     }
 
-    [[nodiscard]] static auto slice(std::vector<basic_event_id> const &column,
-                                    const table_range<basic_event_id> range) noexcept
+    [[nodiscard]] static auto slice(std::vector<basic_event_id> const &column, const table_range<basic_event_id> range) noexcept
         -> std::span<basic_event_id const> {
         if (range.offset > column.size() || range.count > column.size() - range.offset) {
             return {};

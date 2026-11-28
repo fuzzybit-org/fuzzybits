@@ -8,17 +8,16 @@ namespace fuzzybits::ir::pc::passes {
 
 namespace {
 
-[[nodiscard]] auto fold_probability(circuit const &input, pass_options const &options, const pass_id pass,
-                                    const double probability, const bool value) -> transform_result {
+[[nodiscard]] auto fold_probability(circuit const &input, pass_options const &options, const pass_id pass, const double probability, const bool value)
+    -> transform_result {
     auto report = detail::begin_report(input, pass);
     if (auto trivial = detail::trivial_result(input, report)) {
         return std::move(*trivial);
     }
     // Folding an atom event would turn its atom into a constant, which
     // the hull cannot drop. p = 1 folding is never valid for the hull.
-    const auto split = pass == pass_id::fold_zero_probability
-                           ? detail::split_context::make(input, options.atoms, report)
-                           : std::optional<detail::split_context>(detail::split_context{});
+    const auto split = pass == pass_id::fold_zero_probability ? detail::split_context::make(input, options.atoms, report)
+                                                              : std::optional<detail::split_context>(detail::split_context{});
     if (!split) {
         return transform_result{.output = {}, .report = std::move(report)};
     }
@@ -51,8 +50,7 @@ namespace {
             continue;
         }
         detail::remap_operands(input, node, map, operands);
-        map[node] = detail::reference(
-            emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
+        map[node] = detail::reference(emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
     }
 
     report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(operands) + split->bytes();

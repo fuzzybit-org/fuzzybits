@@ -82,9 +82,7 @@ struct edge_key final {
 };
 
 // The operands of a node as a multiset of (mapped source, complement).
-template <typename mapper>
-[[nodiscard]] auto operandsOf(pc::circuit const &circuit, const pc::bool_node_id node, mapper &&map)
-    -> std::vector<edge_key> {
+template <typename mapper> [[nodiscard]] auto operandsOf(pc::circuit const &circuit, const pc::bool_node_id node, mapper &&map) -> std::vector<edge_key> {
     std::vector<edge_key> edges;
     for (auto const &edge : circuit.operands(node)) {
         edges.push_back({map(edge.source), edge.complement});
@@ -112,8 +110,7 @@ template <typename mapper>
 // The read circuit has the structure of the written one, seen through the maps, node for node. What
 // pcfb records differently: house events and a cardinality without operands (a ONES tensor) read as
 // constants, and the order of the operands is the file's.
-void requireSameStructure(RandomModel const &model, writer::write_output const &written,
-                          writer::read_output const &read) {
+void requireSameStructure(RandomModel const &model, writer::write_output const &written, writer::read_output const &read) {
     auto const &original = model.circuit;
     auto const &options = model.options;
     auto const &circuit = read.circuit;
@@ -121,9 +118,7 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
     REQUIRE(written.tensor_by_node.size() == original.node_count());
     const auto readEvents = eventIds(circuit);
 
-    const auto mapped = [&](const pc::bool_node_id node) -> pc::bool_node_id {
-        return read.node_by_tensor.at(written.tensor_by_node.at(node.raw()));
-    };
+    const auto mapped = [&](const pc::bool_node_id node) -> pc::bool_node_id { return read.node_by_tensor.at(written.tensor_by_node.at(node.raw())); };
     const auto mappedId = [&](const pc::bool_node_id node) {
         const auto result = mapped(node);
         REQUIRE(result.valid());
@@ -172,9 +167,8 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
                 REQUIRE(circuit.cardinality_low()[r] == original.cardinality_low()[v]);
                 REQUIRE(circuit.cardinality_high()[r] == original.cardinality_high()[v]);
             }
-            REQUIRE(
-                operandsOf(original, node, mappedId) ==
-                operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); }));
+            REQUIRE(operandsOf(original, node, mappedId) ==
+                    operandsOf(circuit, pc::bool_node_id(r), [](const pc::bool_node_id source) { return source.raw(); }));
             break;
         }
     }
@@ -191,8 +185,7 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
         const auto named = options.target_names.find(before.id);
         const auto readNamed = read.options.target_names.find(after.id);
         REQUIRE(readNamed != read.options.target_names.end());
-        REQUIRE(readNamed->second ==
-                (named == options.target_names.end() ? "t" + std::to_string(before.id.raw()) : named->second));
+        REQUIRE(readNamed->second == (named == options.target_names.end() ? "t" + std::to_string(before.id.raw()) : named->second));
         REQUIRE(read.options.target_kinds.at(after.id) == effectiveKinds(options, before.id));
     }
 
@@ -206,8 +199,7 @@ void requireSameStructure(RandomModel const &model, writer::write_output const &
         const bool hull = std::ranges::find(kinds, kind::monotone_hull_probability) != kinds.end();
         REQUIRE(found->second.target == entry.target);
         REQUIRE(found->second.literal_mode == (hull ? entry.literal_mode : std::string{}));
-        REQUIRE(found->second.max_initiators_per_cutset ==
-                (hull ? entry.max_initiators_per_cutset : std::optional<std::uint32_t>{}));
+        REQUIRE(found->second.max_initiators_per_cutset == (hull ? entry.max_initiators_per_cutset : std::optional<std::uint32_t>{}));
     }
     REQUIRE(read.options.model_name == options.model_name);
     REQUIRE(read.options.source_format == options.source_format);
@@ -352,12 +344,10 @@ TEST_CASE("pcfb reader descriptor and endpoint", "[io][pcfb][read]") {
 
     const auto model = threeTargetModel();
     const auto written = requireWrite(model, threeTargetNames());
-    const auto path = std::filesystem::temp_directory_path() /
-                      ("fzb_pcfb_reader_endpoint_" + std::to_string(std::random_device{}()) + ".pcfb");
+    const auto path = std::filesystem::temp_directory_path() / ("fzb_pcfb_reader_endpoint_" + std::to_string(std::random_device{}()) + ".pcfb");
     {
         std::ofstream output(path, std::ios::binary);
-        output.write(reinterpret_cast<char const *>(written.bytes.data()),
-                     static_cast<std::streamsize>(written.bytes.size()));
+        output.write(reinterpret_cast<char const *>(written.bytes.data()), static_cast<std::streamsize>(written.bytes.size()));
     }
     fuzzybits::io::read_request request{.path = path, .format = fuzzybits::io::formats::pcfb()};
     const auto handle = writer::read(request);
@@ -386,11 +376,9 @@ TEST_CASE("pcfb reader descriptor and endpoint", "[io][pcfb][read]") {
 TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pcfb][read]") {
     const auto model = threeTargetModel();
     auto options = threeTargetNames();
-    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
-                            {pc::target_id(1), {kind::monotone_hull_probability}}};
+    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}}, {pc::target_id(1), {kind::monotone_hull_probability}}};
     options.quantification = {
-        {pc::target_id(0),
-         writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
+        {pc::target_id(0), writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
         {pc::target_id(1), writer::target_quantification{.literal_mode = "fixed"}},
     };
     options.node_names = {{pc::bool_node_id(0), "PUMP-A"}, {pc::bool_node_id(3), "BOTH"}};
@@ -406,8 +394,7 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     const auto read = readOk(written.bytes);
     CHECK(read.schema_version == 0x00010002U);
     CHECK(read.options.target_names == options.target_names);
-    CHECK(read.options.target_kinds.at(pc::target_id(0)) ==
-          std::vector<kind>{kind::probability, kind::monotone_hull_probability});
+    CHECK(read.options.target_kinds.at(pc::target_id(0)) == std::vector<kind>{kind::probability, kind::monotone_hull_probability});
     CHECK(read.options.target_kinds.at(pc::target_id(1)) == std::vector<kind>{kind::monotone_hull_probability});
     CHECK(read.options.target_kinds.at(pc::target_id(2)) == std::vector<kind>{kind::probability});
     CHECK(read.circuit.targets().size() == 3);
@@ -432,8 +419,7 @@ TEST_CASE("pcfb reader recovers names, kinds and the compile metadata", "[io][pc
     REQUIRE((*file)->metadata() != nullptr);
     REQUIRE(read.metadata.size() == (*file)->metadata()->size());
     for (std::size_t index = 0; index < read.metadata.size(); ++index) {
-        CHECK(read.metadata[index].first ==
-              (*file)->metadata()->Get(static_cast<flatbuffers::uoffset_t>(index))->key()->str());
+        CHECK(read.metadata[index].first == (*file)->metadata()->Get(static_cast<flatbuffers::uoffset_t>(index))->key()->str());
     }
     const auto find = [&](std::string const &key) -> writer::metadata_value const * {
         for (auto const &entry : read.metadata) {
@@ -478,8 +464,7 @@ TEST_CASE("pcfb reader keeps the structure of random circuits and rewrites them 
     round_trip_stats stats;
     for (int round = 0; round < 360; ++round) {
         INFO("round " << round);
-        const auto model = round % 3 == 0 ? randomModel(rng, coverage)
-                                          : randomModel(rng, coverage, RandomSize{.max_events = 300, .max_gates = 700});
+        const auto model = round % 3 == 0 ? randomModel(rng, coverage) : randomModel(rng, coverage, RandomSize{.max_events = 300, .max_gates = 700});
         roundTripRandom(model, stats);
     }
     CHECK(stats.circuits == 360);
@@ -502,9 +487,8 @@ TEST_CASE("pcfb reader keeps the event order of a circuit whose gates come first
     // Events a < b < c by node id, listed by the top gate as c, a, b: the file emits the samples in that
     // order and the read circuit must still number a, b, c.
     pc::builder builder;
-    const auto top =
-        builder.add_and({pc::edge_ref{.source = pc::bool_node_id(3)}, pc::edge_ref{.source = pc::bool_node_id(1)},
-                         pc::edge_ref{.source = pc::bool_node_id(2), .complement = true}});
+    const auto top = builder.add_and({pc::edge_ref{.source = pc::bool_node_id(3)}, pc::edge_ref{.source = pc::bool_node_id(1)},
+                                      pc::edge_ref{.source = pc::bool_node_id(2), .complement = true}});
     const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
     const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
     const auto c = builder.add_basic_event(builder.add_literal_probability(0.3));
@@ -522,8 +506,7 @@ TEST_CASE("pcfb reader keeps the event order of a circuit whose gates come first
     std::vector<double> probabilities;
     for (std::uint32_t node = 0; node < read.circuit.node_count(); ++node) {
         if (read.circuit.op_codes()[node] == pc::op_code::basic_event) {
-            probabilities.push_back(
-                read.circuit.probability_sources()[read.circuit.probability_source_refs()[node].raw()].literal);
+            probabilities.push_back(read.circuit.probability_sources()[read.circuit.probability_source_refs()[node].raw()].literal);
         }
     }
     CHECK(probabilities == std::vector<double>{0.1, 0.2, 0.3});
@@ -544,8 +527,7 @@ TEST_CASE("pcfb reader keeps the event order of a circuit whose gates come first
     requireStable(read);
 }
 
-TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to the same structure",
-          "[io][pcfb][read][ftp]") {
+TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to the same structure", "[io][pcfb][read][ftp]") {
     const auto root = projectRoot() / "input" / "ftp" / "conformance";
     std::vector<std::filesystem::path> directories;
     for (auto const &entry : std::filesystem::directory_iterator(root)) {
@@ -617,8 +599,7 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
             }
         }
     }
-    INFO(compiled << " compiled files, " << hullFiles << " with hull queries, " << twoKindTargets
-                  << " two-kind targets");
+    INFO(compiled << " compiled files, " << hullFiles << " with hull queries, " << twoKindTargets << " two-kind targets");
     CHECK(compiled >= 20);
     CHECK(roundTrips == compiled);
     CHECK(hullFiles > 0);
@@ -626,17 +607,14 @@ TEST_CASE("pcfb reader: FTP conformance fixtures compile, read and rewrite to th
     CHECK(groupFiles > 0);
 }
 
-TEST_CASE("pcfb reader: tracked .pcfb files read to a fixed point or are rejected with a documented id",
-          "[io][pcfb][read]") {
+TEST_CASE("pcfb reader: tracked .pcfb files read to a fixed point or are rejected with a documented id", "[io][pcfb][read]") {
     std::vector<std::filesystem::path> files;
     const auto root = projectRoot();
-    for (auto iterator = std::filesystem::recursive_directory_iterator(
-             root, std::filesystem::directory_options::skip_permission_denied);
+    for (auto iterator = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied);
          iterator != std::filesystem::recursive_directory_iterator(); ++iterator) {
         const auto name = iterator->path().filename().string();
-        if (iterator->is_directory() &&
-            (name == ".git" || name == "_deps" || name == "node_modules" || name.rfind("build", 0) == 0 ||
-             name.rfind(".venv", 0) == 0 || name.rfind("cmake-build", 0) == 0)) {
+        if (iterator->is_directory() && (name == ".git" || name == "_deps" || name == "node_modules" || name.rfind("build", 0) == 0 ||
+                                         name.rfind(".venv", 0) == 0 || name.rfind("cmake-build", 0) == 0)) {
             iterator.disable_recursion_pending();
             continue;
         }
@@ -696,8 +674,7 @@ TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", 
     INFO(diagnosticsText(result.diagnostics()));
     REQUIRE(result);
     CHECK(codesOf(result.diagnostics()) == std::set<std::string>{std::string(writer::diag::sample_source_dropped),
-                                                                 std::string(writer::diag::confidence_ignored),
-                                                                 std::string(writer::diag::event_ids_renumbered),
+                                                                 std::string(writer::diag::confidence_ignored), std::string(writer::diag::event_ids_renumbered),
                                                                  std::string(writer::diag::no_op_as_and)});
     auto const &read = result.value();
     auto const &circuit = read.circuit;
@@ -706,8 +683,7 @@ TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", 
     std::vector<double> probabilities;
     for (std::uint32_t node = 0; node < circuit.node_count(); ++node) {
         if (circuit.op_codes()[node] == pc::op_code::basic_event) {
-            probabilities.push_back(
-                circuit.probability_sources()[circuit.probability_source_refs()[node].raw()].literal);
+            probabilities.push_back(circuit.probability_sources()[circuit.probability_source_refs()[node].raw()].literal);
         }
     }
     CHECK(probabilities == std::vector<double>{0.25, 0.125, 0.5});
@@ -728,8 +704,7 @@ TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", 
     CHECK(std::abs(fuzzybits::compile::exact_probability(*file, 0) - referenceProbabilities(circuit)[0]) <= 1.0e-12);
 }
 
-TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is one cardinality node",
-          "[io][pcfb][read]") {
+TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is one cardinality node", "[io][pcfb][read]") {
     auto builder = sampleBytes({0.1, 0.2, 0.3, 0.4}, {1, 2, 3, 4});
     const std::uint32_t operands[] = {0, 1, 2, 3};
     const auto least = builder.add_op(::pcfb::OpCode::BITWISE_ATLEAST, operands, {}, 1U);
@@ -767,8 +742,7 @@ TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is 
     requireStable(read);
 }
 
-TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with stable ids",
-          "[io][pcfb][read][negative]") {
+TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with stable ids", "[io][pcfb][read][negative]") {
     const auto written = requireWrite(threeTargetModel(), threeTargetNames());
     const auto codeOfError = [](fuzzybits::api::diagnostic_list const &diagnostics) {
         for (auto const &item : diagnostics.items()) {
@@ -781,8 +755,7 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
 
     SECTION("empty and truncated bytes") {
         CHECK(codeOfError(writer::read(std::span<std::byte const>{}).diagnostics()) == writer::diag::unreadable);
-        for (const auto length :
-             {std::size_t{1}, std::size_t{4}, std::size_t{8}, written.bytes.size() / 2, written.bytes.size() * 3 / 4}) {
+        for (const auto length : {std::size_t{1}, std::size_t{4}, std::size_t{8}, written.bytes.size() / 2, written.bytes.size() * 3 / 4}) {
             INFO("length " << length);
             const auto result = writer::read(std::span<std::byte const>{written.bytes.data(), length});
             CHECK_FALSE(result);
@@ -798,8 +771,7 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
             auto bytes = written.bytes;
             const auto flips = 1 + round % 4;
             for (int flip = 0; flip < flips; ++flip) {
-                bytes[static_cast<std::size_t>(pcfb_test_random::uniform(rng, 0, bytes.size() - 1))] ^=
-                    static_cast<std::byte>(1 + rng() % 255);
+                bytes[static_cast<std::size_t>(pcfb_test_random::uniform(rng, 0, bytes.size() - 1))] ^= static_cast<std::byte>(1 + rng() % 255);
             }
             const auto result = writer::read(bytes);
             if (!result) {
@@ -885,8 +857,7 @@ TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][
     auto options = threeTargetNames();
     options.model_name = "demo";
     options.target_kinds = {{pc::target_id(0), {kind::monotone_hull_probability}}};
-    options.quantification = {
-        {pc::target_id(0), writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = 2}}};
+    options.quantification = {{pc::target_id(0), writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = 2}}};
     options.source_sha256 = std::array<std::byte, 32>{};
     auto model = unpack(requireWrite(threeTargetModel(), options).bytes);
     for (auto &entry : model->metadata) {
@@ -916,9 +887,8 @@ TEST_CASE("pcfb reader: metadata the reader interprets is checked", "[io][pcfb][
     // Circuit.name is the fallback of general.model_name.
     CHECK(read.options.model_name == "demo");
     // The entries stay as they were.
-    CHECK(std::ranges::any_of(read.metadata, [](auto const &entry) {
-        return entry.first == "general.model_name" && std::holds_alternative<std::int64_t>(entry.second);
-    }));
+    CHECK(std::ranges::any_of(read.metadata,
+                              [](auto const &entry) { return entry.first == "general.model_name" && std::holds_alternative<std::int64_t>(entry.second); }));
 }
 
 TEST_CASE("pcfb reader: a watch or projection-anchor target keeps its role", "[io][pcfb][read]") {
@@ -932,8 +902,7 @@ TEST_CASE("pcfb reader: a watch or projection-anchor target keeps its role", "[i
     (void)builder.add_target(both, pc::observable_role::watch);
     const auto model = sealed(std::move(builder));
     auto options = writer::write_options{};
-    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
-                            {pc::target_id(3), {kind::monotone_hull_probability}}};
+    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}}, {pc::target_id(3), {kind::monotone_hull_probability}}};
     const auto written = requireWrite(model, options);
 
     auto file = ::pcfb::io::from_bytes(written.bytes);
@@ -945,9 +914,8 @@ TEST_CASE("pcfb reader: a watch or projection-anchor target keeps its role", "[i
         }
     }
     // One entry per query of a non-primary target, none for the primary one.
-    CHECK(roles == std::map<std::string, std::string>{{"compile.query.2.role", "watch"},
-                                                      {"compile.query.3.role", "projection_anchor"},
-                                                      {"compile.query.4.role", "watch"}});
+    CHECK(roles == std::map<std::string, std::string>{
+                       {"compile.query.2.role", "watch"}, {"compile.query.3.role", "projection_anchor"}, {"compile.query.4.role", "watch"}});
 
     const auto read = readOk(written.bytes);
     REQUIRE(read.circuit.targets().size() == 4);
@@ -987,8 +955,7 @@ TEST_CASE("pcfb reader: an unknown role value reads as primary with a warning", 
 }
 
 TEST_CASE("pcfb reader: FTP --watch compiles to a file that reads back with the watch role", "[io][pcfb][read][ftp]") {
-    const std::string text =
-        "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+    const std::string text = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
     ftp::options settings;
     settings.kinds = {"probability"};
     settings.watch = {"G1"};
@@ -1004,13 +971,11 @@ TEST_CASE("pcfb reader: FTP --watch compiles to a file that reads back with the 
     requireStable(read);
 }
 
-TEST_CASE("pcfb reader: cardinality(0, n) is written as ATLEAST 0 and read back with its operands",
-          "[io][pcfb][read]") {
+TEST_CASE("pcfb reader: cardinality(0, n) is written as ATLEAST 0 and read back with its operands", "[io][pcfb][read]") {
     pc::builder builder;
     const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
     const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
-    const auto any =
-        builder.add_cardinality(0, 2, {pc::edge_ref{.source = a}, pc::edge_ref{.source = b, .complement = true}});
+    const auto any = builder.add_cardinality(0, 2, {pc::edge_ref{.source = a}, pc::edge_ref{.source = b, .complement = true}});
     (void)builder.add_target(any);
     const auto model = sealed(std::move(builder));
     const auto written = requireWrite(model);
@@ -1047,10 +1012,8 @@ struct mixed_polarity_model final {
     const auto z = builder.add_basic_event(builder.add_literal_probability(0.3));
     const auto gate = builder.add_not(pc::edge_ref{.source = x});
     const auto beside = builder.add_and({pc::edge_ref{.source = x}, pc::edge_ref{.source = gate}});
-    const auto first = builder.add_and(
-        {pc::edge_ref{.source = x}, pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = y}});
-    const auto second = builder.add_or(
-        {pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = x}, pc::edge_ref{.source = y}});
+    const auto first = builder.add_and({pc::edge_ref{.source = x}, pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = y}});
+    const auto second = builder.add_or({pc::edge_ref{.source = x, .complement = true}, pc::edge_ref{.source = x}, pc::edge_ref{.source = y}});
     const auto third = builder.add_and({pc::edge_ref{.source = z}, pc::edge_ref{.source = z, .complement = true}});
     for (const auto node : {beside, first, second, third}) {
         (void)builder.add_target(node);
@@ -1067,8 +1030,7 @@ struct mixed_polarity_model final {
     return std::nullopt;
 }
 
-[[nodiscard]] auto withComplementTensors(bytes_type const &bytes, std::vector<std::uint8_t> const &packed)
-    -> bytes_type {
+[[nodiscard]] auto withComplementTensors(bytes_type const &bytes, std::vector<std::uint8_t> const &packed) -> bytes_type {
     auto model = unpack(bytes);
     for (auto &entry : model->metadata) {
         if (entry->key == "compile.complement_tensors") {
@@ -1094,8 +1056,7 @@ struct mixed_polarity_model final {
 
 } // namespace
 
-TEST_CASE("pcfb reader: a NOT gate beside the writer's NOT tensors stays a node and the tensors fold",
-          "[io][pcfb][read]") {
+TEST_CASE("pcfb reader: a NOT gate beside the writer's NOT tensors stays a node and the tensors fold", "[io][pcfb][read]") {
     const auto model = mixedPolarityModel();
     REQUIRE(model.circuit.node_count() == 8);
     const auto written = requireWrite(model.circuit);
@@ -1124,14 +1085,12 @@ TEST_CASE("pcfb reader: without compile.complement_tensors every NOT operator is
     CHECK(codes.empty());
 }
 
-TEST_CASE("pcfb reader: a writer file without mixed polarity has no compile.complement_tensors entry",
-          "[io][pcfb][read]") {
+TEST_CASE("pcfb reader: a writer file without mixed polarity has no compile.complement_tensors entry", "[io][pcfb][read]") {
     pc::builder builder;
     const auto a = builder.add_basic_event(builder.add_literal_probability(0.1));
     const auto b = builder.add_basic_event(builder.add_literal_probability(0.2));
     const auto gate = builder.add_not(pc::edge_ref{.source = a});
-    (void)builder.add_target(
-        builder.add_and({pc::edge_ref{.source = gate}, pc::edge_ref{.source = b, .complement = true}}));
+    (void)builder.add_target(builder.add_and({pc::edge_ref{.source = gate}, pc::edge_ref{.source = b, .complement = true}}));
     const auto written = requireWrite(sealed(std::move(builder)));
     const auto read = readOk(written.bytes);
     CHECK_FALSE(complementTensorsOf(read).has_value());

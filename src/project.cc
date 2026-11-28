@@ -80,9 +80,8 @@ Project::Project(const std::string &project_file) {
                 SCRAM_THROW(VersionError("Version incompatibility"));
 
         } catch (Error &err) {
-            err << errinfo_value(std::string(version)) << xml::errinfo_element("scram")
-                << xml::errinfo_attribute("version") << boost::errinfo_at_line(root.line())
-                << boost::errinfo_file_name(root.filename());
+            err << errinfo_value(std::string(version)) << xml::errinfo_element("scram") << xml::errinfo_attribute("version")
+                << boost::errinfo_at_line(root.line()) << boost::errinfo_file_name(root.filename());
             throw;
         }
     }

@@ -30,8 +30,7 @@ namespace json = fuzzybits::compile::ftp::json;
 namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
 using fuzzybits::api::diagnostic_list;
 
-constexpr auto simple =
-    "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
+constexpr auto simple = "TOP + G1 E3\nG1 * E1 E2\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 E1\n  2.0E-01 E2\n  3.0E-01 E3\n";
 
 [[nodiscard]] auto render(diagnostic_list const &diagnostics) -> std::string {
     std::ostringstream out;
@@ -55,8 +54,7 @@ constexpr auto simple =
     return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "ftp" / "conformance" / name;
 }
 
-[[nodiscard]] auto sources_of(std::vector<std::pair<std::string, std::string>> files)
-    -> std::vector<reader::source_text> {
+[[nodiscard]] auto sources_of(std::vector<std::pair<std::string, std::string>> files) -> std::vector<reader::source_text> {
     std::vector<reader::source_text> out;
     for (auto &[path, text] : files) {
         out.push_back(reader::source_text{.path = std::move(path), .text = std::move(text)});
@@ -134,8 +132,7 @@ constexpr auto simple =
 [[nodiscard]] auto sample_names(::pcfb::ir::Circuit const &circuit) -> std::set<std::string> {
     std::set<std::string> out;
     for (auto const *op : *circuit->subcircuits()->Get(0)->operators()) {
-        if (op->opcode() == ::pcfb::OpCode::SAMPLE && op->args_as_SampleArgs() != nullptr &&
-            op->args_as_SampleArgs()->name() != nullptr) {
+        if (op->opcode() == ::pcfb::OpCode::SAMPLE && op->args_as_SampleArgs() != nullptr && op->args_as_SampleArgs()->name() != nullptr) {
             out.insert(op->args_as_SampleArgs()->name()->str());
         }
     }
@@ -201,8 +198,7 @@ TEST_CASE("the metadata names the source, its digest and the effective options",
     REQUIRE(root.find("hull")->find("literals")->string == "split");
     REQUIRE(root.find("hull")->find("max_initiators")->kind == json::value::kind_type::null);
     REQUIRE(root.find("initiator_values")->string == "probability");
-    for (const char *removed :
-         {"negation", "literals", "max_initiators_per_cutset", "initiator_unit", "complement_events"}) {
+    for (const char *removed : {"negation", "literals", "max_initiators_per_cutset", "initiator_unit", "complement_events"}) {
         REQUIRE(root.find(removed) == nullptr);
     }
     REQUIRE(root.find("ftp_limit")->string == "1.000000E-12");
@@ -278,11 +274,9 @@ TEST_CASE("a hull query is written only when requested, with its metadata", "[co
     // The config document requests it too; a flag overrides the document.
     ftp::options document;
     document.config = R"({"kinds": "hull"})";
-    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
-            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     document.kinds = {"probability"};
-    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) ==
-            std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
+    REQUIRE(query_kinds(view(compile_ok(simple, document).bytes)) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY});
 }
 
 TEST_CASE("--kind probability writes minor-1 files", "[compile][ftp][hull]") {
@@ -293,11 +287,9 @@ TEST_CASE("--kind probability writes minor-1 files", "[compile][ftp][hull]") {
 }
 
 TEST_CASE("--kind takes repeats and comma-separated lists", "[compile][ftp][hull]") {
-    const std::vector<::pcfb::QueryKind> both{::pcfb::QueryKind::PROBABILITY,
-                                              ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY};
-    for (std::vector<std::string> kinds :
-         {std::vector<std::string>{"probability", "hull"}, std::vector<std::string>{"hull,probability"},
-          std::vector<std::string>{"hull", "probability,hull"}}) {
+    const std::vector<::pcfb::QueryKind> both{::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY};
+    for (std::vector<std::string> kinds : {std::vector<std::string>{"probability", "hull"}, std::vector<std::string>{"hull,probability"},
+                                           std::vector<std::string>{"hull", "probability,hull"}}) {
         ftp::options options = probability_options();
         options.kinds = kinds;
         REQUIRE(query_kinds(view(compile_ok(simple, options).bytes)) == both);
@@ -318,14 +310,11 @@ TEST_CASE("a target can ask for both kinds; names and kinds survive C1", "[compi
         INFO("level " << level);
         REQUIRE(circuit.schema_version() == minor_2);
         REQUIRE(query_names(circuit) == std::vector<std::string>{"TOP", "TOP", "W1", "U1"});
-        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY,
-                                                                       ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
-                                                                       ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
-                                                                       ::pcfb::QueryKind::PROBABILITY});
+        REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                                                       ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, ::pcfb::QueryKind::PROBABILITY});
         const std::vector<std::string> targets{"TOP", "TOP", "W1", "U1"};
         for (std::size_t index = 0; index < targets.size(); ++index) {
-            REQUIRE(string_meta(circuit, ("compile.query." + std::to_string(index) + ".target").c_str()) ==
-                    targets[index]);
+            REQUIRE(string_meta(circuit, ("compile.query." + std::to_string(index) + ".target").c_str()) == targets[index]);
         }
         // TOP's two queries share its tensor.
         auto const *queries = circuit->subcircuits()->Get(0)->queries();
@@ -359,9 +348,8 @@ TEST_CASE("hull targets with marked literals are refused with the ways out", "[c
         REQUIRE_FALSE(refused);
         REQUIRE(has_code(refused.diagnostics(), "compile.pra_to_pc.hull-literals-unsupported"));
         REQUIRE(has_code(refused.diagnostics(), "compile.ftp.hull-literals-unsupported"));
-        const auto hint = std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) {
-            return item.code == "compile.ftp.hull-literals-unsupported";
-        });
+        const auto hint =
+            std::ranges::find_if(refused.diagnostics().items(), [](auto const &item) { return item.code == "compile.ftp.hull-literals-unsupported"; });
         REQUIRE(hint->message.find("--hull-literals plain") != std::string::npos);
         REQUIRE(hint->message.find("--kind probability") != std::string::npos);
     }
@@ -391,8 +379,7 @@ TEST_CASE("the initiator rule is a rule of hull queries, requested explicitly", 
     REQUIRE(std::abs(exact(plain) - 0.45000000000000007) <= 1e-12);
     REQUIRE_FALSE(plain.targets[0].hull_max_initiators);
     REQUIRE(plain.targets[0].initiating_events == 3);
-    REQUIRE_FALSE(
-        has_code(compile_text(text, probability_options()).diagnostics(), "compile.ftp.default-initiator-rule"));
+    REQUIRE_FALSE(has_code(compile_text(text, probability_options()).diagnostics(), "compile.ftp.default-initiator-rule"));
     REQUIRE(view(plain.bytes)->metadata()->LookupByKey("compile.query.0.max_initiators_per_cutset") == nullptr);
 
     // A rule without a hull query would change the probability query: refused.
@@ -503,8 +490,7 @@ TEST_CASE("flags override the config document, which overrides the model default
     REQUIRE(std::abs(exact(compile_ok(text, flags)) - 0.5) <= 1e-12);
 
     auto per_target = probability_options();
-    per_target.config =
-        R"({"targets": [{"name": "TOP", "kinds": ["probability", "hull"], "hull": {"literals": "fixed"}}]})";
+    per_target.config = R"({"targets": [{"name": "TOP", "kinds": ["probability", "hull"], "hull": {"literals": "fixed"}}]})";
     per_target.kinds.clear();
     const auto lowered = ftp::lower_sources(sources_of({{"m.ftp", text}}), per_target);
     REQUIRE(lowered);
@@ -548,8 +534,7 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
         const auto result = compile_text(simple, options);
         REQUIRE(render(result.diagnostics()).find("SCRAM preprocessing levels of MEF input") != std::string::npos);
     }
-    for (std::vector<std::string> kinds : {std::vector<std::string>{"both"}, std::vector<std::string>{"boolean"},
-                                           std::vector<std::string>{"probability,"}}) {
+    for (std::vector<std::string> kinds : {std::vector<std::string>{"both"}, std::vector<std::string>{"boolean"}, std::vector<std::string>{"probability,"}}) {
         options = probability_options();
         options.kinds = kinds;
         fails(options, "compile.ftp.invalid-option");
@@ -571,21 +556,19 @@ TEST_CASE("invalid settings are rejected with stable ids", "[compile][ftp][confi
     options = probability_options();
     options.overrides = {ftp::override_spec{.name = "NOPE", .value = true}};
     fails(options, "compile.pra_to_pc.unknown-element");
-    for (const char *config :
-         {"{", "", R"({"kinds": "probability", "kinds": "hull"})", R"({"kinds": "probability"} trailing)", "[1e999]"}) {
+    for (const char *config : {"{", "", R"({"kinds": "probability", "kinds": "hull"})", R"({"kinds": "probability"} trailing)", "[1e999]"}) {
         INFO(config);
         options = probability_options();
         options.config = config;
         fails(options, "compile.ftp.invalid-json");
     }
     for (const char *config :
-         {"[]", R"({"typo": 1})", R"({"kinds": "maybe"})", R"({"kinds": []})", R"({"targets": [1]})",
-          R"({"overrides": {"E1": 2}})", R"({"compilation_level": 3})", R"({"hull": {"max_initiators": -1}})",
-          R"({"hull": {"literals": "negation"}})", R"({"hull": {"typo": 1}})", R"({"hull": "split"})",
-          R"({"initiator_values": "frequency"})", R"({"targets": [{"name": "TOP", "negation": "hull"}]})",
+         {"[]", R"({"typo": 1})", R"({"kinds": "maybe"})", R"({"kinds": []})", R"({"targets": [1]})", R"({"overrides": {"E1": 2}})",
+          R"({"compilation_level": 3})", R"({"hull": {"max_initiators": -1}})", R"({"hull": {"literals": "negation"}})", R"({"hull": {"typo": 1}})",
+          R"({"hull": "split"})", R"({"initiator_values": "frequency"})", R"({"targets": [{"name": "TOP", "negation": "hull"}]})",
           // Removed keys.
-          R"({"negation": "boolean"})", R"({"literals": "negation"})", R"({"max_initiators_per_cutset": 1})",
-          R"({"initiator_unit": "per-year"})", R"({"complement_events": "negation"})"}) {
+          R"({"negation": "boolean"})", R"({"literals": "negation"})", R"({"max_initiators_per_cutset": 1})", R"({"initiator_unit": "per-year"})",
+          R"({"complement_events": "negation"})"}) {
         INFO(config);
         options = probability_options();
         options.config = config;
@@ -634,8 +617,7 @@ TEST_CASE("target and event names survive C1", "[compile][ftp][names]") {
     REQUIRE(after.passes.front().transform == "ir.pc.fold_zero_probability");
 }
 
-TEST_CASE("duplicate-import passes through to the reader; -EVENT is always a marked literal",
-          "[compile][ftp][reader]") {
+TEST_CASE("duplicate-import passes through to the reader; -EVENT is always a marked literal", "[compile][ftp][reader]") {
     const auto text = read_file(fixture("imports_tags_duplicates") / "model.ftp");
     auto options = probability_options();
     options.duplicate_import = "error";
@@ -692,9 +674,7 @@ TEST_CASE("inputs are classified by extension, directory and content", "[compile
     std::filesystem::remove_all(scratch);
     std::filesystem::create_directories(scratch / "project");
     std::filesystem::create_directories(scratch / "empty");
-    const auto write = [](std::filesystem::path const &path, std::string_view text) {
-        std::ofstream(path, std::ios::binary) << text;
-    };
+    const auto write = [](std::filesystem::path const &path, std::string_view text) { std::ofstream(path, std::ios::binary) << text; };
     write(scratch / "by_extension.FTP", "anything");
     write(scratch / "project" / "a.ftp", simple);
     write(scratch / "by_content.txt", simple);
@@ -732,8 +712,7 @@ TEST_CASE("FTP gates keep their shape through the lowering", "[compile][ftp][low
         return std::move(lowered).value();
     };
 
-    const auto simple_lowering = lower(
-        "TOP + A MID\nMID * B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\nLIMIT 1.0E-05\n");
+    const auto simple_lowering = lower("TOP + A MID\nMID * B C\nENDTREE\nPROCESS TOP\nIMPORT\n  1.0E-01 A\n  2.0E-01 B\n  3.0E-01 C\nLIMIT 1.0E-05\n");
     auto const &circuit = simple_lowering.circuit;
     REQUIRE(circuit.node_count() == 5);
     REQUIRE(circuit.edge_count() == 4);
@@ -793,8 +772,7 @@ namespace {
 
 } // namespace
 
-TEST_CASE("initiating-event values are frequencies: one conditioned query per initiator, grouped (#243)",
-          "[compile][ftp][frequency]") {
+TEST_CASE("initiating-event values are frequencies: one conditioned query per initiator, grouped (#243)", "[compile][ftp][frequency]") {
     auto const parsed = json::parse(read_file(frequency_fixture("expected.json")));
     REQUIRE(parsed);
     auto const &models = *parsed.value().find("models");
@@ -905,9 +883,8 @@ TEST_CASE("a frequency target asking for both kinds gets one group per kind", "[
     options.kinds = {"probability", "hull"};
     const auto compiled = compile_ok(read_file(frequency_fixture("F4.ftp")), options);
     const auto circuit = view(compiled.bytes);
-    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{
-                                        ::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
-                                        ::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
+    REQUIRE(query_kinds(circuit) == std::vector<::pcfb::QueryKind>{::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY,
+                                                                   ::pcfb::QueryKind::PROBABILITY, ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY});
     auto const *groups = circuit->subcircuits()->Get(0)->query_groups();
     REQUIRE(groups->size() == 2);
     REQUIRE(groups->Get(0)->terms()->Get(0)->query() == 0);

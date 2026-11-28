@@ -45,27 +45,21 @@ using clock = std::chrono::steady_clock;
 constexpr std::string_view source_format = "cafta-ftp";
 constexpr std::string_view limit_attribute = "ftp.limit";
 
-[[nodiscard]] auto seconds_since(const clock::time_point start) -> double {
-    return std::chrono::duration<double>(clock::now() - start).count();
-}
+[[nodiscard]] auto seconds_since(const clock::time_point start) -> double { return std::chrono::duration<double>(clock::now() - start).count(); }
 
 [[nodiscard]] auto lower_case(std::string text) -> std::string {
-    std::ranges::transform(text, text.begin(),
-                           [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::ranges::transform(text, text.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return text;
 }
 
 [[nodiscard]] auto in_quotes(std::string_view text) -> std::string { return "'" + std::string(text) + "'"; }
 
-[[nodiscard]] auto option_error(std::string message) -> api::diagnostic {
-    return api::make_error("compile.ftp.invalid-option", std::move(message));
-}
+[[nodiscard]] auto option_error(std::string message) -> api::diagnostic { return api::make_error("compile.ftp.invalid-option", std::move(message)); }
 
 // Compile-stage snapshots, as the MEF path emits them.
 class progress_reporter final {
   public:
-    explicit progress_reporter(options const &settings)
-        : emitter_(settings.progress_sinks, settings.progress_max_rate_hz), start_(clock::now()) {}
+    explicit progress_reporter(options const &settings) : emitter_(settings.progress_sinks, settings.progress_max_rate_hz), start_(clock::now()) {}
 
     void stage(std::string step) {
         if (!emitter_.active()) {
@@ -133,9 +127,7 @@ class progress_reporter final {
     return out;
 }
 
-[[nodiscard]] auto has_hull(std::span<pc::query_kind const> kinds) -> bool {
-    return std::ranges::find(kinds, pc::query_kind::monotone_hull) != kinds.end();
-}
+[[nodiscard]] auto has_hull(std::span<pc::query_kind const> kinds) -> bool { return std::ranges::find(kinds, pc::query_kind::monotone_hull) != kinds.end(); }
 
 [[nodiscard]] auto kinds_json(std::span<pc::query_kind const> kinds) -> json::value {
     auto out = json::value::make_array();
@@ -202,8 +194,7 @@ class document_reader final {
             return fail("the document must be a JSON object");
         }
         static constexpr std::array<std::string_view, 8> known{
-            "targets",          "watch", "overrides", "kinds", "hull", "duplicate_import", "initiator_values",
-            "compilation_level"};
+            "targets", "watch", "overrides", "kinds", "hull", "duplicate_import", "initiator_values", "compilation_level"};
         for (auto const &key : root.keys) {
             if (std::ranges::find(known, std::string_view(key)) == known.end()) {
                 return fail("unknown key " + in_quotes(key));
@@ -259,8 +250,7 @@ class document_reader final {
         diagnostics_.push(api::make_error("compile.ftp.invalid-config", std::move(message)));
     }
 
-    [[nodiscard]] auto choice(json::value const &value, std::string_view key,
-                              std::initializer_list<std::string_view> allowed) -> std::optional<std::string> {
+    [[nodiscard]] auto choice(json::value const &value, std::string_view key, std::initializer_list<std::string_view> allowed) -> std::optional<std::string> {
         if (value.is_string() && std::ranges::find(allowed, std::string_view(value.string)) != allowed.end()) {
             return value.string;
         }
@@ -273,8 +263,7 @@ class document_reader final {
     }
 
     // "probability", "hull" or a non-empty array of them.
-    [[nodiscard]] auto kinds(json::value const &value, std::string_view key)
-        -> std::optional<std::vector<pc::query_kind>> {
+    [[nodiscard]] auto kinds(json::value const &value, std::string_view key) -> std::optional<std::vector<pc::query_kind>> {
         std::vector<std::string> names;
         if (value.is_string()) {
             names.push_back(value.string);
@@ -342,8 +331,7 @@ class document_reader final {
                     continue;
                 }
                 if (auto const *subject = item.find("subject")) {
-                    if (subject->is_string() && (subject->string == "domain_target" || subject->string == "gate" ||
-                                                 subject->string == "basic_event")) {
+                    if (subject->is_string() && (subject->string == "domain_target" || subject->string == "gate" || subject->string == "basic_event")) {
                         spec.subject = subject->string;
                     } else {
                         error("subject must be \"domain_target\", \"gate\" or \"basic_event\"");
@@ -399,8 +387,7 @@ class document_reader final {
             }
             override_item entry{.name = name->string, .value = *flag};
             if (auto const *kind = item.find("kind")) {
-                const bool known = kind->is_string() && (kind->string == "gate" || kind->string == "basic_event" ||
-                                                         kind->string == "house_event");
+                const bool known = kind->is_string() && (kind->string == "gate" || kind->string == "basic_event" || kind->string == "house_event");
                 if (!known) {
                     error("override kind must be \"gate\", \"basic_event\" or \"house_event\"");
                     continue;
@@ -484,8 +471,7 @@ struct lowered_stage final {
     } else if (model.find_basic_event(spec.name).valid()) {
         subject = "basic_event";
     } else {
-        diagnostics.push(api::make_error("compile.ftp.unknown-target",
-                                         "no PROCESS target, gate or basic event is named " + in_quotes(spec.name)));
+        diagnostics.push(api::make_error("compile.ftp.unknown-target", "no PROCESS target, gate or basic event is named " + in_quotes(spec.name)));
         return std::nullopt;
     }
     if (subject == "gate") {
@@ -497,13 +483,12 @@ struct lowered_stage final {
 }
 
 [[nodiscard]] auto level_error(const int level) -> api::diagnostic {
-    return option_error("-c must be 0 or 1 for FTP input (the ir::pc passes: 0 none, 1 all), not " +
-                        std::to_string(level) + "; levels 2 to 8 are the SCRAM preprocessing levels of MEF input");
+    return option_error("-c must be 0 or 1 for FTP input (the ir::pc passes: 0 none, 1 all), not " + std::to_string(level) +
+                        "; levels 2 to 8 are the SCRAM preprocessing levels of MEF input");
 }
 
-[[nodiscard]] auto run_lower(std::span<reader::source_text const> given, options const &settings,
-                             api::diagnostic_list &diagnostics, timings &seconds, progress_reporter *progress,
-                             source_set &set) -> std::optional<lowered_stage> {
+[[nodiscard]] auto run_lower(std::span<reader::source_text const> given, options const &settings, api::diagnostic_list &diagnostics, timings &seconds,
+                             progress_reporter *progress, source_set &set) -> std::optional<lowered_stage> {
     if (settings.level && *settings.level != 0 && *settings.level != 1) {
         diagnostics.push(level_error(*settings.level));
         return std::nullopt;
@@ -529,18 +514,14 @@ struct lowered_stage final {
     if (settings.hull_literals) {
         literals_flag = pra::parse_hull_literals(*settings.hull_literals);
         if (!literals_flag) {
-            diagnostics.push(
-                option_error("hull-literals must be split, fixed or plain, not " + in_quotes(*settings.hull_literals)));
+            diagnostics.push(option_error("hull-literals must be split, fixed or plain, not " + in_quotes(*settings.hull_literals)));
         }
     }
-    if (settings.duplicate_import && *settings.duplicate_import != "error" && *settings.duplicate_import != "first" &&
-        *settings.duplicate_import != "last") {
-        diagnostics.push(option_error("duplicate-import must be error, first or last, not " +
-                                      in_quotes(*settings.duplicate_import)));
+    if (settings.duplicate_import && *settings.duplicate_import != "error" && *settings.duplicate_import != "first" && *settings.duplicate_import != "last") {
+        diagnostics.push(option_error("duplicate-import must be error, first or last, not " + in_quotes(*settings.duplicate_import)));
     }
     if (settings.initiator_values && !parse_initiator_values(*settings.initiator_values)) {
-        diagnostics.push(option_error("initiator-values must be one of " + initiator_values_names() + ", not " +
-                                      in_quotes(*settings.initiator_values)));
+        diagnostics.push(option_error("initiator-values must be one of " + initiator_values_names() + ", not " + in_quotes(*settings.initiator_values)));
     }
     settings_document document;
     if (settings.config) {
@@ -582,8 +563,7 @@ struct lowered_stage final {
     }
     auto const *model = pra::model_from(project.value());
     if (model == nullptr) {
-        diagnostics.push(
-            api::make_error("compile.ftp.invalid-model", "the FTP reader did not produce an ir::pra model"));
+        diagnostics.push(api::make_error("compile.ftp.invalid-model", "the FTP reader did not produce an ir::pra model"));
         return std::nullopt;
     }
 
@@ -592,18 +572,15 @@ struct lowered_stage final {
     // frequencies per year). A flag replaces every per-target choice of the document.
     merged.kinds = kinds_flag.value_or(document.kinds.value_or(merged.kinds));
     merged.hull.literals = literals_flag.value_or(document.hull_literals.value_or(merged.hull.literals));
-    merged.hull.max_initiators = settings.hull_max_initiators
-                                     ? *settings.hull_max_initiators
-                                     : document.hull_max_initiators.value_or(merged.hull.max_initiators);
-    merged.initiator_values =
-        settings.initiator_values.value_or(document.initiator_values.value_or(merged.initiator_values));
+    merged.hull.max_initiators =
+        settings.hull_max_initiators ? *settings.hull_max_initiators : document.hull_max_initiators.value_or(merged.hull.max_initiators);
+    merged.initiator_values = settings.initiator_values.value_or(document.initiator_values.value_or(merged.initiator_values));
     const auto reading = *parse_initiator_values(merged.initiator_values);
 
     lowering_ns::quantification_config config;
     config.default_kinds = merged.kinds;
     config.default_hull = merged.hull;
-    config.initiators =
-        reading.frequencies ? lowering_ns::initiator_values::frequency : lowering_ns::initiator_values::probability;
+    config.initiators = reading.frequencies ? lowering_ns::initiator_values::frequency : lowering_ns::initiator_values::probability;
     config.initiator_unit = reading.unit;
 
     const auto add = [&](std::vector<lowering_ns::target_request> &into, target_spec const &spec) {
@@ -615,14 +592,11 @@ struct lowered_stage final {
         if (has_hull(request->kinds)) {
             request->hull = pra::hull_query{
                 .literals = literals_flag ? merged.hull.literals : spec.hull_literals.value_or(merged.hull.literals),
-                .max_initiators = settings.hull_max_initiators
-                                      ? merged.hull.max_initiators
-                                      : spec.hull_max_initiators.value_or(merged.hull.max_initiators),
+                .max_initiators = settings.hull_max_initiators ? merged.hull.max_initiators : spec.hull_max_initiators.value_or(merged.hull.max_initiators),
             };
         } else if (!kinds_flag && (spec.hull_literals || spec.hull_max_initiators)) {
             diagnostics.push(
-                api::make_error("compile.ftp.invalid-config",
-                                "target " + in_quotes(spec.name) + " sets hull parameters but asks for no hull query"));
+                api::make_error("compile.ftp.invalid-config", "target " + in_quotes(spec.name) + " sets hull parameters but asks for no hull query"));
         }
         into.push_back(std::move(*request));
     };
@@ -631,8 +605,7 @@ struct lowered_stage final {
         for (auto const &name : settings.targets) {
             target_spec spec{.name = name};
             if (document.targets) {
-                if (const auto found = std::ranges::find(*document.targets, name, &target_spec::name);
-                    found != document.targets->end()) {
+                if (const auto found = std::ranges::find(*document.targets, name, &target_spec::name); found != document.targets->end()) {
                     spec = *found;
                 }
             }
@@ -649,8 +622,7 @@ struct lowered_stage final {
         for (auto const &name : settings.watch) {
             target_spec spec{.name = name};
             if (document.watch) {
-                if (const auto found = std::ranges::find(*document.watch, name, &target_spec::name);
-                    found != document.watch->end()) {
+                if (const auto found = std::ranges::find(*document.watch, name, &target_spec::name); found != document.watch->end()) {
                     spec = *found;
                 }
             }
@@ -666,23 +638,18 @@ struct lowered_stage final {
     // The hull parameters belong to hull queries; the initiator rule is a cut-set rule, which
     // conditioning on one initiating event at a time (frequencies) already makes redundant.
     const auto hull_request = [](lowering_ns::target_request const &request) { return request.hull.has_value(); };
-    const bool any_hull =
-        (config.targets.empty() ? has_hull(merged.kinds) : std::ranges::any_of(config.targets, hull_request)) ||
-        std::ranges::any_of(config.watch_targets, hull_request);
+    const bool any_hull = (config.targets.empty() ? has_hull(merged.kinds) : std::ranges::any_of(config.targets, hull_request)) ||
+                          std::ranges::any_of(config.watch_targets, hull_request);
     const auto rule = [](auto const &setting) { return setting && setting->has_value(); };
     if (!any_hull && (literals_flag || rule(settings.hull_max_initiators))) {
         diagnostics.push(option_error("hull-literals and hull-max-initiators apply to hull queries only, and no "
                                       "target asks for one (--kind hull)"));
     }
     if (!any_hull && (document.hull_literals || rule(document.hull_max_initiators))) {
-        diagnostics.push(api::make_error("compile.ftp.invalid-config",
-                                         "\"hull\" applies to hull queries only, and no target asks for one"));
+        diagnostics.push(api::make_error("compile.ftp.invalid-config", "\"hull\" applies to hull queries only, and no target asks for one"));
     }
-    const auto with_rule = [](lowering_ns::target_request const &request) {
-        return request.hull && request.hull->max_initiators;
-    };
-    const bool any_rule = (config.targets.empty() && has_hull(merged.kinds) && merged.hull.max_initiators) ||
-                          std::ranges::any_of(config.targets, with_rule) ||
+    const auto with_rule = [](lowering_ns::target_request const &request) { return request.hull && request.hull->max_initiators; };
+    const bool any_rule = (config.targets.empty() && has_hull(merged.kinds) && merged.hull.max_initiators) || std::ranges::any_of(config.targets, with_rule) ||
                           std::ranges::any_of(config.watch_targets, with_rule);
     if (any_hull && reading.frequencies && any_rule) {
         diagnostics.push(option_error("hull-max-initiators N applies only with --initiator-values probability: with "
@@ -691,8 +658,7 @@ struct lowered_stage final {
 
     merged.overrides = document.overrides;
     for (auto const &entry : settings.overrides) {
-        if (const auto found = std::ranges::find(merged.overrides, entry.name, &override_item::name);
-            found != merged.overrides.end()) {
+        if (const auto found = std::ranges::find(merged.overrides, entry.name, &override_item::name); found != merged.overrides.end()) {
             found->value = entry.value;
         } else {
             merged.overrides.push_back(override_item{.name = entry.name, .value = entry.value});
@@ -733,8 +699,7 @@ struct lowered_stage final {
 // ---- Summaries ------------------------------------------------------
 
 [[nodiscard]] auto semantics_name(const pc::passes::semantic_class semantics) -> std::string {
-    return semantics == pc::passes::semantic_class::function_preserving ? "function_preserving"
-                                                                        : "distribution_preserving";
+    return semantics == pc::passes::semantic_class::function_preserving ? "function_preserving" : "distribution_preserving";
 }
 
 [[nodiscard]] auto subject_name(const pra::element_kind kind, const bool domain) -> std::string {
@@ -750,8 +715,7 @@ struct lowered_stage final {
     for (auto const &binding : stage.lowering.projection.target_bindings()) {
         target_summary summary;
         summary.name =
-            std::string(binding.domain_target.valid() ? model->stable_name(pra::domain_ref(binding.domain_target))
-                                                      : model->stable_name(binding.subject));
+            std::string(binding.domain_target.valid() ? model->stable_name(pra::domain_ref(binding.domain_target)) : model->stable_name(binding.subject));
         summary.subject = subject_name(binding.subject.kind(), binding.domain_target.valid());
         summary.watch = binding.role == pc::observable_role::watch;
         summary.kind = std::string(pc::to_string(binding.kind));
@@ -768,8 +732,7 @@ struct lowered_stage final {
         if (binding.condition.valid()) {
             const pra::domain_ref initiator(binding.condition);
             summary.initiator = std::string(model->stable_name(initiator));
-            summary.initiator_frequency =
-                model->expressions()[model->basic_events()[binding.condition.raw()].expression.raw()].value;
+            summary.initiator_frequency = model->expressions()[model->basic_events()[binding.condition.raw()].expression.raw()].value;
         }
         out.push_back(std::move(summary));
     }
@@ -780,8 +743,7 @@ struct lowered_stage final {
     return value ? json::value::make_int(*value) : json::value::make_null();
 }
 
-[[nodiscard]] auto options_document(lowered_stage const &stage, std::vector<target_summary> const &targets,
-                                    std::string const &limit) -> json::value {
+[[nodiscard]] auto options_document(lowered_stage const &stage, std::vector<target_summary> const &targets, std::string const &limit) -> json::value {
     auto root = json::value::make_object();
     root.set("format", json::value::make_string(std::string(source_format)));
     root.set("compilation_level", json::value::make_int(stage.settings.level));
@@ -829,16 +791,14 @@ struct lowered_stage final {
     return root;
 }
 
-[[nodiscard]] auto model_name_of(std::string_view project_name, std::span<reader::source_text const> sources)
-    -> std::string {
+[[nodiscard]] auto model_name_of(std::string_view project_name, std::span<reader::source_text const> sources) -> std::string {
     if (!project_name.empty()) {
         return std::string(project_name);
     }
     return sources.empty() ? std::string{} : std::filesystem::path(sources.front().path).stem().string();
 }
 
-[[nodiscard]] auto compile_set(std::span<reader::source_text const> given, options const &settings,
-                               std::string directory_name) -> compile_result {
+[[nodiscard]] auto compile_set(std::span<reader::source_text const> given, options const &settings, std::string directory_name) -> compile_result {
     progress_reporter progress(settings);
     api::diagnostic_list diagnostics;
     compiled out;
@@ -870,12 +830,11 @@ struct lowered_stage final {
                 diagnostics.push(item);
             }
             if (literals) {
-                diagnostics.push(api::make_error(
-                    "compile.ftp.hull-literals-unsupported",
-                    "hull queries that read marked literal operands (-EVENT) as split or fixed cannot be written "
-                    "until the .pcfb writer records literal atoms (#235); each alternative is a different query: "
-                    "--kind probability (the probability, the default), or the plain hull with --hull-literals "
-                    "plain"));
+                diagnostics.push(api::make_error("compile.ftp.hull-literals-unsupported",
+                                                 "hull queries that read marked literal operands (-EVENT) as split or fixed cannot be written "
+                                                 "until the .pcfb writer records literal atoms (#235); each alternative is a different query: "
+                                                 "--kind probability (the probability, the default), or the plain hull with --hull-literals "
+                                                 "plain"));
             }
             return fail(std::move(diagnostics));
         }
@@ -898,9 +857,8 @@ struct lowered_stage final {
                 }
             }
         }
-        auto passes = pc::passes::compile(
-            stage->lowering.circuit,
-            stage->settings.level == 0 ? pc::passes::compile_level::c0 : pc::passes::compile_level::c1, pipeline);
+        auto passes =
+            pc::passes::compile(stage->lowering.circuit, stage->settings.level == 0 ? pc::passes::compile_level::c0 : pc::passes::compile_level::c1, pipeline);
         diagnostics.append(passes.diagnostics);
         out.seconds.passes = seconds_since(passes_start);
         if (!passes.ok()) {
@@ -926,11 +884,8 @@ struct lowered_stage final {
         progress.stage("write");
         const auto write_start = clock::now();
         auto const *model = pra::model_from(stage->lowering.pra_model);
-        auto named =
-            lowering_ns::compose_write_options(std::move(write_options).value(), stage->lowering.circuit, passes);
-        named.model_name = model_name_of(directory_name.empty() ? model->text(model->project().name)
-                                                                : std::string_view(directory_name),
-                                         set.sources);
+        auto named = lowering_ns::compose_write_options(std::move(write_options).value(), stage->lowering.circuit, passes);
+        named.model_name = model_name_of(directory_name.empty() ? model->text(model->project().name) : std::string_view(directory_name), set.sources);
         named.source_format = std::string(source_format);
         named.source_sha256 = set.digest;
         out.model_name = named.model_name;
@@ -951,9 +906,7 @@ struct lowered_stage final {
     return compile_result::ok(std::move(out), std::move(diagnostics));
 }
 
-[[nodiscard]] auto has_ftp_extension(std::filesystem::path const &path) -> bool {
-    return lower_case(path.extension().string()) == ".ftp";
-}
+[[nodiscard]] auto has_ftp_extension(std::filesystem::path const &path) -> bool { return lower_case(path.extension().string()) == ".ftp"; }
 
 [[nodiscard]] auto looks_like_ftp_text(std::filesystem::path const &path) -> bool {
     std::ifstream input(path, std::ios::binary);
@@ -996,8 +949,8 @@ struct lowered_stage final {
 [[nodiscard]] auto is_ftp_path(std::filesystem::path const &path) -> bool {
     std::error_code error;
     if (std::filesystem::is_directory(path, error)) {
-        for (auto iterator = std::filesystem::directory_iterator(path, error);
-             !error && iterator != std::filesystem::directory_iterator{}; iterator.increment(error)) {
+        for (auto iterator = std::filesystem::directory_iterator(path, error); !error && iterator != std::filesystem::directory_iterator{};
+             iterator.increment(error)) {
             if (std::error_code status; iterator->is_regular_file(status) && has_ftp_extension(iterator->path())) {
                 return true;
             }
@@ -1021,9 +974,7 @@ struct lowered_stage final {
     return list;
 }
 
-[[nodiscard]] auto count(const std::size_t value) -> json::value {
-    return json::value::make_int(static_cast<std::int64_t>(value));
-}
+[[nodiscard]] auto count(const std::size_t value) -> json::value { return json::value::make_int(static_cast<std::int64_t>(value)); }
 
 } // namespace
 
@@ -1040,13 +991,10 @@ auto classify_inputs(const std::span<std::filesystem::path const> inputs) -> inp
 
 auto parse_override(const std::string_view text) -> api::result<override_spec> {
     const auto equals = text.rfind('=');
-    if (equals == std::string_view::npos || equals == 0 ||
-        (text.substr(equals + 1) != "0" && text.substr(equals + 1) != "1")) {
-        return api::result<override_spec>::fail(
-            option_error("override " + in_quotes(text) + " must be NAME=0 or NAME=1"));
+    if (equals == std::string_view::npos || equals == 0 || (text.substr(equals + 1) != "0" && text.substr(equals + 1) != "1")) {
+        return api::result<override_spec>::fail(option_error("override " + in_quotes(text) + " must be NAME=0 or NAME=1"));
     }
-    return api::result<override_spec>::ok(
-        override_spec{.name = std::string(text.substr(0, equals)), .value = text[equals + 1] == '1'});
+    return api::result<override_spec>::ok(override_spec{.name = std::string(text.substr(0, equals)), .value = text[equals + 1] == '1'});
 }
 
 auto compile_sources(const std::span<reader::source_text const> sources, options const &settings) -> compile_result {
@@ -1062,8 +1010,7 @@ auto compile_project(const std::span<std::filesystem::path const> inputs, option
     for (auto const &path : files.value()) {
         std::ifstream input(path, std::ios::binary);
         if (!input) {
-            return compile_result::fail(
-                api::make_error("io.ftp.open-failed", "failed to open FTP input file '" + path.generic_string() + "'"));
+            return compile_result::fail(api::make_error("io.ftp.open-failed", "failed to open FTP input file '" + path.generic_string() + "'"));
         }
         std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
         sources.push_back(reader::source_text{.path = path.generic_string(), .text = std::move(text)});
@@ -1080,8 +1027,7 @@ auto compile_project(const std::span<std::filesystem::path const> inputs, option
     return compile_set(sources, settings, std::move(name));
 }
 
-auto lower_sources(const std::span<reader::source_text const> sources, options const &settings)
-    -> api::result<lowering_ns::pra_pc_lowering> {
+auto lower_sources(const std::span<reader::source_text const> sources, options const &settings) -> api::result<lowering_ns::pra_pc_lowering> {
     api::diagnostic_list diagnostics;
     timings seconds;
     source_set set;
@@ -1117,10 +1063,8 @@ auto report_json(compile_result const &result, const unsigned indent) -> std::st
         auto const &report = compiled.lowering;
         lowering.set("transform", json::value::make_string(report.transform));
         lowering.set("version", json::value::make_int(report.version));
-        lowering.set("semantics",
-                     json::value::make_string(report.semantics == lowering_ns::semantic_class::function_preserving
-                                                  ? "function_preserving"
-                                                  : "distribution_preserving"));
+        lowering.set("semantics", json::value::make_string(report.semantics == lowering_ns::semantic_class::function_preserving ? "function_preserving"
+                                                                                                                                : "distribution_preserving"));
         lowering.set("source_gates", count(report.source_gates));
         lowering.set("source_operands", count(report.source_operands));
         lowering.set("source_basic_events", count(report.source_basic_events));

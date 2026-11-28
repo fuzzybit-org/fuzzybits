@@ -59,15 +59,11 @@ struct NombriloExportOptions {
 [[nodiscard]] pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std::string &source_path,
                                                           const std::optional<std::string> &weights_path);
 
-[[nodiscard]] pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &circuit,
-                                                      const NombriloCompileOptions &options,
-                                                      std::span<const std::byte> source_sha256,
-                                                      std::string_view model_name, std::string_view source_path = {});
+[[nodiscard]] pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &circuit, const NombriloCompileOptions &options,
+                                                      std::span<const std::byte> source_sha256, std::string_view model_name, std::string_view source_path = {});
 
-[[nodiscard]] pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit,
-                                                             const NombriloExportOptions &options);
+[[nodiscard]] pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit, const NombriloExportOptions &options);
 
-[[nodiscard]] pcfb::Result<Compiled> compile_nombrilo_file(const std::string &path,
-                                                           const NombriloCompileOptions &options);
+[[nodiscard]] pcfb::Result<Compiled> compile_nombrilo_file(const std::string &path, const NombriloCompileOptions &options);
 
 } // namespace fuzzybits::compile

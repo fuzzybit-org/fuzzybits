@@ -77,8 +77,7 @@ struct RandomEvent {
     double p{};
 };
 
-void collect_events(const pcfb::ir::Circuit &circuit, std::vector<RandomEvent> *events,
-                    std::vector<std::int8_t> *constant) {
+void collect_events(const pcfb::ir::Circuit &circuit, std::vector<RandomEvent> *events, std::vector<std::int8_t> *constant) {
     if (!circuit.valid() || !circuit.subcircuits() || circuit.subcircuits()->size() == 0) {
         throw ExactEvalError("exact evaluator: empty circuit");
     }
@@ -131,8 +130,7 @@ double exact_probability(const pcfb::ir::Circuit &circuit, std::uint32_t query_i
         throw ExactEvalError("exact evaluator: missing query");
     }
     if (events.size() > kMaxExactEvents) {
-        throw ExactEvalError("exact evaluator: " + std::to_string(events.size()) + " random events exceeds limit " +
-                             std::to_string(kMaxExactEvents));
+        throw ExactEvalError("exact evaluator: " + std::to_string(events.size()) + " random events exceeds limit " + std::to_string(kMaxExactEvents));
     }
 
     const auto n_tensors = sc->tensors()->size();
@@ -177,8 +175,7 @@ double exact_probability(const pcfb::ir::Circuit &circuit, std::uint32_t query_i
                     ins.push_back(static_cast<std::uint8_t>(1u - value[id]));
                 }
             }
-            const std::uint32_t k =
-                (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
+            const std::uint32_t k = (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
             value[op->output()] = eval_op(op->opcode(), ins, k) ? 1 : 0;
         }
         if (value[target]) {

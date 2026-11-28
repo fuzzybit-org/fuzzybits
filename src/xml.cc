@@ -32,9 +32,8 @@ Document::Document(const std::string &file_path, Validator *validator) : doc_(nu
     const xmlError *xml_error = xmlGetLastError();
     if (xml_error) {
         if (xml_error->domain == xmlErrorDomain::XML_FROM_IO) {
-            SCRAM_THROW(IOError(xml_error->message))
-                << boost::errinfo_file_name(file_path) << boost::errinfo_errno(errno)
-                << boost::errinfo_file_open_mode("r");
+            SCRAM_THROW(IOError(xml_error->message)) << boost::errinfo_file_name(file_path) << boost::errinfo_errno(errno)
+                                                     << boost::errinfo_file_open_mode("r");
         }
         SCRAM_THROW(detail::GetError<ParseError>(xml_error));
     }
@@ -45,11 +44,10 @@ Document::Document(const std::string &file_path, Validator *validator) : doc_(nu
         validator->validate(*this);
 }
 
-Validator::Validator(const std::string &rng_file)
-    : schema_(nullptr, &xmlRelaxNGFree), valid_ctxt_(nullptr, &xmlRelaxNGFreeValidCtxt) {
+Validator::Validator(const std::string &rng_file) : schema_(nullptr, &xmlRelaxNGFree), valid_ctxt_(nullptr, &xmlRelaxNGFreeValidCtxt) {
     xmlResetLastError();
-    std::unique_ptr<xmlRelaxNGParserCtxt, decltype(&xmlRelaxNGFreeParserCtxt)> parser_ctxt(
-        xmlRelaxNGNewParserCtxt(rng_file.c_str()), &xmlRelaxNGFreeParserCtxt);
+    std::unique_ptr<xmlRelaxNGParserCtxt, decltype(&xmlRelaxNGFreeParserCtxt)> parser_ctxt(xmlRelaxNGNewParserCtxt(rng_file.c_str()),
+                                                                                           &xmlRelaxNGFreeParserCtxt);
     if (!parser_ctxt)
         SCRAM_THROW(detail::GetError<LogicError>());
 
@@ -59,8 +57,8 @@ Validator::Validator(const std::string &rng_file)
 Validator Validator::from_memory(const std::string_view &rng_content) {
     Validator validator;
     xmlResetLastError();
-    std::unique_ptr<xmlRelaxNGParserCtxt, decltype(&xmlRelaxNGFreeParserCtxt)> parser_ctxt(
-        xmlRelaxNGNewMemParserCtxt(rng_content.data(), rng_content.size()), &xmlRelaxNGFreeParserCtxt);
+    std::unique_ptr<xmlRelaxNGParserCtxt, decltype(&xmlRelaxNGFreeParserCtxt)> parser_ctxt(xmlRelaxNGNewMemParserCtxt(rng_content.data(), rng_content.size()),
+                                                                                           &xmlRelaxNGFreeParserCtxt);
     if (!parser_ctxt)
         SCRAM_THROW(detail::GetError<LogicError>());
 

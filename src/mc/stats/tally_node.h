@@ -28,8 +28,8 @@ enum convergence : std::int8_t {
 /// expose *both* statistical information and the underlying graph structure
 /// without having to maintain multiple parallel containers.
 struct TallyNode {
-    convergence status;               ///< State of convergence
-    tally tally_stats;                ///< Monte-Carlo statistics
+    convergence status;                      ///< State of convergence
+    tally tally_stats;                       ///< Monte-Carlo statistics
     std::shared_ptr<scram::core::Node> node; ///< Owning/shared pointer to the PDAG node
 };
 
@@ -64,8 +64,7 @@ template <class MonitoredMap> inline auto tallies(MonitoredMap &monitored) {
 
 /// View of node shared_ptrs only.
 template <class MonitoredMap> inline auto nodes(MonitoredMap &monitored) {
-    return monitored | std::views::values |
-           std::views::transform([](auto &tn) -> std::shared_ptr<scram::core::Node> & { return tn.node; });
+    return monitored | std::views::values | std::views::transform([](auto &tn) -> std::shared_ptr<scram::core::Node> & { return tn.node; });
 }
 
 } // namespace fuzzybits::mc::stats

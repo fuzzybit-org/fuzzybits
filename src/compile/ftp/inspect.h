@@ -58,10 +58,8 @@ struct inspection final {
 
 // Files and directories (all `*.ftp`) form one project, as for `compile_project`.
 // Invalid options are not checked here; see `check_options`.
-[[nodiscard]] auto inspect_project(std::span<std::filesystem::path const> inputs, inspect_options const &options = {})
-    -> inspection;
-[[nodiscard]] auto inspect_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources,
-                                   inspect_options const &options = {}) -> inspection;
+[[nodiscard]] auto inspect_project(std::span<std::filesystem::path const> inputs, inspect_options const &options = {}) -> inspection;
+[[nodiscard]] auto inspect_sources(std::span<io::backend::fuzzybits::ftp::source_text const> sources, inspect_options const &options = {}) -> inspection;
 
 // With `counts_only` no element name appears: diagnostics keep id, severity and
 // position, and the roots, targets and duplicate imports are given as counts.

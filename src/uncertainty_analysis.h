@@ -96,8 +96,7 @@ class UncertaintyAnalysis : public Analysis {
     ///
     /// @param[in] deviate_expressions  A collection of deviate expressions.
     /// @param[in,out] p_vars  Indices to probabilities mapping with values.
-    void SampleExpressions(const std::vector<std::pair<int, mef::Expression &>> &deviate_expressions,
-                           Pdag::IndexMap<double> *p_vars);
+    void SampleExpressions(const std::vector<std::pair<int, mef::Expression &>> &deviate_expressions, Pdag::IndexMap<double> *p_vars);
 
   private:
     /// Performs Monte Carlo Simulation
@@ -133,8 +132,7 @@ template <class Calculator> class UncertaintyAnalyzer : public UncertaintyAnalys
     /// to calculate the total probability for sampling.
     ///
     /// @param[in] prob_analyzer  Instantiated probability analyzer.
-    explicit UncertaintyAnalyzer(ProbabilityAnalyzer<Calculator> *prob_analyzer)
-        : UncertaintyAnalysis(prob_analyzer), prob_analyzer_(prob_analyzer) {}
+    explicit UncertaintyAnalyzer(ProbabilityAnalyzer<Calculator> *prob_analyzer) : UncertaintyAnalysis(prob_analyzer), prob_analyzer_(prob_analyzer) {}
 
   private:
     /// @returns Samples of the total probability.
@@ -145,8 +143,7 @@ template <class Calculator> class UncertaintyAnalyzer : public UncertaintyAnalys
 };
 
 template <class Calculator> std::vector<double> UncertaintyAnalyzer<Calculator>::Sample() {
-    std::vector<std::pair<int, mef::Expression &>> deviate_expressions =
-        UncertaintyAnalysis::GatherDeviateExpressions(prob_analyzer_->graph());
+    std::vector<std::pair<int, mef::Expression &>> deviate_expressions = UncertaintyAnalysis::GatherDeviateExpressions(prob_analyzer_->graph());
     Pdag::IndexMap<double> p_vars = prob_analyzer_->p_vars(); // Private copy!
     std::vector<double> samples;
     samples.reserve(Analysis::settings().num_trials());

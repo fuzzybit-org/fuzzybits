@@ -33,17 +33,14 @@ inline std::vector<std::pair<std::string, std::string>> csv_pairs(const mef::Mod
     // ---------------------------------------------------------------------
     //  Size metrics for top-level MEF constructs
     // ---------------------------------------------------------------------
-    out.emplace_back("model_num_fault_trees",
-                     csv_string(std::distance(m.fault_trees().begin(), m.fault_trees().end())));
-    out.emplace_back("model_num_event_trees",
-                     csv_string(std::distance(m.event_trees().begin(), m.event_trees().end())));
+    out.emplace_back("model_num_fault_trees", csv_string(std::distance(m.fault_trees().begin(), m.fault_trees().end())));
+    out.emplace_back("model_num_event_trees", csv_string(std::distance(m.event_trees().begin(), m.event_trees().end())));
     out.emplace_back("model_num_alignments", csv_string(std::distance(m.alignments().begin(), m.alignments().end())));
     out.emplace_back("model_num_rules", csv_string(std::distance(m.rules().begin(), m.rules().end())));
     out.emplace_back("model_num_sequences", csv_string(std::distance(m.sequences().begin(), m.sequences().end())));
 
     out.emplace_back("model_num_parameters", csv_string(std::distance(m.parameters().begin(), m.parameters().end())));
-    out.emplace_back("model_num_substitutions",
-                     csv_string(std::distance(m.substitutions().begin(), m.substitutions().end())));
+    out.emplace_back("model_num_substitutions", csv_string(std::distance(m.substitutions().begin(), m.substitutions().end())));
 
     // Event counts
     const auto num_basic_events = std::distance(m.basic_events().begin(), m.basic_events().end());

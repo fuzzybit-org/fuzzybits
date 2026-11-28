@@ -67,8 +67,7 @@ struct prod_atleast {
         const word my_bit = (cnt >= k) ? mask : word(0);
         const auto &wg = item.get_group();
         const auto lo = sycl::reduce_over_group(wg, static_cast<std::uint32_t>(my_bit), sycl::bit_or<std::uint32_t>());
-        const auto hi =
-            sycl::reduce_over_group(wg, static_cast<std::uint32_t>(my_bit >> 32), sycl::bit_or<std::uint32_t>());
+        const auto hi = sycl::reduce_over_group(wg, static_cast<std::uint32_t>(my_bit >> 32), sycl::bit_or<std::uint32_t>());
         if (lane == 0) {
             g.buffer[index] = (static_cast<word>(hi) << 32) | static_cast<word>(lo);
         }
@@ -129,8 +128,7 @@ std::size_t closest_power_of_2(std::size_t n) {
 
 // working_set::compute_optimal_local_range_3d_for_gpu, which the CPU path also
 // takes.
-sycl::range<3> prod_local_range(std::size_t gates, std::size_t bitpacks, std::size_t max_wg,
-                                const sycl::range<3> &max_items) {
+sycl::range<3> prod_local_range(std::size_t gates, std::size_t bitpacks, std::size_t max_wg, const sycl::range<3> &max_items) {
     auto budget = static_cast<int>(std::log2(max_wg));
     const int lx = std::min(static_cast<int>(std::log2(closest_power_of_2(std::min(gates, max_items[0])))), budget);
     budget -= lx;
@@ -156,9 +154,9 @@ template <typename V, typename A> struct kern {
     }
 };
 
-#define CARD_ALGO(NAME, ...)                                                                                           \
-    struct NAME {                                                                                                      \
-        template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return __VA_ARGS__; }           \
+#define CARD_ALGO(NAME, ...)                                                                                                                                   \
+    struct NAME {                                                                                                                                              \
+        template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return __VA_ARGS__; }                                                   \
     };
 CARD_ALGO(a_ripple, card::eval_ripple_any<V>(g, w))
 CARD_ALGO(a_bin, card::eval_bin_any<V, 16>(g, w))
@@ -169,30 +167,21 @@ CARD_ALGO(a_tblk8, card::eval_therm_blk_upto8<V, 8>(g, w))
 CARD_ALGO(a_auto, card::eval_auto<V>(g, w))
 CARD_ALGO(a_smallsw, card::eval_small_switch<V>(g, w))
 template <int N> struct a_fixedM {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_fixedM<N, V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_fixedM<N, V>(g, w); }
 };
 CARD_ALGO(a_bin8m, card::eval_bin8_mid<V>(g, w))
 CARD_ALGO(a_small16, card::eval_small16_switch<V>(g, w))
 template <int N> struct a_fixedN {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_fixedN<N, V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_fixedN<N, V>(g, w); }
 };
 template <int N, int D> struct a_fixedND {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_fixedND<N, D, V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_fixedND<N, D, V>(g, w); }
 };
 template <int N, int LO, int HI> struct a_fixed {
-    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) {
-        return card::eval_fixed<N, LO, HI, V>(g, w);
-    }
+    template <typename V> static V eval(const card::gate_desc &g, std::size_t w) { return card::eval_fixed<N, LO, HI, V>(g, w); }
 };
 
-template <typename K>
-sycl::event launch2(sycl::queue &q, std::size_t gates, std::size_t items, std::size_t wg, const K &k) {
+template <typename K> sycl::event launch2(sycl::queue &q, std::size_t gates, std::size_t items, std::size_t wg, const K &k) {
     const std::size_t l = std::min(wg, items);
     return q.parallel_for(sycl::nd_range<2>({gates, round_up(items, l)}, {1, l}), k);
 }
@@ -252,11 +241,10 @@ struct options {
 };
 
 const char *kDefaultShapes[] = {
-    "atleast:2:3",   "atleast:3:4",    "atleast:2:4",     "atleast:3:5",     "atleast:2:6",
-    "atleast:4:8",   "atleast:8:16",   "atleast:16:32",   "atleast:32:64",   "atleast:2:64",
-    "atleast:63:64", "atleast:64:128", "atleast:128:256", "atleast:300:600", "atleast:512:1024",
-    "atmost:1:3",    "atmost:2:4",     "atmost:8:16",     "atmost:32:64",    "exactly:1:3",
-    "exactly:2:4",   "exactly:8:16",   "exactly:32:64",   "exactly:1:64",    "range:16:48:64",
+    "atleast:2:3",      "atleast:3:4",   "atleast:2:4",  "atleast:3:5",    "atleast:2:6",    "atleast:4:8",     "atleast:8:16",
+    "atleast:16:32",    "atleast:32:64", "atleast:2:64", "atleast:63:64",  "atleast:64:128", "atleast:128:256", "atleast:300:600",
+    "atleast:512:1024", "atmost:1:3",    "atmost:2:4",   "atmost:8:16",    "atmost:32:64",   "exactly:1:3",     "exactly:2:4",
+    "exactly:8:16",     "exactly:32:64", "exactly:1:64", "range:16:48:64",
 };
 
 bool has(const std::string &list, const std::string &v) {
@@ -383,8 +371,7 @@ int main(int argc, char **argv) {
     const auto max_items = dev.get_info<sycl::info::device::max_work_item_sizes<3>>();
     std::printf("# device: %s | cpu=%d | max_wg=%zu | B=%zu pool=%zu target=%zu "
                 "wg=%zu dmax=%u\n",
-                dev.get_info<sycl::info::device::name>().c_str(), cpu ? 1 : 0, max_wg, o.B, o.pool, o.target, o.wg,
-                o.dmax);
+                dev.get_info<sycl::info::device::name>().c_str(), cpu ? 1 : 0, max_wg, o.B, o.pool, o.target, o.wg, o.dmax);
     std::printf("R\tshape\tn\tlo\thi\tG\tB\tvariant\tms\tGBps\tok\treps\n");
 
     const std::size_t B = o.B;
@@ -504,23 +491,21 @@ int main(int argc, char **argv) {
         };
 
         const double bytes = static_cast<double>(G) * B * 8.0 * (n + 1);
-        auto report = [&](const char *variant, const std::function<std::vector<sycl::event>()> &launch,
-                          const word *result) {
+        auto report = [&](const char *variant, const std::function<std::vector<sycl::event>()> &launch, const word *result) {
             q.memset(const_cast<word *>(result), 0xA5, G * B * sizeof(word)).wait();
             launch();
             q.wait();
             const std::size_t bad = check(result);
             const timing t = time_it(q, launch, o.reps, o.budget_ms);
-            std::printf("R\t%s\t%u\t%u\t%u\t%zu\t%zu\t%s\t%.5f\t%.1f\t%s\t%d\n", spec.c_str(), n, lo, hi, G, B, variant,
-                        t.ms, bytes / (t.ms * 1e6), bad == 0 ? "ok" : "WRONG", t.reps);
+            std::printf("R\t%s\t%u\t%u\t%u\t%zu\t%zu\t%s\t%.5f\t%.1f\t%s\t%d\n", spec.c_str(), n, lo, hi, G, B, variant, t.ms, bytes / (t.ms * 1e6),
+                        bad == 0 ? "ok" : "WRONG", t.reps);
             std::fflush(stdout);
         };
 
         // ---- the replaced kernels: at-least gates, then NOT / AND for at-most,
         // exactly and ranges.
         const bool atleast = hi >= n;
-        auto build_prod = [&](std::vector<prod_gate> &gs, std::vector<word *> &ptrs, std::uint32_t k, word *buf,
-                              std::size_t gi_offset) {
+        auto build_prod = [&](std::vector<prod_gate> &gs, std::vector<word *> &ptrs, std::uint32_t k, word *buf, std::size_t gi_offset) {
             for (std::size_t g = 0; g < G; ++g) {
                 for (std::uint32_t i = 0; i < n; ++i) {
                     ptrs.push_back(pool + static_cast<std::size_t>(idx[g * n + i]) * B);
@@ -543,10 +528,7 @@ int main(int argc, char **argv) {
             const auto bp = static_cast<std::uint32_t>(B);
             report(
                 "prod",
-                [&]() {
-                    return std::vector<sycl::event>{
-                        q.parallel_for(sycl::nd_range<3>({count, 1, B * 64}, {1, 1, 64}), prod_atleast{dg, count, bp})};
-                },
+                [&]() { return std::vector<sycl::event>{q.parallel_for(sycl::nd_range<3>({count, 1, B * 64}, {1, 1, 64}), prod_atleast{dg, count, bp})}; },
                 out);
             sycl::free(dg, q);
             sycl::free(dp, q);
@@ -588,8 +570,7 @@ int main(int argc, char **argv) {
                 lo > 0 ? "lowered:al2+not+and" : "lowered:al+not",
                 [&]() {
                     std::vector<sycl::event> evs;
-                    evs.push_back(
-                        q.parallel_for(sycl::nd_range<3>({count, 1, B * 64}, {1, 1, 64}), prod_atleast{dg, count, bp}));
+                    evs.push_back(q.parallel_for(sycl::nd_range<3>({count, 1, B * 64}, {1, 1, 64}), prod_atleast{dg, count, bp}));
                     evs.push_back(q.parallel_for(op_range, prod_op<0>{ng, gcount, bp}));
                     if (lo > 0) {
                         evs.push_back(q.parallel_for(op_range, prod_op<1>{ag, gcount, bp}));
@@ -650,8 +631,7 @@ int main(int argc, char **argv) {
             }
             return d;
         };
-        auto upload = [&](std::vector<card::gate_desc> d, const std::vector<const word *> &ptrs,
-                          std::vector<void *> &owned) {
+        auto upload = [&](std::vector<card::gate_desc> d, const std::vector<const word *> &ptrs, std::vector<void *> &owned) {
             const word **dp = sycl::malloc_device<const word *>(ptrs.size(), q);
             q.memcpy(dp, ptrs.data(), ptrs.size() * sizeof(const word *)).wait();
             for (auto &x : d) {
@@ -725,19 +705,15 @@ int main(int argc, char **argv) {
                     std::vector<sycl::event> evs;
                     if (n <= 8) {
                         if (cpu) {
-                            evs.push_back(launch2(q, 2 * G, B / lanes, wgl,
-                                                  kern<card::v8, a_smallsw>{dd2, static_cast<std::uint32_t>(B)}));
+                            evs.push_back(launch2(q, 2 * G, B / lanes, wgl, kern<card::v8, a_smallsw>{dd2, static_cast<std::uint32_t>(B)}));
                         } else {
-                            evs.push_back(
-                                launch2(q, 2 * G, B, wgl, kern<word, a_smallsw>{dd2, static_cast<std::uint32_t>(B)}));
+                            evs.push_back(launch2(q, 2 * G, B, wgl, kern<word, a_smallsw>{dd2, static_cast<std::uint32_t>(B)}));
                         }
                     } else {
                         if (cpu) {
-                            evs.push_back(launch2(q, 2 * G, B / lanes, wgl,
-                                                  kern<card::v8, a_bin8m>{dd2, static_cast<std::uint32_t>(B)}));
+                            evs.push_back(launch2(q, 2 * G, B / lanes, wgl, kern<card::v8, a_bin8m>{dd2, static_cast<std::uint32_t>(B)}));
                         } else {
-                            evs.push_back(
-                                launch2(q, 2 * G, B, wgl, kern<word, a_bin8m>{dd2, static_cast<std::uint32_t>(B)}));
+                            evs.push_back(launch2(q, 2 * G, B, wgl, kern<word, a_bin8m>{dd2, static_cast<std::uint32_t>(B)}));
                         }
                     }
                     evs.push_back(q.parallel_for(op_range, prod_op<1>{ag, gcount, bp}));
@@ -796,10 +772,7 @@ int main(int argc, char **argv) {
         };
         const bool therm_ok = !tp.trivial_false && !tp.trivial_true && tp.depth <= 8;
         auto run = [&]<typename V, typename A>(const std::string &name, const card::gate_desc *d) {
-            report(
-                name.c_str(),
-                [&]() { return std::vector<sycl::event>{launch2(q, G, B / card::lanes_v<V>, wg, kern<V, A>{d, bw})}; },
-                out);
+            report(name.c_str(), [&]() { return std::vector<sycl::event>{launch2(q, G, B / card::lanes_v<V>, wg, kern<V, A>{d, bw})}; }, out);
             return true;
         };
         auto dispatch = [&]<typename V>(const std::string &algo, const std::string &name) -> bool {

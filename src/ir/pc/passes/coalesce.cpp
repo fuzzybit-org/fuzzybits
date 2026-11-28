@@ -110,12 +110,11 @@ auto coalesce(circuit const &input, pass_options const &) -> transform_result {
                 operands.push_back(detail::through(map[source.raw()], complement).edge);
             }
         }
-        map[node] = detail::reference(
-            emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
+        map[node] = detail::reference(emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
     }
 
-    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(references) + detail::bytes_of(candidate) +
-                           detail::bytes_of(expanded_fan_in) + detail::bytes_of(operands) + detail::bytes_of(stack);
+    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(references) + detail::bytes_of(candidate) + detail::bytes_of(expanded_fan_in) +
+                           detail::bytes_of(operands) + detail::bytes_of(stack);
     return std::move(emitter).finish(std::move(report));
 }
 

@@ -132,8 +132,7 @@ class Zbdd : private boost::noncopyable {
     /// A single stack is used by all consecutive and recursive modules.
     ///
     /// @pre No constant ZBDD modules resulting in the Base set.
-    class const_iterator
-        : public boost::iterator_facade<const_iterator, const std::vector<int>, boost::forward_traversal_tag> {
+    class const_iterator : public boost::iterator_facade<const_iterator, const std::vector<int>, boost::forward_traversal_tag> {
         friend class boost::iterator_core_access;
 
         /// Iterator over sets in the module ZBDD represented by a proxy node.
@@ -149,8 +148,7 @@ class Zbdd : private boost::noncopyable {
             /// @param[in,out] it  The host iterator with product stacks for output.
             /// @param[in] sentinel  The flag for end iterators.
             module_iterator(const SetNode *node, const Zbdd &zbdd, const_iterator *it, bool sentinel = false)
-                : sentinel_(sentinel), start_pos_(it->product_.size()), end_pos_(start_pos_), it_(*it), node_(node),
-                  zbdd_(zbdd) {
+                : sentinel_(sentinel), start_pos_(it->product_.size()), end_pos_(start_pos_), it_(*it), node_(node), zbdd_(zbdd) {
                 if (!sentinel_) {
                     sentinel_ = !GenerateProduct(zbdd_.root());
                     end_pos_ = it_.product_.size();
@@ -169,8 +167,7 @@ class Zbdd : private boost::noncopyable {
                     return;
                 assert(end_pos_ >= start_pos_ && "Corrupted sentinel.");
                 while (start_pos_ != static_cast<int>(it_.product_.size())) {
-                    if (!module_stack_.empty() &&
-                        static_cast<int>(it_.product_.size()) == module_stack_.back().end_pos_) {
+                    if (!module_stack_.empty() && static_cast<int>(it_.product_.size()) == module_stack_.back().end_pos_) {
                         const SetNode *node = module_stack_.back().node_;
                         for (++module_stack_.back(); module_stack_.back(); ++module_stack_.back()) {
                             if (GenerateProduct(node->high()))
@@ -254,16 +251,14 @@ class Zbdd : private boost::noncopyable {
         /// @param[in] sentinel  The flag to turn the iterator into an end sentinel.
         ///
         /// @pre The ZBDD container is not modified during the iteration.
-        explicit const_iterator(const Zbdd &zbdd, bool sentinel = false)
-            : sentinel_(sentinel), zbdd_(zbdd), it_(nullptr, zbdd, this, sentinel) {
+        explicit const_iterator(const Zbdd &zbdd, bool sentinel = false) : sentinel_(sentinel), zbdd_(zbdd), it_(nullptr, zbdd, this, sentinel) {
             sentinel_ = !it_;
         }
 
         /// The copy constructor is only for begin and end iterators.
         ///
         /// @param[in] other  Begin or End iterator.
-        const_iterator(const const_iterator &other)
-            : sentinel_(other.sentinel_), zbdd_(other.zbdd_), it_(nullptr, zbdd_, this, sentinel_) {
+        const_iterator(const const_iterator &other) : sentinel_(other.sentinel_), zbdd_(other.zbdd_), it_(nullptr, zbdd_, this, sentinel_) {
             assert(*this == other && "Copy ctor is only for begin/end iterators.");
         }
 
@@ -388,8 +383,7 @@ class Zbdd : private boost::noncopyable {
     /// @returns Set node with the given parameters.
     ///
     /// @warning This function is not aware of reduction rules.
-    SetNodePtr FindOrAddVertex(int index, const VertexPtr &high, const VertexPtr &low, int order, bool module = false,
-                               bool coherent = false);
+    SetNodePtr FindOrAddVertex(int index, const VertexPtr &high, const VertexPtr &low, int order, bool module = false, bool coherent = false);
 
     /// Find or adds a ZBDD SetNode vertex using information from gates.
     ///
@@ -631,8 +625,7 @@ class Zbdd : private boost::noncopyable {
     /// @returns Pointer to the root vertex of the ZBDD graph.
     ///
     /// @post The input BDD structure is not changed.
-    VertexPtr ConvertBdd(const Bdd::VertexPtr &vertex, bool complement, Bdd *bdd_graph, int limit_order,
-                         PairTable<VertexPtr> *ites);
+    VertexPtr ConvertBdd(const Bdd::VertexPtr &vertex, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites);
 
     /// Converts BDD if-then-else vertex into ZBDD graph.
     /// This overload differs in that
@@ -647,8 +640,7 @@ class Zbdd : private boost::noncopyable {
     /// @param[in,out] ites  Processed function graphs with ids and limit order.
     ///
     /// @returns Pointer to the root vertex of the ZBDD graph.
-    VertexPtr ConvertBdd(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order,
-                         PairTable<VertexPtr> *ites);
+    VertexPtr ConvertBdd(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites);
 
     /// Converts BDD if-then-else vertex into ZBDD graph for prime implicants.
     /// This is used by the BDD vertex to ZBDD converter,
@@ -661,8 +653,7 @@ class Zbdd : private boost::noncopyable {
     /// @param[in,out] ites  Processed function graphs with ids and limit order.
     ///
     /// @returns Pointer to the root vertex of the ZBDD graph.
-    VertexPtr ConvertBddPrimeImplicants(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order,
-                                        PairTable<VertexPtr> *ites);
+    VertexPtr ConvertBddPrimeImplicants(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites);
 
     /// Transforms a PDAG gate into a Zbdd set graph.
     ///
@@ -675,8 +666,7 @@ class Zbdd : private boost::noncopyable {
     /// @pre The memoization container is not used outside of this function.
     ///
     /// @post Sub-module gates are not processed.
-    VertexPtr ConvertGraph(const Gate &gate, std::unordered_map<int, std::pair<VertexPtr, int>> *gates,
-                           std::unordered_map<int, const Gate *> *module_gates);
+    VertexPtr ConvertGraph(const Gate &gate, std::unordered_map<int, std::pair<VertexPtr, int>> *gates, std::unordered_map<int, const Gate *> *module_gates);
 
     /// Processes complements in a SetNode with processed high/low edges.
     ///

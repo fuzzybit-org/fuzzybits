@@ -26,8 +26,7 @@ constexpr std::uint32_t operation_xor = 2;
     return value;
 }
 
-[[nodiscard]] auto hash3(const std::uint32_t a, const std::uint32_t b, const std::uint32_t c) noexcept
-    -> std::uint64_t {
+[[nodiscard]] auto hash3(const std::uint32_t a, const std::uint32_t b, const std::uint32_t c) noexcept -> std::uint64_t {
     return mix((std::uint64_t{a} << 32) ^ mix((std::uint64_t{b} << 32) | c));
 }
 
@@ -83,16 +82,11 @@ auto bdd_manager::make_node(const std::uint32_t variable, std::uint32_t low, std
 
 auto bdd_manager::top(const std::uint32_t edge) const noexcept -> std::uint32_t { return nodes_[edge >> 1].variable; }
 
-auto bdd_manager::low(const std::uint32_t edge) const noexcept -> std::uint32_t {
-    return nodes_[edge >> 1].low ^ (edge & 1U);
-}
+auto bdd_manager::low(const std::uint32_t edge) const noexcept -> std::uint32_t { return nodes_[edge >> 1].low ^ (edge & 1U); }
 
-auto bdd_manager::high(const std::uint32_t edge) const noexcept -> std::uint32_t {
-    return nodes_[edge >> 1].high ^ (edge & 1U);
-}
+auto bdd_manager::high(const std::uint32_t edge) const noexcept -> std::uint32_t { return nodes_[edge >> 1].high ^ (edge & 1U); }
 
-auto bdd_manager::lookup(const std::uint32_t operation, const std::uint32_t left, const std::uint32_t right,
-                         std::uint32_t &result) const noexcept -> bool {
+auto bdd_manager::lookup(const std::uint32_t operation, const std::uint32_t left, const std::uint32_t right, std::uint32_t &result) const noexcept -> bool {
     auto const &entry = cache_[hash3(operation, left, right) & (cache_.size() - 1)];
     if (entry.generation == generation_ && entry.operation == operation && entry.left == left && entry.right == right) {
         result = entry.result;
@@ -101,8 +95,7 @@ auto bdd_manager::lookup(const std::uint32_t operation, const std::uint32_t left
     return false;
 }
 
-void bdd_manager::store(const std::uint32_t operation, const std::uint32_t left, const std::uint32_t right,
-                        const std::uint32_t result) noexcept {
+void bdd_manager::store(const std::uint32_t operation, const std::uint32_t left, const std::uint32_t right, const std::uint32_t result) noexcept {
     cache_[hash3(operation, left, right) & (cache_.size() - 1)] =
         cache_entry{.generation = generation_, .operation = operation, .left = left, .right = right, .result = result};
 }
@@ -171,9 +164,7 @@ auto bdd_manager::exclusive_or(std::uint32_t left, std::uint32_t right) -> std::
     return result ^ complement;
 }
 
-auto bdd_manager::disjunction(const std::uint32_t left, const std::uint32_t right) -> std::uint32_t {
-    return conjunction(left ^ 1U, right ^ 1U) ^ 1U;
-}
+auto bdd_manager::disjunction(const std::uint32_t left, const std::uint32_t right) -> std::uint32_t { return conjunction(left ^ 1U, right ^ 1U) ^ 1U; }
 
 auto bdd_manager::satisfiable(residual const &circuit, const std::uint32_t node_budget) -> std::optional<bool> {
     reset(node_budget);

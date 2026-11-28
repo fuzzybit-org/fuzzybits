@@ -26,9 +26,7 @@
 namespace fuzzybits::compile {
 namespace {
 
-pcfb::Error nombrilo_error(std::string message) {
-    return pcfb::Error{pcfb::Error::Code::InvalidBuffer, std::move(message)};
-}
+pcfb::Error nombrilo_error(std::string message) { return pcfb::Error{pcfb::Error::Code::InvalidBuffer, std::move(message)}; }
 
 pcfb::Error io_error(std::string message) { return pcfb::Error{pcfb::Error::Code::IoError, std::move(message)}; }
 
@@ -49,8 +47,8 @@ bool lit_pos(std::uint32_t lit) { return (lit & 1u) != 0; }
 std::uint32_t make_lit(std::uint32_t var, bool positive) { return (var << 1) | (positive ? 1u : 0u); }
 
 std::uint32_t read_u32_le(const std::byte *p) {
-    return static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8) |
-           (static_cast<std::uint32_t>(p[2]) << 16) | (static_cast<std::uint32_t>(p[3]) << 24);
+    return static_cast<std::uint32_t>(p[0]) | (static_cast<std::uint32_t>(p[1]) << 8) | (static_cast<std::uint32_t>(p[2]) << 16) |
+           (static_cast<std::uint32_t>(p[3]) << 24);
 }
 
 std::uint64_t read_u64_le(const std::byte *p) {
@@ -613,8 +611,8 @@ pcfb::Result<std::vector<std::uint32_t>> parse_u32_array_text(std::string_view j
 }
 
 void child_order_warn(std::string_view detail) {
-    std::fprintf(stderr, "pcfb_to_nombrilo: ignoring nombrilo.child_order (%.*s); using canonical child order\n",
-                 static_cast<int>(detail.size()), detail.data());
+    std::fprintf(stderr, "pcfb_to_nombrilo: ignoring nombrilo.child_order (%.*s); using canonical child order\n", static_cast<int>(detail.size()),
+                 detail.data());
 }
 
 bool children_are_canonical(std::span<const std::uint32_t> kids) {
@@ -701,8 +699,7 @@ pcfb::Result<std::map<std::uint32_t, std::vector<std::uint32_t>>> parse_child_or
     }
 }
 
-std::vector<std::uint32_t> apply_child_order(const std::vector<std::uint32_t> &pos,
-                                             const std::vector<std::uint32_t> &neg,
+std::vector<std::uint32_t> apply_child_order(const std::vector<std::uint32_t> &pos, const std::vector<std::uint32_t> &neg,
                                              const std::vector<std::uint32_t> *order, std::uint32_t gate) {
     std::vector<std::uint32_t> canonical;
     canonical.reserve(pos.size() + neg.size());
@@ -853,8 +850,7 @@ pcfb::Result<std::vector<std::byte>> load_file(const std::string &path) {
     return bytes;
 }
 
-pcfb::Result<std::span<const std::byte>> tensor_bytes(std::span<const std::byte> data, const TensorInfo &info,
-                                                      std::string_view name, std::size_t elem_size) {
+pcfb::Result<std::span<const std::byte>> tensor_bytes(std::span<const std::byte> data, const TensorInfo &info, std::string_view name, std::size_t elem_size) {
     if (info.end > data.size() || info.begin > info.end) {
         return std::unexpected(nombrilo_error(std::string(name) + " data_offsets out of range"));
     }
@@ -870,8 +866,7 @@ pcfb::Result<std::span<const std::byte>> tensor_bytes(std::span<const std::byte>
 
 bool dtype_is(std::string_view got, std::string_view a, std::string_view b) { return got == a || got == b; }
 
-pcfb::Result<std::vector<std::uint32_t>> load_u32(std::span<const std::byte> data, const TensorInfo &info,
-                                                  std::string_view name) {
+pcfb::Result<std::vector<std::uint32_t>> load_u32(std::span<const std::byte> data, const TensorInfo &info, std::string_view name) {
     if (!dtype_is(info.dtype, "U32", "u32")) {
         return std::unexpected(nombrilo_error(std::string(name) + " dtype must be U32"));
     }
@@ -886,8 +881,7 @@ pcfb::Result<std::vector<std::uint32_t>> load_u32(std::span<const std::byte> dat
     return out;
 }
 
-pcfb::Result<std::vector<double>> load_f64(std::span<const std::byte> data, const TensorInfo &info,
-                                           std::string_view name) {
+pcfb::Result<std::vector<double>> load_f64(std::span<const std::byte> data, const TensorInfo &info, std::string_view name) {
     if (!dtype_is(info.dtype, "F64", "f64")) {
         return std::unexpected(nombrilo_error(std::string(name) + " dtype must be F64"));
     }
@@ -954,8 +948,7 @@ pcfb::Result<void> validate_circuit(const NombriloCircuit &c) {
                 return std::unexpected(nombrilo_error("child literal " + std::to_string(lit) + " is out of range"));
             }
             if (v >= gate_var) {
-                return std::unexpected(nombrilo_error("gate " + std::to_string(i) +
-                                                      " has a forward reference to variable " + std::to_string(v)));
+                return std::unexpected(nombrilo_error("gate " + std::to_string(i) + " has a forward reference to variable " + std::to_string(v)));
             }
         }
     }
@@ -1077,9 +1070,7 @@ std::string tensor_json(std::string_view dtype, std::uint64_t numel, std::uint64
     return out;
 }
 
-pcfb::Result<void> set_meta(pcfb::builder &b, std::string_view key, std::string_view value) {
-    return b.set(key, value);
-}
+pcfb::Result<void> set_meta(pcfb::builder &b, std::string_view key, std::string_view value) { return b.set(key, value); }
 
 pcfb::Result<void> write_nombrilo_side_meta(pcfb::builder &b, const NombriloCircuit &circuit, bool inherited) {
     if (auto r = set_meta(b, "nombrilo.names", names_blob_json(circuit)); !r) {
@@ -1127,8 +1118,7 @@ std::optional<std::string> pcfb_meta_string(const pcfb::ir::Circuit &circuit, st
         if (const auto *by = kv->value_as_BytesValue()) {
             if (by->value()) {
                 const auto *v = by->value();
-                return hex_encode(
-                    std::span<const std::byte>(reinterpret_cast<const std::byte *>(v->data()), v->size()));
+                return hex_encode(std::span<const std::byte>(reinterpret_cast<const std::byte *>(v->data()), v->size()));
             }
         }
     }
@@ -1170,8 +1160,7 @@ std::string dump_pcfb_metadata_json(const pcfb::ir::Circuit &circuit) {
             out += ",\"t\":\"b\",\"v\":";
             if (by->value()) {
                 const auto *v = by->value();
-                out += json_string(
-                    hex_encode(std::span<const std::byte>(reinterpret_cast<const std::byte *>(v->data()), v->size())));
+                out += json_string(hex_encode(std::span<const std::byte>(reinterpret_cast<const std::byte *>(v->data()), v->size())));
             } else {
                 out += "\"\"";
             }
@@ -1750,8 +1739,7 @@ pcfb::Result<std::vector<std::byte>> write_nombrilo(const NombriloCircuit &circu
     return out;
 }
 
-pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std::string &source_path,
-                                            const std::optional<std::string> &weights_path) {
+pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std::string &source_path, const std::optional<std::string> &weights_path) {
     if (circuit.weights) {
         return {};
     }
@@ -1761,8 +1749,7 @@ pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std:
     } else {
         auto sib = sibling_base_path(source_path);
         if (!sib) {
-            return std::unexpected(
-                nombrilo_error("variant file has no weights and no sibling base <model>.safetensors was found"));
+            return std::unexpected(nombrilo_error("variant file has no weights and no sibling base <model>.safetensors was found"));
         }
         path = *sib;
     }
@@ -1771,8 +1758,7 @@ pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std:
         return std::unexpected(base.error());
     }
     if (base->base_count != circuit.base_count) {
-        return std::unexpected(nombrilo_error("weights file base_count " + std::to_string(base->base_count) +
-                                              " does not match variant base_count " +
+        return std::unexpected(nombrilo_error("weights file base_count " + std::to_string(base->base_count) + " does not match variant base_count " +
                                               std::to_string(circuit.base_count)));
     }
     if (input_name_table(*base) != input_name_table(circuit)) {
@@ -1787,9 +1773,8 @@ pcfb::Result<void> inherit_nombrilo_weights(NombriloCircuit &circuit, const std:
     return {};
 }
 
-pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &src, const NombriloCompileOptions &options,
-                                        std::span<const std::byte> source_sha256, std::string_view model_name,
-                                        std::string_view source_path) {
+pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &src, const NombriloCompileOptions &options, std::span<const std::byte> source_sha256,
+                                        std::string_view model_name, std::string_view source_path) {
     if (auto r = validate_circuit(src); !r) {
         return std::unexpected(r.error());
     }
@@ -1847,9 +1832,7 @@ pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &src, const Nombri
             }
         }
 
-        auto emit_const = [&](pcfb::OpCode op) -> pcfb::Result<pcfb::builder::tensor_id> {
-            return b.add_op(op, {}, {}, std::nullopt, gname);
-        };
+        auto emit_const = [&](pcfb::OpCode op) -> pcfb::Result<pcfb::builder::tensor_id> { return b.add_op(op, {}, {}, std::nullopt, gname); };
 
         pcfb::Result<pcfb::builder::tensor_id> t = std::unexpected(nombrilo_error("internal"));
         if (code == kNombriloAnd) {
@@ -2003,14 +1986,11 @@ pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &src, const Nombri
     const auto event_json = meta_get(circuit, "fuzzybits.pcfb.event_ids");
     const auto source_json = meta_get(circuit, "fuzzybits.pcfb.sources");
     if (!event_json.empty() || !source_json.empty()) {
-        auto ids = event_json.empty() ? pcfb::Result<std::vector<std::uint32_t>>(std::vector<std::uint32_t>{})
-                                      : parse_u32_array_text(event_json);
+        auto ids = event_json.empty() ? pcfb::Result<std::vector<std::uint32_t>>(std::vector<std::uint32_t>{}) : parse_u32_array_text(event_json);
         if (!ids) {
             return std::unexpected(ids.error());
         }
-        auto sources = source_json.empty()
-                           ? pcfb::Result<std::vector<pcfb::SampleSource>>(std::vector<pcfb::SampleSource>{})
-                           : parse_sources_json(source_json);
+        auto sources = source_json.empty() ? pcfb::Result<std::vector<pcfb::SampleSource>>(std::vector<pcfb::SampleSource>{}) : parse_sources_json(source_json);
         if (!sources) {
             return std::unexpected(sources.error());
         }
@@ -2069,14 +2049,11 @@ pcfb::Result<Compiled> nombrilo_to_pcfb(const NombriloCircuit &src, const Nombri
                 pcfb::Result<pcfb::builder::tensor_id> t = std::unexpected(nombrilo_error("internal"));
                 auto emit_const = [&](pcfb::OpCode op) { return b2.add_op(op, {}, {}, std::nullopt, gname); };
                 if (code == kNombriloAnd) {
-                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ONES)
-                                 : b2.add_op(pcfb::OpCode::BITWISE_AND, inputs, inverted, std::nullopt, gname);
+                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ONES) : b2.add_op(pcfb::OpCode::BITWISE_AND, inputs, inverted, std::nullopt, gname);
                 } else if (code == kNombriloOr) {
-                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ZEROS)
-                                 : b2.add_op(pcfb::OpCode::BITWISE_OR, inputs, inverted, std::nullopt, gname);
+                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ZEROS) : b2.add_op(pcfb::OpCode::BITWISE_OR, inputs, inverted, std::nullopt, gname);
                 } else if (code == kXorCode) {
-                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ZEROS)
-                                 : b2.add_op(pcfb::OpCode::BITWISE_XOR, inputs, inverted, std::nullopt, gname);
+                    t = nch == 0 ? emit_const(pcfb::OpCode::BITWISE_ZEROS) : b2.add_op(pcfb::OpCode::BITWISE_XOR, inputs, inverted, std::nullopt, gname);
                 } else if (nch == 0) {
                     t = emit_const(code == 0 ? pcfb::OpCode::BITWISE_ONES : pcfb::OpCode::BITWISE_ZEROS);
                 } else if (code > nch) {
@@ -2433,8 +2410,8 @@ std::optional<NombriloCircuit> try_derive_1to1(const pcfb::ir::Circuit &circuit,
     out.metadata["version"] = kNombriloVersion;
     out.metadata["base_count"] = std::to_string(out.base_count);
     if (options.extras) {
-        for (const char *key : {"fuzzybits.pcfb.queries", "fuzzybits.pcfb.event_ids", "fuzzybits.pcfb.sources",
-                                "fuzzybits.pcfb.metadata", "fuzzybits.pcfb.query_groups"}) {
+        for (const char *key :
+             {"fuzzybits.pcfb.queries", "fuzzybits.pcfb.event_ids", "fuzzybits.pcfb.sources", "fuzzybits.pcfb.metadata", "fuzzybits.pcfb.query_groups"}) {
             if (auto v = pcfb_meta_string(circuit, key)) {
                 out.metadata[key] = *v;
             }
@@ -2625,8 +2602,7 @@ pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit,
         }
 
         if (opcode == pcfb::OpCode::BITWISE_EXACTLY) {
-            const std::uint32_t k =
-                (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
+            const std::uint32_t k = (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
             const auto g1 = emit_gate(k, *kids);
             const auto g2 = emit_gate(k + 1, *kids);
             const std::array<std::uint32_t, 2> and_kids{make_lit(g1, true), make_lit(g2, false)};
@@ -2697,16 +2673,14 @@ pcfb::Result<NombriloCircuit> pcfb_to_nombrilo(const pcfb::ir::Circuit &circuit,
             for (const auto *group : *sc->query_groups()) {
                 groups += groups.size() > 1 ? "," : "";
                 groups += "{\"name\":" + json_string(group->name() ? group->name()->string_view() : "") +
-                          ",\"unit\":" + json_string(group->unit() ? group->unit()->string_view() : "") +
-                          ",\"terms\":[";
+                          ",\"unit\":" + json_string(group->unit() ? group->unit()->string_view() : "") + ",\"terms\":[";
                 bool first = true;
                 if (group->terms() != nullptr) {
                     for (const auto *term : *group->terms()) {
                         std::ostringstream weight;
                         weight.precision(17);
                         weight << term->weight();
-                        groups += std::string(first ? "" : ",") + "{\"query\":" + std::to_string(term->query()) +
-                                  ",\"weight\":" + weight.str() + "}";
+                        groups += std::string(first ? "" : ",") + "{\"query\":" + std::to_string(term->query()) + ",\"weight\":" + weight.str() + "}";
                         first = false;
                     }
                 }

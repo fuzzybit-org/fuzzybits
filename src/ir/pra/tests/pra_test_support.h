@@ -27,8 +27,7 @@ namespace fuzzybits::ir::pra::test {
 }
 
 [[nodiscard]] inline auto count(api::diagnostic_list const &diagnostics, const std::string_view code) -> std::size_t {
-    return static_cast<std::size_t>(
-        std::ranges::count_if(diagnostics.items(), [code](api::diagnostic const &item) { return item.code == code; }));
+    return static_cast<std::size_t>(std::ranges::count_if(diagnostics.items(), [code](api::diagnostic const &item) { return item.code == code; }));
 }
 
 [[nodiscard]] inline auto message(api::diagnostic_list const &diagnostics, const std::string_view code) -> std::string {
@@ -59,8 +58,7 @@ namespace fuzzybits::ir::pra::test {
     }
     for (std::uint32_t gate = 0; gate < sealed.gates().size(); ++gate) {
         for (auto const &operand : sealed.operands(gate_id(gate))) {
-            if (const auto child = operand.event.as<gate_id>();
-                child.valid() && position[child.raw()] >= position[gate]) {
+            if (const auto child = operand.event.as<gate_id>(); child.valid() && position[child.raw()] >= position[gate]) {
                 return false;
             }
         }

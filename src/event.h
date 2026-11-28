@@ -214,8 +214,7 @@ const int kNumConnectives = 11;
 
 /// String representations of the connectives.
 /// The ordering is the same as the Connective enum.
-const char *const kConnectiveToString[] = {"and", "or",   "atleast", "xor",   "not",        "nand",
-                                           "nor", "null", "iff",     "imply", "cardinality"};
+const char *const kConnectiveToString[] = {"and", "or", "atleast", "xor", "not", "nand", "nor", "null", "iff", "imply", "cardinality"};
 
 /// Boolean formula with connectives and arguments.
 /// Formulas are not expected to be shared.
@@ -359,8 +358,6 @@ class Formula {
 using FormulaPtr = std::unique_ptr<Formula>; ///< Convenience alias.
 
 /// Comparison of formula arguments.
-inline bool operator==(const Formula::Arg &lhs, const Formula::Arg &rhs) {
-    return lhs.complement == rhs.complement && lhs.event == rhs.event;
-}
+inline bool operator==(const Formula::Arg &lhs, const Formula::Arg &rhs) { return lhs.complement == rhs.complement && lhs.event == rhs.event; }
 
 } // namespace scram::mef

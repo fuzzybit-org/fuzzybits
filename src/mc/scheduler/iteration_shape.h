@@ -12,9 +12,7 @@ template <typename bitpack_t_> class iteration_shape {
 
     // ---- getters -------------------------------------------------------
     [[nodiscard]] std::size_t trials() const { return trials_; }
-    [[nodiscard]] std::size_t iterations() const {
-        return (trials_ + trials_per_iteration() - 1) / trials_per_iteration();
-    }
+    [[nodiscard]] std::size_t iterations() const { return (trials_ + trials_per_iteration() - 1) / trials_per_iteration(); }
 
     // ---- setters -------------------------------------------------------
     void trials(const std::size_t t) { trials_ = t; }

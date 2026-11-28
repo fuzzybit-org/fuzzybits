@@ -147,8 +147,7 @@ struct query_value {
 
 // Throws std::runtime_error naming the problem (an unconvertible unit).
 template <typename value_of>
-std::vector<group_row> group_rows(std::vector<pcfb_frequency::query_group> const &groups, value_of &&value,
-                                  std::optional<double> exposure_hours) {
+std::vector<group_row> group_rows(std::vector<pcfb_frequency::query_group> const &groups, value_of &&value, std::optional<double> exposure_hours) {
     std::vector<group_row> out;
     for (auto const &group : groups) {
         group_row row{.name = group.name, .unit = group.unit, .terms = group.terms.size()};
@@ -161,8 +160,8 @@ std::vector<group_row> group_rows(std::vector<pcfb_frequency::query_group> const
         if (exposure_hours) {
             row.p = pcfb_frequency::exposure_probability(row.estimate, group.unit, *exposure_hours);
             if (!row.p) {
-                throw std::runtime_error("--exposure: group '" + group.name + "' has unit '" + group.unit +
-                                         "', which is not one of " + pcfb_frequency::unit_names());
+                throw std::runtime_error("--exposure: group '" + group.name + "' has unit '" + group.unit + "', which is not one of " +
+                                         pcfb_frequency::unit_names());
             }
             row.p_low = pcfb_frequency::exposure_probability(row.low, group.unit, *exposure_hours);
             row.p_high = pcfb_frequency::exposure_probability(row.high, group.unit, *exposure_hours);
@@ -179,15 +178,13 @@ std::string unit_label(std::string const &unit) {
     return unit.empty() ? std::string("(no unit)") : unit;
 }
 
-void print_group_rows(std::vector<group_row> const &rows, std::string const &exposure, std::ostream &out,
-                      std::string_view prefix) {
+void print_group_rows(std::vector<group_row> const &rows, std::string const &exposure, std::ostream &out, std::string_view prefix) {
     for (auto const &row : rows) {
-        out << prefix << row.name << "  " << std::setprecision(8) << std::scientific << row.estimate << "  [" << row.low
-            << ", " << row.high << "]  " << unit_label(row.unit) << "  (" << std::dec << row.terms
-            << " conditioned queries)\n";
+        out << prefix << row.name << "  " << std::setprecision(8) << std::scientific << row.estimate << "  [" << row.low << ", " << row.high << "]  "
+            << unit_label(row.unit) << "  (" << std::dec << row.terms << " conditioned queries)\n";
         if (row.p) {
-            out << prefix << row.name << "  P(>=1 in " << exposure << ")  " << std::setprecision(8) << std::scientific
-                << *row.p << "  [" << *row.p_low << ", " << *row.p_high << "]\n";
+            out << prefix << row.name << "  P(>=1 in " << exposure << ")  " << std::setprecision(8) << std::scientific << *row.p << "  [" << *row.p_low << ", "
+                << *row.p_high << "]\n";
         }
     }
 }
@@ -196,12 +193,11 @@ void print_group_json(std::vector<group_row> const &rows, std::string const &exp
     out << "  \"groups\": [\n";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         auto const &row = rows[i];
-        out << "    {\"name\": \"" << json_escape(row.name) << "\", \"unit\": \"" << json_escape(row.unit)
-            << "\", \"terms\": " << std::dec << row.terms << ", \"estimate\": " << std::setprecision(16)
-            << std::scientific << row.estimate << ", \"ci_low\": " << row.low << ", \"ci_high\": " << row.high;
+        out << "    {\"name\": \"" << json_escape(row.name) << "\", \"unit\": \"" << json_escape(row.unit) << "\", \"terms\": " << std::dec << row.terms
+            << ", \"estimate\": " << std::setprecision(16) << std::scientific << row.estimate << ", \"ci_low\": " << row.low << ", \"ci_high\": " << row.high;
         if (row.p) {
-            out << ", \"exposure\": {\"duration\": \"" << json_escape(exposure) << "\", \"probability\": " << *row.p
-                << ", \"ci_low\": " << *row.p_low << ", \"ci_high\": " << *row.p_high << "}";
+            out << ", \"exposure\": {\"duration\": \"" << json_escape(exposure) << "\", \"probability\": " << *row.p << ", \"ci_low\": " << *row.p_low
+                << ", \"ci_high\": " << *row.p_high << "}";
         }
         out << "}" << (i + 1 < rows.size() ? "," : "") << "\n";
     }
@@ -216,8 +212,7 @@ std::optional<double> read_exposure(const po::variables_map &vm) {
     const auto text = vm["exposure"].as<std::string>();
     const auto hours = pcfb_frequency::parse_duration_hours(text);
     if (!hours) {
-        throw std::runtime_error("--exposure must be a positive number followed by y, mo, wk, d or h (e.g. 1y), not '" +
-                                 text + "'");
+        throw std::runtime_error("--exposure must be a positive number followed by y, mo, wk, d or h (e.g. 1y), not '" + text + "'");
     }
     return hours;
 }
@@ -232,8 +227,7 @@ std::unique_ptr<fuzzybits::runtime::progress::log_sink> open_progress_log(const 
     if (vm.count("progress-log") == 0) {
         return nullptr;
     }
-    return std::make_unique<fuzzybits::runtime::progress::log_sink>(
-        std::filesystem::path(vm["progress-log"].as<std::string>()));
+    return std::make_unique<fuzzybits::runtime::progress::log_sink>(std::filesystem::path(vm["progress-log"].as<std::string>()));
 }
 
 #ifdef FZB_HAS_RUNTIME
@@ -248,15 +242,11 @@ std::uint64_t parse_trials(const std::string &text) {
 
 int cmd_run(int argc, char **argv) {
     po::options_description desc("fzb run options");
-    desc.add_options()("help,h", "display this help message")("trials,N", po::value<std::string>(),
-                                                              "Bernoulli trials (e.g. 1e9, 1000000)")(
-        "seed,S", po::value<int>()->default_value(372),
-        "must be 372 (the scram-cli default); other values are rejected")(
-        "backend", po::value<std::string>(),
-        "AdaptiveCpp backend: cuda, hip, metal or omp (sets ACPP_VISIBILITY_MASK)")("json", "print results as JSON")(
-        "exposure", po::value<std::string>(), kExposureHelp)("progress-log", po::value<std::string>(),
-                                                             kProgressLogHelp)("input-file", po::value<std::string>(),
-                                                                               ".pcfb file");
+    desc.add_options()("help,h", "display this help message")("trials,N", po::value<std::string>(), "Bernoulli trials (e.g. 1e9, 1000000)")(
+        "seed,S", po::value<int>()->default_value(372), "must be 372 (the scram-cli default); other values are rejected")(
+        "backend", po::value<std::string>(), "AdaptiveCpp backend: cuda, hip, metal or omp (sets ACPP_VISIBILITY_MASK)")("json", "print results as JSON")(
+        "exposure", po::value<std::string>(), kExposureHelp)("progress-log", po::value<std::string>(), kProgressLogHelp)("input-file", po::value<std::string>(),
+                                                                                                                         ".pcfb file");
     add_progress_options(desc);
 
     po::positional_options_description pos;
@@ -320,8 +310,8 @@ int cmd_run(int argc, char **argv) {
         }
         for (auto const &group : groups) {
             if (exposure_hours && !pcfb_frequency::find_unit(group.unit)) {
-                throw std::runtime_error("--exposure: group '" + group.name + "' has unit '" + group.unit +
-                                         "', which is not one of " + pcfb_frequency::unit_names());
+                throw std::runtime_error("--exposure: group '" + group.name + "' has unit '" + group.unit + "', which is not one of " +
+                                         pcfb_frequency::unit_names());
             }
         }
     } catch (const std::exception &ex) {
@@ -394,8 +384,8 @@ int cmd_run(int argc, char **argv) {
             std::cout << "\n}\n";
         } else {
             for (const auto &r : results) {
-                std::cout << r.name << "  " << std::setprecision(8) << std::scientific << r.estimate << "  ["
-                          << r.ci_low << ", " << r.ci_high << "]  n=" << std::dec << r.n << "  hits=" << r.hits << "\n";
+                std::cout << r.name << "  " << std::setprecision(8) << std::scientific << r.estimate << "  [" << r.ci_low << ", " << r.ci_high
+                          << "]  n=" << std::dec << r.n << "  hits=" << r.hits << "\n";
             }
             print_group_rows(rows, exposure_text, std::cout, "");
         }
@@ -714,9 +704,8 @@ bool expand_name_args(const std::vector<std::string> &values, std::vector<std::s
 }
 
 /// The FTP project path of `fzb compile`: reader, quantification config, lowering, passes, writer.
-int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::string> &files,
-                       const std::vector<std::string> &targets, const std::vector<std::string> &watch,
-                       const progress_flags &pf,
+int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::string> &files, const std::vector<std::string> &targets,
+                       const std::vector<std::string> &watch, const progress_flags &pf,
                        const std::unique_ptr<fuzzybits::runtime::progress::log_sink> &progress_log) {
     namespace ftp = fuzzybits::compile::ftp;
 
@@ -724,8 +713,8 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
         std::cerr << "fzb compile: " << message << std::endl;
         return 1;
     };
-    for (const char *flag : {"no-kn", "no-xor", "recognize-atleast", "no-recognize-atleast", "recognize-xor",
-                             "no-recognize-xor", "keep-null", "allow-extern", "weights", "no-ccf"}) {
+    for (const char *flag : {"no-kn", "no-xor", "recognize-atleast", "no-recognize-atleast", "recognize-xor", "no-recognize-xor", "keep-null", "allow-extern",
+                             "weights", "no-ccf"}) {
         if (vm.count(flag)) {
             return fail(std::string("--") + flag + " applies to OpenPSA/MEF input, not to FTP projects");
         }
@@ -875,13 +864,11 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
         }
         std::cerr << "wrote " << out_path << " (" << result.bytes.size() << " bytes)"
                   << " model=" << result.model_name << " targets=" << result.targets.size() << " (" << names << ")\n"
-                  << "  source: " << result.files.size() << " file(s) sha256=" << result.source_sha256.substr(0, 16)
-                  << " c" << result.level << "\n"
-                  << "  lowered: " << result.lowering.source_gates << " gates, " << result.lowering.source_basic_events
-                  << " basic events, " << result.lowering.source_house_events << " house events, "
-                  << result.lowering.overridden_elements << " overrides\n"
-                  << "  circuit: nodes " << result.nodes_before << " -> " << result.nodes_after << ", edges "
-                  << result.edges_before << " -> " << result.edges_after << "\n"
+                  << "  source: " << result.files.size() << " file(s) sha256=" << result.source_sha256.substr(0, 16) << " c" << result.level << "\n"
+                  << "  lowered: " << result.lowering.source_gates << " gates, " << result.lowering.source_basic_events << " basic events, "
+                  << result.lowering.source_house_events << " house events, " << result.lowering.overridden_elements << " overrides\n"
+                  << "  circuit: nodes " << result.nodes_before << " -> " << result.nodes_after << ", edges " << result.edges_before << " -> "
+                  << result.edges_after << "\n"
                   << "  diagnostics: " << warnings << " warning(s), " << notes << " note(s)\n";
     }
     if (progress_log) {
@@ -895,43 +882,33 @@ int compile_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
 
 int cmd_compile(int argc, char **argv) {
     po::options_description desc("fzb compile options");
-    desc.add_options()("help,h", "display this help message")("output,o", po::value<std::string>(),
-                                                              "output .pcfb path")(
+    desc.add_options()("help,h", "display this help message")("output,o", po::value<std::string>(), "output .pcfb path")(
         "compilation-passes,c", po::value<int>(),
         "pass level. MEF/nombrilo (SCRAM preprocessing): 0=off 1=null-only 2=optimize (default) 4-8=multipass. "
-        "FTP (ir::pc passes): 0=none 1=all (default)")("no-kn", "expand k/n to and/or")(
-        "no-xor", "expand xor to and/or")("recognize-atleast", "recognize expanded threshold groups (default on)")(
-        "no-recognize-atleast", "disable k/n group recognition")("recognize-xor",
-                                                                 "recognize expanded xor (default on)")(
-        "no-recognize-xor", "disable xor group recognition")("keep-null", "keep NULL/pass-through gates")(
-        "no-ccf", "MEF: do not expand common-cause failure groups (expanded by default)")(
-        "allow-extern", "**UNSAFE** allow external libraries")(
-        "target", po::value<std::vector<std::string>>(),
-        "MEF: top-event / gate / nombrilo name (one). FTP: PROCESS target, gate or basic event "
-        "(repeatable; default: every PROCESS target). @FILE reads one name per line")(
-        "watch", po::value<std::vector<std::string>>(),
-        "extra gate / basic event written as an additional query (repeatable; NAME or @FILE)")(
+        "FTP (ir::pc passes): 0=none 1=all (default)")("no-kn", "expand k/n to and/or")("no-xor", "expand xor to and/or")(
+        "recognize-atleast", "recognize expanded threshold groups (default on)")("no-recognize-atleast", "disable k/n group recognition")(
+        "recognize-xor", "recognize expanded xor (default on)")("no-recognize-xor", "disable xor group recognition")(
+        "keep-null", "keep NULL/pass-through gates")("no-ccf", "MEF: do not expand common-cause failure groups (expanded by default)")(
+        "allow-extern", "**UNSAFE** allow external libraries")("target", po::value<std::vector<std::string>>(),
+                                                               "MEF: top-event / gate / nombrilo name (one). FTP: PROCESS target, gate or basic event "
+                                                               "(repeatable; default: every PROCESS target). @FILE reads one name per line")(
+        "watch", po::value<std::vector<std::string>>(), "extra gate / basic event written as an additional query (repeatable; NAME or @FILE)")(
         "override", po::value<std::vector<std::string>>(), "FTP: force an element, NAME=0 or NAME=1 (repeatable)")(
-        "duplicate-import", po::value<std::string>(),
-        "FTP: event imported more than once: error|first|last (default last)")(
+        "duplicate-import", po::value<std::string>(), "FTP: event imported more than once: error|first|last (default last)")(
         "kind", po::value<std::vector<std::string>>(),
         "FTP: the query of every target, probability (default) or hull; repeat it, or give probability,hull, for "
-        "both (two queries per target)")(
-        "hull-literals", po::value<std::string>(),
-        "FTP hull queries: how -EVENT operands are read, split (an atom of its own, default), fixed (Rauzy's "
-        "omega_L) or plain (an ordinary complement)")(
+        "both (two queries per target)")("hull-literals", po::value<std::string>(),
+                                         "FTP hull queries: how -EVENT operands are read, split (an atom of its own, default), fixed (Rauzy's "
+                                         "omega_L) or plain (an ordinary complement)")(
         "hull-max-initiators", po::value<std::string>(),
         "FTP hull queries, with --initiator-values probability: delete the cut sets with more than N initiating "
-        "events, or none (default)")(
-        "initiator-values", po::value<std::string>(),
-        "FTP: what I values are: a frequency in per-year (default), per-month, per-week, per-day or per-hour (one "
-        "conditioned query per initiating event, summed as the target's frequency), or probability (values up to "
-        "1)")("config", po::value<std::string>(), "FTP: quantification config FILE (JSON); flags override it")(
+        "events, or none (default)")("initiator-values", po::value<std::string>(),
+                                     "FTP: what I values are: a frequency in per-year (default), per-month, per-week, per-day or per-hour (one "
+                                     "conditioned query per initiating event, summed as the target's frequency), or probability (values up to "
+                                     "1)")("config", po::value<std::string>(), "FTP: quantification config FILE (JSON); flags override it")(
         "report", po::value<std::string>(), "FTP: write the lowering and pass reports and diagnostics to FILE (JSON)")(
-        "weights", po::value<std::string>(), "nombrilo variant weights file")("progress-log", po::value<std::string>(),
-                                                                              kProgressLogHelp)(
-        "input-file", po::value<std::vector<std::string>>(),
-        "MEF XML, nombrilo.circuit, or CAFTA FTP files / a directory of *.ftp files");
+        "weights", po::value<std::string>(), "nombrilo variant weights file")("progress-log", po::value<std::string>(), kProgressLogHelp)(
+        "input-file", po::value<std::vector<std::string>>(), "MEF XML, nombrilo.circuit, or CAFTA FTP files / a directory of *.ftp files");
     add_progress_options(desc);
 
     po::positional_options_description pos;
@@ -946,15 +923,14 @@ int cmd_compile(int argc, char **argv) {
         return 1;
     }
     if (vm.count("help")) {
-        std::cout
-            << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
-               "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
-               "       fzb compile a.ftp [b.ftp ...]|DIR [-c 0|1] [--target NAME|@FILE]... [--watch NAME|@FILE]... "
-               "[--kind probability|hull]... [--hull-literals split|fixed|plain] [--hull-max-initiators N|none] "
-               "[--initiator-values UNIT|probability] [--override NAME=0|1]... [--config FILE] [--report FILE] "
-               "[-o model.pcfb]\n"
-               "                   [--no-progress] [--quiet]\n\n"
-            << desc << std::endl;
+        std::cout << "Usage: fzb compile model.xml|model.safetensors [-c N] [--no-kn] [--no-ccf] "
+                     "[--target NAME|@FILE] [--watch NAME|@FILE]... [--weights FILE] [-o model.pcfb]\n"
+                     "       fzb compile a.ftp [b.ftp ...]|DIR [-c 0|1] [--target NAME|@FILE]... [--watch NAME|@FILE]... "
+                     "[--kind probability|hull]... [--hull-literals split|fixed|plain] [--hull-max-initiators N|none] "
+                     "[--initiator-values UNIT|probability] [--override NAME=0|1]... [--config FILE] [--report FILE] "
+                     "[-o model.pcfb]\n"
+                     "                   [--no-progress] [--quiet]\n\n"
+                  << desc << std::endl;
         return 0;
     }
     if (!vm.count("input-file")) {
@@ -994,8 +970,7 @@ int cmd_compile(int argc, char **argv) {
     case fuzzybits::compile::ftp::input_kind::other:
         break;
     }
-    for (const char *flag : {"override", "duplicate-import", "kind", "hull-literals", "hull-max-initiators",
-                             "initiator-values", "config", "report"}) {
+    for (const char *flag : {"override", "duplicate-import", "kind", "hull-literals", "hull-max-initiators", "initiator-values", "config", "report"}) {
         if (vm.count(flag)) {
             std::cerr << "fzb compile: --" << flag << " applies to CAFTA FTP input only\n";
             return 1;
@@ -1072,8 +1047,7 @@ int cmd_compile(int argc, char **argv) {
         std::cerr << "fzb compile: cannot write " << out_path << std::endl;
         return 1;
     }
-    out.write(reinterpret_cast<const char *>(compiled->bytes.data()),
-              static_cast<std::streamsize>(compiled->bytes.size()));
+    out.write(reinterpret_cast<const char *>(compiled->bytes.data()), static_cast<std::streamsize>(compiled->bytes.size()));
     if (!out) {
         if (progress_sink) {
             progress_sink->stop();
@@ -1132,17 +1106,12 @@ int inspect_ftp_inputs(const po::variables_map &vm, const std::vector<std::strin
 
 int cmd_inspect(int argc, char **argv) {
     po::options_description desc("fzb inspect options");
-    desc.add_options()("help,h", "display this help message")("validate",
-                                                              "run pcfb::validate; exit non-zero on diagnostics")(
-        "json", "print summary as JSON")("exact", "exhaustive exact P(query) for small models (≤ 30 events), and the "
-                                                  "exact value of every frequency group")(
-        "exposure", po::value<std::string>(),
-        "with --exact: as for fzb run")("duplicate-import", po::value<std::string>(),
-                                        "FTP: event imported more than once: error|first|last (default last)")(
-        "strict", "FTP: exit 1 on warnings as well as errors")("counts-only",
-                                                               "FTP: print counts without element names")(
-        "input-file", po::value<std::vector<std::string>>(),
-        ".pcfb file, or CAFTA FTP files / a directory of *.ftp files");
+    desc.add_options()("help,h", "display this help message")("validate", "run pcfb::validate; exit non-zero on diagnostics")("json", "print summary as JSON")(
+        "exact", "exhaustive exact P(query) for small models (≤ 30 events), and the "
+                 "exact value of every frequency group")("exposure", po::value<std::string>(), "with --exact: as for fzb run")(
+        "duplicate-import", po::value<std::string>(), "FTP: event imported more than once: error|first|last (default last)")(
+        "strict", "FTP: exit 1 on warnings as well as errors")("counts-only", "FTP: print counts without element names")(
+        "input-file", po::value<std::vector<std::string>>(), ".pcfb file, or CAFTA FTP files / a directory of *.ftp files");
 
     po::positional_options_description pos;
     pos.add("input-file", -1);
@@ -1185,8 +1154,7 @@ int cmd_inspect(int argc, char **argv) {
         }
     }
     if (inputs.size() > 1) {
-        std::cerr << "Option error: too many positional options have been specified on the command line\n\n"
-                  << desc << std::endl;
+        std::cerr << "Option error: too many positional options have been specified on the command line\n\n" << desc << std::endl;
         return 1;
     }
 
@@ -1244,8 +1212,7 @@ int cmd_inspect(int argc, char **argv) {
                     return query_value{.estimate = value, .low = value, .high = value};
                 },
                 exposure_hours);
-            print_group_rows(rows, vm.count("exposure") ? vm["exposure"].as<std::string>() : std::string{}, std::cout,
-                             "exact_group  ");
+            print_group_rows(rows, vm.count("exposure") ? vm["exposure"].as<std::string>() : std::string{}, std::cout, "exact_group  ");
         } catch (const fuzzybits::compile::ExactEvalError &ex) {
             std::cerr << "fzb inspect --exact: " << ex.what() << std::endl;
             return 1;
@@ -1259,10 +1226,9 @@ int cmd_inspect(int argc, char **argv) {
 
 int cmd_export(int argc, char **argv) {
     po::options_description desc("fzb export options");
-    desc.add_options()("help,h", "display this help message")("to", po::value<std::string>(),
-                                                              "target format (nombrilo)")(
-        "output,o", po::value<std::string>(), "output path")("strict", "omit fuzzybits.pcfb.* extras (plain nombrilo)")(
-        "input-file", po::value<std::string>(), ".pcfb file");
+    desc.add_options()("help,h", "display this help message")("to", po::value<std::string>(), "target format (nombrilo)")(
+        "output,o", po::value<std::string>(), "output path")("strict", "omit fuzzybits.pcfb.* extras (plain nombrilo)")("input-file", po::value<std::string>(),
+                                                                                                                        ".pcfb file");
 
     po::positional_options_description pos;
     pos.add("input-file", 1);
@@ -1276,8 +1242,7 @@ int cmd_export(int argc, char **argv) {
         return 1;
     }
     if (vm.count("help")) {
-        std::cout << "Usage: fzb export --to nombrilo model.pcfb -o out.safetensors [--strict]\n\n"
-                  << desc << std::endl;
+        std::cout << "Usage: fzb export --to nombrilo model.pcfb -o out.safetensors [--strict]\n\n" << desc << std::endl;
         return 0;
     }
     if (!vm.count("input-file")) {

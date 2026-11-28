@@ -53,8 +53,7 @@ struct expected_diagnostic final {
     const auto needle = std::string(file) + ":" + std::to_string(line);
     for (auto at = message.find(needle); at != std::string_view::npos; at = message.find(needle, at + 1)) {
         const auto end = at + needle.size();
-        const bool boundaryBefore =
-            at == 0 || message[at - 1] == '/' || message[at - 1] == ' ' || message[at - 1] == '(';
+        const bool boundaryBefore = at == 0 || message[at - 1] == '/' || message[at - 1] == ' ' || message[at - 1] == '(';
         const bool boundaryAfter = end == message.size() || message[end] < '0' || message[end] > '9';
         if (boundaryBefore && boundaryAfter) {
             return true;
@@ -70,13 +69,10 @@ struct expected_diagnostic final {
     if (!expected.name.empty() && actual.message.find("'" + expected.name + "'") == std::string::npos) {
         return false;
     }
-    return std::ranges::all_of(expected.locations, [&](auto const &location) {
-        return mentionsLocation(actual.message, location.first, location.second);
-    });
+    return std::ranges::all_of(expected.locations, [&](auto const &location) { return mentionsLocation(actual.message, location.first, location.second); });
 }
 
-void requireDiagnostics(fuzzybits::api::diagnostic_list const &actual,
-                        std::vector<expected_diagnostic> const &expected) {
+void requireDiagnostics(fuzzybits::api::diagnostic_list const &actual, std::vector<expected_diagnostic> const &expected) {
     INFO(diagnosticsText(actual));
     std::vector<bool> used(actual.size(), false);
     for (auto const &want : expected) {
@@ -90,8 +86,7 @@ void requireDiagnostics(fuzzybits::api::diagnostic_list const &actual,
         }
         REQUIRE(found);
     }
-    const auto reported = std::ranges::count_if(
-        actual.items(), [](auto const &item) { return item.severity != diagnostic_severity::note; });
+    const auto reported = std::ranges::count_if(actual.items(), [](auto const &item) { return item.severity != diagnostic_severity::note; });
     REQUIRE(static_cast<std::size_t>(reported) == expected.size());
 }
 
@@ -99,15 +94,13 @@ void requireDiagnostics(fuzzybits::api::diagnostic_list const &actual,
     std::vector<expected_diagnostic> out;
     for (auto const &item : list.array()) {
         expected_diagnostic diagnostic;
-        diagnostic.severity =
-            item["severity"].string() == "error" ? diagnostic_severity::error : diagnostic_severity::warning;
+        diagnostic.severity = item["severity"].string() == "error" ? diagnostic_severity::error : diagnostic_severity::warning;
         diagnostic.code = "io.ftp." + item["code"].string();
         if (!item["name"].is_null()) {
             diagnostic.name = item["name"].string();
         }
         for (auto const &location : item["locations"].array()) {
-            diagnostic.locations.emplace_back(location.array()[0].string(),
-                                              static_cast<std::size_t>(location.array()[1].number()));
+            diagnostic.locations.emplace_back(location.array()[0].string(), static_cast<std::size_t>(location.array()[1].number()));
         }
         out.push_back(std::move(diagnostic));
     }
@@ -118,20 +111,15 @@ void requireDiagnostics(fuzzybits::api::diagnostic_list const &actual,
 // both vendors reject or misread it, and so does the reader.
 [[nodiscard]] auto legacyHeaderLimitDiagnostics() -> std::vector<expected_diagnostic> {
     const auto error = [](std::string code, std::string name, std::size_t line) {
-        expected_diagnostic out{
-            .severity = diagnostic_severity::error, .code = "io.ftp." + std::move(code), .name = std::move(name)};
+        expected_diagnostic out{.severity = diagnostic_severity::error, .code = "io.ftp." + std::move(code), .name = std::move(name)};
         out.locations.emplace_back("model.ftp", line);
         return out;
     };
     return {
-        error("missing-endtree", "", 3),
-        error("import-without-header", "A", 6),
-        error("import-without-header", "B", 7),
-        error("import-without-header", "C", 8),
-        error("undefined-reference", "A", 4),
-        error("undefined-reference", "B", 4),
-        error("undefined-reference", "C", 5),
-        expected_diagnostic{.severity = diagnostic_severity::warning, .code = "io.ftp.missing-process"},
+        error("missing-endtree", "", 3),        error("import-without-header", "A", 6),
+        error("import-without-header", "B", 7), error("import-without-header", "C", 8),
+        error("undefined-reference", "A", 4),   error("undefined-reference", "B", 4),
+        error("undefined-reference", "C", 5),   expected_diagnostic{.severity = diagnostic_severity::warning, .code = "io.ftp.missing-process"},
     };
 }
 
@@ -159,8 +147,7 @@ void requireStructure(ftp::structure_summary const &actual, ftp_test::json const
     REQUIRE(actual.basic_events == static_cast<std::size_t>(expected["basic_events"].number()));
     REQUIRE(actual.import_lines == static_cast<std::size_t>(expected["import_lines"].number()));
     REQUIRE(actual.complemented_edges == static_cast<std::size_t>(expected["complemented_edges"].number()));
-    REQUIRE(actual.complemented_edges_to_basic_events ==
-            static_cast<std::size_t>(expected["complemented_edges_to_basic_events"].number()));
+    REQUIRE(actual.complemented_edges_to_basic_events == static_cast<std::size_t>(expected["complemented_edges_to_basic_events"].number()));
     REQUIRE(actual.roots == names(expected["roots"]));
     REQUIRE(actual.process_targets == names(expected["process_targets"]));
     if (expected["limit"].is_null()) {
@@ -170,8 +157,7 @@ void requireStructure(ftp::structure_summary const &actual, ftp_test::json const
         REQUIRE(std::abs(*actual.limit - expected["limit"].number()) <= 1e-12 * std::abs(expected["limit"].number()));
     }
     REQUIRE(actual.initiating_events == static_cast<std::size_t>(expected["initiator_tagged_events"].number()));
-    REQUIRE(actual.initiating_events_p_1 ==
-            static_cast<std::size_t>(expected["initiator_tagged_events_with_p_1"].number()));
+    REQUIRE(actual.initiating_events_p_1 == static_cast<std::size_t>(expected["initiator_tagged_events_with_p_1"].number()));
     REQUIRE(actual.events_p_1 == static_cast<std::size_t>(expected["events_p_eq_1"].number()));
     REQUIRE(actual.events_p_0 == static_cast<std::size_t>(expected["events_p_eq_0"].number()));
     REQUIRE(actual.names_not_ncname == static_cast<std::size_t>(expected["names_not_valid_xml_ncname"].number()));
@@ -192,8 +178,7 @@ void requireStructure(ftp::structure_summary const &actual, ftp_test::json const
 
 } // namespace
 
-TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-import policy",
-          "[io][ftp][conformance]") {
+TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-import policy", "[io][ftp][conformance]") {
     const auto fixtures = fixtureDirectories();
     REQUIRE(fixtures.size() >= 9);
 
@@ -205,8 +190,7 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
             for (auto const &file : (*spec)["files"].array()) {
                 files.push_back(fixture / file.string());
             }
-            const bool legacyHeaderLimit = fixture.filename() == "header_limit" &&
-                                           readText(fixture / "model.ftp").find("ENDTREE") == std::string::npos;
+            const bool legacyHeaderLimit = fixture.filename() == "header_limit" && readText(fixture / "model.ftp").find("ENDTREE") == std::string::npos;
 
             for (auto const &[policy, outcome] : (*spec)["policies"].object()) {
                 INFO("policy " << policy);
@@ -214,15 +198,12 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
                 options.set(ftp::duplicate_import_option(), policy);
                 const auto read = ftp::read_project(files, options);
 
-                auto expected =
-                    legacyHeaderLimit ? legacyHeaderLimitDiagnostics() : expectedDiagnostics(outcome["diagnostics"]);
+                auto expected = legacyHeaderLimit ? legacyHeaderLimitDiagnostics() : expectedDiagnostics(outcome["diagnostics"]);
                 // Fixtures generated before #191 do not list the missing-process warning.
-                const bool documentsMissingProcess = std::ranges::any_of(
-                    expected, [](auto const &item) { return item.code == "io.ftp.missing-process"; });
-                if (auto const *structure = spec->find("structure"); !documentsMissingProcess && structure != nullptr &&
-                                                                     (*structure)["process_targets"].array().empty()) {
-                    expected.push_back(expected_diagnostic{.severity = diagnostic_severity::warning,
-                                                           .code = "io.ftp.missing-process"});
+                const bool documentsMissingProcess = std::ranges::any_of(expected, [](auto const &item) { return item.code == "io.ftp.missing-process"; });
+                if (auto const *structure = spec->find("structure");
+                    !documentsMissingProcess && structure != nullptr && (*structure)["process_targets"].array().empty()) {
+                    expected.push_back(expected_diagnostic{.severity = diagnostic_severity::warning, .code = "io.ftp.missing-process"});
                 }
                 requireDiagnostics(read.diagnostics(), expected);
 
@@ -247,8 +228,7 @@ TEST_CASE("FTP conformance fixtures match expected.json under every duplicate-im
                     }
                     REQUIRE(subject.valid());
                     const auto expectedValue = values["boolean"].number();
-                    REQUIRE(std::abs(ftp_test::brute_force_probability(*model, subject) - expectedValue) <=
-                            1e-9 * expectedValue + 1e-15);
+                    REQUIRE(std::abs(ftp_test::brute_force_probability(*model, subject) - expectedValue) <= 1e-9 * expectedValue + 1e-15);
                 }
             }
         }

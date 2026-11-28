@@ -34,8 +34,7 @@ TEST_CASE("bayes policy does not throw at k = 0 for small and huge n", "[converg
     const double z = z99();
     const double delta = 0.001;
 
-    for (const std::size_t n :
-         {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
+    for (const std::size_t n : {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
         tally t = make_tally(0, n);
         REQUIRE_NOTHROW(update_convergence<bayes_policy>(t, delta, z));
         CHECK(t.mean == 0.0);
@@ -49,8 +48,7 @@ TEST_CASE("bayes policy does not throw at k = n for small and huge n", "[converg
     const double z = z99();
     const double delta = 0.001;
 
-    for (const std::size_t n :
-         {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
+    for (const std::size_t n : {std::size_t{1}, std::size_t{100}, std::size_t{1'000'000}, static_cast<std::size_t>(1e12)}) {
         tally t = make_tally(n, n);
         REQUIRE_NOTHROW(update_convergence<bayes_policy>(t, delta, z));
         CHECK(t.mean == 1.0);

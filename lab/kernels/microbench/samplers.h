@@ -51,15 +51,13 @@ template <bool Split, int Rounds = 10> [[gnu::always_inline]] inline state128 ph
     return c;
 }
 
-[[gnu::always_inline]] inline state128 counter(std::uint32_t pdag_idx, std::uint32_t event_idx,
-                                               std::uint32_t sample_idx, std::uint32_t iteration) {
+[[gnu::always_inline]] inline state128 counter(std::uint32_t pdag_idx, std::uint32_t event_idx, std::uint32_t sample_idx, std::uint32_t iteration) {
     return state128{{pdag_idx + 1, event_idx + 1, sample_idx + 1, (iteration + 1) << 6}};
 }
 
 // ---------------------------------------------------------------- A:
 // production sampler (32-bit thresholds)
-template <bool Split>
-[[gnu::always_inline]] inline std::uint64_t sample_production(const state128 &base, std::uint64_t threshold32) {
+template <bool Split> [[gnu::always_inline]] inline std::uint64_t sample_production(const state128 &base, std::uint64_t threshold32) {
     std::uint64_t out = 0;
 #pragma unroll
     for (std::uint32_t g = 0; g < 16; ++g) {
@@ -122,8 +120,7 @@ inline std::uint64_t bs_reference(const state128 &base, std::uint64_t T) {
 // C: rolled loop, one Philox per iteration, early exit when every lane is
 // decided or T has no 1 bits left. `Tsh` holds the not-yet-compared bits of T
 // at the top.
-template <bool Split>
-[[gnu::always_inline]] inline std::uint64_t sample_bitsliced(const state128 &base, std::uint64_t T) {
+template <bool Split> [[gnu::always_inline]] inline std::uint64_t sample_bitsliced(const state128 &base, std::uint64_t T) {
     if (T == 0) {
         return 0;
     }
@@ -149,8 +146,7 @@ template <bool Split>
 }
 
 // D: unrolled prefix of P generations (no exit checks), then the rolled loop.
-template <bool Split, int P>
-[[gnu::always_inline]] inline std::uint64_t sample_bitsliced_prefix(const state128 &base, std::uint64_t T) {
+template <bool Split, int P> [[gnu::always_inline]] inline std::uint64_t sample_bitsliced_prefix(const state128 &base, std::uint64_t T) {
     if (T == 0) {
         return 0;
     }
@@ -184,9 +180,8 @@ template <bool Split, int P>
 // Philox call per loop iteration; a decided bitpack is stored and the next one starts at once, so a
 // SIMT group pays for the mean decision depth instead of the maximum over its lanes.
 template <bool Split>
-[[gnu::always_inline]] inline void
-sample_bitsliced_persistent(std::uint64_t *row, std::uint32_t pdag_idx, std::uint32_t event_idx, std::uint32_t first,
-                            std::uint32_t stride, std::uint32_t count, std::uint32_t iteration, std::uint64_t T) {
+[[gnu::always_inline]] inline void sample_bitsliced_persistent(std::uint64_t *row, std::uint32_t pdag_idx, std::uint32_t event_idx, std::uint32_t first,
+                                                               std::uint32_t stride, std::uint32_t count, std::uint32_t iteration, std::uint64_t T) {
     if (T == 0) {
         for (std::uint32_t i = 0; i < count; ++i) {
             row[first + i * stride] = 0;
@@ -223,9 +218,7 @@ sample_bitsliced_persistent(std::uint64_t *row, std::uint32_t pdag_idx, std::uin
 template <int W> using u32v = std::uint32_t __attribute__((ext_vector_type(W)));
 template <int W> using u64v = std::uint64_t __attribute__((ext_vector_type(W)));
 
-template <int W>
-[[gnu::always_inline]] inline void philox_round_v(u32v<W> &x0, u32v<W> &x1, u32v<W> &x2, u32v<W> &x3, std::uint32_t k0,
-                                                  std::uint32_t k1) {
+template <int W> [[gnu::always_inline]] inline void philox_round_v(u32v<W> &x0, u32v<W> &x1, u32v<W> &x2, u32v<W> &x3, std::uint32_t k0, std::uint32_t k1) {
     const u64v<W> p0 = __builtin_convertvector(x0, u64v<W>) * static_cast<std::uint64_t>(kM0);
     const u64v<W> p1 = __builtin_convertvector(x2, u64v<W>) * static_cast<std::uint64_t>(kM1);
     const u32v<W> hi0 = __builtin_convertvector(p0 >> 32, u32v<W>);
@@ -241,8 +234,7 @@ template <int W>
 }
 
 template <int W>
-[[gnu::always_inline]] inline void sample_bitsliced_simd(std::uint64_t *out, std::uint32_t pdag_idx,
-                                                         std::uint32_t event_idx, std::uint32_t sample0,
+[[gnu::always_inline]] inline void sample_bitsliced_simd(std::uint64_t *out, std::uint32_t pdag_idx, std::uint32_t event_idx, std::uint32_t sample0,
                                                          std::uint32_t iteration, std::uint64_t T) {
     if (T == 0) {
 #pragma unroll
@@ -267,8 +259,7 @@ template <int W>
         u32v<W> x3 = ((iteration + 1u) << 6) + g;
 #pragma unroll
         for (int i = 0; i < 10; ++i) {
-            philox_round_v<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0,
-                              kK1 + static_cast<std::uint32_t>(i) * kW1);
+            philox_round_v<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0, kK1 + static_cast<std::uint32_t>(i) * kW1);
         }
         const std::uint32_t th = static_cast<std::uint32_t>(Tsh >> 32);
         const std::uint32_t m0 = static_cast<std::uint32_t>(static_cast<std::int32_t>(th) >> 31);
@@ -297,9 +288,7 @@ template <int W>
 // Even u32 lanes multiply as the low halves (pmuludq ignores the high 32 bits), odd lanes after a
 // 32-bit right shift; hi/lo are reassembled in place with shifts and masks, so nothing crosses a
 // 128-bit lane and no u32<->u64 conversions are needed.
-template <int W>
-[[gnu::always_inline]] inline void philox_round_v64(u32v<W> &x0, u32v<W> &x1, u32v<W> &x2, u32v<W> &x3,
-                                                    std::uint32_t k0, std::uint32_t k1) {
+template <int W> [[gnu::always_inline]] inline void philox_round_v64(u32v<W> &x0, u32v<W> &x1, u32v<W> &x2, u32v<W> &x3, std::uint32_t k0, std::uint32_t k1) {
     constexpr int H = W / 2;
     constexpr std::uint64_t lo_mask = 0xFFFFFFFFull;
     const u64v<H> a = __builtin_bit_cast(u64v<H>, x0);
@@ -321,8 +310,7 @@ template <int W>
 }
 
 template <int W>
-[[gnu::always_inline]] inline void sample_bitsliced_simd64(std::uint64_t *out, std::uint32_t pdag_idx,
-                                                           std::uint32_t event_idx, std::uint32_t sample0,
+[[gnu::always_inline]] inline void sample_bitsliced_simd64(std::uint64_t *out, std::uint32_t pdag_idx, std::uint32_t event_idx, std::uint32_t sample0,
                                                            std::uint32_t iteration, std::uint64_t T) {
     if (T == 0) {
 #pragma unroll
@@ -347,8 +335,7 @@ template <int W>
         u32v<W> x3 = ((iteration + 1u) << 6) + g;
 #pragma unroll
         for (int i = 0; i < 10; ++i) {
-            philox_round_v64<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0,
-                                kK1 + static_cast<std::uint32_t>(i) * kW1);
+            philox_round_v64<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0, kK1 + static_cast<std::uint32_t>(i) * kW1);
         }
         const std::uint32_t th = static_cast<std::uint32_t>(Tsh >> 32);
         const std::uint32_t m0 = static_cast<std::uint32_t>(static_cast<std::int32_t>(th) >> 31);
@@ -378,10 +365,8 @@ template <int W>
 // bitpack is decided stores it and restarts on its next bitpack, so the vector pays for the mean
 // decision depth instead of the maximum over W*64 trials.
 template <int W>
-[[gnu::always_inline]] inline void sample_bitsliced_simd64_persistent(std::uint64_t *row, std::uint32_t pdag_idx,
-                                                                      std::uint32_t event_idx, std::uint32_t sample0,
-                                                                      std::uint32_t count, std::uint32_t iteration,
-                                                                      std::uint64_t T) {
+[[gnu::always_inline]] inline void sample_bitsliced_simd64_persistent(std::uint64_t *row, std::uint32_t pdag_idx, std::uint32_t event_idx,
+                                                                      std::uint32_t sample0, std::uint32_t count, std::uint32_t iteration, std::uint64_t T) {
     if (T == 0) {
         for (std::uint32_t i = 0; i < count * W; ++i) {
             row[sample0 + i] = 0;
@@ -415,8 +400,7 @@ template <int W>
         V x3 = g + x3base;
 #pragma unroll
         for (int i = 0; i < 10; ++i) {
-            philox_round_v64<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0,
-                                kK1 + static_cast<std::uint32_t>(i) * kW1);
+            philox_round_v64<W>(x0, x1, x2, x3, kK0 + static_cast<std::uint32_t>(i) * kW0, kK1 + static_cast<std::uint32_t>(i) * kW1);
         }
         // T bits for steps 2g and 2g+1 (g < 16: high word, else low word).
         const V k0 = g * 2u;

@@ -38,9 +38,7 @@
 
 // RAII helper that sets the global PDAG watch list for the current scope.
 struct WatchGuard {
-    explicit WatchGuard(const std::unordered_set<const scram::mef::Gate *> *wl) {
-        scram::core::Pdag::SetWatchedGates(wl);
-    }
+    explicit WatchGuard(const std::unordered_set<const scram::mef::Gate *> *wl) { scram::core::Pdag::SetWatchedGates(wl); }
     ~WatchGuard() { scram::core::Pdag::SetWatchedGates(nullptr); }
 };
 
@@ -111,8 +109,7 @@ void RiskAnalysis::RunAnalysis(const std::optional<Context> &context) {
     // DirectEval engine, run *one* combined PDAG for every sequence of this
     // event-tree.  Fall back to the legacy per-sequence path otherwise.
     const bool combined_mc_path = Analysis::settings().algorithm() == Algorithm::kDirect &&
-                                  Analysis::settings().approximation() == Approximation::kMonteCarlo &&
-                                  Analysis::settings().probability_analysis();
+                                  Analysis::settings().approximation() == Approximation::kMonteCarlo && Analysis::settings().probability_analysis();
 
     // todo:: combine all initiating events and linked event trees into a unified PDAG if using MonteCarlo DirectEval
     // Probability note:: multiple initiating events may point to the same event tree, which is totally fine, it should
@@ -130,9 +127,7 @@ void RiskAnalysis::RunAnalysis(const std::optional<Context> &context) {
                     const mef::Sequence &sequence = result.sequence;
                     LOG(INFO) << "Running analysis for sequence: " << sequence.name();
 
-                    results_.push_back(
-                        {{std::pair<const mef::InitiatingEvent &, const mef::Sequence &>{initiating_event, sequence},
-                          context}});
+                    results_.push_back({{std::pair<const mef::InitiatingEvent &, const mef::Sequence &>{initiating_event, sequence}, context}});
                     RunAnalysis(*result.gate, &results_.back());
 
                     if (result.is_expression_only) {
@@ -214,8 +209,7 @@ template <class Algorithm> void RiskAnalysis::RunAnalysis(const mef::Gate &targe
     result->fault_tree_analysis = std::move(fta);
 }
 
-template <class Algorithm, class Calculator>
-void RiskAnalysis::RunAnalysis(FaultTreeAnalyzer<Algorithm> *fta, Result *result) {
+template <class Algorithm, class Calculator> void RiskAnalysis::RunAnalysis(FaultTreeAnalyzer<Algorithm> *fta, Result *result) {
     auto pa = std::make_unique<ProbabilityAnalyzer<Calculator>>(fta, &model_->mission_time());
 
     if constexpr (std::is_same_v<Calculator, DirectEval>) {
@@ -267,8 +261,7 @@ void RiskAnalysis::RunAnalysis(FaultTreeAnalyzer<Algorithm> *fta, Result *result
 // ---------------------------------------------------------------------------
 //  Combined Monte-Carlo processing of all event-tree sequences (DirectEval)
 // ---------------------------------------------------------------------------
-void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating_event, EventTreeAnalysis *eta,
-                                          const std::optional<Context> &context) {
+void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating_event, EventTreeAnalysis *eta, const std::optional<Context> &context) {
     // Nothing to do if the event-tree produced no sequences.
     if (eta->sequences().empty())
         return;
@@ -350,8 +343,7 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
         const mef::Sequence &sequence = seq_res.sequence;
         LOG(INFO) << "Extracting Monte-Carlo probability for sequence: " << sequence.name();
 
-        results_.push_back(
-            {{std::pair<const mef::InitiatingEvent &, const mef::Sequence &>{initiating_event, sequence}, context}});
+        results_.push_back({{std::pair<const mef::InitiatingEvent &, const mef::Sequence &>{initiating_event, sequence}, context}});
         Result &out = results_.back();
         out.probability_analysis = nullptr;
         out.fault_tree_analysis = nullptr;
@@ -390,14 +382,12 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
         const int idx = B_to_A[watched_gate];
 
         if (!tally_node_map_ptr) {
-            LOG(ERROR) << "idx [" << idx << "] :: watched gate " << watched_gate->full_path()
-                       << " :: tallies not found";
+            LOG(ERROR) << "idx [" << idx << "] :: watched gate " << watched_gate->full_path() << " :: tallies not found";
             break;
         }
 
         if (!tally_node_map_ptr->contains(idx)) {
-            LOG(ERROR) << "idx [" << idx << "] for watched gate " << watched_gate->full_path()
-                       << " not found in tallies";
+            LOG(ERROR) << "idx [" << idx << "] for watched gate " << watched_gate->full_path() << " not found in tallies";
             continue;
         }
 
@@ -416,8 +406,7 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
         gate_result.probability_analysis = nullptr;
         gate_result.fault_tree_analysis = nullptr;
         gate_result.importance_analysis = nullptr;
-        gate_result.uncertainty_analysis =
-            std::make_unique<UncertaintyAnalysis>(tally_node_map_ptr->at(idx).tally_stats);
+        gate_result.uncertainty_analysis = std::make_unique<UncertaintyAnalysis>(tally_node_map_ptr->at(idx).tally_stats);
     }
 
     // Attach analysis artifacts only to the first sequence to retain ownership.

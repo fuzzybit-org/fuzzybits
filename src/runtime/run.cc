@@ -27,8 +27,7 @@ using bitpack_t = std::uint64_t;
 using prob_t = std::double_t;
 using size_t_ = std::size_t;
 
-void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate,
-                   std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
+void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate, std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
     if (!gate || !nodes.emplace(gate->index(), gate).second) {
         return;
     }
@@ -44,10 +43,8 @@ void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate,
 /// loop already collected, so attaching a sink never changes sampling.
 class sampling_progress {
   public:
-    sampling_progress(const RunOptions &options, const std::vector<ReconstructedQuery> &queries,
-                      std::uint64_t trials_per_pass, std::uint64_t passes_total)
-        : emitter_(options.progress_sinks, options.progress_max_rate_hz), trials_per_pass_(trials_per_pass),
-          passes_total_(passes_total), start_(clock::now()) {
+    sampling_progress(const RunOptions &options, const std::vector<ReconstructedQuery> &queries, std::uint64_t trials_per_pass, std::uint64_t passes_total)
+        : emitter_(options.progress_sinks, options.progress_max_rate_hz), trials_per_pass_(trials_per_pass), passes_total_(passes_total), start_(clock::now()) {
         names_.reserve(queries.size());
         for (const auto &q : queries) {
             names_.push_back(q.node->index());
@@ -127,8 +124,7 @@ class sampling_progress {
             q.ci_low = t.ci[0];
             q.ci_high = t.ci[1];
             const double width = t.ci[1] - t.ci[0];
-            q.rel_half_width = t.mean != 0.0 && std::isfinite(width) ? width / (2.0 * t.mean)
-                                                                     : std::numeric_limits<double>::quiet_NaN();
+            q.rel_half_width = t.mean != 0.0 && std::isfinite(width) ? width / (2.0 * t.mean) : std::numeric_limits<double>::quiet_NaN();
         }
         s.trials_per_second = trials_per_second;
         return s;
@@ -188,8 +184,7 @@ void fail_next_run_after_passes(std::uint64_t passes) { fail_run_after_passes = 
 
 } // namespace testing
 
-std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries,
-                                   const RunOptions &options) {
+std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries, const RunOptions &options) {
     if (options.trials == 0) {
         throw RuntimeError("run: --trials must be positive");
     }
@@ -230,8 +225,7 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<Re
             throw RuntimeError("run: sample shaper produced zero iterations");
         }
         const auto &shape = manager.shaper().SAMPLE_SHAPE;
-        const auto trials_per_pass =
-            static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * sizeof(bitpack_t) * 8;
+        const auto trials_per_pass = static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * sizeof(bitpack_t) * 8;
 
         sampling_progress progress(options, queries, trials_per_pass, total_passes);
 
@@ -311,21 +305,16 @@ pcfb::ir::Circuit require_valid_circuit(pcfb::Result<pcfb::ir::Circuit> circuit,
     require_implemented_queries(*circuit, op);
     const auto diags = pcfb::validate(*circuit);
     if (!diags.empty()) {
-        throw InvalidPcfbError(
-            std::string(op) + ": pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
+        throw InvalidPcfbError(std::string(op) + ": pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
     }
     return std::move(*circuit);
 }
 
 } // namespace
 
-pcfb::ir::Circuit load_pcfb(const std::filesystem::path &path) {
-    return require_valid_circuit(pcfb::io::read(path), "load_pcfb");
-}
+pcfb::ir::Circuit load_pcfb(const std::filesystem::path &path) { return require_valid_circuit(pcfb::io::read(path), "load_pcfb"); }
 
-pcfb::ir::Circuit load_pcfb(std::span<const std::byte> bytes) {
-    return require_valid_circuit(pcfb::io::from_bytes(bytes), "load_pcfb");
-}
+pcfb::ir::Circuit load_pcfb(std::span<const std::byte> bytes) { return require_valid_circuit(pcfb::io::from_bytes(bytes), "load_pcfb"); }
 
 std::vector<QueryResult> run_pcfb(const std::filesystem::path &path, const RunOptions &options) {
     apply_backend_mask(options.backend);
@@ -349,8 +338,8 @@ struct Session::Impl {
     bool closed = false;
 };
 
-Session::Session(ReconstructedPdag reconstructed, const std::string &backend, std::size_t requested_trials_per_pass,
-                 std::vector<std::string> watch, std::size_t num_trials) {
+Session::Session(ReconstructedPdag reconstructed, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+                 std::size_t num_trials) {
     apply_backend_mask(backend);
     auto impl = std::make_unique<Impl>();
     impl->reconstructed = std::move(reconstructed);
@@ -388,8 +377,7 @@ Session::Session(ReconstructedPdag reconstructed, const std::string &backend, st
         }
     }
     try {
-        impl->manager = std::make_unique<Impl::Manager>(impl->reconstructed.graph.get(), num_trials, tallies,
-                                                        requested_trials_per_pass);
+        impl->manager = std::make_unique<Impl::Manager>(impl->reconstructed.graph.get(), num_trials, tallies, requested_trials_per_pass);
     } catch (const RuntimeError &) {
         throw;
     } catch (const sycl::exception &e) {
@@ -404,25 +392,21 @@ Session::Session(Session &&) noexcept = default;
 Session &Session::operator=(Session &&) noexcept = default;
 Session::~Session() = default;
 
-Session Session::from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend,
-                              std::size_t requested_trials_per_pass, std::vector<std::string> watch,
-                              std::size_t num_trials) {
+Session Session::from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend, std::size_t requested_trials_per_pass,
+                              std::vector<std::string> watch, std::size_t num_trials) {
     const auto diags = pcfb::validate(circuit);
     if (!diags.empty()) {
-        throw InvalidPcfbError("session: pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)",
-                               diags);
+        throw InvalidPcfbError("session: pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
     }
     return Session(pdag_from_circuit(circuit), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
 
-Session Session::from_bytes(std::span<const std::byte> bytes, const std::string &backend,
-                            std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+Session Session::from_bytes(std::span<const std::byte> bytes, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
                             std::size_t num_trials) {
     return from_circuit(load_pcfb(bytes), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
 
-Session Session::from_path(const std::filesystem::path &path, const std::string &backend,
-                           std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+Session Session::from_path(const std::filesystem::path &path, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
                            std::size_t num_trials) {
     return from_circuit(load_pcfb(path), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
@@ -464,8 +448,7 @@ SampleShape Session::sample_shape() const {
     out.batch_size = shape.batch_size;
     out.bitpacks_per_batch = shape.bitpacks_per_batch;
     out.bits_per_bitpack = sizeof(Impl::bitpack_t) * 8;
-    out.trials_per_pass =
-        static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * out.bits_per_bitpack;
+    out.trials_per_pass = static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * out.bits_per_bitpack;
     out.total_iterations = impl_->manager->shaper().TOTAL_ITERATIONS;
     return out;
 }

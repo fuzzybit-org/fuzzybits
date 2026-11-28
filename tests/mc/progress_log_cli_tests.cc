@@ -61,9 +61,7 @@ std::string json_value(const std::string &record, const std::string &key) {
     return record.substr(start, end - start);
 }
 
-std::uint64_t json_uint(const std::string &record, const std::string &key) {
-    return static_cast<std::uint64_t>(std::stoull(json_value(record, key)));
-}
+std::uint64_t json_uint(const std::string &record, const std::string &key) { return static_cast<std::uint64_t>(std::stoull(json_value(record, key))); }
 
 /// ``"name":"TOP"`` style string field.
 std::string json_string(const std::string &record, const std::string &key) {
@@ -98,8 +96,7 @@ std::filesystem::path chinese_pcfb() {
         const auto out = scratch("chinese.pcfb");
         const auto xml = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / "chinese.xml";
         REQUIRE(std::filesystem::exists(xml));
-        const std::string cmd =
-            quote(FZB_PATH) + " compile " + quote(xml.string()) + " -c 2 --no-kn -o " + quote(out.string());
+        const std::string cmd = quote(FZB_PATH) + " compile " + quote(xml.string()) + " -c 2 --no-kn -o " + quote(out.string());
         REQUIRE(run_cmd(cmd) == 0);
         REQUIRE(std::filesystem::exists(out));
         return out;
@@ -109,8 +106,7 @@ std::filesystem::path chinese_pcfb() {
 
 std::string run_json(const std::filesystem::path &pcfb, const std::vector<std::string> &extra) {
     const auto json = scratch("run.json");
-    std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576" +
-                      fuzzybits::testing::backend_flag() + " --json";
+    std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576" + fuzzybits::testing::backend_flag() + " --json";
     for (const auto &item : extra) {
         cmd += " " + item;
     }
@@ -121,8 +117,7 @@ std::string run_json(const std::filesystem::path &pcfb, const std::vector<std::s
 
 } // namespace
 
-TEST_CASE("fzb run --progress-log writes JSON Lines with schema and a matching finish record",
-          "[mc][cli][progress-log]") {
+TEST_CASE("fzb run --progress-log writes JSON Lines with schema and a matching finish record", "[mc][cli][progress-log]") {
     const auto pcfb = chinese_pcfb();
     const auto log = scratch("run.jsonl");
     const auto printed = run_json(pcfb, {"--progress-log", quote(log.string())});
@@ -188,11 +183,9 @@ TEST_CASE("fzb run --progress-log rejects an unknown extension before sampling",
     const auto pcfb = chinese_pcfb();
     const auto log = scratch("run.txt");
 #ifdef _WIN32
-    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " +
-                            quote(log.string()) + " >NUL 2>&1";
+    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " + quote(log.string()) + " >NUL 2>&1";
 #else
-    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " +
-                            quote(log.string()) + " >/dev/null 2>&1";
+    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " + quote(log.string()) + " >/dev/null 2>&1";
 #endif
     CHECK(run_cmd(cmd) != 0);
     CHECK_FALSE(std::filesystem::exists(log));
@@ -202,11 +195,9 @@ TEST_CASE("fzb run --progress-log rejects a missing directory", "[mc][cli][progr
     const auto pcfb = chinese_pcfb();
     const auto log = scratch("no-such-dir/run.jsonl");
 #ifdef _WIN32
-    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " +
-                            quote(log.string()) + " >NUL 2>&1";
+    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " + quote(log.string()) + " >NUL 2>&1";
 #else
-    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " +
-                            quote(log.string()) + " >/dev/null 2>&1";
+    const std::string cmd = quote(FZB_PATH) + " run " + quote(pcfb.string()) + " --trials 1048576 --progress-log " + quote(log.string()) + " >/dev/null 2>&1";
 #endif
     CHECK(run_cmd(cmd) != 0);
     CHECK_FALSE(std::filesystem::exists(log));
@@ -216,8 +207,7 @@ TEST_CASE("fzb compile --progress-log records the compile stages", "[mc][cli][pr
     const auto xml = std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / "chinese.xml";
     const auto out = scratch("compile-out.pcfb");
     const auto log = scratch("compile.jsonl");
-    const std::string cmd = quote(FZB_PATH) + " compile " + quote(xml.string()) + " -o " + quote(out.string()) +
-                            " --progress-log " + quote(log.string());
+    const std::string cmd = quote(FZB_PATH) + " compile " + quote(xml.string()) + " -o " + quote(out.string()) + " --progress-log " + quote(log.string());
     REQUIRE(run_cmd(cmd) == 0);
     REQUIRE(std::filesystem::exists(out));
     const auto lines = split_lines(slurp(log));

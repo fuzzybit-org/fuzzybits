@@ -45,14 +45,11 @@ namespace lowering = fuzzybits::compile::backend::fuzzybits::pra_to_pc;
     return out;
 }
 
-[[nodiscard]] inline auto count(fuzzybits::api::diagnostic_list const &diagnostics, const std::string_view code)
-    -> std::size_t {
-    return static_cast<std::size_t>(std::ranges::count_if(
-        diagnostics.items(), [code](fuzzybits::api::diagnostic const &item) { return item.code == code; }));
+[[nodiscard]] inline auto count(fuzzybits::api::diagnostic_list const &diagnostics, const std::string_view code) -> std::size_t {
+    return static_cast<std::size_t>(std::ranges::count_if(diagnostics.items(), [code](fuzzybits::api::diagnostic const &item) { return item.code == code; }));
 }
 
-[[nodiscard]] inline auto events_of_span(std::span<pra::basic_event_id const> events)
-    -> std::vector<pra::basic_event_id> {
+[[nodiscard]] inline auto events_of_span(std::span<pra::basic_event_id const> events) -> std::vector<pra::basic_event_id> {
     return {events.begin(), events.end()};
 }
 
@@ -63,8 +60,7 @@ namespace lowering = fuzzybits::compile::backend::fuzzybits::pra_to_pc;
     return sealed.output;
 }
 
-[[nodiscard]] inline auto require_lower(pra::model const &model, lowering::quantification_config const &config = {})
-    -> lowering::pra_pc_lowering {
+[[nodiscard]] inline auto require_lower(pra::model const &model, lowering::quantification_config const &config = {}) -> lowering::pra_pc_lowering {
     auto lowered = lowering::lower(model, config);
     INFO(render(lowered.diagnostics()));
     REQUIRE(lowered);
@@ -80,8 +76,7 @@ struct reference_override final {
 // world is a bit mask over all basic events of the model (bit i: event i).
 class pra_reference final {
   public:
-    pra_reference(pra::model const &model, std::vector<reference_override> overrides)
-        : model_(model), overrides_(std::move(overrides)) {
+    pra_reference(pra::model const &model, std::vector<reference_override> overrides) : model_(model), overrides_(std::move(overrides)) {
         REQUIRE(model.basic_events().size() <= 20);
     }
 
@@ -131,14 +126,11 @@ class pra_reference final {
         return gate_values;
     }
 
-    [[nodiscard]] auto value(const pra::domain_ref element, const std::uint64_t world) const -> bool {
-        return leaf_or_gate(element, world, values(world));
-    }
+    [[nodiscard]] auto value(const pra::domain_ref element, const std::uint64_t world) const -> bool { return leaf_or_gate(element, world, values(world)); }
 
     // Basic events reachable from `subject` without entering an overridden
     // element; with `literals`, only those referenced through an operand marked `literal`.
-    [[nodiscard]] auto cone_events(const pra::domain_ref subject, const bool literals) const
-        -> std::vector<pra::basic_event_id> {
+    [[nodiscard]] auto cone_events(const pra::domain_ref subject, const bool literals) const -> std::vector<pra::basic_event_id> {
         std::vector<std::uint8_t> seen_gate(model_.gates().size(), 0);
         std::vector<std::uint8_t> seen_event(model_.basic_events().size(), 0);
         std::vector<pra::basic_event_id> out;
@@ -171,8 +163,7 @@ class pra_reference final {
     [[nodiscard]] auto cone_initiators(const pra::domain_ref subject) const -> std::vector<pra::basic_event_id> {
         std::vector<pra::basic_event_id> out;
         for (const auto event : cone_events(subject, false)) {
-            if (std::ranges::any_of(model_.initiating_events(),
-                                    [event](auto const &row) { return row.event == event; })) {
+            if (std::ranges::any_of(model_.initiating_events(), [event](auto const &row) { return row.event == event; })) {
                 out.push_back(event);
             }
         }
@@ -181,8 +172,7 @@ class pra_reference final {
 
     // The function a target has under the config: the subject, ANDed with
     // "at most k initiating events of the cone are true" when the rule is set.
-    [[nodiscard]] auto target_value(const pra::domain_ref subject, const std::optional<std::uint32_t> max_initiators,
-                                    const std::uint64_t world) const -> bool {
+    [[nodiscard]] auto target_value(const pra::domain_ref subject, const std::optional<std::uint32_t> max_initiators, const std::uint64_t world) const -> bool {
         if (!value(subject, world)) {
             return false;
         }
@@ -200,8 +190,7 @@ class pra_reference final {
         return model_.expressions()[model_.basic_events()[event.raw()].expression.raw()].value;
     }
 
-    [[nodiscard]] auto target_probability(const pra::domain_ref subject,
-                                          const std::optional<std::uint32_t> max_initiators) const -> double {
+    [[nodiscard]] auto target_probability(const pra::domain_ref subject, const std::optional<std::uint32_t> max_initiators) const -> double {
         const auto events = model_.basic_events().size();
         double sum = 0.0;
         for (std::uint64_t world = 0; world < (std::uint64_t{1} << events); ++world) {
@@ -228,8 +217,7 @@ class pra_reference final {
         return std::nullopt;
     }
 
-    [[nodiscard]] auto leaf_or_gate(const pra::domain_ref element, const std::uint64_t world,
-                                    std::vector<std::uint8_t> const &gate_values) const -> bool {
+    [[nodiscard]] auto leaf_or_gate(const pra::domain_ref element, const std::uint64_t world, std::vector<std::uint8_t> const &gate_values) const -> bool {
         if (const auto fixed = override_of(element)) {
             return *fixed;
         }
@@ -380,8 +368,7 @@ class pc_reference final {
     return target.hull->max_initiators;
 }
 
-inline void require_equivalent(pra::model const &model, lowering::pra_pc_lowering const &lowered,
-                               std::vector<reference_override> const &overrides) {
+inline void require_equivalent(pra::model const &model, lowering::pra_pc_lowering const &lowered, std::vector<reference_override> const &overrides) {
     const pra_reference reference(model, overrides);
     const pc_reference circuit(lowered.circuit);
     auto const targets = lowered.projection.target_bindings();

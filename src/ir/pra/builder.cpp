@@ -30,12 +30,9 @@ constexpr std::size_t duplicate_locations_shown = 8;
 
 using kind_mask = std::uint8_t;
 
-[[nodiscard]] constexpr auto bit(const element_kind kind) noexcept -> kind_mask {
-    return static_cast<kind_mask>(1U << static_cast<unsigned>(kind));
-}
+[[nodiscard]] constexpr auto bit(const element_kind kind) noexcept -> kind_mask { return static_cast<kind_mask>(1U << static_cast<unsigned>(kind)); }
 
-constexpr kind_mask event_kinds =
-    bit(element_kind::basic_event) | bit(element_kind::house_event) | bit(element_kind::gate);
+constexpr kind_mask event_kinds = bit(element_kind::basic_event) | bit(element_kind::house_event) | bit(element_kind::gate);
 
 constexpr std::array all_kinds{
     element_kind::basic_event, element_kind::house_event, element_kind::initiating_event,
@@ -56,8 +53,7 @@ constexpr std::array all_kinds{
     return (vowel ? "an " : "a ") + std::string(noun);
 }
 
-[[nodiscard]] auto join_kinds(const kind_mask kinds, const std::string_view separator, const bool articles)
-    -> std::string {
+[[nodiscard]] auto join_kinds(const kind_mask kinds, const std::string_view separator, const bool articles) -> std::string {
     std::string out;
     for (const auto kind : all_kinds) {
         if ((kinds & bit(kind)) == 0) {
@@ -71,13 +67,10 @@ constexpr std::array all_kinds{
     return out;
 }
 
-[[nodiscard]] auto kind_noun(const kind_mask kinds) -> std::string {
-    return kinds == event_kinds ? std::string("event") : join_kinds(kinds, " or ", false);
-}
+[[nodiscard]] auto kind_noun(const kind_mask kinds) -> std::string { return kinds == event_kinds ? std::string("event") : join_kinds(kinds, " or ", false); }
 
 [[nodiscard]] auto expected_kinds(const kind_mask kinds) -> std::string {
-    return kinds == event_kinds ? std::string("an event (gate, basic event or house event)")
-                                : join_kinds(kinds, " or ", true);
+    return kinds == event_kinds ? std::string("an event (gate, basic event or house event)") : join_kinds(kinds, " or ", true);
 }
 
 [[nodiscard]] constexpr auto gate_kind_name(const gate_kind kind) noexcept -> std::string_view {
@@ -125,8 +118,7 @@ constexpr std::array all_kinds{
 }
 
 template <typename pending_type>
-[[nodiscard]] auto owner_offsets(std::vector<pending_type> const &pending, const std::size_t owners)
-    -> std::vector<std::uint32_t> {
+[[nodiscard]] auto owner_offsets(std::vector<pending_type> const &pending, const std::size_t owners) -> std::vector<std::uint32_t> {
     std::vector<std::uint32_t> offsets(owners + 1, 0);
     for (auto const &item : pending) {
         ++offsets[item.owner.raw() + 1];
@@ -146,8 +138,7 @@ template <typename value_type> void add_unique(std::vector<value_type> &values, 
 // graph depth.
 class sealer final {
   public:
-    sealer(detail::model_storage &storage, detail::builder_state const &state,
-           api::diagnostic_list &diagnostics) noexcept
+    sealer(detail::model_storage &storage, detail::builder_state const &state, api::diagnostic_list &diagnostics) noexcept
         : storage_(storage), state_(state), diagnostics_(diagnostics) {}
 
     void run() {
@@ -170,15 +161,11 @@ class sealer final {
         kind_mask kinds = 0;
     };
 
-    void error(std::string code, std::string message) {
-        diagnostics_.push(api::make_error(std::move(code), std::move(message)));
-    }
+    void error(std::string code, std::string message) { diagnostics_.push(api::make_error(std::move(code), std::move(message))); }
 
     [[nodiscard]] auto text(const text_ref ref) const -> std::string_view { return detail::text_of(storage_, ref); }
 
-    [[nodiscard]] auto reference_name(const text_ref ref) const -> std::string_view {
-        return std::string_view{state_.names}.substr(ref.offset, ref.size);
-    }
+    [[nodiscard]] auto reference_name(const text_ref ref) const -> std::string_view { return std::string_view{state_.names}.substr(ref.offset, ref.size); }
 
     [[nodiscard]] auto location(const source_location where) const -> std::string {
         std::string out = where.file.valid() && where.file.raw() < storage_.source_files.size()
@@ -230,12 +217,10 @@ class sealer final {
         auto cursor = offsets;
         storage_.attributes.resize(base + state_.attributes.size());
         for (auto const &pending : state_.attributes) {
-            storage_.attributes[base + cursor[pending.owner.raw()]++] =
-                attribute{.name = pending.name, .value = pending.value};
+            storage_.attributes[base + cursor[pending.owner.raw()]++] = attribute{.name = pending.name, .value = pending.value};
         }
         for (std::size_t element = 0; element < element_count; ++element) {
-            storage_.elements[element].attributes = table_range<attribute>{
-                .offset = base + offsets[element], .count = offsets[element + 1] - offsets[element]};
+            storage_.elements[element].attributes = table_range<attribute>{.offset = base + offsets[element], .count = offsets[element + 1] - offsets[element]};
         }
     }
 
@@ -248,16 +233,14 @@ class sealer final {
             storage_.source_locations[cursor[pending.owner.raw()]++] = pending.location;
         }
         for (std::size_t element = 0; element < element_count; ++element) {
-            storage_.elements[element].sources = table_range<source_location>{
-                .offset = offsets[element], .count = offsets[element + 1] - offsets[element]};
+            storage_.elements[element].sources = table_range<source_location>{.offset = offsets[element], .count = offsets[element + 1] - offsets[element]};
         }
 
         for (std::uint32_t element = 0; element < element_count; ++element) {
             for (auto const &where : detail::slice(storage_.source_locations, storage_.elements[element].sources)) {
                 if (!where.file.valid() || where.file.raw() >= storage_.source_files.size()) {
-                    error("ir.pra.dangling-reference",
-                          describe(element_id(element)) + " has a source location in a nonexistent source file" +
-                              (where.file.valid() ? " #" + std::to_string(where.file.raw()) : std::string{}));
+                    error("ir.pra.dangling-reference", describe(element_id(element)) + " has a source location in a nonexistent source file" +
+                                                           (where.file.valid() ? " #" + std::to_string(where.file.raw()) : std::string{}));
                 }
             }
         }
@@ -325,9 +308,8 @@ class sealer final {
                 locations += ", ...";
             }
             auto const &row = storage_.elements[first.raw()];
-            error("ir.pra.duplicate-name", "duplicate " + std::string(to_string(row.owner.kind())) + " name " +
-                                               quoted(text(row.stable_name)) + " (" + std::to_string(definitions) +
-                                               " definitions" + locations + ")");
+            error("ir.pra.duplicate-name", "duplicate " + std::string(to_string(row.owner.kind())) + " name " + quoted(text(row.stable_name)) + " (" +
+                                               std::to_string(definitions) + " definitions" + locations + ")");
             begin = end;
         }
     }
@@ -355,8 +337,7 @@ class sealer final {
     }
 
     template <typename context_type>
-    [[nodiscard]] auto resolve(detail::pending_reference const &ref, const kind_mask admissible,
-                               context_type const &context) -> domain_ref {
+    [[nodiscard]] auto resolve(detail::pending_reference const &ref, const kind_mask admissible, context_type const &context) -> domain_ref {
         if (ref.mode == detail::reference_mode::id) {
             return resolve_id(ref.target, admissible, context);
         }
@@ -365,22 +346,19 @@ class sealer final {
         if (ref.mode == detail::reference_mode::qualified) {
             const auto kind = ref.target.kind();
             if ((admissible & bit(kind)) == 0) {
-                error("ir.pra.invalid-reference", context() + " names " + with_article(to_string(kind)) + " " +
-                                                      quoted(name) + " where " + expected_kinds(admissible) +
-                                                      " is required");
+                error("ir.pra.invalid-reference",
+                      context() + " names " + with_article(to_string(kind)) + " " + quoted(name) + " where " + expected_kinds(admissible) + " is required");
                 return {};
             }
             wanted = bit(kind);
         }
         const auto match = lookup(wanted, name);
         if (match.kinds == 0) {
-            error("ir.pra.dangling-reference",
-                  context() + " references unknown " + kind_noun(wanted) + " " + quoted(name));
+            error("ir.pra.dangling-reference", context() + " references unknown " + kind_noun(wanted) + " " + quoted(name));
             return {};
         }
         if (std::popcount(match.kinds) > 1) {
-            error("ir.pra.ambiguous-reference", context() + " references " + quoted(name) + ", which names " +
-                                                    join_kinds(match.kinds, " and ", true) +
+            error("ir.pra.ambiguous-reference", context() + " references " + quoted(name) + ", which names " + join_kinds(match.kinds, " and ", true) +
                                                     "; qualify the reference with a kind");
             return {};
         }
@@ -388,15 +366,13 @@ class sealer final {
     }
 
     template <typename context_type>
-    [[nodiscard]] auto resolve_id(const domain_ref target, const kind_mask admissible, context_type const &context)
-        -> domain_ref {
+    [[nodiscard]] auto resolve_id(const domain_ref target, const kind_mask admissible, context_type const &context) -> domain_ref {
         if (!target.valid()) {
             error("ir.pra.dangling-reference", context() + " is an empty reference");
             return {};
         }
         if ((admissible & bit(target.kind())) == 0) {
-            error("ir.pra.invalid-reference", context() + " references " + describe(target) + " where " +
-                                                  expected_kinds(admissible) + " is required");
+            error("ir.pra.invalid-reference", context() + " references " + describe(target) + " where " + expected_kinds(admissible) + " is required");
             return {};
         }
         if (!detail::exists(storage_, target)) {
@@ -410,9 +386,8 @@ class sealer final {
         for (auto const &row : storage_.gates) {
             for (std::uint32_t index = 0; index < row.operands.count; ++index) {
                 const auto slot = row.operands.offset + index;
-                storage_.gate_operands[slot].event = resolve(state_.operands[slot], event_kinds, [&] {
-                    return describe(row.element) + " operand " + std::to_string(index + 1);
-                });
+                storage_.gate_operands[slot].event =
+                    resolve(state_.operands[slot], event_kinds, [&] { return describe(row.element) + " operand " + std::to_string(index + 1); });
             }
         }
     }
@@ -429,8 +404,7 @@ class sealer final {
                 if (!operand.complement) {
                     error("ir.pra.invalid-literal-operand", context() + " is marked literal but not complemented");
                 } else if (operand.event.valid() && operand.event.kind() != element_kind::basic_event) {
-                    error("ir.pra.invalid-literal-operand", context() + " is marked literal but references " +
-                                                                describe(operand.event) + ", not a basic event");
+                    error("ir.pra.invalid-literal-operand", context() + " is marked literal but references " + describe(operand.event) + ", not a basic event");
                 }
             }
         }
@@ -439,9 +413,7 @@ class sealer final {
     void resolve_initiators() {
         for (std::size_t index = 0; index < storage_.initiating_events.size(); ++index) {
             auto &row = storage_.initiating_events[index];
-            row.event = resolve(state_.initiators[index], bit(element_kind::basic_event), [&] {
-                            return describe(row.element);
-                        }).as<basic_event_id>();
+            row.event = resolve(state_.initiators[index], bit(element_kind::basic_event), [&] { return describe(row.element); }).as<basic_event_id>();
         }
     }
 
@@ -451,18 +423,15 @@ class sealer final {
             switch (row.kind) {
             case gate_kind::not_gate:
                 if (count != 1) {
-                    error("ir.pra.invalid-arity", describe(row.element) + " is a not gate with " +
-                                                      std::to_string(count) + " operands; it takes exactly one");
+                    error("ir.pra.invalid-arity", describe(row.element) + " is a not gate with " + std::to_string(count) + " operands; it takes exactly one");
                 }
                 break;
             case gate_kind::cardinality:
                 if (count == 0) {
                     error("ir.pra.empty-gate", describe(row.element) + " is a cardinality gate without operands");
                 } else if (row.bounds.low > row.bounds.high || row.bounds.high > count) {
-                    error("ir.pra.invalid-cardinality", describe(row.element) + " has cardinality bounds (" +
-                                                            std::to_string(row.bounds.low) + ", " +
-                                                            std::to_string(row.bounds.high) +
-                                                            ") outside 0 <= low <= high <= " + std::to_string(count));
+                    error("ir.pra.invalid-cardinality", describe(row.element) + " has cardinality bounds (" + std::to_string(row.bounds.low) + ", " +
+                                                            std::to_string(row.bounds.high) + ") outside 0 <= low <= high <= " + std::to_string(count));
                 }
                 break;
             case gate_kind::and_gate:
@@ -472,14 +441,12 @@ class sealer final {
             case gate_kind::nor_gate:
             case gate_kind::xnor_gate:
                 if (count == 0) {
-                    error("ir.pra.empty-gate", describe(row.element) + " is " + with_article(gate_kind_name(row.kind)) +
-                                                   " gate without operands");
+                    error("ir.pra.empty-gate", describe(row.element) + " is " + with_article(gate_kind_name(row.kind)) + " gate without operands");
                 }
                 break;
             }
             if (row.fault_tree.valid() && row.fault_tree.raw() >= storage_.fault_trees.size()) {
-                error("ir.pra.dangling-reference", describe(row.element) + " belongs to nonexistent fault tree #" +
-                                                       std::to_string(row.fault_tree.raw()));
+                error("ir.pra.dangling-reference", describe(row.element) + " belongs to nonexistent fault tree #" + std::to_string(row.fault_tree.raw()));
             }
         }
     }
@@ -490,8 +457,7 @@ class sealer final {
             const auto index = row.expression.raw();
             if (!row.expression.valid() || index >= storage_.expressions.size()) {
                 error("ir.pra.dangling-reference",
-                      describe(row.element) + " references a nonexistent expression" +
-                          (row.expression.valid() ? " #" + std::to_string(index) : std::string{}));
+                      describe(row.element) + " references a nonexistent expression" + (row.expression.valid() ? " #" + std::to_string(index) : std::string{}));
                 continue;
             }
             if (checked[index] == 0) {
@@ -512,11 +478,9 @@ class sealer final {
             if (!std::isfinite(row.value)) {
                 error("ir.pra.invalid-literal", context() + " has a non-finite literal value");
             } else if (row.quantity == quantity_kind::probability && (row.value < 0.0 || row.value > 1.0)) {
-                error("ir.pra.invalid-literal",
-                      context() + " has literal probability " + format_value(row.value) + " outside [0, 1]");
+                error("ir.pra.invalid-literal", context() + " has literal probability " + format_value(row.value) + " outside [0, 1]");
             } else if (row.quantity == quantity_kind::frequency && row.value < 0.0) {
-                error("ir.pra.invalid-literal",
-                      context() + " has negative literal frequency " + format_value(row.value));
+                error("ir.pra.invalid-literal", context() + " has negative literal frequency " + format_value(row.value));
             }
             break;
         case expression_kind::parameter:
@@ -526,8 +490,7 @@ class sealer final {
             break;
         case expression_kind::unsupported:
             if (row.diagnostic.empty()) {
-                error("ir.pra.invalid-expression",
-                      context() + " has an unsupported expression without a diagnostic id");
+                error("ir.pra.invalid-expression", context() + " has an unsupported expression without a diagnostic id");
             }
             break;
         }
@@ -536,9 +499,7 @@ class sealer final {
     void build_fault_trees() {
         const auto tree_count = storage_.fault_trees.size();
         const auto gate_count = storage_.gates.size();
-        const auto owned = [tree_count](gate const &row) {
-            return row.fault_tree.valid() && row.fault_tree.raw() < tree_count;
-        };
+        const auto owned = [tree_count](gate const &row) { return row.fault_tree.valid() && row.fault_tree.raw() < tree_count; };
 
         std::vector<std::uint32_t> offsets(tree_count + 1, 0);
         for (auto const &row : storage_.gates) {
@@ -555,8 +516,7 @@ class sealer final {
             }
         }
         for (std::size_t tree = 0; tree < tree_count; ++tree) {
-            storage_.fault_trees[tree].gates =
-                table_range<gate_id>{.offset = offsets[tree], .count = offsets[tree + 1] - offsets[tree]};
+            storage_.fault_trees[tree].gates = table_range<gate_id>{.offset = offsets[tree], .count = offsets[tree + 1] - offsets[tree]};
         }
 
         std::vector<std::uint32_t> top_offsets(tree_count + 1, 0);
@@ -565,8 +525,7 @@ class sealer final {
                 ++top_offsets[top.tree.raw() + 1];
             } else {
                 error("ir.pra.dangling-reference",
-                      "a top gate is listed for nonexistent fault tree" +
-                          (top.tree.valid() ? " #" + std::to_string(top.tree.raw()) : std::string{}));
+                      "a top gate is listed for nonexistent fault tree" + (top.tree.valid() ? " #" + std::to_string(top.tree.raw()) : std::string{}));
             }
         }
         std::partial_sum(top_offsets.begin(), top_offsets.end(), top_offsets.begin());
@@ -593,25 +552,20 @@ class sealer final {
                 }
                 auto const &gate_row = storage_.gates[top.raw()];
                 if (gate_row.fault_tree != tree) {
-                    const auto owner = owned(gate_row)
-                                           ? describe(storage_.fault_trees[gate_row.fault_tree.raw()].element)
-                                           : std::string("no fault tree");
-                    error("ir.pra.invalid-fault-tree-top", describe(tree_row.element) + " lists " +
-                                                               describe(gate_row.element) +
-                                                               " as a top gate, but the gate belongs to " + owner);
+                    const auto owner = owned(gate_row) ? describe(storage_.fault_trees[gate_row.fault_tree.raw()].element) : std::string("no fault tree");
+                    error("ir.pra.invalid-fault-tree-top",
+                          describe(tree_row.element) + " lists " + describe(gate_row.element) + " as a top gate, but the gate belongs to " + owner);
                     continue;
                 }
                 if (listed_by[top.raw()] == tree) {
-                    error("ir.pra.invalid-fault-tree-top", describe(tree_row.element) + " lists " +
-                                                               describe(gate_row.element) +
-                                                               " as a top gate more than once");
+                    error("ir.pra.invalid-fault-tree-top",
+                          describe(tree_row.element) + " lists " + describe(gate_row.element) + " as a top gate more than once");
                     continue;
                 }
                 listed_by[top.raw()] = tree;
                 storage_.fault_tree_top_gates.push_back(top);
             }
-            tree_row.top_gates = table_range<gate_id>{
-                .offset = begin, .count = static_cast<std::uint32_t>(storage_.fault_tree_top_gates.size()) - begin};
+            tree_row.top_gates = table_range<gate_id>{.offset = begin, .count = static_cast<std::uint32_t>(storage_.fault_tree_top_gates.size()) - begin};
         }
     }
 
@@ -626,10 +580,8 @@ class sealer final {
                 if (const auto tree = row.subject.as<fault_tree_id>(); tree.valid()) {
                     auto const &tree_row = storage_.fault_trees[tree.raw()];
                     if (tree_row.top_gates.count != 1) {
-                        error("ir.pra.invalid-target", describe(row.element) + " observes the top of " +
-                                                           describe(tree_row.element) + ", which has " +
-                                                           std::to_string(tree_row.top_gates.count) +
-                                                           " top gates; a fault_tree_top target needs exactly one");
+                        error("ir.pra.invalid-target", describe(row.element) + " observes the top of " + describe(tree_row.element) + ", which has " +
+                                                           std::to_string(tree_row.top_gates.count) + " top gates; a fault_tree_top target needs exactly one");
                     }
                 }
                 break;
@@ -642,9 +594,8 @@ class sealer final {
                 break;
             case domain_target_kind::sequence:
             case domain_target_kind::end_state:
-                error("ir.pra.unsupported-target-kind", describe(row.element) + " has kind " +
-                                                            std::string(target_kind_name(row.kind)) +
-                                                            ", which is reserved until event trees are modeled");
+                error("ir.pra.unsupported-target-kind",
+                      describe(row.element) + " has kind " + std::string(target_kind_name(row.kind)) + ", which is reserved until event trees are modeled");
                 break;
             }
         }
@@ -729,8 +680,7 @@ class sealer final {
         }
     }
 
-    [[nodiscard]] auto unordered_operand(const std::uint32_t gate, std::vector<std::uint32_t> const &remaining) const
-        -> std::uint32_t {
+    [[nodiscard]] auto unordered_operand(const std::uint32_t gate, std::vector<std::uint32_t> const &remaining) const -> std::uint32_t {
         for (auto const &operand : operands_of(gate)) {
             if (const auto child = operand.event.as<gate_id>(); child.valid() && remaining[child.raw()] != 0) {
                 return child.raw();
@@ -750,9 +700,8 @@ class sealer final {
             names += "... -> ";
         }
         names += short_name(storage_.gates[cycle.front()].element);
-        error("ir.pra.cycle", describe(storage_.gates[cycle.front()].element) +
-                                  " is on a gate dependency cycle of length " + std::to_string(cycle.size()) + ": " +
-                                  names);
+        error("ir.pra.cycle",
+              describe(storage_.gates[cycle.front()].element) + " is on a gate dependency cycle of length " + std::to_string(cycle.size()) + ": " + names);
     }
 
     detail::model_storage &storage_;
@@ -773,8 +722,7 @@ class sealer final {
     }
     for (auto const &row : storage.expressions) {
         add_unique(summary.expression_kinds_present, row.kind);
-        summary.has_frequency_expressions =
-            summary.has_frequency_expressions || row.quantity == quantity_kind::frequency;
+        summary.has_frequency_expressions = summary.has_frequency_expressions || row.quantity == quantity_kind::frequency;
     }
 
     std::vector<std::uint32_t> depth(storage.gates.size(), 0);
@@ -815,8 +763,7 @@ void builder::add_project_attribute(const std::string_view name, const std::stri
     if (next_row(storage_.attributes.size() + state_.attributes.size()) == invalid_row) {
         return;
     }
-    storage_.attributes.push_back(
-        attribute{.name = intern(storage_.text, name), .value = intern(storage_.text, value)});
+    storage_.attributes.push_back(attribute{.name = intern(storage_.text, name), .value = intern(storage_.text, value)});
 }
 
 auto builder::add_source_file(source_file_spec const &file) -> source_file_id {
@@ -900,18 +847,16 @@ void builder::add_fault_tree_top(const fault_tree_id tree, const reference gate)
     state_.tops.push_back(detail::pending_top{.tree = tree, .gate = pending(gate)});
 }
 
-auto builder::add_gate(element_spec const &element, const gate_kind kind, const std::span<operand_spec const> operands,
-                       const fault_tree_id tree) -> gate_id {
+auto builder::add_gate(element_spec const &element, const gate_kind kind, const std::span<operand_spec const> operands, const fault_tree_id tree) -> gate_id {
     return push_gate(element, kind, cardinality_bounds{}, operands, tree);
 }
 
-auto builder::add_cardinality(element_spec const &element, const cardinality_bounds bounds,
-                              const std::span<operand_spec const> operands, const fault_tree_id tree) -> gate_id {
+auto builder::add_cardinality(element_spec const &element, const cardinality_bounds bounds, const std::span<operand_spec const> operands,
+                              const fault_tree_id tree) -> gate_id {
     return push_gate(element, gate_kind::cardinality, bounds, operands, tree);
 }
 
-auto builder::add_target(element_spec const &element, const domain_target_kind kind, const reference subject,
-                         const target_role role) -> domain_target_id {
+auto builder::add_target(element_spec const &element, const domain_target_kind kind, const reference subject, const target_role role) -> domain_target_id {
     const auto row = next_row(storage_.targets.size());
     if (row == invalid_row) {
         return {};
@@ -925,10 +870,8 @@ auto builder::add_target(element_spec const &element, const domain_target_kind k
 void builder::add_attribute(const domain_ref owner, const std::string_view name, const std::string_view value) {
     const auto element = detail::element_of(storage_, owner);
     if (!element.valid()) {
-        diagnostics_.push(api::make_error("ir.pra.dangling-reference", "attribute " + quoted(name) +
-                                                                           " is attached to nonexistent " +
-                                                                           std::string(to_string(owner.kind())) + " #" +
-                                                                           std::to_string(owner.raw())));
+        diagnostics_.push(api::make_error("ir.pra.dangling-reference", "attribute " + quoted(name) + " is attached to nonexistent " +
+                                                                           std::string(to_string(owner.kind())) + " #" + std::to_string(owner.raw())));
         return;
     }
     push_attribute(element, name, value);
@@ -937,9 +880,8 @@ void builder::add_attribute(const domain_ref owner, const std::string_view name,
 void builder::add_source(const domain_ref owner, const source_location location) {
     const auto element = detail::element_of(storage_, owner);
     if (!element.valid()) {
-        diagnostics_.push(api::make_error("ir.pra.dangling-reference", "a source location is attached to nonexistent " +
-                                                                           std::string(to_string(owner.kind())) + " #" +
-                                                                           std::to_string(owner.raw())));
+        diagnostics_.push(api::make_error("ir.pra.dangling-reference", "a source location is attached to nonexistent " + std::string(to_string(owner.kind())) +
+                                                                           " #" + std::to_string(owner.raw())));
         return;
     }
     push_source(element, location);
@@ -949,8 +891,7 @@ void builder::push_attribute(const element_id owner, const std::string_view name
     if (next_row(storage_.attributes.size() + state_.attributes.size()) == invalid_row) {
         return;
     }
-    state_.attributes.push_back(detail::pending_attribute{
-        .owner = owner, .name = intern(storage_.text, name), .value = intern(storage_.text, value)});
+    state_.attributes.push_back(detail::pending_attribute{.owner = owner, .name = intern(storage_.text, name), .value = intern(storage_.text, value)});
 }
 
 void builder::push_source(const element_id owner, const source_location location) {
@@ -963,8 +904,7 @@ void builder::push_source(const element_id owner, const source_location location
 auto builder::seal() && -> finalize_result {
     auto diagnostics = std::move(diagnostics_);
     if (capacity_exceeded_) {
-        diagnostics.push(api::make_error("ir.pra.capacity-exceeded",
-                                         "PRA model exceeds the R1 limit of 2^32 - 1 rows per table or bytes of text"));
+        diagnostics.push(api::make_error("ir.pra.capacity-exceeded", "PRA model exceeds the R1 limit of 2^32 - 1 rows per table or bytes of text"));
         return finalize_result{.output = {}, .diagnostics = std::move(diagnostics)};
     }
 
@@ -996,8 +936,7 @@ auto builder::intern(std::string &pool, const std::string_view text) -> text_ref
         capacity_exceeded_ = true;
         return {};
     }
-    const text_ref ref{.offset = static_cast<std::uint32_t>(pool.size()),
-                       .size = static_cast<std::uint32_t>(text.size())};
+    const text_ref ref{.offset = static_cast<std::uint32_t>(pool.size()), .size = static_cast<std::uint32_t>(text.size())};
     pool.append(text);
     return ref;
 }
@@ -1034,8 +973,8 @@ auto builder::pending(reference const &ref) -> detail::pending_reference {
     };
 }
 
-auto builder::push_gate(element_spec const &element, const gate_kind kind, const cardinality_bounds bounds,
-                        const std::span<operand_spec const> operands, const fault_tree_id tree) -> gate_id {
+auto builder::push_gate(element_spec const &element, const gate_kind kind, const cardinality_bounds bounds, const std::span<operand_spec const> operands,
+                        const fault_tree_id tree) -> gate_id {
     const auto row = next_row(storage_.gates.size());
     if (row == invalid_row || next_row(storage_.gate_operands.size() + operands.size()) == invalid_row) {
         return {};

@@ -11,8 +11,8 @@
 #include "mc/event/node.h"
 #include "mc/event/tally.h"
 #include "mc/executor/builder/layer.h"
-#include "mc/executor/compat.h"
 #include "mc/executor/builder/program.h"
+#include "mc/executor/compat.h"
 #include "mc/executor/descriptor/execution_plan.h"
 #include "mc/executor/descriptor/kernel_dag.h"
 #include "mc/executor/descriptor/node.h"
@@ -20,7 +20,6 @@
 #include "mc/executor/sample_shaper.h"
 #include "mc/prng/stream.h"
 #include "mc/stats/tally_node_map.h"
-
 
 #include <hipSYCL/runtime/settings.hpp>
 #include <sycl/sycl.hpp>

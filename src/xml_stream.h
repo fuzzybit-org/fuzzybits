@@ -64,8 +64,7 @@ class Indenter {
         ///
         /// @post If the number of chars exceeds kMaxIndent,
         ///       the indentation is kMaxIndent.
-        Indentation(int num_chars, Indenter *indent)
-            : pos_(num_chars > kMaxIndent ? kMaxIndent : num_chars), indent_(indent) {
+        Indentation(int num_chars, Indenter *indent) : pos_(num_chars > kMaxIndent ? kMaxIndent : num_chars), indent_(indent) {
             indent_->spaces[pos_] = '\0'; // Indent string up to the position.
         }
 
@@ -185,8 +184,7 @@ class StreamElement {
     /// @param[in,out] out  The destination stream.
     ///
     /// @throws StreamError  Invalid setup for the element.
-    StreamElement(const char *name, detail::Indenter *indenter, detail::FileStream *out)
-        : StreamElement(name, 0, nullptr, indenter, out) {}
+    StreamElement(const char *name, detail::Indenter *indenter, detail::FileStream *out) : StreamElement(name, 0, nullptr, indenter, out) {}
 
     /// Puts the closing tag.
     ///
@@ -312,10 +310,9 @@ class StreamElement {
     /// @param[in,out] out  The destination stream.
     ///
     /// @throws StreamError  Invalid setup for the element.
-    StreamElement(const char *name, int indent, StreamElement *parent, detail::Indenter *indenter,
-                  detail::FileStream *out)
-        : kName_(name), kIndent_(indent), accept_attributes_(true), accept_elements_(true), accept_text_(true),
-          active_(true), parent_(parent), indenter_(*indenter), out_(*out) {
+    StreamElement(const char *name, int indent, StreamElement *parent, detail::Indenter *indenter, detail::FileStream *out)
+        : kName_(name), kIndent_(indent), accept_attributes_(true), accept_elements_(true), accept_text_(true), active_(true), parent_(parent),
+          indenter_(*indenter), out_(*out) {
         if (*kName_ == '\0')
             throw StreamError("The element name can't be empty.");
 
@@ -399,8 +396,7 @@ class Stream {
     /// @param[in] indent  Option to indent output for readability.
     ///
     /// @note This output file has clean error state.
-    explicit Stream(std::FILE *out, bool indent = true)
-        : indenter_(indent), has_root_(false), uncaught_exceptions_(std::uncaught_exceptions()), out_(out) {
+    explicit Stream(std::FILE *out, bool indent = true) : indenter_(indent), has_root_(false), uncaught_exceptions_(std::uncaught_exceptions()), out_(out) {
         assert(!std::ferror(out) && "Unclean error state in output destination.");
         out_ << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
     }

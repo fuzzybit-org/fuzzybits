@@ -57,13 +57,11 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
 
     writer::write_options names;
     names.target_names = {{first_target, "TOP"}, {second_target, "OTHER"}};
-    names.target_kinds = {
-        {first_target, {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}},
-        {second_target, {writer::query_kind::monotone_hull_probability}}};
+    names.target_kinds = {{first_target, {writer::query_kind::probability, writer::query_kind::monotone_hull_probability}},
+                          {second_target, {writer::query_kind::monotone_hull_probability}}};
     names.quantification = {{first_target, {.literal_mode = "split", .max_initiators_per_cutset = 1}},
                             {second_target, {.literal_mode = "plain", .max_initiators_per_cutset = std::nullopt}}};
-    names.node_names = {{a, "A"},       {b, "B"},          {zero, "ZERO"},       {wrapper, "WRAP"}, {inverted, "NOT-B"},
-                        {dead, "DEAD"}, {top, "TOP-GATE"}, {other, "OTHER-GATE"}};
+    names.node_names = {{a, "A"}, {b, "B"}, {zero, "ZERO"}, {wrapper, "WRAP"}, {inverted, "NOT-B"}, {dead, "DEAD"}, {top, "TOP-GATE"}, {other, "OTHER-GATE"}};
 
     const auto compiled = passes::compile(input, passes::compile_level::c1);
     REQUIRE(compiled.ok());
@@ -76,8 +74,7 @@ TEST_CASE("names move to the nodes that compute them through C1", "[compile][pra
     // Query kinds and the quantification record follow their target.
     REQUIRE(composed.target_kinds.size() == 2);
     REQUIRE(composed.target_kinds.at(compiled.target_map[first_target.raw()]) ==
-            std::vector<writer::query_kind>{writer::query_kind::probability,
-                                            writer::query_kind::monotone_hull_probability});
+            std::vector<writer::query_kind>{writer::query_kind::probability, writer::query_kind::monotone_hull_probability});
     REQUIRE(composed.target_kinds.at(compiled.target_map[second_target.raw()]) ==
             std::vector<writer::query_kind>{writer::query_kind::monotone_hull_probability});
     REQUIRE(composed.quantification.size() == 2);

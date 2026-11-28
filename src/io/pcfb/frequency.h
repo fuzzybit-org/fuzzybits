@@ -75,8 +75,7 @@ inline constexpr std::string_view default_unit = units[0].unit;
 
 // P(at least one occurrence in the period) = 1 - exp(-F * tau), occurrences a Poisson process at
 // rate F in `unit`. Unset when the unit is unknown.
-[[nodiscard]] inline auto exposure_probability(const double frequency, const std::string_view unit, const double hours)
-    -> std::optional<double> {
+[[nodiscard]] inline auto exposure_probability(const double frequency, const std::string_view unit, const double hours) -> std::optional<double> {
     const auto spec = find_unit(unit);
     if (!spec) {
         return std::nullopt;

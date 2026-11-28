@@ -40,20 +40,16 @@ struct source_text final {
 
 // Expands directories to their `*.ftp` files (sorted by name); files keep
 // the given order.
-[[nodiscard]] auto project_files(std::span<std::filesystem::path const> inputs)
-    -> api::result<std::vector<std::filesystem::path>>;
+[[nodiscard]] auto project_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<std::filesystem::path>>;
 
 // A CAFTA FTP project (one or more files read as their ordered union) into
 // an `ir.pra.model` handle.
-[[nodiscard]] auto read_project(std::span<std::filesystem::path const> inputs, api::option_set const &options = {})
-    -> io::read_result;
-[[nodiscard]] auto read_project(std::span<source_text const> sources, api::option_set const &options = {})
-    -> io::read_result;
+[[nodiscard]] auto read_project(std::span<std::filesystem::path const> inputs, api::option_set const &options = {}) -> io::read_result;
+[[nodiscard]] auto read_project(std::span<source_text const> sources, api::option_set const &options = {}) -> io::read_result;
 // `request.path` is a file or a directory.
 [[nodiscard]] auto read_project(io::read_request const &request) -> io::read_result;
 
 [[nodiscard]] auto write(ir::handle const &model, std::ostream &output) -> io::write_result;
-[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 } // namespace fuzzybits::io::backend::fuzzybits::ftp

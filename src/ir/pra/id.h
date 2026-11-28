@@ -124,9 +124,7 @@ class domain_ref final {
 
     [[nodiscard]] constexpr auto raw() const noexcept -> std::uint32_t { return index_; }
 
-    [[nodiscard]] constexpr auto valid() const noexcept -> bool {
-        return index_ != std::numeric_limits<std::uint32_t>::max();
-    }
+    [[nodiscard]] constexpr auto valid() const noexcept -> bool { return index_ != std::numeric_limits<std::uint32_t>::max(); }
 
     // Returns an invalid id when the reference is of another kind.
     template <typename id_type> [[nodiscard]] constexpr auto as() const noexcept -> id_type {

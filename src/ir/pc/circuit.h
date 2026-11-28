@@ -48,33 +48,23 @@ class circuit final {
     [[nodiscard]] auto descriptor() const noexcept -> ir::descriptor const & { return descriptor_; }
     [[nodiscard]] auto shape() const noexcept -> shape_summary const & { return shape_; }
     [[nodiscard]] auto form_profile() const noexcept -> ir::form_profile const & { return shape_.form_profile; }
-    [[nodiscard]] auto satisfies_form(api::form_id const &form) const -> bool {
-        return ir::descriptor_satisfies_form(descriptor_, form);
-    }
-    [[nodiscard]] auto satisfied_form_strings() const -> std::vector<std::string> {
-        return ir::form_profile_for(descriptor_).satisfied_form_strings();
-    }
+    [[nodiscard]] auto satisfies_form(api::form_id const &form) const -> bool { return ir::descriptor_satisfies_form(descriptor_, form); }
+    [[nodiscard]] auto satisfied_form_strings() const -> std::vector<std::string> { return ir::form_profile_for(descriptor_).satisfied_form_strings(); }
 
-    [[nodiscard]] auto node_count() const noexcept -> std::uint32_t {
-        return storage_ == nullptr ? 0U : static_cast<std::uint32_t>(storage_->op_codes.size());
-    }
+    [[nodiscard]] auto node_count() const noexcept -> std::uint32_t { return storage_ == nullptr ? 0U : static_cast<std::uint32_t>(storage_->op_codes.size()); }
 
-    [[nodiscard]] auto edge_count() const noexcept -> std::uint32_t {
-        return storage_ == nullptr ? 0U : static_cast<std::uint32_t>(storage_->edges.size());
-    }
+    [[nodiscard]] auto edge_count() const noexcept -> std::uint32_t { return storage_ == nullptr ? 0U : static_cast<std::uint32_t>(storage_->edges.size()); }
 
     [[nodiscard]] auto op_codes() const noexcept -> std::span<op_code const> {
         return storage_ == nullptr ? std::span<op_code const>{} : std::span<op_code const>{storage_->op_codes};
     }
 
     [[nodiscard]] auto operand_offsets() const noexcept -> std::span<std::uint32_t const> {
-        return storage_ == nullptr ? std::span<std::uint32_t const>{}
-                                   : std::span<std::uint32_t const>{storage_->operand_offsets};
+        return storage_ == nullptr ? std::span<std::uint32_t const>{} : std::span<std::uint32_t const>{storage_->operand_offsets};
     }
 
     [[nodiscard]] auto operand_counts() const noexcept -> std::span<std::uint32_t const> {
-        return storage_ == nullptr ? std::span<std::uint32_t const>{}
-                                   : std::span<std::uint32_t const>{storage_->operand_counts};
+        return storage_ == nullptr ? std::span<std::uint32_t const>{} : std::span<std::uint32_t const>{storage_->operand_counts};
     }
 
     [[nodiscard]] auto edges() const noexcept -> std::span<edge_ref const> {
@@ -82,28 +72,23 @@ class circuit final {
     }
 
     [[nodiscard]] auto probability_source_refs() const noexcept -> std::span<probability_source_id const> {
-        return storage_ == nullptr ? std::span<probability_source_id const>{}
-                                   : std::span<probability_source_id const>{storage_->probability_source_refs};
+        return storage_ == nullptr ? std::span<probability_source_id const>{} : std::span<probability_source_id const>{storage_->probability_source_refs};
     }
 
     [[nodiscard]] auto probability_sources() const noexcept -> std::span<probability_source const> {
-        return storage_ == nullptr ? std::span<probability_source const>{}
-                                   : std::span<probability_source const>{storage_->probability_sources};
+        return storage_ == nullptr ? std::span<probability_source const>{} : std::span<probability_source const>{storage_->probability_sources};
     }
 
     [[nodiscard]] auto cardinality_low() const noexcept -> std::span<std::uint32_t const> {
-        return storage_ == nullptr ? std::span<std::uint32_t const>{}
-                                   : std::span<std::uint32_t const>{storage_->cardinality_low};
+        return storage_ == nullptr ? std::span<std::uint32_t const>{} : std::span<std::uint32_t const>{storage_->cardinality_low};
     }
 
     [[nodiscard]] auto cardinality_high() const noexcept -> std::span<std::uint32_t const> {
-        return storage_ == nullptr ? std::span<std::uint32_t const>{}
-                                   : std::span<std::uint32_t const>{storage_->cardinality_high};
+        return storage_ == nullptr ? std::span<std::uint32_t const>{} : std::span<std::uint32_t const>{storage_->cardinality_high};
     }
 
     [[nodiscard]] auto constant_values() const noexcept -> std::span<std::uint8_t const> {
-        return storage_ == nullptr ? std::span<std::uint8_t const>{}
-                                   : std::span<std::uint8_t const>{storage_->constant_values};
+        return storage_ == nullptr ? std::span<std::uint8_t const>{} : std::span<std::uint8_t const>{storage_->constant_values};
     }
 
     [[nodiscard]] auto targets() const noexcept -> std::span<target_view const> {
@@ -137,12 +122,8 @@ class circuit final {
     ir::descriptor descriptor_ = make_descriptor();
 };
 
-[[nodiscard]] inline auto is_pc(ir::handle const &handle) -> bool {
-    return handle.valid() && handle.storage_type() == storage_type_id();
-}
+[[nodiscard]] inline auto is_pc(ir::handle const &handle) -> bool { return handle.valid() && handle.storage_type() == storage_type_id(); }
 
-[[nodiscard]] inline auto circuit_from(ir::handle const &handle) -> circuit const * {
-    return is_pc(handle) ? handle.storage_as<circuit>() : nullptr;
-}
+[[nodiscard]] inline auto circuit_from(ir::handle const &handle) -> circuit const * { return is_pc(handle) ? handle.storage_as<circuit>() : nullptr; }
 
 } // namespace fuzzybits::ir::pc

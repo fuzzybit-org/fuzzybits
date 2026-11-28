@@ -24,9 +24,7 @@ constexpr double tiny_probability = 1.0 / 4294967296.0;
     return !name.empty() && start(name.front()) && std::ranges::all_of(name.substr(1), rest);
 }
 
-[[nodiscard]] auto literal_value(pra::model const &model, pra::basic_event const &event) -> double {
-    return model.expressions()[event.expression.raw()].value;
-}
+[[nodiscard]] auto literal_value(pra::model const &model, pra::basic_event const &event) -> double { return model.expressions()[event.expression.raw()].value; }
 
 [[nodiscard]] auto source_path(pra::model const &model, const pra::source_location location) -> std::string {
     return std::string(model.text(model.source_files()[location.file.raw()].path));
@@ -60,8 +58,7 @@ void add_duplicate(structure_summary &out, pra::model const &model, pra::basic_e
         return std::pair(left.first.file.raw(), left.first.line) < std::pair(right.first.file.raw(), right.first.line);
     });
     for (auto const &[location, chosen] : records) {
-        duplicate.occurrences.push_back(
-            import_occurrence{.file = source_path(model, location), .line = location.line, .chosen = chosen});
+        duplicate.occurrences.push_back(import_occurrence{.file = source_path(model, location), .line = location.line, .chosen = chosen});
     }
     out.duplicate_imports.push_back(std::move(duplicate));
 }

@@ -59,8 +59,7 @@ inline constexpr std::string_view kFtpImportFlagAttribute = "ftp.import_flag";
     return character >= 'a' && character <= 'z' ? static_cast<char>(character - 'a' + 'A') : character;
 }
 
-[[nodiscard]] constexpr auto equal_ignoring_case(const std::string_view left, const std::string_view right) noexcept
-    -> bool {
+[[nodiscard]] constexpr auto equal_ignoring_case(const std::string_view left, const std::string_view right) noexcept -> bool {
     if (left.size() != right.size()) {
         return false;
     }
@@ -85,9 +84,7 @@ struct NameHash final {
 
 struct NameEqual final {
     using is_transparent = void;
-    [[nodiscard]] auto operator()(const std::string_view left, const std::string_view right) const noexcept -> bool {
-        return equal_ignoring_case(left, right);
-    }
+    [[nodiscard]] auto operator()(const std::string_view left, const std::string_view right) const noexcept -> bool { return equal_ignoring_case(left, right); }
 };
 
 using NameIndex = std::unordered_map<std::string_view, std::uint32_t, NameHash, NameEqual>;
@@ -172,8 +169,7 @@ struct ParsedProject final {
     api::diagnostic_list diagnostics;
 };
 
-[[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics)
-    -> duplicate_import_policy;
+[[nodiscard]] auto parse_options(api::option_set const &options, api::diagnostic_list &diagnostics) -> duplicate_import_policy;
 [[nodiscard]] auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<std::vector<source_text>>;
 // Parses every source in order and resolves names, imports and targets.
 [[nodiscard]] auto parse(std::vector<source_text> sources, duplicate_import_policy policy) -> ParsedProject;
@@ -182,7 +178,6 @@ struct ParsedProject final {
 // Every complemented basic-event operand (`-EVENT`) is marked `literal`; a
 // complemented gate (`-GATE`) never is.
 [[nodiscard]] auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result;
-[[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 } // namespace fuzzybits::io::backend::fuzzybits::ftp::detail

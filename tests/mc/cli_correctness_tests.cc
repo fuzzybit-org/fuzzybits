@@ -36,8 +36,8 @@ int run_scram(const std::filesystem::path &model, const std::filesystem::path &r
 #ifndef _WIN32
     cmd << "timeout 60 ";
 #endif
-    cmd << shell_quote(SCRAM_CLI_PATH) << " --monte-carlo --probability --pdag -c 2" << (expand_kn ? " --no-kn" : "")
-        << " -P wald -N " << kNumTrials << " -r " << kNumTrials << " --seed 372 --no-indent -V 0"
+    cmd << shell_quote(SCRAM_CLI_PATH) << " --monte-carlo --probability --pdag -c 2" << (expand_kn ? " --no-kn" : "") << " -P wald -N " << kNumTrials << " -r "
+        << kNumTrials << " --seed 372 --no-indent -V 0"
         << " -o " << shell_quote(report.string()) << " " << shell_quote(model.string());
 #ifdef _WIN32
     return std::system(("cmd /S /C \"" + cmd.str() + "\"").c_str());
@@ -85,8 +85,7 @@ double check_model(const char *name, const char *relative_path, const double p_r
     const double p_hat = parse_p_hat(report);
     const double sigma_hat = std::sqrt(p_hat * (1.0 - p_hat) / static_cast<double>(kNumTrials));
     const double abs_err = std::abs(p_hat - p_ref);
-    INFO("model=" << name << " p_hat=" << p_hat << " p_ref=" << p_ref << " sigma_hat=" << sigma_hat
-                  << " |err|=" << abs_err << " bound=" << kZ * sigma_hat);
+    INFO("model=" << name << " p_hat=" << p_hat << " p_ref=" << p_ref << " sigma_hat=" << sigma_hat << " |err|=" << abs_err << " bound=" << kZ * sigma_hat);
     REQUIRE(sigma_hat > 0.0);
     CHECK(abs_err <= kZ * sigma_hat);
 
@@ -96,30 +95,20 @@ double check_model(const char *name, const char *relative_path, const double p_r
 
 } // namespace
 
-TEST_CASE("MC chinese vs BDD reference within 4 sigma", "[mc][chinese]") {
-    check_model("chinese", "input/Aralia/chinese.xml", 1.17058e-3);
-}
+TEST_CASE("MC chinese vs BDD reference within 4 sigma", "[mc][chinese]") { check_model("chinese", "input/Aralia/chinese.xml", 1.17058e-3); }
 
-TEST_CASE("MC das9201 vs BDD reference within 4 sigma", "[mc][das9201]") {
-    check_model("das9201", "input/Aralia/das9201.xml", 1.34237e-2);
-}
+TEST_CASE("MC das9201 vs BDD reference within 4 sigma", "[mc][das9201]") { check_model("das9201", "input/Aralia/das9201.xml", 1.34237e-2); }
 
-TEST_CASE("MC isp9601 vs BDD reference within 4 sigma", "[mc][isp9601]") {
-    check_model("isp9601", "input/Aralia/isp9601.xml", 5.71245e-2);
-}
+TEST_CASE("MC isp9601 vs BDD reference within 4 sigma", "[mc][isp9601]") { check_model("isp9601", "input/Aralia/isp9601.xml", 5.71245e-2); }
 
-TEST_CASE("MC baobab2 vs BDD reference within 4 sigma", "[mc][baobab2]") {
-    check_model("baobab2", "input/Aralia/baobab2.xml", 7.13018e-4);
-}
+TEST_CASE("MC baobab2 vs BDD reference within 4 sigma", "[mc][baobab2]") { check_model("baobab2", "input/Aralia/baobab2.xml", 7.13018e-4); }
 
 TEST_CASE("MC SmallTree vs exponential point-value formula within 4 sigma", "[mc][small_tree]") {
     // 1-(1-p1 p2)(1-p3 p4) with p_i = 1-exp(-lambda_i * 8760), lambda means.
     check_model("small_tree", "input/SmallTree/SmallTree.xml", 0.026776830672032736);
 }
 
-TEST_CASE("MC BSCU vs XFTA point probability within 4 sigma", "[mc][bscu]") {
-    check_model("bscu", "input/BSCU/BSCU.xml", 0.1124087);
-}
+TEST_CASE("MC BSCU vs XFTA point probability within 4 sigma", "[mc][bscu]") { check_model("bscu", "input/BSCU/BSCU.xml", 0.1124087); }
 
 TEST_CASE("MC native K/N gates vs BDD reference within 4 sigma, identical to expanded", "[mc][kn_synthetic]") {
     // 100 basic events, 21 K/N gates; reference from `scram-cli --bdd --probability`.
