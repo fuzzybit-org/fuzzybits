@@ -185,8 +185,7 @@ TEST_CASE("from_chars fallback matches std::from_chars", "[io][charconv]") {
         }
         const auto shortest = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
         compare(std::string_view(buffer.data(), static_cast<std::size_t>(shortest.ptr - buffer.data())));
-        const auto fixed =
-            std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::scientific, 16);
+        const auto fixed = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value, std::chars_format::scientific, 16);
         compare(std::string_view(buffer.data(), static_cast<std::size_t>(fixed.ptr - buffer.data())));
     }
 }

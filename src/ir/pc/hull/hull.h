@@ -103,8 +103,8 @@ struct cone;
 // `check` may be called concurrently from any number of threads.
 class checker final {
   public:
-    [[nodiscard]] static auto make(circuit const &model, bool_node_id target, std::span<event_mode const> modes = {},
-                                   check_options const &options = {}) -> api::result<checker>;
+    [[nodiscard]] static auto make(circuit const &model, bool_node_id target, std::span<event_mode const> modes = {}, check_options const &options = {})
+        -> api::result<checker>;
 
     // Basic events of the circuit in node-id order; lane bit e is event_node(e),
     // and callers (#183) gather lanes in this order.

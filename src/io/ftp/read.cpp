@@ -36,8 +36,7 @@ auto parse_options(api::option_set const &options, api::diagnostic_list &diagnos
     if (*value == "error") {
         return duplicate_import_policy::error;
     }
-    diagnostics.push(api::make_error("io.ftp.invalid-option",
-                                     "io.ftp.duplicate_import must be last, first or error, not '" + *value + "'"));
+    diagnostics.push(api::make_error("io.ftp.invalid-option", "io.ftp.duplicate_import must be last, first or error, not '" + *value + "'"));
     return duplicate_import_policy::last;
 }
 
@@ -51,11 +50,10 @@ auto load_files(std::span<std::filesystem::path const> inputs) -> api::result<st
     for (auto const &path : files.value()) {
         std::ifstream input(path, std::ios::binary);
         if (!input) {
-            return api::result<std::vector<source_text>>::fail(
-                api::diagnostic{.severity = api::diagnostic_severity::error,
-                                .code = "io.ftp.open-failed",
-                                .message = "failed to open FTP input file '" + path.generic_string() + "'",
-                                .file = path.generic_string()});
+            return api::result<std::vector<source_text>>::fail(api::diagnostic{.severity = api::diagnostic_severity::error,
+                                                                               .code = "io.ftp.open-failed",
+                                                                               .message = "failed to open FTP input file '" + path.generic_string() + "'",
+                                                                               .file = path.generic_string()});
         }
         std::string text{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
         sources.push_back(source_text{.path = path.generic_string(), .text = std::move(text)});
@@ -69,13 +67,11 @@ namespace {
 
 [[nodiscard]] auto hasFtpExtension(std::filesystem::path const &path) -> bool {
     auto extension = path.extension().string();
-    std::ranges::transform(extension, extension.begin(),
-                           [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::ranges::transform(extension, extension.begin(), [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return extension == ".ftp";
 }
 
-[[nodiscard]] auto parseSources(std::vector<source_text> sources, api::option_set const &options)
-    -> detail::ParsedProject {
+[[nodiscard]] auto parseSources(std::vector<source_text> sources, api::option_set const &options) -> detail::ParsedProject {
     api::diagnostic_list optionDiagnostics;
     const auto policy = detail::parse_options(options, optionDiagnostics);
     auto project = detail::parse(std::move(sources), policy);
@@ -89,8 +85,7 @@ namespace {
         return io::read_result::fail(std::move(project.diagnostics));
     }
     if (project.targets.empty()) {
-        project.diagnostics.push(
-            api::make_error("io.ftp.no-targets", "FTP project has no PROCESS target and no root gate"));
+        project.diagnostics.push(api::make_error("io.ftp.no-targets", "FTP project has no PROCESS target and no root gate"));
         return io::read_result::fail(std::move(project.diagnostics));
     }
     auto [model, diagnostics] = detail::build_pra(project);
@@ -101,9 +96,7 @@ namespace {
     return io::read_result::ok(model.to_handle(), std::move(project.diagnostics));
 }
 
-[[nodiscard]] auto formatMismatch(io::read_request const &request) -> bool {
-    return !request.format.empty() && request.format != formats::ftp();
-}
+[[nodiscard]] auto formatMismatch(io::read_request const &request) -> bool { return !request.format.empty() && request.format != formats::ftp(); }
 
 } // namespace
 
@@ -120,9 +113,8 @@ namespace {
         .key = duplicate_import_option(),
         .name = "Duplicate import",
         .default_value = std::string("last"),
-        .help =
-            "Value of an event imported more than once: last (default) or first, with a warning naming every record, "
-            "or error. An I tag on any record makes the event an initiating event.",
+        .help = "Value of an event imported more than once: last (default) or first, with a warning naming every record, "
+                "or error. An I tag on any record makes the event an initiating event.",
     };
 }
 
@@ -153,23 +145,21 @@ auto project_files(std::span<std::filesystem::path const> inputs) -> api::result
             continue;
         }
         std::vector<std::filesystem::path> entries;
-        for (auto iterator = std::filesystem::directory_iterator(input, error);
-             !error && iterator != std::filesystem::directory_iterator{}; iterator.increment(error)) {
+        for (auto iterator = std::filesystem::directory_iterator(input, error); !error && iterator != std::filesystem::directory_iterator{};
+             iterator.increment(error)) {
             if (std::error_code status; iterator->is_regular_file(status) && hasFtpExtension(iterator->path())) {
                 entries.push_back(iterator->path());
             }
         }
         if (error) {
             return api::result<std::vector<std::filesystem::path>>::fail(
-                api::make_error("io.ftp.open-failed", "failed to list FTP project directory '" +
-                                                          input.generic_string() + "': " + error.message()));
+                api::make_error("io.ftp.open-failed", "failed to list FTP project directory '" + input.generic_string() + "': " + error.message()));
         }
         std::ranges::sort(entries);
         files.insert(files.end(), entries.begin(), entries.end());
     }
     if (files.empty()) {
-        return api::result<std::vector<std::filesystem::path>>::fail(
-            api::make_error("io.ftp.no-files", "no .ftp files given"));
+        return api::result<std::vector<std::filesystem::path>>::fail(api::make_error("io.ftp.no-files", "no .ftp files given"));
     }
     return api::result<std::vector<std::filesystem::path>>::ok(std::move(files));
 }
@@ -188,8 +178,7 @@ auto read_project(std::span<source_text const> sources, api::option_set const &o
 
 auto read_project(io::read_request const &request) -> io::read_result {
     if (formatMismatch(request)) {
-        return io::read_result::fail(
-            api::make_error("io.ftp.format-mismatch", "FTP reader received a non-FTP format request"));
+        return io::read_result::fail(api::make_error("io.ftp.format-mismatch", "FTP reader received a non-FTP format request"));
     }
     return read_project(std::span{&request.path, 1}, request.options);
 }

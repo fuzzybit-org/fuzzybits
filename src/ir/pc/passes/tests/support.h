@@ -45,8 +45,7 @@ constexpr word all_lanes = ~word{0};
     return output.str();
 }
 
-[[nodiscard]] inline auto has_code(fuzzybits::api::diagnostic_list const &diagnostics, std::string const &code)
-    -> bool {
+[[nodiscard]] inline auto has_code(fuzzybits::api::diagnostic_list const &diagnostics, std::string const &code) -> bool {
     return std::ranges::any_of(diagnostics.items(), [&](auto const &diagnostic) { return diagnostic.code == code; });
 }
 
@@ -94,8 +93,7 @@ constexpr word all_lanes = ~word{0};
 // event's value in world i.
 class evaluator final {
   public:
-    explicit evaluator(pc::circuit const &model)
-        : model_(model), order_(topological_order(model)), event_slot_(model.node_count(), 0) {
+    explicit evaluator(pc::circuit const &model) : model_(model), order_(topological_order(model)), event_slot_(model.node_count(), 0) {
         for (std::uint32_t node = 0; node < model.node_count(); ++node) {
             if (model.op_codes()[node] == pc::op_code::basic_event) {
                 event_slot_[node] = static_cast<std::uint32_t>(events_.size());
@@ -130,8 +128,8 @@ class evaluator final {
     }
 
   private:
-    [[nodiscard]] auto value(const std::uint32_t node, std::span<word const> event_words,
-                             std::span<word const> atom_words, std::vector<word> const &values) const -> word {
+    [[nodiscard]] auto value(const std::uint32_t node, std::span<word const> event_words, std::span<word const> atom_words,
+                             std::vector<word> const &values) const -> word {
         const auto code = model_.op_codes()[node];
         if (code == pc::op_code::basic_event) {
             return event_words[event_slot_[node]];
@@ -233,8 +231,7 @@ struct neumaier final {
     [[nodiscard]] auto value() const -> double { return sum + compensation; }
 };
 
-[[nodiscard]] inline auto world_mass(pc::circuit const &model, std::span<std::uint32_t const> events,
-                                     const std::uint64_t world) -> double {
+[[nodiscard]] inline auto world_mass(pc::circuit const &model, std::span<std::uint32_t const> events, const std::uint64_t world) -> double {
     double mass = 1.0;
     for (std::size_t index = 0; index < events.size(); ++index) {
         const auto p = literal(model, events[index]);
@@ -251,21 +248,20 @@ struct neumaier final {
     const auto targets = model.targets();
     std::vector<neumaier> sums(targets.size());
     std::vector<word> values;
-    for_each_block(static_cast<std::uint32_t>(events.size()),
-                   [&](const std::uint64_t base, const word lanes, std::span<word const> words) {
-                       eval.run(words, values);
-                       for (std::uint32_t lane = 0; lane < 64; ++lane) {
-                           if (((lanes >> lane) & 1U) == 0) {
-                               continue;
-                           }
-                           const auto mass = world_mass(model, events, base + lane);
-                           for (std::size_t target = 0; target < targets.size(); ++target) {
-                               if (((values[targets[target].node.raw()] >> lane) & 1U) != 0) {
-                                   sums[target].add(mass);
-                               }
-                           }
-                       }
-                   });
+    for_each_block(static_cast<std::uint32_t>(events.size()), [&](const std::uint64_t base, const word lanes, std::span<word const> words) {
+        eval.run(words, values);
+        for (std::uint32_t lane = 0; lane < 64; ++lane) {
+            if (((lanes >> lane) & 1U) == 0) {
+                continue;
+            }
+            const auto mass = world_mass(model, events, base + lane);
+            for (std::size_t target = 0; target < targets.size(); ++target) {
+                if (((values[targets[target].node.raw()] >> lane) & 1U) != 0) {
+                    sums[target].add(mass);
+                }
+            }
+        }
+    });
     std::vector<double> result;
     for (auto const &sum : sums) {
         result.push_back(sum.value());
@@ -288,8 +284,7 @@ struct neumaier final {
         for (std::uint32_t lane = 0; lane < 64; ++lane) {
             if (((lanes >> lane) & 1U) != 0) {
                 for (std::size_t target = 0; target < targets.size(); ++target) {
-                    tables[target][base + lane] =
-                        static_cast<std::uint8_t>((values[targets[target].node.raw()] >> lane) & 1U);
+                    tables[target][base + lane] = static_cast<std::uint8_t>((values[targets[target].node.raw()] >> lane) & 1U);
                 }
             }
         }
@@ -319,8 +314,7 @@ struct neumaier final {
 // on complemented edges into the target's atom events, and not y_v on other
 // complemented edges. Brute force: truth table over events and atoms,
 // superset closure, then the weighted sum at the coupled point.
-[[nodiscard]] inline auto split_hull_probabilities(pc::circuit const &model,
-                                                   std::vector<std::vector<pc::bool_node_id>> const &atom_events)
+[[nodiscard]] inline auto split_hull_probabilities(pc::circuit const &model, std::vector<std::vector<pc::bool_node_id>> const &atom_events)
     -> std::vector<double> {
     const auto targets = model.targets();
     REQUIRE(atom_events.size() == targets.size());
@@ -370,14 +364,12 @@ struct neumaier final {
 // Atom events carried through a node map. Events that were dropped (outside
 // every cone) or folded (no atom edge) no longer affect any target.
 [[nodiscard]] inline auto carried_atoms(pc::circuit const &output, std::span<passes::node_image const> node_map,
-                                        std::vector<std::vector<pc::bool_node_id>> const &atom_events)
-    -> std::vector<std::vector<pc::bool_node_id>> {
+                                        std::vector<std::vector<pc::bool_node_id>> const &atom_events) -> std::vector<std::vector<pc::bool_node_id>> {
     std::vector<std::vector<pc::bool_node_id>> carried(atom_events.size());
     for (std::size_t target = 0; target < atom_events.size(); ++target) {
         for (const auto event : atom_events[target]) {
             auto const &image = node_map[event.raw()];
-            if (image.kind == passes::image_kind::reference &&
-                output.op_codes()[image.edge.source.raw()] == pc::op_code::basic_event) {
+            if (image.kind == passes::image_kind::reference && output.op_codes()[image.edge.source.raw()] == pc::op_code::basic_event) {
                 REQUIRE_FALSE(image.edge.complement);
                 carried[target].push_back(image.edge.source);
             }
@@ -387,22 +379,18 @@ struct neumaier final {
 }
 
 // Union of the per-target atom events, as pass options for every target.
-[[nodiscard]] inline auto atom_options(pc::circuit const &model,
-                                       std::vector<std::vector<pc::bool_node_id>> const &atom_events)
-    -> passes::pass_options {
+[[nodiscard]] inline auto atom_options(pc::circuit const &model, std::vector<std::vector<pc::bool_node_id>> const &atom_events) -> passes::pass_options {
     passes::pass_options options;
     for (std::uint32_t target = 0; target < atom_events.size(); ++target) {
         if (!atom_events[target].empty()) {
             options.atoms.targets.push_back(model.targets()[target].id);
-            options.atoms.events.insert(options.atoms.events.end(), atom_events[target].begin(),
-                                        atom_events[target].end());
+            options.atoms.events.insert(options.atoms.events.end(), atom_events[target].begin(), atom_events[target].end());
         }
     }
     return options;
 }
 
-inline void require_close(std::vector<double> const &expected, std::vector<double> const &actual,
-                          const double tolerance = 1.0e-12) {
+inline void require_close(std::vector<double> const &expected, std::vector<double> const &actual, const double tolerance = 1.0e-12) {
     REQUIRE(expected.size() == actual.size());
     for (std::size_t index = 0; index < expected.size(); ++index) {
         INFO("target " << index << " expected " << expected[index] << " actual " << actual[index]);
@@ -420,9 +408,8 @@ enum class worlds : std::uint8_t {
 // Every node image and every target of `output` agrees with `input` on the
 // given worlds. Also checks the maps' shape and that every output basic event
 // is the image of exactly one input event.
-inline void require_images(pc::circuit const &input, pc::circuit const &output,
-                           std::span<passes::node_image const> node_map, std::span<pc::target_id const> target_map,
-                           const worlds mode) {
+inline void require_images(pc::circuit const &input, pc::circuit const &output, std::span<passes::node_image const> node_map,
+                           std::span<pc::target_id const> target_map, const worlds mode) {
     REQUIRE(node_map.size() == input.node_count());
     REQUIRE(target_map.size() == input.targets().size());
     const evaluator in(input);
@@ -434,8 +421,7 @@ inline void require_images(pc::circuit const &input, pc::circuit const &output,
     for (std::uint32_t slot = 0; slot < in.events().size(); ++slot) {
         const auto node = in.events()[slot];
         const auto p = literal(input, node);
-        const bool literal_source = input.probability_sources()[input.probability_source_refs()[node].raw()].kind ==
-                                    pc::probability_source_kind::literal;
+        const bool literal_source = input.probability_sources()[input.probability_source_refs()[node].raw()].kind == pc::probability_source_kind::literal;
         if (mode == worlds::almost_sure && literal_source && (p == 0.0 || p == 1.0)) {
             is_free[slot] = 0;
             fixed[slot] = p == 1.0 ? all_lanes : 0;
@@ -474,39 +460,38 @@ inline void require_images(pc::circuit const &input, pc::circuit const &output,
     std::vector<word> output_values;
     std::uint64_t mismatches = 0;
     std::uint32_t first_mismatch = 0;
-    for_each_block(
-        static_cast<std::uint32_t>(free.size()), [&](std::uint64_t, const word lanes, std::span<word const> words) {
-            input_words = fixed;
-            for (std::size_t index = 0; index < free.size(); ++index) {
-                input_words[free[index]] = words[index];
+    for_each_block(static_cast<std::uint32_t>(free.size()), [&](std::uint64_t, const word lanes, std::span<word const> words) {
+        input_words = fixed;
+        for (std::size_t index = 0; index < free.size(); ++index) {
+            input_words[free[index]] = words[index];
+        }
+        for (const auto node : out.events()) {
+            output_words[out.slot(node)] = input_words[static_cast<std::size_t>(preimage[node])];
+        }
+        in.run(input_words, input_values);
+        out.run(output_words, output_values);
+        for (std::uint32_t node = 0; node < input.node_count(); ++node) {
+            auto const &image = node_map[node];
+            word expected = 0;
+            if (image.kind == passes::image_kind::constant) {
+                expected = image.constant_value ? all_lanes : 0;
+            } else if (image.kind == passes::image_kind::reference) {
+                expected = output_values[image.edge.source.raw()] ^ (image.edge.complement ? all_lanes : 0);
+            } else {
+                continue;
             }
-            for (const auto node : out.events()) {
-                output_words[out.slot(node)] = input_words[static_cast<std::size_t>(preimage[node])];
+            if (((expected ^ input_values[node]) & lanes) != 0) {
+                first_mismatch = mismatches++ == 0 ? node : first_mismatch;
             }
-            in.run(input_words, input_values);
-            out.run(output_words, output_values);
-            for (std::uint32_t node = 0; node < input.node_count(); ++node) {
-                auto const &image = node_map[node];
-                word expected = 0;
-                if (image.kind == passes::image_kind::constant) {
-                    expected = image.constant_value ? all_lanes : 0;
-                } else if (image.kind == passes::image_kind::reference) {
-                    expected = output_values[image.edge.source.raw()] ^ (image.edge.complement ? all_lanes : 0);
-                } else {
-                    continue;
-                }
-                if (((expected ^ input_values[node]) & lanes) != 0) {
-                    first_mismatch = mismatches++ == 0 ? node : first_mismatch;
-                }
+        }
+        for (std::uint32_t target = 0; target < target_map.size(); ++target) {
+            const auto in_node = input.targets()[target].node.raw();
+            const auto out_node = output.targets()[target_map[target].raw()].node.raw();
+            if (((input_values[in_node] ^ output_values[out_node]) & lanes) != 0) {
+                first_mismatch = mismatches++ == 0 ? in_node : first_mismatch;
             }
-            for (std::uint32_t target = 0; target < target_map.size(); ++target) {
-                const auto in_node = input.targets()[target].node.raw();
-                const auto out_node = output.targets()[target_map[target].raw()].node.raw();
-                if (((input_values[in_node] ^ output_values[out_node]) & lanes) != 0) {
-                    first_mismatch = mismatches++ == 0 ? in_node : first_mismatch;
-                }
-            }
-        });
+        }
+    });
     INFO("first mismatching input node " << first_mismatch);
     REQUIRE(mismatches == 0);
 }
@@ -549,9 +534,7 @@ struct random_options final {
         bool value = false;
         double probability = 0.0;
     };
-    const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) {
-        return std::uniform_int_distribution<std::uint32_t>(low, high)(rng);
-    };
+    const auto uniform = [&](const std::uint32_t low, const std::uint32_t high) { return std::uniform_int_distribution<std::uint32_t>(low, high)(rng); };
     const auto chance = [&](const double p) { return std::bernoulli_distribution(p)(rng); };
 
     std::vector<logical> nodes;
@@ -570,16 +553,14 @@ struct random_options final {
     }
     const auto constants = uniform(0, 2);
     for (std::uint32_t index = 0; index < constants; ++index) {
-        nodes.push_back(
-            logical{.code = chance(0.5) ? pc::op_code::constant : pc::op_code::house_event, .value = chance(0.5)});
+        nodes.push_back(logical{.code = chance(0.5) ? pc::op_code::constant : pc::op_code::house_event, .value = chance(0.5)});
     }
     std::ranges::shuffle(nodes, rng);
     const auto leaves = static_cast<std::uint32_t>(nodes.size());
 
     constexpr std::array codes{
-        pc::op_code::and_gate,  pc::op_code::or_gate,     pc::op_code::and_gate,  pc::op_code::or_gate,
-        pc::op_code::xor_gate,  pc::op_code::not_gate,    pc::op_code::nand_gate, pc::op_code::nor_gate,
-        pc::op_code::xnor_gate, pc::op_code::cardinality,
+        pc::op_code::and_gate, pc::op_code::or_gate,   pc::op_code::and_gate, pc::op_code::or_gate,   pc::op_code::xor_gate,
+        pc::op_code::not_gate, pc::op_code::nand_gate, pc::op_code::nor_gate, pc::op_code::xnor_gate, pc::op_code::cardinality,
     };
     const auto gates = uniform(1, options.max_gates);
     for (std::uint32_t gate = 0; gate < gates; ++gate) {
@@ -644,8 +625,7 @@ struct random_options final {
             break;
         }
     }
-    constexpr std::array roles{pc::observable_role::primary, pc::observable_role::watch,
-                               pc::observable_role::projection_anchor};
+    constexpr std::array roles{pc::observable_role::primary, pc::observable_role::watch, pc::observable_role::projection_anchor};
     const auto targets = uniform(1, 3);
     for (std::uint32_t target = 0; target < targets; ++target) {
         const auto logical_node = chance(0.8) ? uniform(leaves, count - 1) : uniform(0, count - 1);

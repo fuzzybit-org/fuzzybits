@@ -29,17 +29,14 @@ auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
     for (auto const &path : project.paths) {
         files.push_back(builder.add_source_file(ir::pra::source_file_spec{.path = path, .format = kFtpFormat}));
     }
-    const auto source = [&files](const Location location) {
-        return ir::pra::source_location{.file = files[location.file], .line = location.line};
-    };
+    const auto source = [&files](const Location location) { return ir::pra::source_location{.file = files[location.file], .line = location.line}; };
 
     std::size_t operandCount = 0;
     for (auto const &definition : project.definitions) {
         operandCount += definition.operands.size();
     }
     builder.reserve_basic_events(static_cast<std::uint32_t>(project.events.size()));
-    builder.reserve_gates(static_cast<std::uint32_t>(project.definitions.size()),
-                          static_cast<std::uint32_t>(operandCount));
+    builder.reserve_gates(static_cast<std::uint32_t>(project.definitions.size()), static_cast<std::uint32_t>(operandCount));
 
     std::vector<ir::pra::source_location> sources;
     std::vector<ir::pra::attribute_spec> attributes;
@@ -54,12 +51,10 @@ auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
             }
         }
         const auto quantity = event.frequency ? ir::pra::quantity_kind::frequency : ir::pra::quantity_kind::probability;
-        const auto id = builder.add_basic_event(
-            ir::pra::element_spec{.stable_name = event.name, .attributes = attributes, .sources = sources},
-            ir::pra::expression_spec::literal(event.value, quantity));
+        const auto id = builder.add_basic_event(ir::pra::element_spec{.stable_name = event.name, .attributes = attributes, .sources = sources},
+                                                ir::pra::expression_spec::literal(event.value, quantity));
         if (event.initiator) {
-            const auto initiator = builder.add_initiating_event(
-                ir::pra::element_spec{.stable_name = event.name, .sources = std::span{sources}.first(1)}, id);
+            const auto initiator = builder.add_initiating_event(ir::pra::element_spec{.stable_name = event.name, .sources = std::span{sources}.first(1)}, id);
             (void)initiator;
         }
     }
@@ -70,9 +65,8 @@ auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
         if (const auto gate = project.definitionByName.find(operand.name); gate != project.definitionByName.end()) {
             return ir::pra::operand_spec{.event = ir::pra::gate_id(gate->second), .complement = operand.complement};
         }
-        return ir::pra::operand_spec{.event = ir::pra::basic_event_id(project.eventByName.at(operand.name)),
-                                     .complement = operand.complement,
-                                     .literal = operand.complement};
+        return ir::pra::operand_spec{
+            .event = ir::pra::basic_event_id(project.eventByName.at(operand.name)), .complement = operand.complement, .literal = operand.complement};
     };
 
     std::vector<ir::pra::operand_spec> operands;
@@ -92,11 +86,8 @@ auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
             id = builder.add_gate(element, ir::pra::gate_kind::or_gate, operands);
             break;
         case DefinitionKind::at_least:
-            id = builder.add_cardinality(
-                element,
-                ir::pra::cardinality_bounds{.low = definition.threshold,
-                                            .high = static_cast<std::uint32_t>(operands.size())},
-                operands);
+            id = builder.add_cardinality(element, ir::pra::cardinality_bounds{.low = definition.threshold, .high = static_cast<std::uint32_t>(operands.size())},
+                                         operands);
             break;
         }
         (void)id;
@@ -105,10 +96,8 @@ auto build_pra(ParsedProject const &project) -> ir::pra::finalize_result {
     for (auto const &target : project.targets) {
         const auto location = source(target.location);
         const ir::pra::element_spec element{.stable_name = target.name, .sources = std::span{&location, 1}};
-        const auto id =
-            target.gate ? builder.add_target(element, ir::pra::domain_target_kind::gate, ir::pra::gate_id(target.index))
-                        : builder.add_target(element, ir::pra::domain_target_kind::basic_event,
-                                             ir::pra::basic_event_id(target.index));
+        const auto id = target.gate ? builder.add_target(element, ir::pra::domain_target_kind::gate, ir::pra::gate_id(target.index))
+                                    : builder.add_target(element, ir::pra::domain_target_kind::basic_event, ir::pra::basic_event_id(target.index));
         (void)id;
     }
 

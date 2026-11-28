@@ -35,15 +35,12 @@ void Substitution::Add(BasicEvent *source_event) {
 
 void Substitution::Validate() const {
     assert(hypothesis_ && "Missing substitution hypothesis.");
-    if (ext::any_of(hypothesis_->args(),
-                    [](const Formula::Arg &arg) { return !std::holds_alternative<BasicEvent *>(arg.event); })) {
-        SCRAM_THROW(ValidityError("Substitution hypothesis must be built over basic events only."))
-            << errinfo_element(Element::name(), kTypeString);
+    if (ext::any_of(hypothesis_->args(), [](const Formula::Arg &arg) { return !std::holds_alternative<BasicEvent *>(arg.event); })) {
+        SCRAM_THROW(ValidityError("Substitution hypothesis must be built over basic events only.")) << errinfo_element(Element::name(), kTypeString);
     }
 
     if (ext::any_of(hypothesis_->args(), [](const Formula::Arg &arg) { return arg.complement; })) {
-        SCRAM_THROW(ValidityError("Substitution hypotheses must be coherent."))
-            << errinfo_element(Element::name(), kTypeString);
+        SCRAM_THROW(ValidityError("Substitution hypotheses must be coherent.")) << errinfo_element(Element::name(), kTypeString);
     }
 
     if (declarative()) {
@@ -55,8 +52,7 @@ void Substitution::Validate() const {
             break;
         default:
             SCRAM_THROW(ValidityError("Substitution hypotheses must be coherent."))
-                << errinfo_element(Element::name(), kTypeString)
-                << errinfo_connective(kConnectiveToString[hypothesis_->connective()]);
+                << errinfo_element(Element::name(), kTypeString) << errinfo_connective(kConnectiveToString[hypothesis_->connective()]);
         }
         const bool *constant = std::get_if<bool>(&target_);
         if (constant && *constant)
@@ -70,21 +66,17 @@ void Substitution::Validate() const {
         default:
             SCRAM_THROW(ValidityError("Non-declarative substitution hypotheses only allow "
                                       "AND/OR/NULL connectives."))
-                << errinfo_element(Element::name(), kTypeString)
-                << errinfo_connective(kConnectiveToString[hypothesis_->connective()]);
+                << errinfo_element(Element::name(), kTypeString) << errinfo_connective(kConnectiveToString[hypothesis_->connective()]);
         }
         const bool *constant = std::get_if<bool>(&target_);
         if (constant && !*constant)
-            SCRAM_THROW(ValidityError("Substitution source set is irrelevant."))
-                << errinfo_element(Element::name(), kTypeString);
+            SCRAM_THROW(ValidityError("Substitution source set is irrelevant.")) << errinfo_element(Element::name(), kTypeString);
     }
 }
 
 std::optional<Substitution::Type> Substitution::type() const {
     auto in_hypothesis = [this](const BasicEvent *source_arg) {
-        return ext::any_of(hypothesis_->args(), [source_arg](const Formula::Arg &arg) {
-            return std::get<BasicEvent *>(arg.event) == source_arg;
-        });
+        return ext::any_of(hypothesis_->args(), [source_arg](const Formula::Arg &arg) { return std::get<BasicEvent *>(arg.event) == source_arg; });
     };
 
     auto is_mutually_exclusive = [](const Formula &formula) {

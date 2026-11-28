@@ -62,16 +62,12 @@ namespace {
     return static_cast<std::uint32_t>(value);
 }
 
-[[nodiscard]] auto checkedLiteralLimit(Header const &header) -> bool {
-    return header.maxVariable <= ((std::numeric_limits<std::uint32_t>::max() - 1U) >> 1U);
-}
+[[nodiscard]] auto checkedLiteralLimit(Header const &header) -> bool { return header.maxVariable <= ((std::numeric_limits<std::uint32_t>::max() - 1U) >> 1U); }
 
-[[nodiscard]] auto parseHeader(const std::string_view line, api::diagnostic_list &diagnostics)
-    -> std::optional<Header> {
+[[nodiscard]] auto parseHeader(const std::string_view line, api::diagnostic_list &diagnostics) -> std::optional<Header> {
     const auto tokens = splitWhitespace(line);
     if (tokens.size() < 6) {
-        diagnostics.push(
-            api::make_error("io.aiger.invalid-header", "AIGER header must contain format and MILOA counts"));
+        diagnostics.push(api::make_error("io.aiger.invalid-header", "AIGER header must contain format and MILOA counts"));
         return std::nullopt;
     }
 
@@ -91,8 +87,7 @@ namespace {
     auto const outputCount = parseUnsigned(tokens[4]);
     auto const andCount = parseUnsigned(tokens[5]);
     if (!maxVariable || !inputCount || !latchCount || !outputCount || !andCount) {
-        diagnostics.push(
-            api::make_error("io.aiger.invalid-header", "AIGER MILOA counts must be unsigned 32-bit integers"));
+        diagnostics.push(api::make_error("io.aiger.invalid-header", "AIGER MILOA counts must be unsigned 32-bit integers"));
         return std::nullopt;
     }
 
@@ -108,20 +103,17 @@ namespace {
     for (auto extra = tokens.begin() + 6; extra != tokens.end(); ++extra) {
         auto const count = parseUnsigned(*extra);
         if (!count) {
-            diagnostics.push(
-                api::make_error("io.aiger.invalid-header", "AIGER extension counts must be unsigned 32-bit integers"));
+            diagnostics.push(api::make_error("io.aiger.invalid-header", "AIGER extension counts must be unsigned 32-bit integers"));
             return std::nullopt;
         }
         if (*count != 0) {
             diagnostics.push(
-                api::make_error("io.aiger.unsupported-extensions",
-                                "AIGER reader supports only MILOA combinational files without extension sections"));
+                api::make_error("io.aiger.unsupported-extensions", "AIGER reader supports only MILOA combinational files without extension sections"));
             return std::nullopt;
         }
     }
     if (!checkedLiteralLimit(header)) {
-        diagnostics.push(
-            api::make_error("io.aiger.literal-overflow", "AIGER literals exceed the PC reader's 32-bit literal range"));
+        diagnostics.push(api::make_error("io.aiger.literal-overflow", "AIGER literals exceed the PC reader's 32-bit literal range"));
         return std::nullopt;
     }
     if (header.latchCount != 0) {
@@ -129,21 +121,17 @@ namespace {
         // and next-state projection. The current PC IR is a flat
         // combinational Boolean DAG, so accepting latches would either
         // drop behavior or silently compile a transition system.
-        diagnostics.push(
-            api::make_error("io.aiger.unsupported-latches", "AIGER reader supports only combinational AIGER files"));
+        diagnostics.push(api::make_error("io.aiger.unsupported-latches", "AIGER reader supports only combinational AIGER files"));
         return std::nullopt;
     }
     // Complemented output literals may become explicit PC NOT nodes because
     // targets point at nodes, not edge_ref values. The +outputCount bound
     // keeps that worst-case materialization inside the 32-bit PC node id
     // range before allocating builder storage.
-    constexpr auto maxPcNodes =
-        static_cast<std::uint64_t>(std::numeric_limits<ir::pc::bool_node_id::value_type>::max());
-    if (const auto worstCasePcNodes =
-            static_cast<std::uint64_t>(header.inputCount) + header.andCount + header.outputCount + 2U;
+    constexpr auto maxPcNodes = static_cast<std::uint64_t>(std::numeric_limits<ir::pc::bool_node_id::value_type>::max());
+    if (const auto worstCasePcNodes = static_cast<std::uint64_t>(header.inputCount) + header.andCount + header.outputCount + 2U;
         worstCasePcNodes > maxPcNodes) {
-        diagnostics.push(
-            api::make_error("io.aiger.too-large", "AIGER input exceeds the PC reader's 32-bit node range"));
+        diagnostics.push(api::make_error("io.aiger.too-large", "AIGER input exceeds the PC reader's 32-bit node range"));
         return std::nullopt;
     }
     if (header.encoding == Encoding::binary && header.maxVariable != header.inputCount + header.andCount) {
@@ -157,35 +145,29 @@ namespace {
     return header;
 }
 
-[[nodiscard]] auto readUnsignedLine(std::istream &input, const std::string_view section,
-                                    api::diagnostic_list &diagnostics) -> std::optional<std::uint32_t> {
+[[nodiscard]] auto readUnsignedLine(std::istream &input, const std::string_view section, api::diagnostic_list &diagnostics) -> std::optional<std::uint32_t> {
     std::string line;
     if (!std::getline(input, line)) {
-        diagnostics.push(api::make_error("io.aiger.unexpected-eof",
-                                         "unexpected end of file while reading AIGER " + std::string(section)));
+        diagnostics.push(api::make_error("io.aiger.unexpected-eof", "unexpected end of file while reading AIGER " + std::string(section)));
         return std::nullopt;
     }
     auto const value = parseUnsigned(trim(line));
     if (!value) {
-        diagnostics.push(
-            api::make_error("io.aiger.invalid-integer", "invalid unsigned integer in AIGER " + std::string(section)));
+        diagnostics.push(api::make_error("io.aiger.invalid-integer", "invalid unsigned integer in AIGER " + std::string(section)));
         return std::nullopt;
     }
     return value;
 }
 
-[[nodiscard]] auto readAsciiAndLine(std::istream &input, api::diagnostic_list &diagnostics)
-    -> std::optional<AndDefinition> {
+[[nodiscard]] auto readAsciiAndLine(std::istream &input, api::diagnostic_list &diagnostics) -> std::optional<AndDefinition> {
     std::string line;
     if (!std::getline(input, line)) {
-        diagnostics.push(
-            api::make_error("io.aiger.unexpected-eof", "unexpected end of file while reading AIGER AND gates"));
+        diagnostics.push(api::make_error("io.aiger.unexpected-eof", "unexpected end of file while reading AIGER AND gates"));
         return std::nullopt;
     }
     const auto tokens = splitWhitespace(line);
     if (tokens.size() != 3) {
-        diagnostics.push(
-            api::make_error("io.aiger.invalid-and", "ASCII AIGER AND definition must contain lhs rhs0 rhs1"));
+        diagnostics.push(api::make_error("io.aiger.invalid-and", "ASCII AIGER AND definition must contain lhs rhs0 rhs1"));
         return std::nullopt;
     }
     auto const lhs = parseUnsigned(tokens[0]);
@@ -207,8 +189,7 @@ namespace {
     while (true) {
         const auto next = input.get();
         if (next == std::char_traits<char>::eof()) {
-            diagnostics.push(
-                api::make_error("io.aiger.unexpected-eof", "unexpected end of file in binary AIGER delta"));
+            diagnostics.push(api::make_error("io.aiger.unexpected-eof", "unexpected end of file in binary AIGER delta"));
             return std::nullopt;
         }
         const auto byte = static_cast<unsigned char>(next);
@@ -218,21 +199,18 @@ namespace {
         }
         shift += 7;
         if (shift >= 35 || value > std::numeric_limits<std::uint32_t>::max()) {
-            diagnostics.push(
-                api::make_error("io.aiger.delta-overflow", "binary AIGER delta exceeds the 32-bit literal range"));
+            diagnostics.push(api::make_error("io.aiger.delta-overflow", "binary AIGER delta exceeds the 32-bit literal range"));
             return std::nullopt;
         }
     }
     if (value > std::numeric_limits<std::uint32_t>::max()) {
-        diagnostics.push(
-            api::make_error("io.aiger.delta-overflow", "binary AIGER delta exceeds the 32-bit literal range"));
+        diagnostics.push(api::make_error("io.aiger.delta-overflow", "binary AIGER delta exceeds the 32-bit literal range"));
         return std::nullopt;
     }
     return static_cast<std::uint32_t>(value);
 }
 
-void parseSymbolLine(const std::string_view line, ParsedModel &model,
-                     std::unordered_set<std::uint32_t> &seenInputSymbols) {
+void parseSymbolLine(const std::string_view line, ParsedModel &model, std::unordered_set<std::uint32_t> &seenInputSymbols) {
     if (line.empty()) {
         return;
     }
@@ -240,21 +218,18 @@ void parseSymbolLine(const std::string_view line, ParsedModel &model,
         return;
     }
     if (line.front() != 'i' && line.front() != 'l' && line.front() != 'o') {
-        model.diagnostics.push(
-            api::make_error("io.aiger.invalid-symbol", "AIGER symbol line has an invalid symbol kind"));
+        model.diagnostics.push(api::make_error("io.aiger.invalid-symbol", "AIGER symbol line has an invalid symbol kind"));
         return;
     }
 
     const auto space = line.find(' ');
     if (space == std::string_view::npos) {
-        model.diagnostics.push(
-            api::make_error("io.aiger.invalid-symbol", "AIGER symbol line must contain a symbol name"));
+        model.diagnostics.push(api::make_error("io.aiger.invalid-symbol", "AIGER symbol line must contain a symbol name"));
         return;
     }
     auto const position = parseUnsigned(line.substr(1, space - 1));
     if (!position) {
-        model.diagnostics.push(
-            api::make_error("io.aiger.invalid-symbol", "AIGER symbol position must be an unsigned integer"));
+        model.diagnostics.push(api::make_error("io.aiger.invalid-symbol", "AIGER symbol position must be an unsigned integer"));
         return;
     }
     if (line.front() != 'i') {
@@ -265,8 +240,7 @@ void parseSymbolLine(const std::string_view line, ParsedModel &model,
         return;
     }
     if (!seenInputSymbols.insert(*position).second) {
-        model.diagnostics.push(
-            api::make_error("io.aiger.duplicate-symbol", "AIGER input symbol is defined more than once"));
+        model.diagnostics.push(api::make_error("io.aiger.duplicate-symbol", "AIGER input symbol is defined more than once"));
         return;
     }
     model.inputSymbols[*position] = std::string(line.substr(space + 1));
@@ -283,11 +257,9 @@ void parseTrailingSymbols(std::istream &input, ParsedModel &model) {
     }
 }
 
-void validateLiteral(const std::uint32_t literal, Header const &header, api::diagnostic_list &diagnostics,
-                     const std::string_view context) {
+void validateLiteral(const std::uint32_t literal, Header const &header, api::diagnostic_list &diagnostics, const std::string_view context) {
     if (literalVariable(literal) > header.maxVariable) {
-        diagnostics.push(
-            api::make_error("io.aiger.literal-out-of-range", "AIGER " + std::string(context) + " literal exceeds M"));
+        diagnostics.push(api::make_error("io.aiger.literal-out-of-range", "AIGER " + std::string(context) + " literal exceeds M"));
     }
 }
 
@@ -298,13 +270,11 @@ void validateParsedModel(ParsedModel &model) {
     for (auto const literal : model.inputLiterals) {
         validateLiteral(literal, model.header, model.diagnostics, "input");
         if (literal == 0 || (literal & 1U) != 0) {
-            model.diagnostics.push(
-                api::make_error("io.aiger.invalid-input", "AIGER input literal must be positive and even"));
+            model.diagnostics.push(api::make_error("io.aiger.invalid-input", "AIGER input literal must be positive and even"));
             continue;
         }
         if (!definedVariables.insert(literalVariable(literal)).second) {
-            model.diagnostics.push(
-                api::make_error("io.aiger.duplicate-definition", "AIGER variable is defined more than once"));
+            model.diagnostics.push(api::make_error("io.aiger.duplicate-definition", "AIGER variable is defined more than once"));
         }
     }
 
@@ -318,8 +288,7 @@ void validateParsedModel(ParsedModel &model) {
             model.diagnostics.push(api::make_error("io.aiger.invalid-and", "AIGER AND lhs must be positive and even"));
         }
         if (!definedVariables.insert(literalVariable(lhs)).second) {
-            model.diagnostics.push(
-                api::make_error("io.aiger.duplicate-definition", "AIGER variable is defined more than once"));
+            model.diagnostics.push(api::make_error("io.aiger.duplicate-definition", "AIGER variable is defined more than once"));
         }
         for (auto const val : rhs) {
             validateLiteral(val, model.header, model.diagnostics, "AND rhs");
@@ -328,22 +297,19 @@ void validateParsedModel(ParsedModel &model) {
 
     for (auto const literal : model.outputLiterals) {
         if (const auto variable = literalVariable(literal); variable != 0 && !definedVariables.contains(variable)) {
-            model.diagnostics.push(
-                api::make_error("io.aiger.undefined-literal", "AIGER output references an undefined literal"));
+            model.diagnostics.push(api::make_error("io.aiger.undefined-literal", "AIGER output references an undefined literal"));
         }
     }
     for (const auto &[lhs, rhs] : model.andDefinitions) {
         for (auto const val : rhs) {
             if (const auto variable = literalVariable(val); variable != 0 && !definedVariables.contains(variable)) {
-                model.diagnostics.push(
-                    api::make_error("io.aiger.undefined-literal", "AIGER AND references an undefined literal"));
+                model.diagnostics.push(api::make_error("io.aiger.undefined-literal", "AIGER AND references an undefined literal"));
             }
         }
     }
 }
 
-[[nodiscard]] auto parseAscii(std::istream &input, const Header &header, api::diagnostic_list diagnostics)
-    -> ParsedModel {
+[[nodiscard]] auto parseAscii(std::istream &input, const Header &header, api::diagnostic_list diagnostics) -> ParsedModel {
     ParsedModel model{
         .header = header,
         .diagnostics = std::move(diagnostics),
@@ -373,8 +339,7 @@ void validateParsedModel(ParsedModel &model) {
     return model;
 }
 
-[[nodiscard]] auto parseBinary(std::istream &input, const Header &header, api::diagnostic_list diagnostics)
-    -> ParsedModel {
+[[nodiscard]] auto parseBinary(std::istream &input, const Header &header, api::diagnostic_list diagnostics) -> ParsedModel {
     ParsedModel model{
         .header = header,
         .diagnostics = std::move(diagnostics),
@@ -413,8 +378,7 @@ void validateParsedModel(ParsedModel &model) {
         }
         const auto rhs1 = rhs0 - *delta1;
         if (!(lhs > rhs0 && rhs0 >= rhs1)) {
-            model.diagnostics.push(
-                api::make_error("io.aiger.invalid-delta", "binary AIGER AND literals violate lhs > rhs0 >= rhs1"));
+            model.diagnostics.push(api::make_error("io.aiger.invalid-delta", "binary AIGER AND literals violate lhs > rhs0 >= rhs1"));
             continue;
         }
         model.andDefinitions.push_back(AndDefinition{

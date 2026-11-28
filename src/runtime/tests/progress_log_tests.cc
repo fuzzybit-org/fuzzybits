@@ -71,8 +71,7 @@ std::vector<std::string> parse_csv_fields(const std::string &line) {
     return fields;
 }
 
-progress::query_state query(std::string name, std::uint64_t hits, std::uint64_t trials, double estimate, double ci_low,
-                            double ci_high) {
+progress::query_state query(std::string name, std::uint64_t hits, std::uint64_t trials, double estimate, double ci_low, double ci_high) {
     progress::query_state q;
     q.name = std::move(name);
     q.hits = hits;
@@ -95,8 +94,8 @@ progress::snapshot two_query_snapshot() {
     s.trials_per_second = 16384.0;
     s.queries.push_back(query("TOP", 12, 4096, 0.0029296875, 0.0012, 0.0046));
     // Not yet computed: every double is NaN, which JSON must spell as null.
-    s.queries.push_back(query("no,comma\"quote", 0, 4096, std::numeric_limits<double>::quiet_NaN(),
-                              std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN()));
+    s.queries.push_back(query("no,comma\"quote", 0, 4096, std::numeric_limits<double>::quiet_NaN(), std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN()));
     return s;
 }
 
@@ -133,11 +132,9 @@ TEST_CASE("JSON Lines progress log: every field, NaN as null, one finish record"
     CHECK(first.front() == '{');
     CHECK(first.back() == '}');
     for (const char *key :
-         {"\"record\":0", "\"event\":\"snapshot\"", "\"interrupted\":false", "\"schema\":1", "\"phase\":\"sampling\"",
-          "\"step\":\"\"", "\"trials_done\":4096", "\"trials_total\":8192", "\"passes_done\":1", "\"passes_total\":2",
-          "\"elapsed_seconds\":0.25", "\"trials_per_second\":16384", "\"name\":\"TOP\"", "\"hits\":12",
-          "\"trials\":4096", "\"estimate\":0.0029296875", "\"ci_low\":0.0012", "\"ci_high\":0.0046",
-          "\"converged\":false"}) {
+         {"\"record\":0", "\"event\":\"snapshot\"", "\"interrupted\":false", "\"schema\":1", "\"phase\":\"sampling\"", "\"step\":\"\"", "\"trials_done\":4096",
+          "\"trials_total\":8192", "\"passes_done\":1", "\"passes_total\":2", "\"elapsed_seconds\":0.25", "\"trials_per_second\":16384", "\"name\":\"TOP\"",
+          "\"hits\":12", "\"trials\":4096", "\"estimate\":0.0029296875", "\"ci_low\":0.0012", "\"ci_high\":0.0046", "\"converged\":false"}) {
         INFO("missing " << key);
         CHECK(first.find(key) != std::string::npos);
     }
@@ -183,9 +180,8 @@ TEST_CASE("CSV progress log: header, one row per query, RFC 4180 quoting, empty 
     CHECK(columns.size() == progress::log_csv_column_count());
     CHECK(columns.front() == "record");
     CHECK(columns.back() == "converged");
-    for (const char *required :
-         {"schema", "phase", "step", "trials_done", "trials_total", "query_name", "hits", "trials", "estimate",
-          "ci_low", "ci_high", "rel_half_width", "target_rel_half_width"}) {
+    for (const char *required : {"schema", "phase", "step", "trials_done", "trials_total", "query_name", "hits", "trials", "estimate", "ci_low", "ci_high",
+                                 "rel_half_width", "target_rel_half_width"}) {
         INFO("missing column " << required);
         CHECK(std::find(columns.begin(), columns.end(), required) != columns.end());
     }

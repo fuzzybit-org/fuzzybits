@@ -22,12 +22,13 @@
 
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/event/sample_shape.h"
+#include "mc/executor/descriptor/device.h"
 
 #include <cstddef>
 #include <sycl/sycl.hpp>
 
-namespace scram::mc {
+namespace fuzzybits::mc {
 
 /**
  * @struct working_set
@@ -158,8 +159,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @param num_events Number of events in the Monte Carlo simulation
      * @param requested_shape Desired sample buffer organization
      */
-    explicit working_set(const sycl::queue &queue, const size_type num_events = 0,
-                         const event::sample_shape<size_type> &requested_shape = {}) {
+    explicit working_set(const sycl::queue &queue, const size_type num_events = 0, const event::sample_shape<size_type> &requested_shape = {}) {
         const auto device = queue.get_device();
         num_events_ = num_events;
         bitpack_buffer_shape_ = requested_shape;
@@ -191,8 +191,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
         max_num_sub_groups = device.get_info<sycl::info::device::max_num_sub_groups>();
         sub_group_sizes = device.get_info<sycl::info::device::sub_group_sizes>();
         preferred_vector_width_char = device.get_info<sycl::info::device::preferred_vector_width_char>();
-        sub_group_independent_forward_progress =
-            device.get_info<sycl::info::device::sub_group_independent_forward_progress>();
+        sub_group_independent_forward_progress = device.get_info<sycl::info::device::sub_group_independent_forward_progress>();
 
         // memory allocation
         max_mem_alloc_size = device.get_info<sycl::info::device::max_mem_alloc_size>();
@@ -245,33 +244,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @return Reference to the output stream for chaining
      */
     friend std::ostream &operator<<(std::ostream &os, const working_set &ws) {
-        os << "device_type: ";
-        switch (ws.device_type) {
-        case sycl::info::device_type::cpu:
-            os << "cpu";
-            break;
-        case sycl::info::device_type::gpu:
-            os << "gpu";
-            break;
-        case sycl::info::device_type::all:
-            os << "all";
-            break;
-        case sycl::info::device_type::custom:
-            os << "custom";
-            break;
-        case sycl::info::device_type::automatic:
-            os << "automatic";
-            break;
-        case sycl::info::device_type::accelerator:
-            os << "accelerator";
-            break;
-        case sycl::info::device_type::host:
-            os << "host";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
+        os << "device_type: " << executor::descriptor::name_of(ws.device_type);
         os << std::endl;
         os << "name: " << ws.name << std::endl
            << "vendor_id: " << ws.vendor_id << std::endl
@@ -294,14 +267,12 @@ template <typename size_type, typename bitpack_type> struct working_set {
            << "------------------------------------------------" << std::endl;
         os << "max_work_item_dimensions: " << ws.max_work_item_dimensions << std::endl
            << "max_work_item_sizes_1d: " << ws.max_work_item_sizes_1d[0] << std::endl
-           << "max_work_item_sizes_2d: " << ws.max_work_item_sizes_2d[0] << ", " << ws.max_work_item_sizes_2d[1]
+           << "max_work_item_sizes_2d: " << ws.max_work_item_sizes_2d[0] << ", " << ws.max_work_item_sizes_2d[1] << std::endl
+           << "max_work_item_sizes_3d: " << ws.max_work_item_sizes_3d[0] << ", " << ws.max_work_item_sizes_3d[1] << ", " << ws.max_work_item_sizes_3d[2]
            << std::endl
-           << "max_work_item_sizes_3d: " << ws.max_work_item_sizes_3d[0] << ", " << ws.max_work_item_sizes_3d[1] << ", "
-           << ws.max_work_item_sizes_3d[2] << std::endl
            << "work_item_independent_forward_progress: " << ws.work_item_independent_forward_progress << std::endl
            << "------------------------------------------------" << std::endl;
-        os << "max_work_group_size: " << ws.max_work_group_size << std::endl
-           << "------------------------------------------------" << std::endl;
+        os << "max_work_group_size: " << ws.max_work_group_size << std::endl << "------------------------------------------------" << std::endl;
         os << "max_num_sub_groups: " << ws.max_num_sub_groups << std::endl << "sub_group_sizes: ";
         for (const auto &size : ws.sub_group_sizes) {
             os << size << ", ";
@@ -314,39 +285,9 @@ template <typename size_type, typename bitpack_type> struct working_set {
            << "global_mem_size: " << ws.global_mem_size << std::endl
            << "global_mem_cache_size: " << ws.global_mem_cache_size << std::endl
            << "global_mem_cache_line_size: " << ws.global_mem_cache_line_size << std::endl
-           << "global_mem_cache_type: ";
-        switch (ws.global_mem_cache_type) {
-        case sycl::info::global_mem_cache_type::none:
-            os << "none";
-            break;
-        case sycl::info::global_mem_cache_type::read_only:
-            os << "read_only";
-            break;
-        case sycl::info::global_mem_cache_type::read_write:
-            os << "read_write";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
-        os << std::endl << "local_mem_type: ";
-        switch (ws.local_mem_type) {
-        case sycl::info::local_mem_type::none:
-            os << "none";
-            break;
-        case sycl::info::local_mem_type::local:
-            os << "local";
-            break;
-        case sycl::info::local_mem_type::global:
-            os << "global";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
-        os << std::endl
-           << "local_mem_size: " << ws.local_mem_size << std::endl
-           << "------------------------------------------------" << std::endl;
+           << "global_mem_cache_type: " << executor::descriptor::name_of(ws.global_mem_cache_type) << std::endl
+           << "local_mem_type: " << executor::descriptor::name_of(ws.local_mem_type);
+        os << std::endl << "local_mem_size: " << ws.local_mem_size << std::endl << "------------------------------------------------" << std::endl;
         os << "num_events_: " << ws.num_events_ << std::endl
            << "buffer_shape_batch_size: " << ws.bitpack_buffer_shape_.batch_size << std::endl
            << "buffer_shape_bitpacks_per_batch: " << ws.bitpack_buffer_shape_.bitpacks_per_batch << std::endl
@@ -368,8 +309,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @param total_elements Total number of elements to process
      * @return Optimal nd_range with computed global and local sizes
      */
-    static sycl::nd_range<1> compute_optimal_nd_range_for_tally(const sycl::queue &queue,
-                                                                const size_type total_elements) {
+    static sycl::nd_range<1> compute_optimal_nd_range_for_tally(const sycl::queue &queue, const size_type total_elements) {
         const auto device = queue.get_device();
         size_type max_work_group_size = device.get_info<sycl::info::device::max_work_group_size>();
 
@@ -436,8 +376,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @param num_events Number of events requiring sample storage
      * @return Optimal sample_shape within memory constraints
      */
-    static event::sample_shape<size_type> compute_optimal_sample_shape(const sycl::queue &queue,
-                                                                       const size_type num_events) {
+    static event::sample_shape<size_type> compute_optimal_sample_shape(const sycl::queue &queue, const size_type num_events) {
         const auto device = queue.get_device();
         const size_t max_malloc_size = device.get_info<sycl::info::device::max_mem_alloc_size>();
         static constexpr size_type max_sample_size = 16;
@@ -450,8 +389,8 @@ template <typename size_type, typename bitpack_type> struct working_set {
         for (; ss >= 0; --ss) {
             bs = max_batch_size; // Reinitialize bs for each ss
             for (; bs >= 0; --bs) {
-                uint64_t used_bytes = static_cast<uint64_t>(num_events) * (static_cast<uint64_t>(one) << bs) *
-                                      (static_cast<uint64_t>(one) << ss) * sizeof(bitpack_type);
+                uint64_t used_bytes =
+                    static_cast<uint64_t>(num_events) * (static_cast<uint64_t>(one) << bs) * (static_cast<uint64_t>(one) << ss) * sizeof(bitpack_type);
                 if (used_bytes <= max_malloc_size) {
                     found = true;
                     break; // Breaks out of the inner loop
@@ -528,8 +467,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @param limits Optional constraints on each dimension (0 = no limit)
      * @return Optimal 3D local range for CPU execution
      */
-    [[nodiscard]] sycl::range<3> compute_optimal_local_range_3d_for_cpu(const sycl::range<3> &limits = {0, 0,
-                                                                                                        0}) const {
+    [[nodiscard]] sycl::range<3> compute_optimal_local_range_3d_for_cpu(const sycl::range<3> &limits = {0, 0, 0}) const {
         const auto num_bytes_in_dtype = sizeof(bitpack_type); // in bytes
         const auto div_8 = 8 / num_bytes_in_dtype;
         const auto lz = !limits[2] ? div_8 : std::clamp(div_8, static_cast<decltype(limits[2])>(1), limits[2]);
@@ -558,24 +496,21 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @note GPU devices benefit from larger work-groups (e.g., 256, 512, 1024)
      * @note All dimensions are powers of 2 for optimal hardware utilization
      */
-    [[nodiscard]] sycl::range<3> compute_optimal_local_range_3d_for_gpu(const sycl::range<3> &limits = {0, 0,
-                                                                                                        0}) const {
+    [[nodiscard]] sycl::range<3> compute_optimal_local_range_3d_for_gpu(const sycl::range<3> &limits = {0, 0, 0}) const {
         const auto log_2_max_work_group_size = static_cast<std::uint8_t>(std::log2(max_work_group_size));
         auto remaining_budget = log_2_max_work_group_size;
 
-        const auto target_x = !limits[0] ? num_events_
-                                         : std::clamp(static_cast<decltype(limits[0])>(num_events_),
-                                                      static_cast<decltype(limits[0])>(1), limits[0]);
+        const auto target_x =
+            !limits[0] ? num_events_ : std::clamp(static_cast<decltype(limits[0])>(num_events_), static_cast<decltype(limits[0])>(1), limits[0]);
         const auto hw_limited_target_x = std::clamp(target_x, target_x, max_work_item_sizes_3d[0]);
         const auto log_2_rounded_x = static_cast<std::uint8_t>(std::log2(closest_power_of_2(hw_limited_target_x)));
         const auto log2_local_x = std::min<std::uint8_t>(log_2_rounded_x, remaining_budget); // between 0 and 10,13
 
         remaining_budget = remaining_budget - log2_local_x; // between 0 and 10,13
 
-        const auto target_y = !limits[1]
-                                  ? bitpack_buffer_shape_.batch_size
-                                  : std::clamp(static_cast<decltype(limits[1])>(bitpack_buffer_shape_.batch_size),
-                                               static_cast<decltype(limits[1])>(1), limits[1]);
+        const auto target_y =
+            !limits[1] ? bitpack_buffer_shape_.batch_size
+                       : std::clamp(static_cast<decltype(limits[1])>(bitpack_buffer_shape_.batch_size), static_cast<decltype(limits[1])>(1), limits[1]);
         const auto hw_limited_target_y = std::clamp(target_y, target_y, max_work_item_sizes_3d[1]);
         const auto log_2_rounded_y = static_cast<std::uint8_t>(std::log2(closest_power_of_2(hw_limited_target_y)));
         const auto log2_local_y = std::min<std::uint8_t>(log_2_rounded_y, remaining_budget); // between 0 and 10,13
@@ -584,8 +519,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
 
         const auto target_z =
             !limits[2] ? bitpack_buffer_shape_.bitpacks_per_batch
-                       : std::clamp(static_cast<decltype(limits[2])>(bitpack_buffer_shape_.bitpacks_per_batch),
-                                    static_cast<decltype(limits[2])>(1), limits[2]);
+                       : std::clamp(static_cast<decltype(limits[2])>(bitpack_buffer_shape_.bitpacks_per_batch), static_cast<decltype(limits[2])>(1), limits[2]);
         const auto hw_limited_target_z = std::clamp(target_z, target_z, max_work_item_sizes_3d[2]);
         const auto log_2_rounded_z = static_cast<std::uint8_t>(std::log2(closest_power_of_2(hw_limited_target_z)));
         const auto log2_local_z = std::min<std::uint8_t>(log_2_rounded_z, remaining_budget); // between 0 and 10,13
@@ -620,4 +554,4 @@ template <typename size_type, typename bitpack_type> struct working_set {
         return local_range;
     }
 };
-} // namespace scram::mc
+} // namespace fuzzybits::mc

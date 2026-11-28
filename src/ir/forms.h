@@ -63,55 +63,41 @@ struct form_info final {
 
 [[nodiscard]] inline auto robdd() -> api::form_id { return api::form_id("ir.robdd"); }
 
-[[nodiscard]] inline auto probabilistic_boolean_dag() -> api::form_id {
-    return api::form_id("ir.probabilistic_boolean_dag");
-}
+[[nodiscard]] inline auto probabilistic_boolean_dag() -> api::form_id { return api::form_id("ir.probabilistic_boolean_dag"); }
 
-[[nodiscard]] inline auto probabilistic_risk_model() -> api::form_id {
-    return api::form_id("ir.probabilistic_risk_model");
-}
+[[nodiscard]] inline auto probabilistic_risk_model() -> api::form_id { return api::form_id("ir.probabilistic_risk_model"); }
 
 [[nodiscard]] inline auto known_form_infos() -> std::span<form_info const> {
     static const std::array infos{
-        form_info{bool_dag(), "Boolean DAG",
-                  "A Boolean directed acyclic graph with Boolean-valued nodes and target roots."},
-        form_info{
-            probabilistic_boolean_dag(), "Probabilistic Boolean DAG",
-            "A Boolean DAG with probability-bearing leaves or side tables sufficient for probabilistic analysis."},
+        form_info{bool_dag(), "Boolean DAG", "A Boolean directed acyclic graph with Boolean-valued nodes and target roots."},
+        form_info{probabilistic_boolean_dag(), "Probabilistic Boolean DAG",
+                  "A Boolean DAG with probability-bearing leaves or side tables sufficient for probabilistic analysis."},
         form_info{probabilistic_risk_model(), "Probabilistic Risk Model",
                   "A domain PRA model with fault trees, event trees, initiators, hazards, systems, rules, and "
                   "projection identity."},
         form_info{nnf(), "NNF", "Negation normal form; negation is pushed to leaves in a Boolean representation."},
-        form_info{xag(), "XAG",
-                  "XOR-AND graph; a Boolean DAG over XOR, AND, constants, inputs, and edge or leaf polarity."},
-        form_info{flat_nnf(), "f-NNF",
-                  "Flat negation normal form; a flattened NNF variant suitable for CNF/DNF-style products."},
-        form_info{dnnf(), "DNNF",
-                  "Decomposable negation normal form; conjunction children are defined over disjoint variable sets."},
-        form_info{deterministic_nnf(), "d-NNF",
-                  "Deterministic negation normal form; disjunction children are mutually exclusive."},
+        form_info{xag(), "XAG", "XOR-AND graph; a Boolean DAG over XOR, AND, constants, inputs, and edge or leaf polarity."},
+        form_info{flat_nnf(), "f-NNF", "Flat negation normal form; a flattened NNF variant suitable for CNF/DNF-style products."},
+        form_info{dnnf(), "DNNF", "Decomposable negation normal form; conjunction children are defined over disjoint variable sets."},
+        form_info{deterministic_nnf(), "d-NNF", "Deterministic negation normal form; disjunction children are mutually exclusive."},
         form_info{aig(), "AIG", "AND-inverter graph; a Boolean DAG represented with AND nodes and inversion."},
         form_info{rnf(), "RNF", "Reed-Muller normal form; XOR-polynomial representation over Boolean variables."},
         form_info{fprm(), "FPRM", "Fixed-polarity Reed-Muller form; RNF with a fixed variable polarity assignment."},
         form_info{cnf(), "CNF", "Conjunctive normal form; a conjunction of clauses."},
         form_info{dnf(), "DNF", "Disjunctive normal form; a disjunction of conjunction terms."},
         form_info{smooth_dnnf(), "s-DNNF", "Smooth DNNF; every disjunction child mentions the same variable set."},
-        form_info{deterministic_dnnf(), "d-DNNF",
-                  "Deterministic DNNF; DNNF with mutually exclusive disjunction children."},
-        form_info{pi(), "PI",
-                  "Prime implicants; irredundant implicant terms that cannot be weakened without losing implication."},
+        form_info{deterministic_dnnf(), "d-DNNF", "Deterministic DNNF; DNNF with mutually exclusive disjunction children."},
+        form_info{pi(), "PI", "Prime implicants; irredundant implicant terms that cannot be weakened without losing implication."},
         form_info{implicant_cover(), "IP/BCF", "Implicants or Boolean cover form; a cover-style set of product terms."},
         form_info{pprm(), "PPRM", "Positive-polarity Reed-Muller form; FPRM with all variables in positive polarity."},
         form_info{epi(), "EPI", "Essential prime implicants; prime implicants required by every complete cover."},
         form_info{essential_implicant(), "EIP", "Essential implicants; implicants required by every relevant cover."},
-        form_info{smooth_deterministic_dnnf(), "sd-DNNF",
-                  "Smooth deterministic DNNF; both smooth and deterministic DNNF."},
+        form_info{smooth_deterministic_dnnf(), "sd-DNNF", "Smooth deterministic DNNF; both smooth and deterministic DNNF."},
         form_info{bdd(), "BDD", "Binary decision diagram; a decision-DAG representation over Boolean variables."},
         form_info{free_bdd(), "f-BDD", "Free BDD; a BDD where each variable is tested at most once along any path."},
         form_info{obdd(), "OBDD", "Ordered BDD; a BDD respecting a single variable order on every path."},
         form_info{sdd(), "SDD", "Sentential decision diagram; a canonical decomposable form relative to a vtree."},
-        form_info{robdd(), "ROBDD",
-                  "Reduced ordered BDD; an OBDD with redundant tests and duplicate subgraphs eliminated."},
+        form_info{robdd(), "ROBDD", "Reduced ordered BDD; an OBDD with redundant tests and duplicate subgraphs eliminated."},
     };
     return infos;
 }

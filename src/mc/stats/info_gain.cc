@@ -5,12 +5,10 @@
 
 #include <boost/math/special_functions/digamma.hpp>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 namespace {
 
-[[nodiscard]] double ln_beta(const double a, const double b) {
-    return std::lgamma(a) + std::lgamma(b) - std::lgamma(a + b);
-}
+[[nodiscard]] double ln_beta(const double a, const double b) { return std::lgamma(a) + std::lgamma(b) - std::lgamma(a + b); }
 
 } // namespace
 
@@ -28,13 +26,11 @@ double beta_entropy_bits(const double alpha, const double beta) {
     return beta_entropy_nats(alpha, beta) / LN2;
 }
 
-double information_gain_bits(const double alpha_prev, const double beta_prev, const double alpha_new,
-                             const double beta_new) {
+double information_gain_bits(const double alpha_prev, const double beta_prev, const double alpha_new, const double beta_new) {
     return beta_entropy_bits(alpha_prev, beta_prev) - beta_entropy_bits(alpha_new, beta_new);
 }
 
-double info_gain_bits_per_second(const double alpha_prev, const double beta_prev, const double alpha_new,
-                                 const double beta_new, const double seconds) {
+double info_gain_bits_per_second(const double alpha_prev, const double beta_prev, const double alpha_new, const double beta_new, const double seconds) {
     const double ig = information_gain_bits(alpha_prev, beta_prev, alpha_new, beta_new);
     return (seconds > 0.0) ? ig / seconds : std::numeric_limits<double>::quiet_NaN();
 }
@@ -51,4 +47,4 @@ double info_gain::add_batch(const std::size_t successes, const std::size_t failu
     return last_bits_;
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

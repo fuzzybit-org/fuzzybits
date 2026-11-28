@@ -248,10 +248,8 @@ class Element : public ContainerElement, private boost::noncopyable {
 ///      while it is in the container.
 template <typename T>
 using ElementTable =
-    boost::multi_index_container<T,
-                                 boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
-                                     boost::multi_index::const_mem_fun<Element, std::string_view, &Element::name_view>,
-                                     std::hash<std::string_view>>>>;
+    boost::multi_index_container<T, boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
+                                        boost::multi_index::const_mem_fun<Element, std::string_view, &Element::name_view>, std::hash<std::string_view>>>>;
 
 /// Role, access attributes for elements.
 enum class RoleSpecifier : std::uint8_t { kPublic, kPrivate };
@@ -346,9 +344,8 @@ class Id : public Element, public Role {
 /// @pre The element IDs are not modified
 ///      while it is in the container.
 template <typename T>
-using IdTable = boost::multi_index_container<
-    T, boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
-           boost::multi_index::const_mem_fun<Id, std::string_view, &Id::id_view>, std::hash<std::string_view>>>>;
+using IdTable = boost::multi_index_container<T, boost::multi_index::indexed_by<boost::multi_index::hashed_unique<
+                                                    boost::multi_index::const_mem_fun<Id, std::string_view, &Id::id_view>, std::hash<std::string_view>>>>;
 
 /// Wraps the element container tables into ranges of plain references
 /// to hide the memory smart or raw pointers.
@@ -452,8 +449,7 @@ template <class Self, class T, bool Ownership = true, bool ById = std::is_base_o
             return **it;
 
         SCRAM_THROW(UndefinedElement()) << errinfo_element(std::string(id), T::kTypeString)
-                                        << errinfo_container(Id::unique_name(static_cast<const Self &>(*this)),
-                                                             Self::kTypeString);
+                                        << errinfo_container(Id::unique_name(static_cast<const Self &>(*this)), Self::kTypeString);
     }
     T &Get(const key_type &id) { return const_cast<T &>(std::as_const(*this).Get(id)); }
     /// @}
@@ -467,9 +463,8 @@ template <class Self, class T, bool Ownership = true, bool ById = std::is_base_o
     void Add(Pointer element) {
         T &stable_ref = *element; // The pointer will be moved later.
         if (table_.insert(std::move(element)).second == false) {
-            SCRAM_THROW(DuplicateElementError())
-                << errinfo_element(Id::unique_name(stable_ref), T::kTypeString)
-                << errinfo_container(Id::unique_name(static_cast<Self &>(*this)), Self::kTypeString);
+            SCRAM_THROW(DuplicateElementError()) << errinfo_element(Id::unique_name(stable_ref), T::kTypeString)
+                                                 << errinfo_container(Id::unique_name(static_cast<Self &>(*this)), Self::kTypeString);
         }
         stable_ref.container(static_cast<const Self *>(this));
     }
@@ -521,8 +516,7 @@ namespace detail { // Composite container helper facilities.
 /// Implementation of container_of to deal w/ empty type list.
 template <class E, class T, class... Ts> struct container_of_impl {
     /// The type of the container with elements of type T.
-    using type =
-        std::conditional_t<std::is_same_v<E, typename T::ElementType>, T, typename container_of_impl<E, Ts...>::type>;
+    using type = std::conditional_t<std::is_same_v<E, typename T::ElementType>, T, typename container_of_impl<E, Ts...>::type>;
 };
 
 /// Specialization for an empty type list.
@@ -576,12 +570,10 @@ template <typename... Ts> class Composite : public Ts... {
     ///
     /// @throws UndefinedElement  The element is not found.
     /// @{
-    template <class T, class ContainerType = typename detail::container_of<T, Ts...>::type>
-    const T &Get(const typename ContainerType::key_type &id) const {
+    template <class T, class ContainerType = typename detail::container_of<T, Ts...>::type> const T &Get(const typename ContainerType::key_type &id) const {
         return ContainerType::Get(id);
     }
-    template <class T, class ContainerType = typename detail::container_of<T, Ts...>::type>
-    T &Get(const typename ContainerType::key_type &id) {
+    template <class T, class ContainerType = typename detail::container_of<T, Ts...>::type> T &Get(const typename ContainerType::key_type &id) {
         return ContainerType::Get(id);
     }
     /// @}

@@ -50,9 +50,7 @@ void Print(const ProductContainer &products) {
 
     using LiteralPtr = std::pair<bool, const mef::BasicEvent *>;
     struct Comparator {
-        bool operator()(const LiteralPtr &lhs, const LiteralPtr &rhs) const {
-            return lhs.second->id() < rhs.second->id();
-        }
+        bool operator()(const LiteralPtr &lhs, const LiteralPtr &rhs) const { return lhs.second->id() < rhs.second->id(); }
     };
 
     using ProductSet = boost::container::flat_set<LiteralPtr, Comparator>;
@@ -85,8 +83,7 @@ void Print(const ProductContainer &products) {
     std::cerr << std::endl;
 }
 
-ProductContainer::ProductContainer(const Zbdd &products, const Pdag &graph)
-    : products_(products), graph_(graph), size_(0) {
+ProductContainer::ProductContainer(const Zbdd &products, const Pdag &graph) : products_(products), graph_(graph), size_(0) {
     Pdag::IndexMap<bool> filter(graph_.basic_events().size());
     for (const std::vector<int> &product : products_) {
         int order_index = product.empty() ? 0 : product.size() - 1;
@@ -147,8 +144,7 @@ void FaultTreeAnalysis::Store(const Zbdd &products, const Pdag &graph) {
 
 #ifndef NDEBUG
     for (const Product &product : *products_)
-        assert(product.size() <= Analysis::settings().limit_order() &&
-               "Miscalculated product sets with larger-than-required order.");
+        assert(product.size() <= Analysis::settings().limit_order() && "Miscalculated product sets with larger-than-required order.");
 
     if (Analysis::settings().print)
         Print(*products_);

@@ -55,8 +55,7 @@ double p_exp(double p_mu, double p_lambda, double mu, double lambda, double time
 
 } // namespace
 
-Exponential::Exponential(Expression *lambda, Expression *t)
-    : ExpressionFormula({lambda, t}), lambda_(*lambda), time_(*t) {}
+Exponential::Exponential(Expression *lambda, Expression *t) : ExpressionFormula({lambda, t}), lambda_(*lambda), time_(*t) {}
 
 void Exponential::Validate() const {
     EnsureNonNegative(&lambda_, "rate of failure");
@@ -90,23 +89,18 @@ void Weibull::Validate() const {
     EnsureNonNegative(&time_, "mission time");
 }
 
-double Weibull::Compute(double alpha, double beta, double t0, double time) {
-    return time <= t0 ? 0 : 1 - std::exp(-std::pow((time - t0) / alpha, beta));
-}
+double Weibull::Compute(double alpha, double beta, double t0, double time) { return time <= t0 ? 0 : 1 - std::exp(-std::pow((time - t0) / alpha, beta)); }
 
 PeriodicTest::PeriodicTest(Expression *lambda, Expression *tau, Expression *theta, Expression *time)
     : Expression({lambda, tau, theta, time}), flavor_(new PeriodicTest::InstantRepair(lambda, tau, theta, time)) {}
 
 PeriodicTest::PeriodicTest(Expression *lambda, Expression *mu, Expression *tau, Expression *theta, Expression *time)
-    : Expression({lambda, mu, tau, theta, time}), flavor_(new PeriodicTest::InstantTest(lambda, mu, tau, theta, time)) {
-}
+    : Expression({lambda, mu, tau, theta, time}), flavor_(new PeriodicTest::InstantTest(lambda, mu, tau, theta, time)) {}
 
-PeriodicTest::PeriodicTest(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau,
-                           Expression *theta, Expression *gamma, Expression *test_duration,
-                           Expression *available_at_test, Expression *sigma, Expression *omega, Expression *time)
+PeriodicTest::PeriodicTest(Expression *lambda, Expression *lambda_test, Expression *mu, Expression *tau, Expression *theta, Expression *gamma,
+                           Expression *test_duration, Expression *available_at_test, Expression *sigma, Expression *omega, Expression *time)
     : Expression({lambda, lambda_test, mu, tau, theta, gamma, test_duration, available_at_test, sigma, omega, time}),
-      flavor_(new PeriodicTest::Complete(lambda, lambda_test, mu, tau, theta, gamma, test_duration, available_at_test,
-                                         sigma, omega, time)) {}
+      flavor_(new PeriodicTest::Complete(lambda, lambda_test, mu, tau, theta, gamma, test_duration, available_at_test, sigma, omega, time)) {}
 
 void PeriodicTest::InstantRepair::Validate() const {
     EnsurePositive(&lambda_, "rate of failure");
@@ -142,13 +136,9 @@ double PeriodicTest::InstantRepair::Compute(double lambda, double tau, double th
     return p_exp(lambda, time_after_test ? time_after_test : tau);
 }
 
-double PeriodicTest::InstantRepair::value() {
-    return Compute(lambda_.value(), tau_.value(), theta_.value(), time_.value());
-}
+double PeriodicTest::InstantRepair::value() { return Compute(lambda_.value(), tau_.value(), theta_.value(), time_.value()); }
 
-double PeriodicTest::InstantRepair::Sample() {
-    return Compute(lambda_.Sample(), tau_.Sample(), theta_.Sample(), time_.Sample());
-}
+double PeriodicTest::InstantRepair::Sample() { return Compute(lambda_.Sample(), tau_.Sample(), theta_.Sample(), time_.Sample()); }
 
 double PeriodicTest::InstantTest::Compute(double lambda, double mu, double tau, double theta, double time) {
     if (time <= theta) // No test has been performed.
@@ -162,9 +152,7 @@ double PeriodicTest::InstantTest::Compute(double lambda, double mu, double tau, 
     };
 
     double prob = p_exp(lambda, theta); // The current rolling probability.
-    auto p_period = [&prob, &carry](double p_lambda, double p_mu, double t) {
-        return prob * carry(p_lambda, p_mu, t) + p_lambda;
-    };
+    auto p_period = [&prob, &carry](double p_lambda, double p_mu, double t) { return prob * carry(p_lambda, p_mu, t) + p_lambda; };
 
     double delta = time - theta;
     int num_periods = delta / tau;
@@ -176,17 +164,12 @@ double PeriodicTest::InstantTest::Compute(double lambda, double mu, double tau, 
     return p_period(p_exp(lambda, time_after_test), p_exp(mu, time_after_test), time_after_test);
 }
 
-double PeriodicTest::InstantTest::value() {
-    return Compute(lambda_.value(), mu_.value(), tau_.value(), theta_.value(), time_.value());
-}
+double PeriodicTest::InstantTest::value() { return Compute(lambda_.value(), mu_.value(), tau_.value(), theta_.value(), time_.value()); }
 
-double PeriodicTest::InstantTest::Sample() {
-    return Compute(lambda_.Sample(), mu_.Sample(), tau_.Sample(), theta_.Sample(), time_.Sample());
-}
+double PeriodicTest::InstantTest::Sample() { return Compute(lambda_.Sample(), mu_.Sample(), tau_.Sample(), theta_.Sample(), time_.Sample()); }
 
-double PeriodicTest::Complete::Compute(double lambda, double lambda_test, double mu, double tau, double theta,
-                                       double gamma, double test_duration, bool available_at_test, double sigma,
-                                       double omega, double time) {
+double PeriodicTest::Complete::Compute(double lambda, double lambda_test, double mu, double tau, double theta, double gamma, double test_duration,
+                                       bool available_at_test, double sigma, double omega, double time) {
     if (time <= theta) // No test has been performed.
         return p_exp(lambda, time);
 
@@ -195,9 +178,7 @@ double PeriodicTest::Complete::Compute(double lambda, double lambda_test, double
     double p_available = 1 - p_fail;
 
     // Failure after repair.
-    auto p_mu_lambda = [&](double p_mu, double p_lambda, double t) {
-        return p_mu * omega + (1 - omega) * p_exp(p_mu, p_lambda, mu, lambda, t);
-    };
+    auto p_mu_lambda = [&](double p_mu, double p_lambda, double t) { return p_mu * omega + (1 - omega) * p_exp(p_mu, p_lambda, mu, lambda, t); };
 
     auto p_test = [&](double p_lambda_test, double p_mu, double p_lambda, double t, bool available = true) {
         double p_fail_transient = p_fail + p_available * (gamma + (1 - gamma) * p_lambda_test);
@@ -236,8 +217,7 @@ double PeriodicTest::Complete::Compute(double lambda, double lambda_test, double
 
     double time_after_test = delta - num_periods * tau;
     if (time_after_test <= test_duration) {
-        p_test(p_exp(lambda_test, time_after_test), p_exp(mu, time_after_test), p_exp(lambda, time_after_test),
-               time_after_test, available_at_test);
+        p_test(p_exp(lambda_test, time_after_test), p_exp(mu, time_after_test), p_exp(lambda, time_after_test), time_after_test, available_at_test);
 
     } else {
         p_test(p_lambda_test, p_mu_at_test, p_lambda_at_test, test_duration);
@@ -249,14 +229,13 @@ double PeriodicTest::Complete::Compute(double lambda, double lambda_test, double
 }
 
 double PeriodicTest::Complete::value() {
-    return Compute(lambda_.value(), lambda_test_.value(), mu_.value(), tau_.value(), theta_.value(), gamma_.value(),
-                   test_duration_.value(), available_at_test_.value(), sigma_.value(), omega_.value(), time_.value());
+    return Compute(lambda_.value(), lambda_test_.value(), mu_.value(), tau_.value(), theta_.value(), gamma_.value(), test_duration_.value(),
+                   available_at_test_.value(), sigma_.value(), omega_.value(), time_.value());
 }
 
 double PeriodicTest::Complete::Sample() {
-    return Compute(lambda_.Sample(), lambda_test_.Sample(), mu_.Sample(), tau_.Sample(), theta_.Sample(),
-                   gamma_.Sample(), test_duration_.Sample(), available_at_test_.Sample(), sigma_.Sample(),
-                   omega_.Sample(), time_.Sample());
+    return Compute(lambda_.Sample(), lambda_test_.Sample(), mu_.Sample(), tau_.Sample(), theta_.Sample(), gamma_.Sample(), test_duration_.Sample(),
+                   available_at_test_.Sample(), sigma_.Sample(), omega_.Sample(), time_.Sample());
 }
 
 } // namespace scram::mef

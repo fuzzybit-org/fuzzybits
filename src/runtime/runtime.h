@@ -111,7 +111,7 @@ struct OriginRecord {
     std::string full_path;
 };
 
-/// Owns the reconstructed PDAG plus the MEF objects kernel_builder reads
+/// Owns the reconstructed PDAG plus the MEF objects the layer manager reads
 /// through `Pdag::basic_events()`. Special members are out-of-line because
 /// `Pdag` / `BasicEvent` / `ConstantExpression` are incomplete here.
 struct ReconstructedPdag {
@@ -151,8 +151,7 @@ void fail_next_run_after_passes(std::uint64_t passes);
 /// the in-memory compile path.
 [[nodiscard]] ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit);
 
-[[nodiscard]] std::vector<QueryResult>
-run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries, const RunOptions &options);
+[[nodiscard]] std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries, const RunOptions &options);
 
 [[nodiscard]] std::vector<QueryResult> run_pcfb(const pcfb::ir::Circuit &circuit, const RunOptions &options);
 
@@ -192,23 +191,20 @@ struct PassResult {
 /// `close()` to release USM. Not thread-safe.
 class Session {
   public:
-    Session(ReconstructedPdag reconstructed, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0,
-            std::vector<std::string> watch = {}, std::size_t num_trials = 0);
+    Session(ReconstructedPdag reconstructed, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
+            std::size_t num_trials = 0);
     Session(Session &&) noexcept;
     Session &operator=(Session &&) noexcept;
     ~Session();
     Session(const Session &) = delete;
     Session &operator=(const Session &) = delete;
 
-    static Session from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend = {},
-                                std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-                                std::size_t num_trials = 0);
-    static Session from_bytes(std::span<const std::byte> bytes, const std::string &backend = {},
-                              std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-                              std::size_t num_trials = 0);
-    static Session from_path(const std::filesystem::path &path, const std::string &backend = {},
-                             std::size_t requested_trials_per_pass = 0, std::vector<std::string> watch = {},
-                             std::size_t num_trials = 0);
+    static Session from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0,
+                                std::vector<std::string> watch = {}, std::size_t num_trials = 0);
+    static Session from_bytes(std::span<const std::byte> bytes, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0,
+                              std::vector<std::string> watch = {}, std::size_t num_trials = 0);
+    static Session from_path(const std::filesystem::path &path, const std::string &backend = {}, std::size_t requested_trials_per_pass = 0,
+                             std::vector<std::string> watch = {}, std::size_t num_trials = 0);
 
     [[nodiscard]] scram::core::Pdag &pdag();
     [[nodiscard]] const scram::core::Pdag &pdag() const;
@@ -219,8 +215,7 @@ class Session {
 
     /// Resolve extra watch names (id / name / full_path / decimal PDAG index)
     /// against the reconstructed graph. Unknown names throw `RuntimeError`.
-    [[nodiscard]] static std::vector<int> resolve_watch(const ReconstructedPdag &reconstructed,
-                                                        const std::vector<std::string> &names);
+    [[nodiscard]] static std::vector<int> resolve_watch(const ReconstructedPdag &reconstructed, const std::vector<std::string> &names);
 
     /// Run `passes` device passes (at least 1), waiting once at the end, and
     /// return the cumulative tallies.

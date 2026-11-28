@@ -37,9 +37,9 @@ namespace scram::core {
 /// Runs assertions on ZBDD structure.
 ///
 /// @param[in] full  A flag for full test including submodules.
-#define CHECK_ZBDD(full)                                                                                               \
-    ClearMarks(root_, full);                                                                                           \
-    TestStructure(root_, full);                                                                                        \
+#define CHECK_ZBDD(full)                                                                                                                                       \
+    ClearMarks(root_, full);                                                                                                                                   \
+    TestStructure(root_, full);                                                                                                                                \
     ClearMarks(root_, full)
 #else
 #define CHECK_ZBDD(full) ///< No checks on release.
@@ -98,11 +98,10 @@ void Zbdd::Analyze(const Pdag *graph) {
 }
 
 Zbdd::Zbdd(const Settings &settings, bool coherent, int module_index)
-    : kBase_(new Terminal<SetNode>(true)), kEmpty_(new Terminal<SetNode>(false)), kSettings_(settings), root_(kEmpty_),
-      coherent_(coherent), module_index_(module_index), set_id_(2) {}
+    : kBase_(new Terminal<SetNode>(true)), kEmpty_(new Terminal<SetNode>(false)), kSettings_(settings), root_(kEmpty_), coherent_(coherent),
+      module_index_(module_index), set_id_(2) {}
 
-Zbdd::Zbdd(const Bdd::Function &module, bool coherent, Bdd *bdd, const Settings &settings, int module_index)
-    : Zbdd(settings, coherent, module_index) {
+Zbdd::Zbdd(const Bdd::Function &module, bool coherent, Bdd *bdd, const Settings &settings, int module_index) : Zbdd(settings, coherent, module_index) {
     CLOCK(init_time);
     LOG(DEBUG2) << "Creating ZBDD from BDD: G" << module_index;
     LOG(DEBUG4) << "Limit on product order: " << settings.limit_order();
@@ -180,8 +179,7 @@ Zbdd::Zbdd(const Gate &gate, const Settings &settings) : Zbdd(settings, gate.coh
 
 #undef CHECK_ZBDD
 
-SetNodePtr Zbdd::FindOrAddVertex(int index, const VertexPtr &high, const VertexPtr &low, int order, bool module,
-                                 bool coherent) {
+SetNodePtr Zbdd::FindOrAddVertex(int index, const VertexPtr &high, const VertexPtr &low, int order, bool module, bool coherent) {
     assert(high->id() != low->id() && "Reduction failure.");
 
     SetNodeWeakPtr &in_table = unique_table_.FindOrAdd(index, high->id(), low->id());
@@ -210,8 +208,7 @@ SetNodePtr Zbdd::FindOrAddVertex(const Gate &gate, const VertexPtr &high, const 
     return FindOrAddVertex(gate.index(), high, low, gate.order(), gate.module(), gate.coherent());
 }
 
-Zbdd::VertexPtr Zbdd::GetReducedVertex(const ItePtr &ite, bool complement, const VertexPtr &high,
-                                       const VertexPtr &low) {
+Zbdd::VertexPtr Zbdd::GetReducedVertex(const ItePtr &ite, bool complement, const VertexPtr &high, const VertexPtr &low) {
     if (high->id() == low->id())
         return low;
     if (high->terminal() && !Terminal<SetNode>::Ref(high).value())
@@ -219,8 +216,7 @@ Zbdd::VertexPtr Zbdd::GetReducedVertex(const ItePtr &ite, bool complement, const
     if (low->terminal() && Terminal<SetNode>::Ref(low).value())
         return low;
     assert(ite->index() > 0 && "BDD indices are never negative.");
-    return FindOrAddVertex(complement ? -ite->index() : ite->index(), high, low, ite->order(), ite->module(),
-                           ite->coherent());
+    return FindOrAddVertex(complement ? -ite->index() : ite->index(), high, low, ite->order(), ite->module(), ite->coherent());
 }
 
 Zbdd::VertexPtr Zbdd::GetReducedVertex(const SetNodePtr &node, const VertexPtr &high, const VertexPtr &low) {
@@ -235,8 +231,7 @@ Zbdd::VertexPtr Zbdd::GetReducedVertex(const SetNodePtr &node, const VertexPtr &
     return FindOrAddVertex(node, high, low);
 }
 
-Zbdd::VertexPtr Zbdd::ConvertBdd(const Bdd::VertexPtr &vertex, bool complement, Bdd *bdd_graph, int limit_order,
-                                 PairTable<VertexPtr> *ites) {
+Zbdd::VertexPtr Zbdd::ConvertBdd(const Bdd::VertexPtr &vertex, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites) {
     if (vertex->terminal())
         return complement ? kEmpty_ : kBase_;
     VertexPtr &result = (*ites)[{complement ? -vertex->id() : vertex->id(), limit_order}];
@@ -251,8 +246,7 @@ Zbdd::VertexPtr Zbdd::ConvertBdd(const Bdd::VertexPtr &vertex, bool complement, 
     return result;
 }
 
-Zbdd::VertexPtr Zbdd::ConvertBdd(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order,
-                                 PairTable<VertexPtr> *ites) {
+Zbdd::VertexPtr Zbdd::ConvertBdd(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites) {
     if (ite->module() && !ite->coherent())
         return ConvertBddPrimeImplicants(ite, complement, bdd_graph, limit_order, ites);
     VertexPtr low = ConvertBdd(ite->low(), ite->complement_edge() ^ complement, bdd_graph, limit_order, ites);
@@ -265,8 +259,7 @@ Zbdd::VertexPtr Zbdd::ConvertBdd(const ItePtr &ite, bool complement, Bdd *bdd_gr
     return GetReducedVertex(ite, false, high, low);
 }
 
-Zbdd::VertexPtr Zbdd::ConvertBddPrimeImplicants(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order,
-                                                PairTable<VertexPtr> *ites) {
+Zbdd::VertexPtr Zbdd::ConvertBddPrimeImplicants(const ItePtr &ite, bool complement, Bdd *bdd_graph, int limit_order, PairTable<VertexPtr> *ites) {
     Bdd::Function common = Bdd::Consensus()(bdd_graph, ite, complement);
     VertexPtr consensus = ConvertBdd(common.vertex, common.complement, bdd_graph, limit_order, ites);
     if (limit_order == 0) { // Cut-off on the product order.
@@ -351,13 +344,11 @@ template <> Zbdd::VertexPtr Zbdd::Apply<kAnd>(const SetNodePtr &arg_one, const S
     int limit_high = limit_order - !MayBeUnity(*arg_one);
     if (arg_one->order() == arg_two->order() && arg_one->index() == arg_two->index()) { // The same variable.
         // (x*f1 + f0) * (x*g1 + g0) = x*(f1*(g1 + g0) + f0*g1) + f0*g0
-        high = Apply<kOr>(
-            Apply<kAnd>(arg_one->high(), Apply<kOr>(arg_two->high(), arg_two->low(), limit_high), limit_high),
-            Apply<kAnd>(arg_one->low(), arg_two->high(), limit_high), limit_high);
+        high = Apply<kOr>(Apply<kAnd>(arg_one->high(), Apply<kOr>(arg_two->high(), arg_two->low(), limit_high), limit_high),
+                          Apply<kAnd>(arg_one->low(), arg_two->high(), limit_high), limit_high);
         low = Apply<kAnd>(arg_one->low(), arg_two->low(), limit_order);
     } else {
-        assert((arg_one->order() < arg_two->order() || arg_one->index() > arg_two->index()) &&
-               "Ordering contract failed.");
+        assert((arg_one->order() < arg_two->order() || arg_one->index() > arg_two->index()) && "Ordering contract failed.");
         if (arg_one->order() == arg_two->order()) {
             // (x*f1 + f0) * (~x*g1 + g0) = x*f1*g0 + f0*(~x*g1 + g0)
             high = Apply<kAnd>(arg_one->high(), arg_two->low(), limit_high);
@@ -415,8 +406,7 @@ template <> Zbdd::VertexPtr Zbdd::Apply<kOr>(const SetNodePtr &arg_one, const Se
         high = Apply<kOr>(arg_one->high(), arg_two->high(), limit_high);
         low = Apply<kOr>(arg_one->low(), arg_two->low(), limit_order);
     } else {
-        assert((arg_one->order() < arg_two->order() || arg_one->index() > arg_two->index()) &&
-               "Ordering contract failed.");
+        assert((arg_one->order() < arg_two->order() || arg_one->index() > arg_two->index()) && "Ordering contract failed.");
         if (arg_one->order() == arg_two->order()) {
             if (arg_one->high()->terminal() && arg_two->high()->terminal())
                 return kBase_;
@@ -478,8 +468,7 @@ Zbdd::VertexPtr Zbdd::EliminateComplements(const VertexPtr &vertex, std::unorder
     if (result)
         return result;
     SetNodePtr node = SetNode::Ptr(vertex);
-    result = EliminateComplement(node, EliminateComplements(node->high(), wide_results),
-                                 EliminateComplements(node->low(), wide_results));
+    result = EliminateComplement(node, EliminateComplements(node->high(), wide_results), EliminateComplements(node->low(), wide_results));
     return result;
 }
 
@@ -507,8 +496,7 @@ Zbdd::VertexPtr Zbdd::EliminateConstantModules(const VertexPtr &vertex, std::uno
     if (result)
         return result;
     SetNodePtr node = SetNode::Ptr(vertex);
-    result = EliminateConstantModule(node, EliminateConstantModules(node->high(), results),
-                                     EliminateConstantModules(node->low(), results));
+    result = EliminateConstantModule(node, EliminateConstantModules(node->high(), results), EliminateConstantModules(node->low(), results));
     return result;
 }
 
@@ -557,8 +545,7 @@ Zbdd::VertexPtr Zbdd::Subsume(const VertexPtr &high, const VertexPtr &low) {
 
     SetNodePtr high_node = SetNode::Ptr(high);
     SetNodePtr low_node = SetNode::Ptr(low);
-    if (high_node->order() > low_node->order() ||
-        (high_node->order() == low_node->order() && high_node->index() < low_node->index())) {
+    if (high_node->order() > low_node->order() || (high_node->order() == low_node->order() && high_node->index() < low_node->index())) {
         computed = Subsume(high, low_node->low());
         return computed;
     }
@@ -570,8 +557,7 @@ Zbdd::VertexPtr Zbdd::Subsume(const VertexPtr &high, const VertexPtr &low) {
         subhigh = Subsume(subhigh, low_node->low());
         sublow = Subsume(high_node->low(), low_node->low());
     } else {
-        assert(high_node->order() < low_node->order() ||
-               (high_node->order() == low_node->order() && high_node->index() > low_node->index()));
+        assert(high_node->order() < low_node->order() || (high_node->order() == low_node->order() && high_node->index() > low_node->index()));
         subhigh = Subsume(high_node->high(), low);
         sublow = Subsume(high_node->low(), low);
     }
@@ -660,8 +646,7 @@ void Zbdd::ApplySubstitutions(const std::vector<Pdag::Substitution> &substitutio
         std::vector<int> to_add;
         std::vector<int> to_remove;
         for (const Pdag::Substitution &substitution : substitutions) {
-            if (ext::all_of(substitution.hypothesis,
-                            [&product](int id) { return boost::find(product, id) != product.end(); })) {
+            if (ext::all_of(substitution.hypothesis, [&product](int id) { return boost::find(product, id) != product.end(); })) {
                 to_remove.insert(to_remove.end(), substitution.source.begin(), substitution.source.end());
                 if (substitution.target)
                     to_add.push_back(substitution.target);
@@ -671,12 +656,10 @@ void Zbdd::ApplySubstitutions(const std::vector<Pdag::Substitution> &substitutio
         for (int id : product) {
             if (boost::find(to_remove, id) != to_remove.end())
                 continue;
-            new_product =
-                Apply<kAnd>(new_product, FindOrAddVertex(id, kBase_, kEmpty_, std::abs(id)), kSettings_.limit_order());
+            new_product = Apply<kAnd>(new_product, FindOrAddVertex(id, kBase_, kEmpty_, std::abs(id)), kSettings_.limit_order());
         }
         for (int id : to_add) {
-            new_product =
-                Apply<kAnd>(new_product, FindOrAddVertex(id, kBase_, kEmpty_, std::abs(id)), kSettings_.limit_order());
+            new_product = Apply<kAnd>(new_product, FindOrAddVertex(id, kBase_, kEmpty_, std::abs(id)), kSettings_.limit_order());
         }
         new_root = Apply<kOr>(new_root, new_product, kSettings_.limit_order());
     }
@@ -754,17 +737,12 @@ void Zbdd::TestStructure(const VertexPtr &vertex, bool modules) {
     assert(node.high() && node.low() && "Malformed node high/low pointers.");
     assert(!(node.high()->terminal() && !Terminal<SetNode>::Ref(node.high()).value()) && "Reduction rule failure.");
     assert((node.high()->id() != node.low()->id()) && "Minimization failure.");
-    assert(!(!node.high()->terminal() && node.order() >= SetNode::Ref(node.high()).order()) &&
-           "Ordering of nodes failed.");
-    assert(!(!node.low()->terminal() && node.order() > SetNode::Ref(node.low()).order()) &&
-           "Ordering of nodes failed.");
-    assert(!(!node.low()->terminal() && node.order() == SetNode::Ref(node.low()).order() &&
-             node.index() <= SetNode::Ref(node.low()).index()) &&
+    assert(!(!node.high()->terminal() && node.order() >= SetNode::Ref(node.high()).order()) && "Ordering of nodes failed.");
+    assert(!(!node.low()->terminal() && node.order() > SetNode::Ref(node.low()).order()) && "Ordering of nodes failed.");
+    assert(!(!node.low()->terminal() && node.order() == SetNode::Ref(node.low()).order() && node.index() <= SetNode::Ref(node.low()).index()) &&
            "Ordering of complements failed.");
-    assert(!(!node.high()->terminal() && node.minimal() && !SetNode::Ref(node.high()).minimal()) &&
-           "Non-minimal branches in minimal ZBDD.");
-    assert(!(!node.low()->terminal() && node.minimal() && !SetNode::Ref(node.low()).minimal()) &&
-           "Non-minimal branches in minimal ZBDD.");
+    assert(!(!node.high()->terminal() && node.minimal() && !SetNode::Ref(node.high()).minimal()) && "Non-minimal branches in minimal ZBDD.");
+    assert(!(!node.low()->terminal() && node.minimal() && !SetNode::Ref(node.low()).minimal()) && "Non-minimal branches in minimal ZBDD.");
     if (modules && node.module()) {
         Zbdd *module = modules_.find(node.index())->second.get();
         assert(!module->root_->terminal() && "Terminal modules must be removed.");

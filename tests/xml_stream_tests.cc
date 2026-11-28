@@ -125,14 +125,10 @@ TEST_CASE("XmlStreamTest.Full", "[xml_stream]") {
                            "  </student>\n"
                            "</root>\n";
     {
-        std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(temp_file.string().c_str(), "w"),
-                                                              &std::fclose);
+        std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(temp_file.string().c_str(), "w"), &std::fclose);
         Stream xml_stream(fp.get());
         StreamElement root = xml_stream.root("root");
-        root.SetAttribute("name", "master")
-            .SetAttribute("age", 42)
-            .SetAttribute("stamina", "0.42")
-            .SetAttribute("empty", "");
+        root.SetAttribute("name", "master").SetAttribute("age", 42).SetAttribute("stamina", "0.42").SetAttribute("empty", "");
         root.AddChild("empty");
         {
             StreamElement student = root.AddChild("student");

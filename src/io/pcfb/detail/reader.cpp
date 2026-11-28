@@ -9,6 +9,7 @@
 #include "ir/pc/op_code.h"
 #include "ir/pc/target.h"
 
+#include "pcfb/count.h"
 #include "pcfb/io.h"
 #include "pcfb/validate.h"
 #include "pcfb_generated.h"
@@ -106,6 +107,13 @@ struct NodeInfo final {
         return ir::pc::op_code::nor_gate;
     case ::pcfb::OpCode::BITWISE_XNOR:
         return ir::pc::op_code::xnor_gate;
+    // The counting ops are not gates of their own: each reads as one cardinality (count_bounds), the IR's only k-of-n
+    // form (docs/IR-PC-REQUIREMENTS.md §4).
+    case ::pcfb::OpCode::BITWISE_ATLEAST:
+    case ::pcfb::OpCode::BITWISE_ATMOST:
+    case ::pcfb::OpCode::BITWISE_EXACTLY:
+    case ::pcfb::OpCode::BITWISE_MAJORITY:
+    case ::pcfb::OpCode::BITWISE_MINORITY:
     default:
         return std::nullopt;
     }
@@ -119,23 +127,19 @@ struct NodeInfo final {
     case ::pcfb::OpCode::BITWISE_ATLEAST:
     case ::pcfb::OpCode::BITWISE_ATMOST:
     case ::pcfb::OpCode::BITWISE_EXACTLY:
+    case ::pcfb::OpCode::BITWISE_MAJORITY:
+    case ::pcfb::OpCode::BITWISE_MINORITY:
         return true;
     default:
         return gateCode(opcode).has_value();
     }
 }
 
-[[nodiscard]] auto error(std::string_view code, std::string message) -> api::diagnostic {
-    return api::make_error(std::string(code), std::move(message));
-}
+[[nodiscard]] auto error(std::string_view code, std::string message) -> api::diagnostic { return api::make_error(std::string(code), std::move(message)); }
 
-[[nodiscard]] auto warning(std::string_view code, std::string message) -> api::diagnostic {
-    return api::make_warning(std::string(code), std::move(message));
-}
+[[nodiscard]] auto warning(std::string_view code, std::string message) -> api::diagnostic { return api::make_warning(std::string(code), std::move(message)); }
 
-[[nodiscard]] auto note(std::string_view code, std::string message) -> api::diagnostic {
-    return api::make_note(std::string(code), std::move(message));
-}
+[[nodiscard]] auto note(std::string_view code, std::string message) -> api::diagnostic { return api::make_note(std::string(code), std::move(message)); }
 
 class Reader final {
   public:
@@ -161,9 +165,7 @@ class Reader final {
   private:
     [[nodiscard]] auto op(const std::uint32_t index) const -> ::pcfb::Op const * { return ops_->Get(index); }
     [[nodiscard]] static auto inputsOf(::pcfb::Op const *operation) -> Indices { return Indices(operation->inputs()); }
-    [[nodiscard]] static auto invertedOf(::pcfb::Op const *operation) -> Indices {
-        return Indices(operation->inverted_inputs());
-    }
+    [[nodiscard]] static auto invertedOf(::pcfb::Op const *operation) -> Indices { return Indices(operation->inverted_inputs()); }
     [[nodiscard]] auto kOf(::pcfb::Op const *operation) const -> std::uint32_t {
         auto const *args = operation->args_as_KofNArgs();
         return args == nullptr ? 0U : args->k();
@@ -177,9 +179,8 @@ class Reader final {
         }
         auto const *sub = subcircuits->Get(0);
         if (sub->inputs() != nullptr && sub->inputs()->size() != 0) {
-            diagnostics_.push(
-                error(diag::external_inputs, "the subcircuit lists " + std::to_string(sub->inputs()->size()) +
-                                                 " externally supplied input tensor(s); ir::pc has no such leaf"));
+            diagnostics_.push(error(diag::external_inputs, "the subcircuit lists " + std::to_string(sub->inputs()->size()) +
+                                                               " externally supplied input tensor(s); ir::pc has no such leaf"));
             return false;
         }
         ops_ = sub->operators();
@@ -196,15 +197,13 @@ class Reader final {
         for (std::uint32_t index = 0; index < opCount_; ++index) {
             auto const *operation = op(index);
             if (!supported(operation->opcode())) {
-                diagnostics_.push(
-                    error(diag::unsupported_opcode, "operator " + std::to_string(index) + " has opcode " +
-                                                        std::to_string(static_cast<unsigned>(operation->opcode())) +
-                                                        ", which ir::pc cannot represent"));
+                diagnostics_.push(error(diag::unsupported_opcode, "operator " + std::to_string(index) + " has opcode " +
+                                                                      std::to_string(static_cast<unsigned>(operation->opcode())) +
+                                                                      ", which ir::pc cannot represent"));
                 return false;
             }
             if (operation->output() >= opOfTensor_.size()) {
-                diagnostics_.push(
-                    error(diag::invalid_file, "operator " + std::to_string(index) + " writes a tensor out of range"));
+                diagnostics_.push(error(diag::invalid_file, "operator " + std::to_string(index) + " writes a tensor out of range"));
                 return false;
             }
             opOfTensor_[operation->output()] = index;
@@ -220,8 +219,7 @@ class Reader final {
         const auto found = tensor < opOfTensor_.size() ? opOfTensor_[tensor] : kNone;
         if (found == kNone && !missingReported_) {
             missingReported_ = true;
-            diagnostics_.push(
-                error(diag::invalid_file, "tensor " + std::to_string(tensor) + " has no producing operator"));
+            diagnostics_.push(error(diag::invalid_file, "tensor " + std::to_string(tensor) + " has no producing operator"));
         }
         return found;
     }
@@ -241,9 +239,7 @@ class Reader final {
                         return false;
                     }
                     if (source >= index) {
-                        diagnostics_.push(error(diag::invalid_file, "operator " + std::to_string(index) +
-                                                                        " reads tensor " +
-                                                                        std::to_string(list[position]) +
+                        diagnostics_.push(error(diag::invalid_file, "operator " + std::to_string(index) + " reads tensor " + std::to_string(list[position]) +
                                                                         ", which a later operator writes"));
                         return false;
                     }
@@ -269,8 +265,7 @@ class Reader final {
     void foldCardinality() {
         for (std::uint32_t index = 0; index < opCount_; ++index) {
             auto const *conjunction = op(index);
-            if (conjunction->opcode() != ::pcfb::OpCode::BITWISE_AND || inputsOf(conjunction).size() != 2 ||
-                invertedOf(conjunction).size() != 0) {
+            if (conjunction->opcode() != ::pcfb::OpCode::BITWISE_AND || inputsOf(conjunction).size() != 2 || invertedOf(conjunction).size() != 0) {
                 continue;
             }
             const auto least = producer(inputsOf(conjunction)[0]);
@@ -280,11 +275,9 @@ class Reader final {
             }
             auto const *leastOp = op(least);
             auto const *mostOp = op(most);
-            if (leastOp->opcode() != ::pcfb::OpCode::BITWISE_ATLEAST ||
-                mostOp->opcode() != ::pcfb::OpCode::BITWISE_ATMOST || !textOf(leastOp->name()).empty() ||
-                !textOf(mostOp->name()).empty() || fanout_[least] != 1 || fanout_[most] != 1 ||
-                inputsOf(leastOp) != inputsOf(mostOp) || invertedOf(leastOp) != invertedOf(mostOp) ||
-                kOf(leastOp) > kOf(mostOp)) {
+            if (leastOp->opcode() != ::pcfb::OpCode::BITWISE_ATLEAST || mostOp->opcode() != ::pcfb::OpCode::BITWISE_ATMOST ||
+                !textOf(leastOp->name()).empty() || !textOf(mostOp->name()).empty() || fanout_[least] != 1 || fanout_[most] != 1 ||
+                inputsOf(leastOp) != inputsOf(mostOp) || invertedOf(leastOp) != invertedOf(mostOp) || kOf(leastOp) > kOf(mostOp)) {
                 continue;
             }
             role_[least] = Role::cardinality_part;
@@ -302,22 +295,18 @@ class Reader final {
         }
         auto const *packed = std::get_if<std::vector<std::byte>>(&output_.metadata[found->second].second);
         if (packed == nullptr || packed->size() % 4 != 0) {
-            diagnostics_.push(
-                warning(diag::invalid_metadata,
-                        "metadata 'compile.complement_tensors' is not a list of 32-bit tensor ids and is ignored"));
+            diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' is not a list of 32-bit tensor ids and is ignored"));
             return;
         }
         std::vector<std::uint32_t> tensors;
         for (std::size_t at = 0; at < packed->size(); at += 4) {
             std::uint32_t tensor = 0;
             for (unsigned byte = 0; byte < 4; ++byte) {
-                tensor |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>((*packed)[at + byte]))
-                          << (8U * byte);
+                tensor |= static_cast<std::uint32_t>(std::to_integer<std::uint8_t>((*packed)[at + byte])) << (8U * byte);
             }
             if (tensor >= opOfTensor_.size() || (!tensors.empty() && tensor <= tensors.back())) {
-                diagnostics_.push(warning(diag::invalid_metadata,
-                                          "metadata 'compile.complement_tensors' lists tensor " +
-                                              std::to_string(tensor) + " out of range or out of order and is ignored"));
+                diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' lists tensor " + std::to_string(tensor) +
+                                                                      " out of range or out of order and is ignored"));
                 return;
             }
             tensors.push_back(tensor);
@@ -336,16 +325,13 @@ class Reader final {
         for (const auto tensor : tensors) {
             const auto index = opOfTensor_[tensor];
             auto const *operation = op(index);
-            const bool shaped = operation->opcode() == ::pcfb::OpCode::BITWISE_NOT &&
-                                textOf(operation->name()).empty() && inputsOf(operation).size() == 1 &&
+            const bool shaped = operation->opcode() == ::pcfb::OpCode::BITWISE_NOT && textOf(operation->name()).empty() && inputsOf(operation).size() == 1 &&
                                 invertedOf(operation).size() == 0;
             const auto source = shaped ? producer(inputsOf(operation)[0]) : kNone;
-            if (!shaped || queried_[index] != 0 || invertedUse[index] != 0 || role_[index] != Role::node ||
-                source == kNone || listed[source] != 0 || role_[source] != Role::node) {
-                diagnostics_.push(
-                    warning(diag::invalid_metadata,
-                            "metadata 'compile.complement_tensors' lists tensor " + std::to_string(tensor) +
-                                ", which is not a NOT tensor the writer created; it is read as a NOT gate"));
+            if (!shaped || queried_[index] != 0 || invertedUse[index] != 0 || role_[index] != Role::node || source == kNone || listed[source] != 0 ||
+                role_[source] != Role::node) {
+                diagnostics_.push(warning(diag::invalid_metadata, "metadata 'compile.complement_tensors' lists tensor " + std::to_string(tensor) +
+                                                                      ", which is not a NOT tensor the writer created; it is read as a NOT gate"));
                 continue;
             }
             role_[index] = Role::complement_tensor;
@@ -389,8 +375,7 @@ class Reader final {
                 info.code = ir::pc::op_code::basic_event;
                 auto const *sample = operation->args_as_SampleArgs();
                 if (sample == nullptr) {
-                    diagnostics_.push(
-                        error(diag::invalid_file, "SAMPLE operator " + std::to_string(index) + " has no SampleArgs"));
+                    diagnostics_.push(error(diag::invalid_file, "SAMPLE operator " + std::to_string(index) + " has no SampleArgs"));
                     return false;
                 }
                 if (sample->source() != ::pcfb::SampleSource::BASIC_EVENT) {
@@ -405,12 +390,14 @@ class Reader final {
                 break;
             case ::pcfb::OpCode::BITWISE_ATLEAST:
             case ::pcfb::OpCode::BITWISE_ATMOST:
-            case ::pcfb::OpCode::BITWISE_EXACTLY: {
+            case ::pcfb::OpCode::BITWISE_EXACTLY:
+            case ::pcfb::OpCode::BITWISE_MAJORITY:
+            case ::pcfb::OpCode::BITWISE_MINORITY: {
                 info.code = ir::pc::op_code::cardinality;
-                const auto fanIn = inputsOf(operation).size() + invertedOf(operation).size();
-                const auto k = kOf(operation);
-                info.low = operation->opcode() == ::pcfb::OpCode::BITWISE_ATMOST ? 0 : k;
-                info.high = operation->opcode() == ::pcfb::OpCode::BITWISE_ATLEAST ? fanIn : k;
+                const auto fanIn = static_cast<std::uint32_t>(inputsOf(operation).size() + invertedOf(operation).size());
+                const auto range = ::pcfb::count_bounds(operation->opcode(), fanIn, kOf(operation)).value();
+                info.low = range.low;
+                info.high = range.high;
                 break;
             }
             default:
@@ -436,21 +423,16 @@ class Reader final {
             return false;
         }
         if (noOps != 0) {
-            diagnostics_.push(
-                note(diag::no_op_as_and, std::to_string(noOps) + " BITWISE_NO_OP operator(s) read as one-operand AND"));
+            diagnostics_.push(note(diag::no_op_as_and, std::to_string(noOps) + " BITWISE_NO_OP operator(s) read as one-operand AND"));
         }
         if (sourcesDropped_ != 0) {
-            diagnostics_.push(
-                warning(diag::sample_source_dropped,
-                        std::to_string(sourcesDropped_) +
-                            " SAMPLE operator(s) with source COLLAPSED_MODULE or HOUSE_EVENT read as basic events"));
+            diagnostics_.push(warning(diag::sample_source_dropped, std::to_string(sourcesDropped_) +
+                                                                       " SAMPLE operator(s) with source COLLAPSED_MODULE or HOUSE_EVENT read as basic events"));
         }
         return true;
     }
 
-    [[nodiscard]] auto sampleOf(const std::uint32_t node) const -> ::pcfb::SampleArgs const * {
-        return op(nodes_[node].op)->args_as_SampleArgs();
-    }
+    [[nodiscard]] auto sampleOf(const std::uint32_t node) const -> ::pcfb::SampleArgs const * { return op(nodes_[node].op)->args_as_SampleArgs(); }
 
     // The canonical numbering: basic events first, by ascending file event id, then every other node
     // in file operator order. The file lists an operator after the operators it reads, so every
@@ -463,14 +445,12 @@ class Reader final {
                 events.push_back(node);
             }
         }
-        std::ranges::sort(events, [&](const std::uint32_t left, const std::uint32_t right) {
-            return sampleOf(left)->event_id() < sampleOf(right)->event_id();
-        });
+        std::ranges::sort(events,
+                          [&](const std::uint32_t left, const std::uint32_t right) { return sampleOf(left)->event_id() < sampleOf(right)->event_id(); });
         for (std::uint32_t rank = 0; rank < events.size(); ++rank) {
             if (sampleOf(events[rank])->event_id() != rank + 1) {
-                diagnostics_.push(warning(diag::event_ids_renumbered,
-                                          "event ids are not 1.." + std::to_string(events.size()) +
-                                              "; the read circuit numbers its events by ascending file id"));
+                diagnostics_.push(warning(diag::event_ids_renumbered, "event ids are not 1.." + std::to_string(events.size()) +
+                                                                          "; the read circuit numbers its events by ascending file id"));
                 break;
             }
         }
@@ -496,12 +476,10 @@ class Reader final {
         for (std::uint32_t id = 0; id < count; ++id) {
             auto const &info = nodes_[order_[id]];
             operands.clear();
-            for (const auto list :
-                 {std::span{positive_}.subspan(info.positive_begin, info.positive_end - info.positive_begin),
-                  std::span{negative_}.subspan(info.negative_begin, info.negative_end - info.negative_begin)}) {
+            for (const auto list : {std::span{positive_}.subspan(info.positive_begin, info.positive_end - info.positive_begin),
+                                    std::span{negative_}.subspan(info.negative_begin, info.negative_end - info.negative_begin)}) {
                 for (auto const &operand : list) {
-                    operands.push_back(ir::pc::edge_ref{.source = ir::pc::bool_node_id(idOfNode_[operand.source]),
-                                                        .complement = operand.complement});
+                    operands.push_back(ir::pc::edge_ref{.source = ir::pc::bool_node_id(idOfNode_[operand.source]), .complement = operand.complement});
                 }
             }
             switch (info.code) {
@@ -544,8 +522,7 @@ class Reader final {
             auto const *query = queries_->Get(index);
             const auto node = nodeOfOp_[producer(query->target())];
             if (node == kNone) {
-                diagnostics_.push(
-                    error(diag::invalid_file, "query " + std::to_string(index) + " targets a tensor without a node"));
+                diagnostics_.push(error(diag::invalid_file, "query " + std::to_string(index) + " targets a tensor without a node"));
                 return false;
             }
             const auto name = textOf(query->name());
@@ -557,10 +534,9 @@ class Reader final {
                 kind = query_kind::monotone_hull_probability;
                 break;
             default:
-                diagnostics_.push(
-                    error(diag::unknown_query_kind, "query " + std::to_string(index) + " has kind " +
-                                                        std::to_string(static_cast<unsigned>(query->kind())) +
-                                                        ", which this reader does not implement"));
+                diagnostics_.push(error(diag::unknown_query_kind, "query " + std::to_string(index) + " has kind " +
+                                                                      std::to_string(static_cast<unsigned>(query->kind())) +
+                                                                      ", which this reader does not implement"));
                 return false;
             }
             if (query->confidence() != nullptr && query->confidence()->size() != 0) {
@@ -568,8 +544,7 @@ class Reader final {
             }
             const auto role = roleOfQuery(index);
             auto &kinds = targetKinds_;
-            const bool joins = !kinds.empty() && node == previousNode && name == previousName &&
-                               role == targetRoles_.back() &&
+            const bool joins = !kinds.empty() && node == previousNode && name == previousName && role == targetRoles_.back() &&
                                std::ranges::find(kinds.back(), kind) == kinds.back().end();
             if (!joins) {
                 (void)builder.add_target(ir::pc::bool_node_id(idOfNode_[node]), role);
@@ -585,8 +560,7 @@ class Reader final {
         }
         if (confidenceDropped_ != 0) {
             diagnostics_.push(
-                warning(diag::confidence_ignored, std::to_string(confidenceDropped_) +
-                                                      " query(ies) request confidence levels, which are not read"));
+                warning(diag::confidence_ignored, std::to_string(confidenceDropped_) + " query(ies) request confidence levels, which are not read"));
         }
         return true;
     }
@@ -654,9 +628,8 @@ class Reader final {
             return ir::pc::observable_role::projection_anchor;
         }
         if (text) {
-            diagnostics_.push(warning(diag::invalid_metadata,
-                                      "metadata '" + key + "' is '" + *text +
-                                          "', not watch or projection_anchor; the target is read as primary"));
+            diagnostics_.push(
+                warning(diag::invalid_metadata, "metadata '" + key + "' is '" + *text + "', not watch or projection_anchor; the target is read as primary"));
         }
         return ir::pc::observable_role::primary;
     }
@@ -668,34 +641,28 @@ class Reader final {
             const auto prefix = "compile.query." + std::to_string(index) + ".";
             target_quantification entry;
             bool present = false;
-            if (const auto name =
-                    metadataIndex_.contains(prefix + "target") ? metadataText(prefix + "target") : std::nullopt) {
+            if (const auto name = metadataIndex_.contains(prefix + "target") ? metadataText(prefix + "target") : std::nullopt) {
                 entry.target = *name;
                 present = true;
             }
             // The hull reading and the initiator rule belong to the hull query; a probability query's copy
             // is ignored.
             const bool hull = queryKind_[index] == query_kind::monotone_hull_probability;
-            if (const auto mode = hull && metadataIndex_.contains(prefix + "literal_mode")
-                                      ? metadataText(prefix + "literal_mode")
-                                      : std::nullopt) {
+            if (const auto mode = hull && metadataIndex_.contains(prefix + "literal_mode") ? metadataText(prefix + "literal_mode") : std::nullopt) {
                 entry.literal_mode = *mode;
                 present = true;
             }
-            if (const auto found = metadataIndex_.find(prefix + "max_initiators_per_cutset");
-                hull && found != metadataIndex_.end()) {
+            if (const auto found = metadataIndex_.find(prefix + "max_initiators_per_cutset"); hull && found != metadataIndex_.end()) {
                 auto const *number = std::get_if<std::int64_t>(&output_.metadata[found->second].second);
                 if (number != nullptr && *number >= 0 && *number <= std::numeric_limits<std::uint32_t>::max()) {
                     entry.max_initiators_per_cutset = static_cast<std::uint32_t>(*number);
                     present = true;
                 } else {
-                    diagnostics_.push(warning(diag::invalid_metadata,
-                                              "metadata '" + prefix +
-                                                  "max_initiators_per_cutset' is not a 32-bit count and is ignored"));
+                    diagnostics_.push(
+                        warning(diag::invalid_metadata, "metadata '" + prefix + "max_initiators_per_cutset' is not a 32-bit count and is ignored"));
                 }
             }
-            if (const auto initiator =
-                    metadataIndex_.contains(prefix + "initiator") ? metadataText(prefix + "initiator") : std::nullopt) {
+            if (const auto initiator = metadataIndex_.contains(prefix + "initiator") ? metadataText(prefix + "initiator") : std::nullopt) {
                 entry.initiator = *initiator;
                 present = true;
             }
@@ -717,15 +684,12 @@ class Reader final {
                 recorded[target] = 1;
                 output_.options.quantification[id] = entry;
             } else if (auto &kept = output_.options.quantification[id];
-                       kept.target != entry.target ||
-                       (!kept.literal_mode.empty() && !entry.literal_mode.empty() &&
-                        kept.literal_mode != entry.literal_mode) ||
+                       kept.target != entry.target || (!kept.literal_mode.empty() && !entry.literal_mode.empty() && kept.literal_mode != entry.literal_mode) ||
                        (kept.max_initiators_per_cutset && entry.max_initiators_per_cutset &&
                         kept.max_initiators_per_cutset != entry.max_initiators_per_cutset) ||
                        kept.initiator != entry.initiator || kept.initiator_frequency != entry.initiator_frequency) {
-                diagnostics_.push(
-                    warning(diag::quantification_conflict, "queries of target " + std::to_string(target) +
-                                                               " record different quantification; the first is kept"));
+                diagnostics_.push(warning(diag::quantification_conflict,
+                                          "queries of target " + std::to_string(target) + " record different quantification; the first is kept"));
             } else {
                 // Only the target's hull query records the hull parameters.
                 if (kept.literal_mode.empty()) {
@@ -742,8 +706,7 @@ class Reader final {
         auto &options = output_.options;
         for (std::uint32_t id = 0; id < nodes_.size(); ++id) {
             auto const &info = nodes_[order_[id]];
-            const auto name = info.code == ir::pc::op_code::basic_event ? textOf(sampleOf(order_[id])->name())
-                                                                        : textOf(op(info.op)->name());
+            const auto name = info.code == ir::pc::op_code::basic_event ? textOf(sampleOf(order_[id])->name()) : textOf(op(info.op)->name());
             if (!name.empty()) {
                 options.node_names.emplace(ir::pc::bool_node_id(id), std::string(name));
             }
@@ -787,8 +750,7 @@ class Reader final {
                 std::ranges::copy(*bytes, digest.begin());
                 options.source_sha256 = digest;
             } else {
-                diagnostics_.push(
-                    warning(diag::invalid_metadata, "metadata 'general.source_sha256' is not 32 bytes and is ignored"));
+                diagnostics_.push(warning(diag::invalid_metadata, "metadata 'general.source_sha256' is not 32 bytes and is ignored"));
             }
         }
     }
@@ -827,6 +789,23 @@ class Reader final {
     std::unordered_map<std::string, std::size_t> metadataIndex_;
 };
 
+// The reader's id for a pcfb::validate finding. SchemaVersionTooOld is an unknown query kind when a query's, and makes
+// the file invalid when an operator's (MAJORITY or MINORITY in a file that declares minor 1): pcfb::Diagnostic::location
+// is a dotted path into the file, so an operator's names `.operators[`. An opcode the pinned pcfb does not define is
+// one ir::pc has no op code for.
+[[nodiscard]] auto findingCode(::pcfb::Diagnostic const &finding) -> std::string_view {
+    switch (finding.code) {
+    case ::pcfb::Diagnostic::Code::UnknownQueryKind:
+        return diag::unknown_query_kind;
+    case ::pcfb::Diagnostic::Code::SchemaVersionTooOld:
+        return finding.location.find(".operators[") == std::string::npos ? diag::unknown_query_kind : diag::invalid_file;
+    case ::pcfb::Diagnostic::Code::UnknownOpcode:
+        return diag::unsupported_opcode;
+    default:
+        return diag::invalid_file;
+    }
+}
+
 } // namespace
 
 auto read_pcfb(std::span<std::byte const> bytes) -> pcfb_read_result {
@@ -836,11 +815,7 @@ auto read_pcfb(std::span<std::byte const> bytes) -> pcfb_read_result {
     }
     api::diagnostic_list diagnostics;
     for (auto const &finding : ::pcfb::validate(*file)) {
-        const auto kind = finding.code == ::pcfb::Diagnostic::Code::UnknownQueryKind ||
-                                  finding.code == ::pcfb::Diagnostic::Code::SchemaVersionTooOld
-                              ? diag::unknown_query_kind
-                              : diag::invalid_file;
-        diagnostics.push(error(kind, finding.location + ": " + finding.message));
+        diagnostics.push(error(findingCode(finding), finding.location + ": " + finding.message));
     }
     if (diagnostics.has_errors()) {
         return pcfb_read_result::fail(std::move(diagnostics));

@@ -25,8 +25,7 @@
 
 namespace scram::mef {
 
-Component::Component(std::string name, std::string base_path, RoleSpecifier role)
-    : Element(std::move(name)), Role(role, std::move(base_path)) {}
+Component::Component(std::string name, std::string base_path, RoleSpecifier role) : Element(std::move(name)), Role(role, std::move(base_path)) {}
 
 void Component::Add(CcfGroup *ccf_group) {
     if (ccf_groups().count(ccf_group->name())) {
@@ -50,8 +49,7 @@ void Component::GatherGates(std::unordered_set<Gate *> *gates) {
 void Component::CheckDuplicateEvent(const Event &event) {
     const std::string &name = event.name();
     if (gates().count(name) || basic_events().count(name) || house_events().count(name)) {
-        SCRAM_THROW(DuplicateElementError())
-            << errinfo_element(name, "event") << errinfo_container(Element::name(), kTypeString);
+        SCRAM_THROW(DuplicateElementError()) << errinfo_element(name, "event") << errinfo_container(Element::name(), kTypeString);
     }
 }
 

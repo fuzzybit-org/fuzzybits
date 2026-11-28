@@ -108,8 +108,7 @@ HitsN parse_fzb_json(const std::string &json) {
 void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
     REQUIRE(std::filesystem::exists(xml));
 
-    const auto tmp = std::filesystem::temp_directory_path() /
-                     ("fuzzybits-cli-id-" + xml.stem().string() + "-" + std::to_string(requested));
+    const auto tmp = std::filesystem::temp_directory_path() / ("fuzzybits-cli-id-" + xml.stem().string() + "-" + std::to_string(requested));
     // scram-cli appends to convergence.csv; a failed earlier run leaves its rows behind.
     std::filesystem::remove_all(tmp);
     std::filesystem::create_directories(tmp);
@@ -119,8 +118,7 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
     const auto csv = tmp / "convergence.csv";
 
     std::ostringstream compile;
-    compile << shell_quote(FZB_PATH) << " compile " << shell_quote(xml.string()) << " -c 2 --no-kn -o "
-            << shell_quote(pcfb.string());
+    compile << shell_quote(FZB_PATH) << " compile " << shell_quote(xml.string()) << " -c 2 --no-kn -o " << shell_quote(pcfb.string());
     REQUIRE(run_cmd(compile.str()) == 0);
     REQUIRE(std::filesystem::exists(pcfb));
 
@@ -128,13 +126,11 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
 #ifdef _WIN32
     // run_cmd already wraps this in cmd /S /C "...". A nested cmd /C "..." shifts the quotes, so the
     // outer cmd.exe splits at && and scram-cli runs outside tmp with its last argument ending in '"'.
-    scram << "cd /D " << shell_quote(tmp.string()) << " && " << shell_quote(SCRAM_CLI_PATH)
-          << " --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N " << requested << " --no-indent -V 0 -o "
-          << shell_quote(report.string()) << " " << shell_quote(xml.string());
+    scram << "cd /D " << shell_quote(tmp.string()) << " && " << shell_quote(SCRAM_CLI_PATH) << " --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N "
+          << requested << " --no-indent -V 0 -o " << shell_quote(report.string()) << " " << shell_quote(xml.string());
 #else
-    scram << "timeout 60 bash -lc \"cd '" << tmp.string() << "' && '" << SCRAM_CLI_PATH
-          << "' --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N " << requested << " --no-indent -V 0 -o '"
-          << report.string() << "' '" << xml.string() << "'\"";
+    scram << "timeout 60 bash -lc \"cd '" << tmp.string() << "' && '" << SCRAM_CLI_PATH << "' --monte-carlo --probability --pdag -c 2 --no-kn -P wald -N "
+          << requested << " --no-indent -V 0 -o '" << report.string() << "' '" << xml.string() << "'\"";
 #endif
     REQUIRE(run_cmd(scram.str()) == 0);
     REQUIRE(std::filesystem::exists(csv));
@@ -142,11 +138,9 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
 
     std::ostringstream fzb;
 #ifdef _WIN32
-    fzb << shell_quote(FZB_PATH) << " run " << shell_quote(pcfb.string()) << " --trials " << requested << " --json > "
-        << shell_quote(json_path.string());
+    fzb << shell_quote(FZB_PATH) << " run " << shell_quote(pcfb.string()) << " --trials " << requested << " --json > " << shell_quote(json_path.string());
 #else
-    fzb << "timeout 60 '" << FZB_PATH << "' run '" << pcfb.string() << "' --trials " << requested << " --json > '"
-        << json_path.string() << "'";
+    fzb << "timeout 60 '" << FZB_PATH << "' run '" << pcfb.string() << "' --trials " << requested << " --json > '" << json_path.string() << "'";
 #endif
     REQUIRE(run_cmd(fzb.str()) == 0);
     std::ostringstream body;
@@ -158,8 +152,7 @@ void check_n(const std::filesystem::path &xml, std::uint64_t requested) {
     }
     const auto from_fzb = parse_fzb_json(body.str());
 
-    INFO("requested=" << requested << " scram hits=" << from_scram.hits << " n=" << from_scram.n
-                      << " fzb hits=" << from_fzb.hits << " n=" << from_fzb.n);
+    INFO("requested=" << requested << " scram hits=" << from_scram.hits << " n=" << from_scram.n << " fzb hits=" << from_fzb.hits << " n=" << from_fzb.n);
     REQUIRE(from_fzb.n == from_scram.n);
     REQUIRE(from_fzb.hits == from_scram.hits);
     REQUIRE(from_fzb.n >= requested);
@@ -190,8 +183,7 @@ TEST_CASE("fzb run rejects a non-default --seed", "[mc][cli][seed]") {
     const auto xml = src / "input" / "Aralia" / "chinese.xml";
     const auto tmp = std::filesystem::temp_directory_path() / "fuzzybits-seed-reject.pcfb";
     std::ostringstream compile;
-    compile << shell_quote(FZB_PATH) << " compile " << shell_quote(xml.string()) << " -c 2 --no-kn -o "
-            << shell_quote(tmp.string());
+    compile << shell_quote(FZB_PATH) << " compile " << shell_quote(xml.string()) << " -c 2 --no-kn -o " << shell_quote(tmp.string());
     REQUIRE(run_cmd(compile.str()) == 0);
     std::ostringstream run;
 #ifdef _WIN32

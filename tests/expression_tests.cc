@@ -38,8 +38,7 @@ namespace scram::mef::test {
 // return values and samples in a hard coded way.
 class OpenExpression : public Expression {
   public:
-    explicit OpenExpression(double m = 1, double s = 1, double mn = 0, double mx = 0)
-        : mean(m), sample(s), min(mn), max(mx) {}
+    explicit OpenExpression(double m = 1, double s = 1, double mn = 0, double mx = 0) : mean(m), sample(s), min(mn), max(mx) {}
     double mean;
     double sample;
     double min; // This value is used only if explicitly set non-zero.
@@ -52,9 +51,7 @@ class OpenExpression : public Expression {
 
 namespace {
 
-template <class T> std::unique_ptr<T> MakeUnique(std::initializer_list<Expression *> args) {
-    return std::make_unique<T>(args);
-}
+template <class T> std::unique_ptr<T> MakeUnique(std::initializer_list<Expression *> args) { return std::make_unique<T>(args); }
 
 void TestProbability(Expression *expr, OpenExpression *arg, bool sample = true) {
     REQUIRE_NOTHROW(expr->Validate());
@@ -268,8 +265,8 @@ TEST_CASE("ExpressionTest.PeriodicTest11", "[mef::expression]") {
     OpenExpression omega(0.01, 0.01);
     OpenExpression time(8760, 8760);
     std::unique_ptr<Expression> dev;
-    REQUIRE_NOTHROW(dev = std::make_unique<PeriodicTest>(&lambda, &lambda_test, &mu, &tau, &theta, &gamma,
-                                                         &test_duration, &available_at_test, &sigma, &omega, &time));
+    REQUIRE_NOTHROW(
+        dev = std::make_unique<PeriodicTest>(&lambda, &lambda_test, &mu, &tau, &theta, &gamma, &test_duration, &available_at_test, &sigma, &omega, &time));
     CHECK_FALSE(dev->IsDeviate());
     TestNegative(dev.get(), &lambda_test);
     TestNonPositive(dev.get(), &test_duration);

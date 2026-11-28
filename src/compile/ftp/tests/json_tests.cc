@@ -33,8 +33,8 @@ TEST_CASE("json parses documents and keeps key order", "[compile][ftp][json]") {
 }
 
 TEST_CASE("json rejects malformed documents with a stable id", "[compile][ftp][json]") {
-    for (const char *text : {"", "{", "[1,]", "{\"a\":1,}", "{\"a\":1 \"b\":2}", "{\"a\":1,\"a\":2}", "01", "1.",
-                             "\"\\x\"", "\"\\ud800\"", "[1] 2", "nul", "\"unterminated", "{\"a\":\"\t\"}", "1e999"}) {
+    for (const char *text : {"", "{", "[1,]", "{\"a\":1,}", "{\"a\":1 \"b\":2}", "{\"a\":1,\"a\":2}", "01", "1.", "\"\\x\"", "\"\\ud800\"", "[1] 2", "nul",
+                             "\"unterminated", "{\"a\":\"\t\"}", "1e999"}) {
         INFO(text);
         const auto parsed = json::parse(text);
         REQUIRE_FALSE(parsed);
@@ -46,10 +46,7 @@ TEST_CASE("json rejects malformed documents with a stable id", "[compile][ftp][j
 TEST_CASE("json dump round-trips", "[compile][ftp][json]") {
     auto root = json::value::make_object();
     root.set("text", json::value::make_string("a\"b\\c\n\x01"));
-    root.set("list", json::value::make_array()
-                         .push(json::value::make_int(-3))
-                         .push(json::value::make_number(0.1))
-                         .push(json::value::make_bool(false)));
+    root.set("list", json::value::make_array().push(json::value::make_int(-3)).push(json::value::make_number(0.1)).push(json::value::make_bool(false)));
     root.set("none", json::value::make_null());
     root.set("empty", json::value::make_object());
     const auto compact = json::dump(root);
@@ -101,9 +98,8 @@ TEST_CASE("json string escapes and surrogate pairs", "[compile][ftp][json]") {
     REQUIRE(parse_ok("\"caf\xC3\xA9 \xE2\x82\xAC\"").string == "caf\xC3\xA9 \xE2\x82\xAC");
     // Keys decode like values.
     REQUIRE(parse_ok(R"({"\u0041\n": 1})").keys.front() == "A\n");
-    for (const char *bad :
-         {R"("\uD83D")", R"("\uD83Dx")", R"("\uD83D\u0041")", R"("\uDE00")", R"("\uD83D\uD83D")", R"("\u12G4")",
-          R"("\u12")", R"("\U0041")", R"("\a")", R"("\')", "\"\n\"", "\"\x1f\"", "\"abc"}) {
+    for (const char *bad : {R"("\uD83D")", R"("\uD83Dx")", R"("\uD83D\u0041")", R"("\uDE00")", R"("\uD83D\uD83D")", R"("\u12G4")", R"("\u12")", R"("\U0041")",
+                            R"("\a")", R"("\')", "\"\n\"", "\"\x1f\"", "\"abc"}) {
         require_rejected(bad);
     }
 }
@@ -136,9 +132,8 @@ TEST_CASE("json numbers", "[compile][ftp][json]") {
     REQUIRE(big.kind == json::value::kind_type::number);
     REQUIRE(big.number == 9223372036854775808.0);
     REQUIRE(parse_ok("1e308").number == 1e308);
-    for (const char *bad :
-         {"1e309", "-1e309", "1e99999", "1e-99999", "+1",    ".5",  "5.",       "-",         "--1", "1e", "1e+",
-          "1.e2",  "0x10",   "01",      "-01",      "1_000", "NaN", "Infinity", "-Infinity", "1 2", "1,2"}) {
+    for (const char *bad : {"1e309", "-1e309", "1e99999", "1e-99999", "+1",    ".5",  "5.",       "-",         "--1", "1e", "1e+",
+                            "1.e2",  "0x10",   "01",      "-01",      "1_000", "NaN", "Infinity", "-Infinity", "1 2", "1,2"}) {
         require_rejected(bad);
     }
 }
@@ -178,8 +173,8 @@ TEST_CASE("json duplicate keys and trailing data", "[compile][ftp][json]") {
     require_rejected("");
     require_rejected(" \n ");
     // Structure errors.
-    for (const char *bad : {"{", "}", "[", "]", "{\"a\"}", "{\"a\":}", "{\"a\" 1}", "{1: 2}", "{'a': 1}", "{\"a\": 1,}",
-                            "[,1]", "[1,,2]", "[1 2]", "tru", "nul", "True", "NULL"}) {
+    for (const char *bad : {"{", "}", "[", "]", "{\"a\"}", "{\"a\":}", "{\"a\" 1}", "{1: 2}", "{'a': 1}", "{\"a\": 1,}", "[,1]", "[1,,2]", "[1 2]", "tru",
+                            "nul", "True", "NULL"}) {
         require_rejected(bad);
     }
 }

@@ -153,7 +153,6 @@ using lowering_result = api::result<pra_pc_lowering>;
 // (docs/rfc/monotone-hull-queries.md 7.3, #235). With plain, marked operands are ordinary
 // complements, which is the plain hull a hull query means without literal fields, so such a
 // query is written.
-[[nodiscard]] auto pcfb_write_options(pra_pc_lowering const &lowering)
-    -> api::result<io::backend::fuzzybits::pcfb::write_options>;
+[[nodiscard]] auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<io::backend::fuzzybits::pcfb::write_options>;
 
 } // namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc

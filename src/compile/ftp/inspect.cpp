@@ -53,8 +53,8 @@ namespace reader = io::backend::fuzzybits::ftp;
 
 void collect(inspection &out, io::read_result const &read) {
     for (auto const &item : read.diagnostics().items()) {
-        out.diagnostics.push_back(inspected_diagnostic{
-            .id = item.code, .severity = item.severity, .file = item.file, .line = item.line, .message = item.message});
+        out.diagnostics.push_back(
+            inspected_diagnostic{.id = item.code, .severity = item.severity, .file = item.file, .line = item.line, .message = item.message});
     }
     if (!read || read.diagnostics().has_errors()) {
         return;
@@ -74,9 +74,7 @@ void collect(inspection &out, io::read_result const &read) {
     }
 }
 
-[[nodiscard]] auto count_value(const std::size_t value) -> json::value {
-    return json::value::make_int(static_cast<std::int64_t>(value));
-}
+[[nodiscard]] auto count_value(const std::size_t value) -> json::value { return json::value::make_int(static_cast<std::int64_t>(value)); }
 
 [[nodiscard]] auto name_list(std::vector<std::string> const &names) -> json::value {
     auto out = json::value::make_array();
@@ -163,16 +161,14 @@ void put_line(std::string &out, const std::string_view text) {
 } // namespace
 
 auto check_options(inspect_options const &options) -> std::string {
-    if (options.duplicate_import != "error" && options.duplicate_import != "first" &&
-        options.duplicate_import != "last") {
+    if (options.duplicate_import != "error" && options.duplicate_import != "first" && options.duplicate_import != "last") {
         return "--duplicate-import must be error, first or last, not '" + options.duplicate_import + "'";
     }
     return {};
 }
 
 auto inspection::count(const api::diagnostic_severity severity) const -> std::size_t {
-    return static_cast<std::size_t>(
-        std::ranges::count_if(diagnostics, [severity](auto const &item) { return item.severity == severity; }));
+    return static_cast<std::size_t>(std::ranges::count_if(diagnostics, [severity](auto const &item) { return item.severity == severity; }));
 }
 
 auto inspect_sources(const std::span<reader::source_text const> sources, inspect_options const &options) -> inspection {
@@ -185,8 +181,7 @@ auto inspect_sources(const std::span<reader::source_text const> sources, inspect
     return out;
 }
 
-auto inspect_project(const std::span<std::filesystem::path const> inputs, inspect_options const &options)
-    -> inspection {
+auto inspect_project(const std::span<std::filesystem::path const> inputs, inspect_options const &options) -> inspection {
     inspection out;
     if (auto files = reader::project_files(inputs); files) {
         for (auto const &path : files.value()) {
@@ -235,8 +230,8 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
     for (auto const &file : result.files) {
         put_line(out, "  " + file);
     }
-    put_line(out, "diagnostics: " + std::to_string(result.errors()) + " errors, " + std::to_string(result.warnings()) +
-                      " warnings, " + std::to_string(result.count(api::diagnostic_severity::note)) + " notes");
+    put_line(out, "diagnostics: " + std::to_string(result.errors()) + " errors, " + std::to_string(result.warnings()) + " warnings, " +
+                      std::to_string(result.count(api::diagnostic_severity::note)) + " notes");
     for (auto const &item : result.diagnostics) {
         std::string text = "  " + severity_name(item.severity) + " " + item.id;
         if (!item.file.empty()) {
@@ -249,13 +244,10 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
     }
     if (result.structure) {
         auto const &s = *result.structure;
-        const auto field = [&out](const std::string_view name, const std::string &value) {
-            put_line(out, "  " + std::string(name) + ": " + value);
-        };
+        const auto field = [&out](const std::string_view name, const std::string &value) { put_line(out, "  " + std::string(name) + ": " + value); };
         const auto number = [](const std::size_t value) { return std::to_string(value); };
         put_line(out, "structure:");
-        field("gates", number(s.gates) + " (or " + number(s.or_gates) + ", and " + number(s.and_gates) + ", atleast " +
-                           number(s.atleast_gates) + ")");
+        field("gates", number(s.gates) + " (or " + number(s.or_gates) + ", and " + number(s.and_gates) + ", atleast " + number(s.atleast_gates) + ")");
         for (auto const &[key, count] : s.atleast_k_of_n) {
             field("  atleast " + key, number(count));
         }
@@ -266,13 +258,11 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
         field("basic_events", number(s.basic_events));
         field("house_events", number(s.house_events));
         field("import_lines", number(s.import_lines));
-        field("initiator_tagged_events",
-              number(s.initiating_events) + " (p = 1: " + number(s.initiating_events_p_1) + ")");
+        field("initiator_tagged_events", number(s.initiating_events) + " (p = 1: " + number(s.initiating_events_p_1) + ")");
         field("events_p_eq_1", number(s.events_p_1));
         field("events_p_eq_0", number(s.events_p_0));
         field("events_0_lt_p_lt_2^-32", number(s.events_p_tiny));
-        field("complemented_edges", number(s.complemented_edges) + " (to basic events " +
-                                        number(s.complemented_edges_to_basic_events) + ", to gates " +
+        field("complemented_edges", number(s.complemented_edges) + " (to basic events " + number(s.complemented_edges_to_basic_events) + ", to gates " +
                                         number(s.complemented_edges_to_gates) + ")");
         field("literal_operands", number(s.literal_operands));
         field("names_not_valid_xml_ncname", number(s.names_not_ncname));
@@ -292,8 +282,7 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
             for (auto const &duplicate : s.duplicate_imports) {
                 std::string text = "    " + duplicate.name + " = " + format_number(duplicate.value) + " at";
                 for (auto const &occurrence : duplicate.occurrences) {
-                    text +=
-                        " " + occurrence.file + ":" + std::to_string(occurrence.line) + (occurrence.chosen ? "*" : "");
+                    text += " " + occurrence.file + ":" + std::to_string(occurrence.line) + (occurrence.chosen ? "*" : "");
                 }
                 put_line(out, text);
             }
@@ -312,8 +301,6 @@ auto inspection_text(inspection const &result, const bool counts_only) -> std::s
     return out;
 }
 
-auto inspect_exit_status(inspection const &result, const bool strict) -> int {
-    return result.errors() > 0 || (strict && result.warnings() > 0) ? 1 : 0;
-}
+auto inspect_exit_status(inspection const &result, const bool strict) -> int { return result.errors() > 0 || (strict && result.warnings() > 0) ? 1 : 0; }
 
 } // namespace fuzzybits::compile::ftp

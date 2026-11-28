@@ -25,10 +25,8 @@ using fuzzybits::compile::NombriloExportOptions;
 
 std::uint32_t lit(std::uint32_t var, bool pos = true) { return (var << 1) | (pos ? 1u : 0u); }
 
-NombriloCircuit make_circuit(std::uint32_t B, std::vector<std::uint32_t> ops,
-                             std::vector<std::vector<std::uint32_t>> kids,
-                             std::vector<std::pair<std::string, std::uint32_t>> names = {},
-                             std::optional<std::vector<double>> weights = std::nullopt) {
+NombriloCircuit make_circuit(std::uint32_t B, std::vector<std::uint32_t> ops, std::vector<std::vector<std::uint32_t>> kids,
+                             std::vector<std::pair<std::string, std::uint32_t>> names = {}, std::optional<std::vector<double>> weights = std::nullopt) {
     NombriloCircuit c;
     c.base_count = B;
     c.operators = std::move(ops);
@@ -75,8 +73,8 @@ fuzzybits::compile::Compiled must_to_pcfb(const NombriloCircuit &c, NombriloComp
 }
 
 bool arrays_equal(const NombriloCircuit &a, const NombriloCircuit &b) {
-    if (a.base_count != b.base_count || a.operators != b.operators || a.offsets != b.offsets ||
-        a.children != b.children || a.names != b.names || a.name_lits != b.name_lits) {
+    if (a.base_count != b.base_count || a.operators != b.operators || a.offsets != b.offsets || a.children != b.children || a.names != b.names ||
+        a.name_lits != b.name_lits) {
         return false;
     }
     if (a.weights.has_value() != b.weights.has_value()) {
@@ -101,19 +99,16 @@ std::filesystem::path nombrilo_dir() {
 } // namespace
 
 TEST_CASE("nombrilo round-trip write/read preserves arrays", "[nombrilo]") {
-    auto c =
-        make_circuit(2, {0, 1}, {{lit(1), lit(2)}, {lit(3), lit(1, false)}},
-                     {{"a", lit(1)}, {"b", lit(2)}, {"g0", lit(3)}, {"r1", lit(4)}}, std::vector<double>{0.1, 0.2});
+    auto c = make_circuit(2, {0, 1}, {{lit(1), lit(2)}, {lit(3), lit(1, false)}}, {{"a", lit(1)}, {"b", lit(2)}, {"g0", lit(3)}, {"r1", lit(4)}},
+                          std::vector<double>{0.1, 0.2});
     auto bytes = must_write(c);
     auto back = must_read(bytes);
     REQUIRE(arrays_equal(c, back));
 }
 
 TEST_CASE("nombrilo AND/OR/XOR/ATLEAST and negation compile to valid pcfb", "[nombrilo]") {
-    auto c = make_circuit(3, {0, 1, 0xFFFFFFFFu, 2},
-                          {{lit(1), lit(2)}, {lit(3), lit(1, false)}, {lit(3), lit(4)}, {lit(1), lit(2), lit(3)}},
-                          {{"x", lit(1)}, {"y", lit(2)}, {"z", lit(3)}, {"r1", lit(7)}},
-                          std::vector<double>{0.5, 0.25, 0.125});
+    auto c = make_circuit(3, {0, 1, 0xFFFFFFFFu, 2}, {{lit(1), lit(2)}, {lit(3), lit(1, false)}, {lit(3), lit(4)}, {lit(1), lit(2), lit(3)}},
+                          {{"x", lit(1)}, {"y", lit(2)}, {"z", lit(3)}, {"r1", lit(7)}}, std::vector<double>{0.5, 0.25, 0.125});
     auto compiled = must_to_pcfb(c);
     auto circuit = pcfb::io::from_bytes(compiled.bytes);
     REQUIRE(circuit);
@@ -125,8 +120,7 @@ std::optional<std::string> pcfb_meta(const pcfb::ir::Circuit &circuit, std::stri
         return std::nullopt;
     }
     for (const auto *kv : *circuit.get()->metadata()) {
-        if (kv && kv->key() && kv->key()->str() == key && kv->value_as_StringValue() &&
-            kv->value_as_StringValue()->value()) {
+        if (kv && kv->key() && kv->key()->str() == key && kv->value_as_StringValue() && kv->value_as_StringValue()->value()) {
             return kv->value_as_StringValue()->value()->str();
         }
     }
@@ -134,8 +128,7 @@ std::optional<std::string> pcfb_meta(const pcfb::ir::Circuit &circuit, std::stri
 }
 
 TEST_CASE("empty AND becomes ONES, empty OR/XOR become ZEROS, k>n becomes ZEROS", "[nombrilo][edge]") {
-    auto c = make_circuit(1, {0, 1, 0xFFFFFFFFu, 5}, {{}, {}, {}, {lit(1)}}, {{"x", lit(1)}, {"r1", lit(5)}},
-                          std::vector<double>{0.3});
+    auto c = make_circuit(1, {0, 1, 0xFFFFFFFFu, 5}, {{}, {}, {}, {lit(1)}}, {{"x", lit(1)}, {"r1", lit(5)}}, std::vector<double>{0.3});
     auto compiled = must_to_pcfb(c);
     auto circuit = pcfb::io::from_bytes(compiled.bytes);
     REQUIRE(circuit);
@@ -154,8 +147,7 @@ TEST_CASE("empty AND becomes ONES, empty OR/XOR become ZEROS, k>n becomes ZEROS"
 }
 
 TEST_CASE("constant children and complementary literals are valid pcfb", "[nombrilo][edge]") {
-    auto c = make_circuit(1, {0, 1}, {{lit(0), lit(1)}, {lit(1), lit(1, false)}}, {{"x", lit(1)}, {"r1", lit(3)}},
-                          std::vector<double>{0.4});
+    auto c = make_circuit(1, {0, 1}, {{lit(0), lit(1)}, {lit(1), lit(1, false)}}, {{"x", lit(1)}, {"r1", lit(3)}}, std::vector<double>{0.4});
     auto compiled = must_to_pcfb(c);
     auto circuit = pcfb::io::from_bytes(compiled.bytes);
     REQUIRE(circuit);
@@ -191,9 +183,7 @@ TEST_CASE("target on a negated literal appends NOT", "[nombrilo]") {
 }
 
 TEST_CASE("names on negated literals and multiple names per variable survive round-trip", "[nombrilo]") {
-    auto c =
-        make_circuit(1, {0}, {{lit(1)}}, {{"x", lit(1)}, {"also_x", lit(1)}, {"not_x", lit(1, false)}, {"g", lit(2)}},
-                     std::vector<double>{0.5});
+    auto c = make_circuit(1, {0}, {{lit(1)}}, {{"x", lit(1)}, {"also_x", lit(1)}, {"not_x", lit(1, false)}, {"g", lit(2)}}, std::vector<double>{0.5});
     auto compiled = must_to_pcfb(c);
     auto circuit = pcfb::io::from_bytes(compiled.bytes);
     REQUIRE(circuit);
@@ -270,8 +260,7 @@ TEST_CASE("malformed nombrilo files are rejected", "[nombrilo][error]") {
         REQUIRE(bytes.error().message.find("[0, 1]") != std::string::npos);
     }
     SECTION("forward reference") {
-        auto bad =
-            make_circuit(1, {0, 0}, {{lit(3)}, {lit(1)}}, {{"x", lit(1)}, {"r1", lit(3)}}, std::vector<double>{0.5});
+        auto bad = make_circuit(1, {0, 0}, {{lit(3)}, {lit(1)}}, {{"x", lit(1)}, {"r1", lit(3)}}, std::vector<double>{0.5});
         auto bytes = fuzzybits::compile::write_nombrilo(bad);
         REQUIRE_FALSE(bytes);
         REQUIRE(bytes.error().message.find("forward") != std::string::npos);
@@ -395,8 +384,7 @@ TEST_CASE("nombrilo metadata records source format and no compile.* keys", "[nom
 }
 
 TEST_CASE("interleaved children round-trip via child_order, not array snapshots", "[nombrilo]") {
-    auto c = make_circuit(2, {0}, {{lit(1), lit(2, false), lit(1)}}, {{"x", lit(1)}, {"y", lit(2)}, {"r1", lit(3)}},
-                          std::vector<double>{0.2, 0.3});
+    auto c = make_circuit(2, {0}, {{lit(1), lit(2, false), lit(1)}}, {{"x", lit(1)}, {"y", lit(2)}, {"r1", lit(3)}}, std::vector<double>{0.2, 0.3});
     auto compiled = must_to_pcfb(c);
     auto circuit = pcfb::io::from_bytes(compiled.bytes);
     REQUIRE(circuit);
@@ -431,8 +419,7 @@ TEST_CASE("tampered child_order is ignored and canonical order is emitted", "[no
 }
 
 TEST_CASE("export reflects an edited pcfb opcode, not a stale snapshot", "[nombrilo]") {
-    auto c = make_circuit(2, {0}, {{lit(1), lit(2)}}, {{"x", lit(1)}, {"y", lit(2)}, {"r1", lit(3)}},
-                          std::vector<double>{0.2, 0.3});
+    auto c = make_circuit(2, {0}, {{lit(1), lit(2)}}, {{"x", lit(1)}, {"y", lit(2)}, {"r1", lit(3)}}, std::vector<double>{0.2, 0.3});
     auto compiled = must_to_pcfb(c);
     REQUIRE(compiled.bytes.size() > 0);
     pcfb::builder b;
@@ -485,8 +472,7 @@ TEST_CASE("dataset nombrilo → pcfb → nombrilo is array-exact", "[nombrilo][d
         if (entry.path().filename() == "das9701.f1.safetensors") {
             const auto order = pcfb_meta(*circuit, "nombrilo.child_order");
             const auto names = pcfb_meta(*circuit, "nombrilo.names");
-            UNSCOPED_INFO("das9701.f1 child_order bytes=" << (order ? order->size() : 0)
-                                                          << " names bytes=" << (names ? names->size() : 0)
+            UNSCOPED_INFO("das9701.f1 child_order bytes=" << (order ? order->size() : 0) << " names bytes=" << (names ? names->size() : 0)
                                                           << " pcfb bytes=" << compiled->bytes.size());
         }
         auto back = fuzzybits::compile::pcfb_to_nombrilo(*circuit, NombriloExportOptions{false});
@@ -502,8 +488,7 @@ TEST_CASE("dataset nombrilo → pcfb → nombrilo is array-exact", "[nombrilo][d
         if (had_weights) {
             REQUIRE(back->weights);
             REQUIRE(back->weights->size() == orig->weights->size());
-            REQUIRE(std::memcmp(back->weights->data(), orig->weights->data(), orig->weights->size() * sizeof(double)) ==
-                    0);
+            REQUIRE(std::memcmp(back->weights->data(), orig->weights->data(), orig->weights->size() * sizeof(double)) == 0);
         } else {
             REQUIRE_FALSE(back->weights.has_value());
         }

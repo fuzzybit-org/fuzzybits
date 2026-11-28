@@ -20,14 +20,11 @@ using pra::test::message;
 using pra::test::named;
 using pra::test::render;
 
-[[nodiscard]] auto literal(const double value, const pra::quantity_kind quantity = pra::quantity_kind::probability)
-    -> pra::expression_spec {
+[[nodiscard]] auto literal(const double value, const pra::quantity_kind quantity = pra::quantity_kind::probability) -> pra::expression_spec {
     return pra::expression_spec::literal(value, quantity);
 }
 
-[[nodiscard]] auto mentions(std::string const &text, const std::string_view part) -> bool {
-    return text.find(part) != std::string::npos;
-}
+[[nodiscard]] auto mentions(std::string const &text, const std::string_view part) -> bool { return text.find(part) != std::string::npos; }
 
 // Seals and requires rejection with exactly one diagnostic, of `code`.
 [[nodiscard]] auto rejected_with(pra::builder &&builder, std::string const &code) -> std::string {
@@ -64,10 +61,8 @@ TEST_CASE("PRA validation: stable names are unique within a kind", "[ir][pra][va
     const auto event = builder.add_basic_event({.stable_name = "B"}, literal(0.1));
 
     SECTION("gates defined in two files") {
-        (void)builder.add_gate({.stable_name = "G1", .sources = {&first, 1}}, pra::gate_kind::or_gate,
-                               {{.event = event}});
-        (void)builder.add_gate({.stable_name = "G1", .sources = {&second, 1}}, pra::gate_kind::and_gate,
-                               {{.event = event}});
+        (void)builder.add_gate({.stable_name = "G1", .sources = {&first, 1}}, pra::gate_kind::or_gate, {{.event = event}});
+        (void)builder.add_gate({.stable_name = "G1", .sources = {&second, 1}}, pra::gate_kind::and_gate, {{.event = event}});
         const auto text = rejected_with(std::move(builder), "ir.pra.duplicate-name");
         CHECK(mentions(text, "duplicate gate name 'G1'"));
         CHECK(mentions(text, "2 definitions"));
@@ -104,8 +99,7 @@ TEST_CASE("PRA validation: unqualified names must match exactly one admissible k
     }
 
     SECTION("qualified") {
-        (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                               {{.event = pra::reference::named(pra::element_kind::gate, "X")}});
+        (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = pra::reference::named(pra::element_kind::gate, "X")}});
         require_ok(std::move(builder));
     }
 }
@@ -120,8 +114,7 @@ TEST_CASE("PRA validation: dangling references", "[ir][pra][validation]") {
 
     SECTION("operand name") {
         (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = event}, named("NOPE")});
-        CHECK(
-            mentions(rejected_with(std::move(builder), code), "gate 'TOP' operand 2 references unknown event 'NOPE'"));
+        CHECK(mentions(rejected_with(std::move(builder), code), "gate 'TOP' operand 2 references unknown event 'NOPE'"));
     }
     SECTION("operand id") {
         (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = pra::gate_id(42)}});
@@ -137,16 +130,14 @@ TEST_CASE("PRA validation: dangling references", "[ir][pra][validation]") {
     }
     SECTION("fault-tree top gate") {
         builder.add_fault_tree_top(tree, pra::reference::named("NOPE"));
-        CHECK(mentions(rejected_with(std::move(builder), code),
-                       "fault tree 'FT' top gate references unknown gate 'NOPE'"));
+        CHECK(mentions(rejected_with(std::move(builder), code), "fault tree 'FT' top gate references unknown gate 'NOPE'"));
     }
     SECTION("top gate of a nonexistent fault tree") {
         builder.add_fault_tree_top(pra::fault_tree_id(3), gate);
         CHECK(mentions(rejected_with(std::move(builder), code), "nonexistent fault tree #3"));
     }
     SECTION("gate owner") {
-        (void)builder.add_gate({.stable_name = "H"}, pra::gate_kind::or_gate, {{.event = event}},
-                               pra::fault_tree_id(5));
+        (void)builder.add_gate({.stable_name = "H"}, pra::gate_kind::or_gate, {{.event = event}}, pra::fault_tree_id(5));
         CHECK(mentions(rejected_with(std::move(builder), code), "belongs to nonexistent fault tree #5"));
     }
     SECTION("expression") {
@@ -193,8 +184,7 @@ TEST_CASE("PRA validation: references to a kind the use site does not admit", "[
         CHECK(mentions(rejected_with(std::move(builder), code), "references fault tree 'FT' where an event"));
     }
     SECTION("operand name qualified with a non-event kind") {
-        (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
-                               {{.event = pra::reference::named(pra::element_kind::fault_tree, "FT")}});
+        (void)builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate, {{.event = pra::reference::named(pra::element_kind::fault_tree, "FT")}});
         CHECK(mentions(rejected_with(std::move(builder), code), "names a fault tree 'FT' where an event"));
     }
     SECTION("target subject of another kind") {
@@ -223,8 +213,7 @@ TEST_CASE("PRA validation: gate dependency cycles", "[ir][pra][validation]") {
 
     SECTION("through complements and a cardinality gate") {
         (void)builder.add_gate({.stable_name = "A"}, pra::gate_kind::and_gate, {named("BB"), {.event = event}});
-        (void)builder.add_cardinality({.stable_name = "BB"}, {.low = 1, .high = 2},
-                                      {named("C", true), {.event = event}});
+        (void)builder.add_cardinality({.stable_name = "BB"}, {.low = 1, .high = 2}, {named("C", true), {.event = event}});
         (void)builder.add_gate({.stable_name = "C"}, pra::gate_kind::or_gate, {named("A")});
         (void)builder.add_gate({.stable_name = "D"}, pra::gate_kind::or_gate, {named("A")});
         const auto text = rejected_with(std::move(builder), "ir.pra.cycle");
@@ -246,8 +235,8 @@ TEST_CASE("PRA validation: gate dependency cycles", "[ir][pra][validation]") {
 }
 
 TEST_CASE("PRA validation: n-ary gates need operands", "[ir][pra][validation]") {
-    for (const auto kind : std::array{pra::gate_kind::and_gate, pra::gate_kind::or_gate, pra::gate_kind::xor_gate,
-                                      pra::gate_kind::nand_gate, pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate}) {
+    for (const auto kind : std::array{pra::gate_kind::and_gate, pra::gate_kind::or_gate, pra::gate_kind::xor_gate, pra::gate_kind::nand_gate,
+                                      pra::gate_kind::nor_gate, pra::gate_kind::xnor_gate}) {
         pra::builder builder;
         (void)builder.add_gate({.stable_name = "G"}, kind, {});
         CHECK(mentions(rejected_with(std::move(builder), "ir.pra.empty-gate"), "gate without operands"));
@@ -279,33 +268,28 @@ TEST_CASE("PRA validation: literal markers only on complemented basic-event oper
 
     SECTION("uncomplemented basic event") {
         (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = event, .literal = true}});
-        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"),
-                       "marked literal but not complemented"));
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "marked literal but not complemented"));
     }
     SECTION("complemented gate") {
-        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
-                               {{.event = inner, .complement = true, .literal = true}});
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = inner, .complement = true, .literal = true}});
         CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "gate 'I'"));
     }
     SECTION("complemented gate by name, resolved at seal") {
-        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
-                               {{.event = pra::reference::named("I"), .complement = true, .literal = true}});
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = pra::reference::named("I"), .complement = true, .literal = true}});
         CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "not a basic event"));
     }
     SECTION("complemented house event") {
-        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
-                               {{.event = house, .complement = true, .literal = true}});
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = house, .complement = true, .literal = true}});
         CHECK(mentions(rejected_with(std::move(builder), "ir.pra.invalid-literal-operand"), "house event 'H'"));
     }
     SECTION("dangling operands are reported once, as dangling") {
-        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
-                               {{.event = pra::reference::named("NOPE"), .complement = true, .literal = true}});
+        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate, {{.event = pra::reference::named("NOPE"), .complement = true, .literal = true}});
         (void)rejected_with(std::move(builder), "ir.pra.dangling-reference");
     }
     SECTION("complemented basic event, by id or by name") {
-        (void)builder.add_gate({.stable_name = "G"}, pra::gate_kind::and_gate,
-                               {{.event = event, .complement = true, .literal = true},
-                                {.event = pra::reference::named("E"), .complement = true, .literal = true}});
+        (void)builder.add_gate(
+            {.stable_name = "G"}, pra::gate_kind::and_gate,
+            {{.event = event, .complement = true, .literal = true}, {.event = pra::reference::named("E"), .complement = true, .literal = true}});
         require_ok(std::move(builder));
     }
 }
@@ -345,8 +329,7 @@ TEST_CASE("PRA validation: literal values lie in their domain", "[ir][pra][valid
 
     SECTION("probability above one") {
         (void)builder.add_basic_event({.stable_name = "B"}, literal(1.5));
-        CHECK(mentions(rejected_with(std::move(builder), code),
-                       "basic event 'B' has literal probability 1.5 outside [0, 1]"));
+        CHECK(mentions(rejected_with(std::move(builder), code), "basic event 'B' has literal probability 1.5 outside [0, 1]"));
     }
     SECTION("negative probability") {
         (void)builder.add_basic_event({.stable_name = "B"}, literal(-0.25));
@@ -357,8 +340,7 @@ TEST_CASE("PRA validation: literal values lie in their domain", "[ir][pra][valid
         CHECK(mentions(rejected_with(std::move(builder), code), "non-finite"));
     }
     SECTION("infinite frequency") {
-        (void)builder.add_basic_event({.stable_name = "B"},
-                                      literal(std::numeric_limits<double>::infinity(), pra::quantity_kind::frequency));
+        (void)builder.add_basic_event({.stable_name = "B"}, literal(std::numeric_limits<double>::infinity(), pra::quantity_kind::frequency));
         CHECK(mentions(rejected_with(std::move(builder), code), "non-finite"));
     }
     SECTION("negative frequency") {
@@ -397,10 +379,8 @@ TEST_CASE("PRA validation: fault-tree top gates belong to their tree", "[ir][pra
     const auto event = builder.add_basic_event({.stable_name = "E"}, literal(0.1));
     const auto first_tree = builder.add_fault_tree({.stable_name = "FT1"});
     const auto second_tree = builder.add_fault_tree({.stable_name = "FT2"});
-    const auto first_gate =
-        builder.add_gate({.stable_name = "G1"}, pra::gate_kind::or_gate, {{.event = event}}, first_tree);
-    const auto second_gate =
-        builder.add_gate({.stable_name = "G2"}, pra::gate_kind::or_gate, {{.event = event}}, second_tree);
+    const auto first_gate = builder.add_gate({.stable_name = "G1"}, pra::gate_kind::or_gate, {{.event = event}}, first_tree);
+    const auto second_gate = builder.add_gate({.stable_name = "G2"}, pra::gate_kind::or_gate, {{.event = event}}, second_tree);
     const auto loose_gate = builder.add_gate({.stable_name = "G3"}, pra::gate_kind::or_gate, {{.event = event}});
     const std::string code = "ir.pra.invalid-fault-tree-top";
 
@@ -443,8 +423,7 @@ TEST_CASE("PRA validation: sequence and end-state targets are reserved", "[ir][p
     for (const auto kind : {pra::domain_target_kind::sequence, pra::domain_target_kind::end_state}) {
         pra::builder builder;
         (void)builder.add_target({.stable_name = "S"}, kind, pra::reference::named("S1"));
-        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.unsupported-target-kind"),
-                       "reserved until event trees"));
+        CHECK(mentions(rejected_with(std::move(builder), "ir.pra.unsupported-target-kind"), "reserved until event trees"));
     }
 }
 
@@ -460,9 +439,8 @@ TEST_CASE("PRA validation reports every error, not only the first", "[ir][pra][v
     auto result = std::move(builder).seal();
     INFO(render(result.diagnostics));
     REQUIRE_FALSE(result.ok());
-    for (const auto *code :
-         {"ir.pra.missing-name", "ir.pra.invalid-literal", "ir.pra.dangling-reference", "ir.pra.duplicate-name",
-          "ir.pra.empty-gate", "ir.pra.invalid-arity", "ir.pra.cycle", "ir.pra.unsupported-target-kind"}) {
+    for (const auto *code : {"ir.pra.missing-name", "ir.pra.invalid-literal", "ir.pra.dangling-reference", "ir.pra.duplicate-name", "ir.pra.empty-gate",
+                             "ir.pra.invalid-arity", "ir.pra.cycle", "ir.pra.unsupported-target-kind"}) {
         CHECK(count(result.diagnostics, code) == 1);
     }
     CHECK(result.diagnostics.size() == 8);

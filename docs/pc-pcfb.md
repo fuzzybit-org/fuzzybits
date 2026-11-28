@@ -181,9 +181,10 @@ read->schema_version;
 `reader_endpoint_id()` is `io.fuzzybits.pcfb.reader`; `read(io::read_request const&)`
 returns the `ir::pc` handle (`ir.probabilistic_boolean_dag`). The reader runs
 `pcfb::validate` first (its findings are `io.pcfb.invalid-file`, an unknown query kind is
-`io.pcfb.unknown-query-kind`), then requires one subcircuit without external inputs and at least
-one query. Any minor of schema major 1 is accepted; `MONOTONE_HULL_PROBABILITY` needs minor 2, as
-in `pcfb::validate`.
+`io.pcfb.unknown-query-kind`, an opcode the pinned `pcfb` does not define is
+`io.pcfb.unsupported-opcode`), then requires one subcircuit without external inputs and at least
+one query. Any minor of schema major 1 is accepted; `MONOTONE_HULL_PROBABILITY`, `MAJORITY` and
+`MINORITY` need minor 2, as in `pcfb::validate`.
 
 ### Mapping
 
@@ -193,6 +194,7 @@ in `pcfb::validate`.
 | `ZEROS` / `ONES` | constant 0 / 1 |
 | `AND` `OR` `XOR` `NAND` `NOR` `XNOR` `NOT` | the gate of the same name; `inverted_inputs` become complemented edges |
 | `ATLEAST` / `ATMOST` / `EXACTLY` (`k`) | cardinality `[k, n]` / `[0, k]` / `[k, k]` |
+| `MAJORITY` / `MINORITY` (v1.2 opcode amendment) | cardinality `[⌊n/2⌋ + 1, n]` / `[0, ⌊n/2⌋]` (`pcfb::count_bounds`; a tie is a minority) |
 | `AND(ATLEAST(k), ATMOST(m))` over the same operands | one cardinality `[k, m]`; the two unnamed tensors have no node |
 | `NOT` tensor listed in `compile.complement_tensors` | complemented edge in the position of the tensor in `inputs`; no node |
 | every other `NOT` | `not_gate` node (this includes all NOTs of files without the key, such as other writers' files) |
@@ -234,10 +236,10 @@ node ids as such.
 | Id | Severity | Meaning |
 |---|---|---|
 | `io.pcfb.unreadable` | error | not a verifiable FlatBuffer, or the file cannot be read |
-| `io.pcfb.invalid-file` | error | `pcfb::validate` finding other than an unknown query kind, or an operator that reads a tensor a later operator writes |
+| `io.pcfb.invalid-file` | error | `pcfb::validate` finding other than an unknown query kind or opcode, such as a reserved opcode or a `MAJORITY` or `MINORITY` operator in a file that declares minor 1, or an operator that reads a tensor a later operator writes |
 | `io.pcfb.unknown-query-kind` | error | query kind not defined by the pinned `pcfb`, or newer than the file's minor |
 | `io.pcfb.external-inputs` | error | the subcircuit has externally supplied inputs |
-| `io.pcfb.unsupported-opcode` | error | an operator `ir::pc` has no op code for, or one reserved by `core-1.1` |
+| `io.pcfb.unsupported-opcode` | error | an operator `ir::pc` has no op code for, such as an opcode the pinned `pcfb` does not define |
 | `io.pcfb.too-large` | error | more tensors than a 32-bit node id addresses |
 | `io.pcfb.format-mismatch` | error | the read request names a format other than pcfb |
 | `io.pcfb.invalid-circuit` | error | the rebuilt circuit failed `ir::pc` sealing |

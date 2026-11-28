@@ -511,7 +511,7 @@ class Settings {
     CIPolicy ci_policy_ = CIPolicy::kBayes;
 
   private:
-    Algorithm algorithm_ = Algorithm::kDirect; ///< Algorithm for minimal cut set / prime implicant analysis
+    Algorithm algorithm_ = Algorithm::kDirect;                 ///< Algorithm for minimal cut set / prime implicant analysis
     Approximation approximation_ = Approximation::kMonteCarlo; ///< The approximations for calculations
     bool probability_analysis_ = false;                        ///< A flag for probability analysis.
     bool safety_integrity_levels_ = false;                     ///< Calculation of the SIL metrics.
@@ -522,14 +522,14 @@ class Settings {
     bool skip_products_ = false;                               ///< Do not compute the products.
     int limit_order_ = 20;                                     ///< Limit on the order of products.
     int seed_ = 372;                                           ///< The seed for the pseudo-random number generator.
-    std::size_t num_trials_ = 0;  ///< The number of trials for Monte Carlo simulations (default 2^26).
-    std::size_t batch_size_ = 0;  ///< Batch size for Monte Carlo simulations.
-    std::size_t sample_size_ = 0; ///< Sample size for Monte Carlo simulations.
-    int num_quantiles_ = 20;      ///< The number of quantiles for distributions.
-    int num_bins_ = 20;           ///< The number of bins for histograms.
-    double mission_time_ = 8760;  ///< System mission time.
-    double time_step_ = 0;        ///< The time step for probability analyses.
-    double cut_off_ = 1e-8;       ///< The cut-off probability for products.
+    std::size_t num_trials_ = 0;                               ///< The number of trials for Monte Carlo simulations (default 2^26).
+    std::size_t batch_size_ = 0;                               ///< Batch size for Monte Carlo simulations.
+    std::size_t sample_size_ = 0;                              ///< Sample size for Monte Carlo simulations.
+    int num_quantiles_ = 20;                                   ///< The number of quantiles for distributions.
+    int num_bins_ = 20;                                        ///< The number of bins for histograms.
+    double mission_time_ = 8760;                               ///< System mission time.
+    double time_step_ = 0;                                     ///< The time step for probability analyses.
+    double cut_off_ = 1e-8;                                    ///< The cut-off probability for products.
 
     double oracle_p_ = -1.0; ///< negative means unset.
 

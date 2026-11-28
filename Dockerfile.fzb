@@ -66,17 +66,17 @@ RUN BD="$(cat /app/.fzb-build-dir)" && \
 RUN set -eu; \
     BD="$(cat /app/.fzb-build-dir)"; \
     FZB="${BD}/targets/fzb/fzb"; \
-    echo "=== nm -C fzb | ProbabilityAnalyzer<scram::mc::DirectEval> ==="; \
-    nm -C "${FZB}" | grep 'ProbabilityAnalyzer<scram::mc::DirectEval>' || true; \
+    echo "=== nm -C fzb | ProbabilityAnalyzer<scram::core::DirectEval> ==="; \
+    nm -C "${FZB}" | grep 'ProbabilityAnalyzer<scram::core::DirectEval>' || true; \
     echo "=== ldd fzb ==="; \
     ldd "${FZB}"; \
-    defs="$(nm -C "${FZB}" | grep 'ProbabilityAnalyzer<scram::mc::DirectEval>' | grep -E ' [TtWwVv] ' || true)"; \
+    defs="$(nm -C "${FZB}" | grep 'ProbabilityAnalyzer<scram::core::DirectEval>' | grep -E ' [TtWwVv] ' || true)"; \
     if [ "${FUZZYBITS_WITH_MC}" = "ON" ]; then \
       if [ -n "${defs}" ]; then echo "ERROR: DirectEval definitions in fzb (WITH_MC=ON):"; echo "${defs}"; exit 1; fi; \
       echo "=== nm -C libscram.so (undefined DirectEval) ==="; \
-      nm -C "${BD}/src/libscram.so" | grep 'ProbabilityAnalyzer<scram::mc::DirectEval>' | grep ' U ' | head; \
+      nm -C "${BD}/src/libscram.so" | grep 'ProbabilityAnalyzer<scram::core::DirectEval>' | grep ' U ' | head; \
       echo "=== nm -C libmc.so (defined DirectEval) ==="; \
-      nm -C "${BD}/src/mc/libmc.so" | grep 'ProbabilityAnalyzer<scram::mc::DirectEval>' | grep -E ' [TtWwVv] ' | head; \
+      nm -C "${BD}/src/mc/libmc.so" | grep 'ProbabilityAnalyzer<scram::core::DirectEval>' | grep -E ' [TtWwVv] ' | head; \
       ldd "${FZB}" | grep libmc; \
       test -x "${BD}/targets/scram/scram-cli"; \
       echo "WITH_MC=ON: fzb has no DirectEval defs, ldd shows libmc, scram-cli built"; \

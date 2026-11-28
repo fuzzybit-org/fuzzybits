@@ -27,8 +27,7 @@
 
 namespace scram {
 
-const char *const Logger::kLevelToString_[] = {"ERROR",  "WARNING", "INFO",   "DEBUG1",
-                                               "DEBUG2", "DEBUG3",  "DEBUG4", "DEBUG5"};
+const char *const Logger::kLevelToString_[] = {"ERROR", "WARNING", "INFO", "DEBUG1", "DEBUG2", "DEBUG3", "DEBUG4", "DEBUG5"};
 LogLevel Logger::report_level_ = ERROR;
 
 Logger::~Logger() {

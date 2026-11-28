@@ -34,12 +34,11 @@
 namespace scram::mef {
 
 /// Component is for logical grouping of events, gates, and other components.
-class Component
-    : public Element,
-      public Role,
-      public Composite<Container<Component, Component, true, false>, Container<Component, BasicEvent, false, false>,
-                       Container<Component, HouseEvent, false, false>, Container<Component, Gate, false, false>,
-                       Container<Component, Parameter, false, false>, Container<Component, CcfGroup, false, false>> {
+class Component : public Element,
+                  public Role,
+                  public Composite<Container<Component, Component, true, false>, Container<Component, BasicEvent, false, false>,
+                                   Container<Component, HouseEvent, false, false>, Container<Component, Gate, false, false>,
+                                   Container<Component, Parameter, false, false>, Container<Component, CcfGroup, false, false>> {
   public:
     /// Type identifier string for error messages.
     static constexpr const char *kTypeString = "component/fault tree";

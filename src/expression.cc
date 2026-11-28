@@ -55,8 +55,7 @@ namespace detail {
 
 void EnsureMultivariateArgs(std::vector<Expression *> args) {
     if (args.size() < 2)
-        SCRAM_THROW(ValidityError("Expression requires 2 or more arguments."))
-            << errinfo_value(std::to_string(args.size()));
+        SCRAM_THROW(ValidityError("Expression requires 2 or more arguments.")) << errinfo_value(std::to_string(args.size()));
 }
 
 } // namespace detail
@@ -79,8 +78,7 @@ void EnsureProbability(Expression *expression, const char *type) {
 
     Interval interval = expression->interval();
     if (IsProbability(interval) == false)
-        SCRAM_THROW(DomainError("Invalid " + std::string(type) + " sample domain"))
-            << errinfo_value(ToString(interval));
+        SCRAM_THROW(DomainError("Invalid " + std::string(type) + " sample domain")) << errinfo_value(ToString(interval));
 }
 
 void EnsurePositive(Expression *expression, const char *description) {
@@ -88,13 +86,11 @@ void EnsurePositive(Expression *expression, const char *description) {
 
     double value = expression->value();
     if (value <= 0)
-        SCRAM_THROW(DomainError(description + " argument value must be positive."s))
-            << errinfo_value(std::to_string(value));
+        SCRAM_THROW(DomainError(description + " argument value must be positive."s)) << errinfo_value(std::to_string(value));
 
     Interval interval = expression->interval();
     if (IsPositive(interval) == false)
-        SCRAM_THROW(DomainError(description + " argument sample domain must be positive."s))
-            << errinfo_value(ToString(interval));
+        SCRAM_THROW(DomainError(description + " argument sample domain must be positive."s)) << errinfo_value(ToString(interval));
 }
 
 void EnsureNonNegative(Expression *expression, const char *description) {
@@ -102,13 +98,11 @@ void EnsureNonNegative(Expression *expression, const char *description) {
 
     double value = expression->value();
     if (value < 0)
-        SCRAM_THROW(DomainError(description + " argument value cannot be negative."s))
-            << errinfo_value(std::to_string(value));
+        SCRAM_THROW(DomainError(description + " argument value cannot be negative."s)) << errinfo_value(std::to_string(value));
 
     Interval interval = expression->interval();
     if (IsNonNegative(interval) == false)
-        SCRAM_THROW(DomainError(description + " argument sample cannot have negative values."s))
-            << errinfo_value(ToString(interval));
+        SCRAM_THROW(DomainError(description + " argument sample cannot have negative values."s)) << errinfo_value(ToString(interval));
 }
 
 void EnsureWithin(Expression *expression, const Interval &interval, const char *type) {

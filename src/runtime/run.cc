@@ -1,6 +1,6 @@
 #include "runtime/runtime.h"
 
-#include "mc/queue/layer_manager.h"
+#include "mc/executor/layer_manager.h"
 #include "mc/scheduler/convergence_controller.h"
 #include "mc/stats/tally_node_map.h"
 #include "pdag.h"
@@ -27,8 +27,7 @@ using bitpack_t = std::uint64_t;
 using prob_t = std::double_t;
 using size_t_ = std::size_t;
 
-void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate,
-                   std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
+void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate, std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
     if (!gate || !nodes.emplace(gate->index(), gate).second) {
         return;
     }
@@ -44,10 +43,8 @@ void collect_nodes(const std::shared_ptr<scram::core::Gate> &gate,
 /// loop already collected, so attaching a sink never changes sampling.
 class sampling_progress {
   public:
-    sampling_progress(const RunOptions &options, const std::vector<ReconstructedQuery> &queries,
-                      std::uint64_t trials_per_pass, std::uint64_t passes_total)
-        : emitter_(options.progress_sinks, options.progress_max_rate_hz), trials_per_pass_(trials_per_pass),
-          passes_total_(passes_total), start_(clock::now()) {
+    sampling_progress(const RunOptions &options, const std::vector<ReconstructedQuery> &queries, std::uint64_t trials_per_pass, std::uint64_t passes_total)
+        : emitter_(options.progress_sinks, options.progress_max_rate_hz), trials_per_pass_(trials_per_pass), passes_total_(passes_total), start_(clock::now()) {
         names_.reserve(queries.size());
         for (const auto &q : queries) {
             names_.push_back(q.node->index());
@@ -62,7 +59,7 @@ class sampling_progress {
 
     /// Emits at most once per coalescing interval. `tallies` must hold cumulative counters for every
     /// query node.
-    void maybe_emit(const scram::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
+    void maybe_emit(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
         if (!emitter_.active()) {
             return;
         }
@@ -71,7 +68,7 @@ class sampling_progress {
 
     /// Emits `last` regardless of the rate and then `on_finish`. Exceptions from the sinks are
     /// swallowed when the run is already unwinding, so the original error is not replaced.
-    void finish(const scram::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done, bool interrupted) {
+    void finish(const fuzzybits::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done, bool interrupted) {
         if (!emitter_.active()) {
             return;
         }
@@ -89,7 +86,7 @@ class sampling_progress {
     }
 
     /// `finish(..., interrupted=true)`, for the RAII guard. Never throws.
-    void finish_interrupted(const scram::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done) noexcept {
+    void finish_interrupted(const fuzzybits::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done) noexcept {
         try {
             finish(tallies, passes_done, /*interrupted=*/true);
         } catch (...) {
@@ -116,8 +113,7 @@ class sampling_progress {
 
     /// Fills the per-query states from `tallies`; the only difference between an intermediate and the
     /// final snapshot is the throughput value (resampled vs. the last delivered rate).
-    [[nodiscard]] progress::snapshot build(const scram::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done,
-                                           double trials_per_second) const {
+    [[nodiscard]] progress::snapshot build(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done, double trials_per_second) const {
         progress::snapshot s = snapshot_without_tallies(passes_done);
         for (std::size_t i = 0; i < names_.size(); ++i) {
             const auto &t = tallies.at(names_[i]).tally_stats;
@@ -128,23 +124,20 @@ class sampling_progress {
             q.ci_low = t.ci[0];
             q.ci_high = t.ci[1];
             const double width = t.ci[1] - t.ci[0];
-            q.rel_half_width = t.mean != 0.0 && std::isfinite(width) ? width / (2.0 * t.mean)
-                                                                     : std::numeric_limits<double>::quiet_NaN();
+            q.rel_half_width = t.mean != 0.0 && std::isfinite(width) ? width / (2.0 * t.mean) : std::numeric_limits<double>::quiet_NaN();
         }
         s.trials_per_second = trials_per_second;
         return s;
     }
 
     /// An intermediate snapshot: resamples the throughput window and remembers the result.
-    [[nodiscard]] progress::snapshot build_live(const scram::mc::stats::TallyNodeMap &tallies,
-                                                std::uint64_t passes_done) {
+    [[nodiscard]] progress::snapshot build_live(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
         last_rate_ = update_rate(passes_done * trials_per_pass_);
         return build(tallies, passes_done, last_rate_);
     }
 
     /// The final snapshot reuses the last delivered rate (see `update_rate`).
-    [[nodiscard]] progress::snapshot build_final(const scram::mc::stats::TallyNodeMap &tallies,
-                                                 std::uint64_t passes_done) const {
+    [[nodiscard]] progress::snapshot build_final(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) const {
         return build(tallies, passes_done, last_rate_);
     }
 
@@ -191,8 +184,7 @@ void fail_next_run_after_passes(std::uint64_t passes) { fail_run_after_passes = 
 
 } // namespace testing
 
-std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries,
-                                   const RunOptions &options) {
+std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<ReconstructedQuery> &queries, const RunOptions &options) {
     if (options.trials == 0) {
         throw RuntimeError("run: --trials must be positive");
     }
@@ -212,29 +204,28 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<Re
     settings.ci_policy(scram::core::CIPolicy::kWald);
     settings.watch_mode(false);
 
-    scram::mc::stats::TallyNodeMap monitored;
+    fuzzybits::mc::stats::TallyNodeMap monitored;
     for (const auto &q : queries) {
         if (!q.node) {
             throw RuntimeError("run: query '" + q.name + "' has no node");
         }
-        monitored.insert_or_assign(q.node->index(), scram::mc::stats::TallyNode{
-                                                        .status = scram::mc::stats::not_tracked,
+        monitored.insert_or_assign(q.node->index(), fuzzybits::mc::stats::TallyNode{
+                                                        .status = fuzzybits::mc::stats::not_tracked,
                                                         .tally_stats = {},
                                                         .node = q.node,
                                                     });
     }
 
     try {
-        scram::mc::queue::layer_manager<bitpack_t, prob_t, size_t_> manager(&pdag, static_cast<size_t_>(options.trials),
-                                                                            monitored, /*requested_trials_per_pass=*/0);
+        fuzzybits::mc::executor::layer_manager<bitpack_t, prob_t, size_t_> manager(&pdag, static_cast<size_t_>(options.trials), monitored,
+                                                                                   /*requested_trials_per_pass=*/0);
 
         const auto total_passes = manager.shaper().TOTAL_ITERATIONS;
         if (total_passes == 0) {
             throw RuntimeError("run: sample shaper produced zero iterations");
         }
         const auto &shape = manager.shaper().SAMPLE_SHAPE;
-        const auto trials_per_pass =
-            static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * sizeof(bitpack_t) * 8;
+        const auto trials_per_pass = static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * sizeof(bitpack_t) * 8;
 
         sampling_progress progress(options, queries, trials_per_pass, total_passes);
 
@@ -258,7 +249,7 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<Re
             // the final tally are unchanged.
             for (std::uint64_t pass = 1; pass <= total_passes; ++pass) {
                 manager.pass(1);
-                scram::mc::queue::wait_sycl_queue(manager.queue());
+                fuzzybits::mc::executor::wait_sycl_queue(manager.queue());
                 if (progress.due()) {
                     manager.collect_tallies(monitored);
                     collected_pass = pass;
@@ -314,21 +305,16 @@ pcfb::ir::Circuit require_valid_circuit(pcfb::Result<pcfb::ir::Circuit> circuit,
     require_implemented_queries(*circuit, op);
     const auto diags = pcfb::validate(*circuit);
     if (!diags.empty()) {
-        throw InvalidPcfbError(
-            std::string(op) + ": pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
+        throw InvalidPcfbError(std::string(op) + ": pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
     }
     return std::move(*circuit);
 }
 
 } // namespace
 
-pcfb::ir::Circuit load_pcfb(const std::filesystem::path &path) {
-    return require_valid_circuit(pcfb::io::read(path), "load_pcfb");
-}
+pcfb::ir::Circuit load_pcfb(const std::filesystem::path &path) { return require_valid_circuit(pcfb::io::read(path), "load_pcfb"); }
 
-pcfb::ir::Circuit load_pcfb(std::span<const std::byte> bytes) {
-    return require_valid_circuit(pcfb::io::from_bytes(bytes), "load_pcfb");
-}
+pcfb::ir::Circuit load_pcfb(std::span<const std::byte> bytes) { return require_valid_circuit(pcfb::io::from_bytes(bytes), "load_pcfb"); }
 
 std::vector<QueryResult> run_pcfb(const std::filesystem::path &path, const RunOptions &options) {
     apply_backend_mask(options.backend);
@@ -344,7 +330,7 @@ struct Session::Impl {
     using bitpack_t = std::uint64_t;
     using prob_t = std::double_t;
     using size_t_ = std::size_t;
-    using Manager = scram::mc::queue::layer_manager<bitpack_t, prob_t, size_t_>;
+    using Manager = fuzzybits::mc::executor::layer_manager<bitpack_t, prob_t, size_t_>;
 
     ReconstructedPdag reconstructed;
     std::unique_ptr<Manager> manager;
@@ -352,8 +338,8 @@ struct Session::Impl {
     bool closed = false;
 };
 
-Session::Session(ReconstructedPdag reconstructed, const std::string &backend, std::size_t requested_trials_per_pass,
-                 std::vector<std::string> watch, std::size_t num_trials) {
+Session::Session(ReconstructedPdag reconstructed, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+                 std::size_t num_trials) {
     apply_backend_mask(backend);
     auto impl = std::make_unique<Impl>();
     impl->reconstructed = std::move(reconstructed);
@@ -364,13 +350,13 @@ Session::Session(ReconstructedPdag reconstructed, const std::string &backend, st
         throw RuntimeError("session: no queries");
     }
 
-    scram::mc::stats::TallyNodeMap tallies;
+    fuzzybits::mc::stats::TallyNodeMap tallies;
     for (const auto &q : impl->reconstructed.queries) {
         if (!q.node) {
             throw RuntimeError("session: query '" + q.name + "' has no node");
         }
-        tallies.insert_or_assign(q.node->index(), scram::mc::stats::TallyNode{
-                                                      .status = scram::mc::stats::not_tracked,
+        tallies.insert_or_assign(q.node->index(), fuzzybits::mc::stats::TallyNode{
+                                                      .status = fuzzybits::mc::stats::not_tracked,
                                                       .tally_stats = {},
                                                       .node = q.node,
                                                   });
@@ -383,16 +369,15 @@ Session::Session(ReconstructedPdag reconstructed, const std::string &backend, st
             if (it == nodes.end()) {
                 throw RuntimeError("session: watched index " + std::to_string(index) + " is not in the PDAG");
             }
-            tallies.insert_or_assign(index, scram::mc::stats::TallyNode{
-                                                .status = scram::mc::stats::not_tracked,
+            tallies.insert_or_assign(index, fuzzybits::mc::stats::TallyNode{
+                                                .status = fuzzybits::mc::stats::not_tracked,
                                                 .tally_stats = {},
                                                 .node = it->second,
                                             });
         }
     }
     try {
-        impl->manager = std::make_unique<Impl::Manager>(impl->reconstructed.graph.get(), num_trials, tallies,
-                                                        requested_trials_per_pass);
+        impl->manager = std::make_unique<Impl::Manager>(impl->reconstructed.graph.get(), num_trials, tallies, requested_trials_per_pass);
     } catch (const RuntimeError &) {
         throw;
     } catch (const sycl::exception &e) {
@@ -407,25 +392,21 @@ Session::Session(Session &&) noexcept = default;
 Session &Session::operator=(Session &&) noexcept = default;
 Session::~Session() = default;
 
-Session Session::from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend,
-                              std::size_t requested_trials_per_pass, std::vector<std::string> watch,
-                              std::size_t num_trials) {
+Session Session::from_circuit(const pcfb::ir::Circuit &circuit, const std::string &backend, std::size_t requested_trials_per_pass,
+                              std::vector<std::string> watch, std::size_t num_trials) {
     const auto diags = pcfb::validate(circuit);
     if (!diags.empty()) {
-        throw InvalidPcfbError("session: pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)",
-                               diags);
+        throw InvalidPcfbError("session: pcfb validation failed (" + std::to_string(diags.size()) + " diagnostics)", diags);
     }
     return Session(pdag_from_circuit(circuit), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
 
-Session Session::from_bytes(std::span<const std::byte> bytes, const std::string &backend,
-                            std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+Session Session::from_bytes(std::span<const std::byte> bytes, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
                             std::size_t num_trials) {
     return from_circuit(load_pcfb(bytes), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
 
-Session Session::from_path(const std::filesystem::path &path, const std::string &backend,
-                           std::size_t requested_trials_per_pass, std::vector<std::string> watch,
+Session Session::from_path(const std::filesystem::path &path, const std::string &backend, std::size_t requested_trials_per_pass, std::vector<std::string> watch,
                            std::size_t num_trials) {
     return from_circuit(load_pcfb(path), backend, requested_trials_per_pass, std::move(watch), num_trials);
 }
@@ -467,8 +448,7 @@ SampleShape Session::sample_shape() const {
     out.batch_size = shape.batch_size;
     out.bitpacks_per_batch = shape.bitpacks_per_batch;
     out.bits_per_bitpack = sizeof(Impl::bitpack_t) * 8;
-    out.trials_per_pass =
-        static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * out.bits_per_bitpack;
+    out.trials_per_pass = static_cast<std::uint64_t>(shape.batch_size) * shape.bitpacks_per_batch * out.bits_per_bitpack;
     out.total_iterations = impl_->manager->shaper().TOTAL_ITERATIONS;
     return out;
 }
@@ -482,7 +462,7 @@ PassResult Session::step(const std::size_t passes) {
     if (passes == 0) {
         throw RuntimeError("session: passes must be at least 1");
     }
-    scram::mc::stats::TallyNodeMap tallies;
+    fuzzybits::mc::stats::TallyNodeMap tallies;
     try {
         impl_->manager->pass_wait_collect(tallies, passes, 0);
     } catch (const RuntimeError &) {

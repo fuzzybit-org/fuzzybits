@@ -41,8 +41,7 @@ struct written_file final {
     auto bytes = std::move(written.value().bytes);
     auto circuit = ::pcfb::io::from_bytes(bytes);
     REQUIRE(circuit);
-    written_file file{
-        .bytes = std::move(bytes), .circuit = *circuit, .tensor_by_node = std::move(written.value().tensor_by_node)};
+    written_file file{.bytes = std::move(bytes), .circuit = *circuit, .tensor_by_node = std::move(written.value().tensor_by_node)};
     const auto diagnostics = ::pcfb::validate(file.circuit);
     INFO("pcfb::validate reported " << diagnostics.size() << " finding(s)");
     REQUIRE(diagnostics.empty());
@@ -64,16 +63,13 @@ struct query_row final {
     return rows;
 }
 
-[[nodiscard]] auto minorOf(::pcfb::ir::Circuit const &circuit) -> std::uint32_t {
-    return circuit->schema_version() & 0xFFFFU;
-}
+[[nodiscard]] auto minorOf(::pcfb::ir::Circuit const &circuit) -> std::uint32_t { return circuit->schema_version() & 0xFFFFU; }
 
 [[nodiscard]] auto meta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> ::pcfb::KeyValue const * {
     return circuit->metadata() == nullptr ? nullptr : circuit->metadata()->LookupByKey(key.c_str());
 }
 
-[[nodiscard]] auto stringMeta(::pcfb::ir::Circuit const &circuit, std::string const &key)
-    -> std::optional<std::string> {
+[[nodiscard]] auto stringMeta(::pcfb::ir::Circuit const &circuit, std::string const &key) -> std::optional<std::string> {
     auto const *entry = meta(circuit, key);
     if (entry == nullptr || entry->value_type() != ::pcfb::MetadataValue::StringValue) {
         return std::nullopt;
@@ -96,10 +92,9 @@ TEST_CASE("pcfb writer: Boolean-only query sets stay at schema minor 1", "[io][p
     auto const options = threeTargetNames();
     const auto file = writeAndRead(model, options);
     CHECK(file.circuit->schema_version() == ::pcfb::kSchemaVersionV11);
-    CHECK(queriesOf(file.circuit) ==
-          std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
-                                 {"OR", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[4]},
-                                 {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
+    CHECK(queriesOf(file.circuit) == std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
+                                                            {"OR", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[4]},
+                                                            {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
 
     // An explicit probability kind is the same file.
     auto explicitKinds = threeTargetNames();
@@ -107,18 +102,16 @@ TEST_CASE("pcfb writer: Boolean-only query sets stay at schema minor 1", "[io][p
     CHECK(writeAndRead(model, explicitKinds).bytes == file.bytes);
 }
 
-TEST_CASE("pcfb writer: a monotone-hull target makes the file schema minor 2 and keeps names and kinds",
-          "[io][pcfb][kind]") {
+TEST_CASE("pcfb writer: a monotone-hull target makes the file schema minor 2 and keeps names and kinds", "[io][pcfb][kind]") {
     const auto model = threeTargetModel();
     auto options = threeTargetNames();
     options.target_kinds = {{pc::target_id(1), {kind::monotone_hull_probability}}};
     const auto file = writeAndRead(model, options);
     CHECK(file.circuit->schema_version() == ::pcfb::kSchemaVersionV12);
     CHECK(minorOf(file.circuit) == 2);
-    CHECK(queriesOf(file.circuit) ==
-          std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
-                                 {"OR", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[4]},
-                                 {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
+    CHECK(queriesOf(file.circuit) == std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
+                                                            {"OR", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[4]},
+                                                            {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
     // pcfb 1.2 adds no operators.
     CHECK(stringMeta(file.circuit, "pcfb.opset") == "core-1.1");
 }
@@ -130,15 +123,12 @@ TEST_CASE("pcfb writer: options.query is the default for targets without an expl
     options.target_kinds = {{pc::target_id(0), {kind::probability}}};
     const auto file = writeAndRead(model, options);
     CHECK(minorOf(file.circuit) == 2);
-    CHECK(queriesOf(file.circuit) ==
-          std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
-                                 {"OR", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[4]},
-                                 {"A", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[0]}});
+    CHECK(queriesOf(file.circuit) == std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
+                                                            {"OR", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[4]},
+                                                            {"A", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[0]}});
 
     // Overriding every target back to probability returns to minor 1 whatever the default says.
-    options.target_kinds = {{pc::target_id(0), {kind::probability}},
-                            {pc::target_id(1), {kind::probability}},
-                            {pc::target_id(2), {kind::probability}}};
+    options.target_kinds = {{pc::target_id(0), {kind::probability}}, {pc::target_id(1), {kind::probability}}, {pc::target_id(2), {kind::probability}}};
     CHECK(minorOf(writeAndRead(model, options).circuit) == 1);
 }
 
@@ -148,11 +138,10 @@ TEST_CASE("pcfb writer: several kinds on one target make several queries on one 
     options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}}};
     const auto file = writeAndRead(model, options);
     CHECK(minorOf(file.circuit) == 2);
-    CHECK(queriesOf(file.circuit) ==
-          std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
-                                 {"AND", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[3]},
-                                 {"OR", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[4]},
-                                 {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
+    CHECK(queriesOf(file.circuit) == std::vector<query_row>{{"AND", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[3]},
+                                                            {"AND", ::pcfb::QueryKind::MONOTONE_HULL_PROBABILITY, file.tensor_by_node[3]},
+                                                            {"OR", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[4]},
+                                                            {"A", ::pcfb::QueryKind::PROBABILITY, file.tensor_by_node[0]}});
 }
 
 TEST_CASE("pcfb writer: io.pcfb.query_kind selects the default kind of the stream writer", "[io][pcfb][kind]") {
@@ -196,13 +185,10 @@ TEST_CASE("pcfb writer: io.pcfb.query_kind selects the default kind of the strea
 TEST_CASE("pcfb writer: per-target quantification is recorded next to the queries", "[io][pcfb][kind]") {
     const auto model = threeTargetModel();
     auto options = threeTargetNames();
-    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}},
-                            {pc::target_id(1), {kind::monotone_hull_probability}}};
+    options.target_kinds = {{pc::target_id(0), {kind::probability, kind::monotone_hull_probability}}, {pc::target_id(1), {kind::monotone_hull_probability}}};
     options.quantification = {
-        {pc::target_id(0),
-         writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
-        {pc::target_id(1),
-         writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = std::nullopt}},
+        {pc::target_id(0), writer::target_quantification{.target = "TOP", .literal_mode = "split", .max_initiators_per_cutset = 1}},
+        {pc::target_id(1), writer::target_quantification{.literal_mode = "fixed", .max_initiators_per_cutset = std::nullopt}},
     };
     const auto file = writeAndRead(model, options);
     REQUIRE(queriesOf(file.circuit).size() == 4);

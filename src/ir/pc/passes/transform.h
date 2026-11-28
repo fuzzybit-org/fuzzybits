@@ -64,9 +64,7 @@ struct transform_report final {
     std::size_t scratch_bytes = 0;
     api::diagnostic_list diagnostics;
 
-    [[nodiscard]] auto preserves(const query_kind kind) const -> bool {
-        return std::ranges::find(preserved_kinds, kind) != preserved_kinds.end();
-    }
+    [[nodiscard]] auto preserves(const query_kind kind) const -> bool { return std::ranges::find(preserved_kinds, kind) != preserved_kinds.end(); }
 };
 
 struct transform_result final {
@@ -90,8 +88,7 @@ struct transform_result final {
     return next;
 }
 
-[[nodiscard]] inline auto compose(std::span<node_image const> first, std::span<node_image const> second)
-    -> std::vector<node_image> {
+[[nodiscard]] inline auto compose(std::span<node_image const> first, std::span<node_image const> second) -> std::vector<node_image> {
     std::vector<node_image> composed(first.size());
     for (std::size_t node = 0; node < first.size(); ++node) {
         composed[node] = compose(first[node], second);
@@ -99,8 +96,7 @@ struct transform_result final {
     return composed;
 }
 
-[[nodiscard]] inline auto compose(std::span<target_id const> first, std::span<target_id const> second)
-    -> std::vector<target_id> {
+[[nodiscard]] inline auto compose(std::span<target_id const> first, std::span<target_id const> second) -> std::vector<target_id> {
     std::vector<target_id> composed(first.size());
     for (std::size_t target = 0; target < first.size(); ++target) {
         composed[target] = first[target].valid() ? second[first[target].raw()] : target_id::invalid();

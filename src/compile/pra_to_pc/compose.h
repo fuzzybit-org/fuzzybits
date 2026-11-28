@@ -14,8 +14,7 @@ namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
 // output node computes it without complement. An event name only ever goes
 // to the event's own node, never to a gate that was eliminated onto it. A
 // node folded to a constant, absorbed or complemented loses its name.
-[[nodiscard]] auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options,
-                                         ir::pc::circuit const &input, ir::pc::passes::pipeline_result const &passes)
-    -> io::backend::fuzzybits::pcfb::write_options;
+[[nodiscard]] auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options, ir::pc::circuit const &input,
+                                         ir::pc::passes::pipeline_result const &passes) -> io::backend::fuzzybits::pcfb::write_options;
 
 } // namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc

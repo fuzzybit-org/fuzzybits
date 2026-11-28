@@ -58,9 +58,7 @@ struct residual final {
         return std::span<std::uint32_t const>{literals}.subspan(node.begin, node.count);
     }
 
-    [[nodiscard]] auto variable_count() const noexcept -> std::uint32_t {
-        return static_cast<std::uint32_t>(variables.size());
-    }
+    [[nodiscard]] auto variable_count() const noexcept -> std::uint32_t { return static_cast<std::uint32_t>(variables.size()); }
 };
 
 // Three-valued (Kleene) evaluation. `values` must hold the variables'
@@ -69,8 +67,7 @@ void evaluate_kleene(residual const &circuit, std::span<std::uint8_t> values);
 
 // Two-valued evaluation of the root under an assignment of the variables
 // (indexed by ordinal); `scratch` is resized as needed.
-[[nodiscard]] auto evaluate(residual const &circuit, std::span<std::uint8_t const> assignment,
-                            std::vector<std::uint8_t> &scratch) -> bool;
+[[nodiscard]] auto evaluate(residual const &circuit, std::span<std::uint8_t const> assignment, std::vector<std::uint8_t> &scratch) -> bool;
 
 // Per node: which polarities reach it from the root.
 void polarities(residual const &circuit, std::vector<std::uint8_t> &out);

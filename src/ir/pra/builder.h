@@ -51,24 +51,18 @@ struct expression_spec final {
     std::string_view diagnostic;
     std::string_view detail;
 
-    [[nodiscard]] static constexpr auto literal(const double value,
-                                                const quantity_kind quantity = quantity_kind::probability) noexcept
-        -> expression_spec {
+    [[nodiscard]] static constexpr auto literal(const double value, const quantity_kind quantity = quantity_kind::probability) noexcept -> expression_spec {
         return expression_spec{.kind = expression_kind::literal, .quantity = quantity, .value = value};
     }
 
-    [[nodiscard]] static constexpr auto parameter(const std::string_view name,
-                                                  const quantity_kind quantity = quantity_kind::probability) noexcept
+    [[nodiscard]] static constexpr auto parameter(const std::string_view name, const quantity_kind quantity = quantity_kind::probability) noexcept
         -> expression_spec {
         return expression_spec{.kind = expression_kind::parameter, .quantity = quantity, .parameter_name = name};
     }
 
-    [[nodiscard]] static constexpr auto unsupported(const std::string_view diagnostic,
-                                                    const std::string_view detail = {},
-                                                    const quantity_kind quantity = quantity_kind::probability) noexcept
-        -> expression_spec {
-        return expression_spec{
-            .kind = expression_kind::unsupported, .quantity = quantity, .diagnostic = diagnostic, .detail = detail};
+    [[nodiscard]] static constexpr auto unsupported(const std::string_view diagnostic, const std::string_view detail = {},
+                                                    const quantity_kind quantity = quantity_kind::probability) noexcept -> expression_spec {
+        return expression_spec{.kind = expression_kind::unsupported, .quantity = quantity, .diagnostic = diagnostic, .detail = detail};
     }
 };
 
@@ -83,8 +77,7 @@ class reference final {
 
     constexpr reference(const domain_ref target) noexcept : target_(target) {} // NOLINT(google-explicit-constructor)
 
-    template <element_tag tag_type>
-    constexpr reference(const id<tag_type> target) noexcept : target_(target) {} // NOLINT(google-explicit-constructor)
+    template <element_tag tag_type> constexpr reference(const id<tag_type> target) noexcept : target_(target) {} // NOLINT(google-explicit-constructor)
 
     [[nodiscard]] static constexpr auto named(const std::string_view name) noexcept -> reference {
         reference out;
@@ -93,8 +86,7 @@ class reference final {
         return out;
     }
 
-    [[nodiscard]] static constexpr auto named(const element_kind kind, const std::string_view name) noexcept
-        -> reference {
+    [[nodiscard]] static constexpr auto named(const element_kind kind, const std::string_view name) noexcept -> reference {
         reference out;
         out.target_ = domain_ref(kind, std::numeric_limits<std::uint32_t>::max());
         out.name_ = name;
@@ -199,26 +191,23 @@ class builder final {
     [[nodiscard]] auto add_fault_tree(element_spec const &element) -> fault_tree_id;
     void add_fault_tree_top(fault_tree_id tree, reference gate);
 
-    [[nodiscard]] auto add_gate(element_spec const &element, gate_kind kind, std::span<operand_spec const> operands,
-                                fault_tree_id tree = {}) -> gate_id;
+    [[nodiscard]] auto add_gate(element_spec const &element, gate_kind kind, std::span<operand_spec const> operands, fault_tree_id tree = {}) -> gate_id;
 
-    [[nodiscard]] auto add_gate(element_spec const &element, const gate_kind kind,
-                                const std::initializer_list<operand_spec> operands, const fault_tree_id tree = {})
-        -> gate_id {
+    [[nodiscard]] auto add_gate(element_spec const &element, const gate_kind kind, const std::initializer_list<operand_spec> operands,
+                                const fault_tree_id tree = {}) -> gate_id {
         return add_gate(element, kind, std::span<operand_spec const>{operands.begin(), operands.size()}, tree);
     }
 
-    [[nodiscard]] auto add_cardinality(element_spec const &element, cardinality_bounds bounds,
-                                       std::span<operand_spec const> operands, fault_tree_id tree = {}) -> gate_id;
+    [[nodiscard]] auto add_cardinality(element_spec const &element, cardinality_bounds bounds, std::span<operand_spec const> operands, fault_tree_id tree = {})
+        -> gate_id;
 
-    [[nodiscard]] auto add_cardinality(element_spec const &element, const cardinality_bounds bounds,
-                                       const std::initializer_list<operand_spec> operands,
+    [[nodiscard]] auto add_cardinality(element_spec const &element, const cardinality_bounds bounds, const std::initializer_list<operand_spec> operands,
                                        const fault_tree_id tree = {}) -> gate_id {
         return add_cardinality(element, bounds, std::span<operand_spec const>{operands.begin(), operands.size()}, tree);
     }
 
-    [[nodiscard]] auto add_target(element_spec const &element, domain_target_kind kind, reference subject,
-                                  target_role role = target_role::primary) -> domain_target_id;
+    [[nodiscard]] auto add_target(element_spec const &element, domain_target_kind kind, reference subject, target_role role = target_role::primary)
+        -> domain_target_id;
 
     // Attach metadata to an element after it was added.
     void add_attribute(domain_ref owner, std::string_view name, std::string_view value);
@@ -233,8 +222,8 @@ class builder final {
     void push_attribute(element_id owner, std::string_view name, std::string_view value);
     void push_source(element_id owner, source_location location);
     [[nodiscard]] auto pending(reference const &ref) -> detail::pending_reference;
-    [[nodiscard]] auto push_gate(element_spec const &element, gate_kind kind, cardinality_bounds bounds,
-                                 std::span<operand_spec const> operands, fault_tree_id tree) -> gate_id;
+    [[nodiscard]] auto push_gate(element_spec const &element, gate_kind kind, cardinality_bounds bounds, std::span<operand_spec const> operands,
+                                 fault_tree_id tree) -> gate_id;
 
     detail::model_storage storage_;
     detail::builder_state state_;

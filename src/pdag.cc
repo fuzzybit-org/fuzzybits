@@ -50,8 +50,7 @@ void Pdag::SetWatchedGates(const std::unordered_set<const mef::Gate *> *gates) {
 
 void Pdag::SetNextNodeIndex(int index) {
     if (index <= node_index_) {
-        throw std::logic_error("Pdag::SetNextNodeIndex: index " + std::to_string(index) +
-                               " does not exceed last assigned " + std::to_string(node_index_));
+        throw std::logic_error("Pdag::SetNextNodeIndex: index " + std::to_string(index) + " does not exceed last assigned " + std::to_string(node_index_));
     }
     node_index_ = index - 1;
 }
@@ -59,8 +58,7 @@ void Pdag::SetNextNodeIndex(int index) {
 void Pdag::SetBasicEvent(int variable_index, const mef::BasicEvent *event) {
     const int slot = variable_index - kVariableStartIndex;
     if (slot < 0) {
-        throw std::logic_error("Pdag::SetBasicEvent: index " + std::to_string(variable_index) +
-                               " is below kVariableStartIndex");
+        throw std::logic_error("Pdag::SetBasicEvent: index " + std::to_string(variable_index) + " is below kVariableStartIndex");
     }
     if (static_cast<std::size_t>(slot) >= basic_events_.size()) {
         basic_events_.resize(static_cast<std::size_t>(slot) + 1, nullptr);
@@ -73,15 +71,13 @@ void NodeParentManager::AddParent(const GatePtr &gate) {
     parents_.data().emplace_back(gate->index(), gate);
 }
 
-Node::Node(Pdag *graph)
-    : index_(Pdag::NodeIndexGenerator()(graph)), order_(0), visits_{}, opti_value_(0), pos_count_(0), neg_count_(0),
-      graph_(*graph) {}
+Node::Node(Pdag *graph) : index_(Pdag::NodeIndexGenerator()(graph)), order_(0), visits_{}, opti_value_(0), pos_count_(0), neg_count_(0), graph_(*graph) {}
 
 Node::~Node() = default;
 
 Gate::Gate(Connective type, Pdag *graph)
-    : Node(graph), type_(type), mark_(false), module_(false), coherent_(false), min_number_(0), descendant_(0),
-      ancestor_(0), origin_(nullptr), min_time_(0), max_time_(0) {}
+    : Node(graph), type_(type), mark_(false), module_(false), coherent_(false), min_number_(0), descendant_(0), ancestor_(0), origin_(nullptr), min_time_(0),
+      max_time_(0) {}
 
 void Gate::type(Connective type) { // Don't use in Gate constructor!
     /// @todo Find the inefficient resets.
@@ -462,9 +458,7 @@ void Gate::ProcessComplementArg(int index) {
     }
 }
 
-Pdag::Pdag()
-    : node_index_(0), complement_(false), coherent_(true), normal_(true), register_null_gates_(true),
-      constant_(new Constant(this)) {}
+Pdag::Pdag() : node_index_(0), complement_(false), coherent_(true), normal_(true), register_null_gates_(true), constant_(new Constant(this)) {}
 
 Pdag::Pdag(const mef::Gate &root, bool ccf, const mef::Model *model) : Pdag() {
     TIMER(DEBUG2, "PDAG Construction");
@@ -505,8 +499,8 @@ namespace {
 
 /// @returns true if mef::Connective enum maps exactly to core::Connective enum.
 constexpr bool CheckConnectiveEnums() {
-    return CONNECTIVE_EQ(kAnd) && CONNECTIVE_EQ(kOr) && CONNECTIVE_EQ(kAtleast) && CONNECTIVE_EQ(kXor) &&
-           CONNECTIVE_EQ(kNot) && CONNECTIVE_EQ(kNand) && CONNECTIVE_EQ(kNor) && CONNECTIVE_EQ(kNull);
+    return CONNECTIVE_EQ(kAnd) && CONNECTIVE_EQ(kOr) && CONNECTIVE_EQ(kAtleast) && CONNECTIVE_EQ(kXor) && CONNECTIVE_EQ(kNot) && CONNECTIVE_EQ(kNand) &&
+           CONNECTIVE_EQ(kNor) && CONNECTIVE_EQ(kNull);
 }
 #undef CONNECTIVE_EQ
 } // namespace
@@ -556,8 +550,7 @@ void Pdag::GatherVariables(const mef::Substitution &substitution, bool ccf, Proc
         GatherVariables(**target, ccf, nodes);
 }
 
-template <class T>
-void Pdag::AddArg(const GatePtr &parent, const T &event, bool complement, bool ccf, ProcessedNodes *nodes) {
+template <class T> void Pdag::AddArg(const GatePtr &parent, const T &event, bool complement, bool ccf, ProcessedNodes *nodes) {
     if constexpr (std::is_same_v<T, mef::HouseEvent>) {
         (void)ccf;
         (void)nodes;
@@ -593,8 +586,8 @@ void Pdag::AddArg(const GatePtr &parent, const T &event, bool complement, bool c
     }
 }
 
-void Pdag::AddArg(const GatePtr &parent, const std::variant<mef::Gate *, mef::BasicEvent *, mef::HouseEvent *> &event,
-                  bool complement, bool ccf, ProcessedNodes *nodes) {
+void Pdag::AddArg(const GatePtr &parent, const std::variant<mef::Gate *, mef::BasicEvent *, mef::HouseEvent *> &event, bool complement, bool ccf,
+                  ProcessedNodes *nodes) {
     std::visit([&](const auto *arg_event) { AddArg(parent, *arg_event, complement, ccf, nodes); }, event);
 }
 

@@ -6,11 +6,11 @@
 
 #include "tally_node.h"
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 /// A container that owns a single `std::unordered_map<int, TallyNode>` but can
 /// be interacted with as if it were **two** separate maps – one from index to
-/// `tally` and one from index to `std::shared_ptr<core::Node>` – **without any
+/// `tally` and one from index to `std::shared_ptr<scram::core::Node>` – **without any
 /// copies**.  The proxy maps hand out references directly into the underlying
 /// `TallyNode` objects so modifications stay in sync automatically.
 class TallyNodeMap {
@@ -85,7 +85,7 @@ class TallyNodeMap {
 
   public:
     using tally_map = proxy_map<decltype(&TallyNode::tally_stats), tally>;
-    using node_map = proxy_map<decltype(&TallyNode::node), std::shared_ptr<core::Node>>;
+    using node_map = proxy_map<decltype(&TallyNode::node), std::shared_ptr<scram::core::Node>>;
 
     // Accessors for proxy maps -------------------------------------------------
     tally_map tallies() { return tally_map(this, &TallyNode::tally_stats); }
@@ -121,9 +121,7 @@ class TallyNodeMap {
     TallyNode &operator[](int key) { return data_[key]; }
     const TallyNode &at(int key) const { return data_.at(key); }
 
-    template <typename TN> auto insert_or_assign(int key, TN &&value) {
-        return data_.insert_or_assign(key, std::forward<TN>(value));
-    }
+    template <typename TN> auto insert_or_assign(int key, TN &&value) { return data_.insert_or_assign(key, std::forward<TN>(value)); }
 };
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

@@ -54,8 +54,7 @@ template class ext::linear_map<KeyClass, std::string, ext::MoveEraser, boost::co
 namespace std {
 
 template <typename T1, typename T2> std::ostream &operator<<(std::ostream &out, const std::pair<T1, T2> &value) {
-    out << "{" << Catch::StringMaker<T1>::convert(value.first) << ", " << Catch::StringMaker<T2>::convert(value.second)
-        << "}";
+    out << "{" << Catch::StringMaker<T1>::convert(value.first) << ", " << Catch::StringMaker<T2>::convert(value.second) << "}";
     return out;
 }
 

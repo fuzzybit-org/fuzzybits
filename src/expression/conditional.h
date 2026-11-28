@@ -33,8 +33,7 @@ class Ite : public ExpressionFormula<Ite> {
     /// @param[in] condition  The Boolean expression to be tested.
     /// @param[in] then_arm  The expression if the Boolean is true.
     /// @param[in] else_arm  The expression if the Boolean is false.
-    Ite(Expression *condition, Expression *then_arm, Expression *else_arm)
-        : ExpressionFormula<Ite>({condition, then_arm, else_arm}) {}
+    Ite(Expression *condition, Expression *then_arm, Expression *else_arm) : ExpressionFormula<Ite>({condition, then_arm, else_arm}) {}
 
     Interval interval() override;
 

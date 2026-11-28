@@ -24,8 +24,7 @@ using json_object = std::map<std::string, json, std::less<>>;
 using json_array = std::vector<json>;
 
 struct json final {
-    std::variant<std::nullptr_t, bool, double, std::string, std::shared_ptr<json_array>, std::shared_ptr<json_object>>
-        value = nullptr;
+    std::variant<std::nullptr_t, bool, double, std::string, std::shared_ptr<json_array>, std::shared_ptr<json_object>> value = nullptr;
 
     [[nodiscard]] auto is_null() const -> bool { return std::holds_alternative<std::nullptr_t>(value); }
     [[nodiscard]] auto number() const -> double { return std::get<double>(value); }
@@ -58,8 +57,7 @@ class json_parser final {
 
   private:
     void skip() {
-        while (cursor_ < text_.size() &&
-               (text_[cursor_] == ' ' || text_[cursor_] == '\n' || text_[cursor_] == '\r' || text_[cursor_] == '\t')) {
+        while (cursor_ < text_.size() && (text_[cursor_] == ' ' || text_[cursor_] == '\n' || text_[cursor_] == '\r' || text_[cursor_] == '\t')) {
             ++cursor_;
         }
     }

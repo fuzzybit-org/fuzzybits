@@ -276,8 +276,7 @@ enum Connective : std::uint8_t {
 };
 
 static const std::map<Connective, std::string> OpName = {
-    {kAnd, "and"}, {kOr, "or"},     {kAtleast, "k/n"}, {kXor, "xor"},
-    {kNot, "not"}, {kNand, "nand"}, {kNor, "nor"},     {kNull, "null"},
+    {kAnd, "and"}, {kOr, "or"}, {kAtleast, "k/n"}, {kXor, "xor"}, {kNot, "not"}, {kNand, "nand"}, {kNor, "nor"}, {kNull, "null"},
     //{kXnor,     "XNOR"},
 };
 
@@ -397,8 +396,7 @@ class Gate : public Node, public std::enable_shared_from_this<Gate> {
     ///
     /// @returns Forward-iterable range with ConstArg value type.
     template <class T> auto args() const {
-        return boost::adaptors::transform(const_cast<Gate *>(this)->args<T>(),
-                                          [](const Arg<T> &arg) { return ConstArg<T>{arg.first, *arg.second}; });
+        return boost::adaptors::transform(const_cast<Gate *>(this)->args<T>(), [](const Arg<T> &arg) { return ConstArg<T>{arg.first, *arg.second}; });
     }
 
     /// Marks are used for linear traversal of graphs.
@@ -563,9 +561,7 @@ class Gate : public Node, public std::enable_shared_from_this<Gate> {
         arg->AddParent(shared_from_this());
     }
     /// Wrapper to add gate arguments with index retrieval from the arg.
-    template <class T> void AddArg(const std::shared_ptr<T> &arg, bool complement = false) {
-        return AddArg(complement ? -arg->index() : arg->index(), arg);
-    }
+    template <class T> void AddArg(const std::shared_ptr<T> &arg, bool complement = false) { return AddArg(complement ? -arg->index() : arg->index(), arg); }
     /// Wrapper to add arguments from the containers.
     template <class T> void AddArg(const Arg<T> &arg) { return AddArg(arg.first, arg.second); }
 
@@ -1008,7 +1004,7 @@ class Pdag : private boost::noncopyable {
     /// Last assigned node index (0 before the Constant at 1 is created).
     [[nodiscard]] int last_node_index() const { return node_index_; }
 
-    /// Map a Variable index onto a MEF BasicEvent for kernel_builder lookup.
+    /// Map a Variable index onto a MEF BasicEvent, which the layer manager looks up (layer_manager::read_layer).
     /// `variable_index` is the PDAG index (`kVariableStartIndex`-based).
     void SetBasicEvent(int variable_index, const mef::BasicEvent *event);
 
@@ -1106,10 +1102,9 @@ class Pdag : private boost::noncopyable {
     /// @param[in,out] nodes  The mapping of processed nodes.
     ///
     /// @{
-    template <class T>
-    void AddArg(const GatePtr &parent, const T &event, bool complement, bool ccf, ProcessedNodes *nodes);
-    void AddArg(const GatePtr &parent, const std::variant<mef::Gate *, mef::BasicEvent *, mef::HouseEvent *> &event,
-                bool complement, bool ccf, ProcessedNodes *nodes);
+    template <class T> void AddArg(const GatePtr &parent, const T &event, bool complement, bool ccf, ProcessedNodes *nodes);
+    void AddArg(const GatePtr &parent, const std::variant<mef::Gate *, mef::BasicEvent *, mef::HouseEvent *> &event, bool complement, bool ccf,
+                ProcessedNodes *nodes);
     /// @}
 
     /// Propagate NULL type gates bottom-up.

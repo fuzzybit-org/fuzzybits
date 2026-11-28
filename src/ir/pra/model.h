@@ -51,8 +51,7 @@ struct model_storage final {
 };
 
 template <typename row_type>
-[[nodiscard]] auto slice(std::vector<row_type> const &column, const table_range<row_type> range) noexcept
-    -> std::span<row_type const> {
+[[nodiscard]] auto slice(std::vector<row_type> const &column, const table_range<row_type> range) noexcept -> std::span<row_type const> {
     return std::span<row_type const>{column}.subspan(range.offset, range.count);
 }
 
@@ -107,14 +106,11 @@ template <typename row_type>
     return text.substr(ref.offset, ref.size);
 }
 
-[[nodiscard]] inline auto name_hash(const std::string_view name) noexcept -> std::size_t {
-    return std::hash<std::string_view>{}(name);
-}
+[[nodiscard]] inline auto name_hash(const std::string_view name) noexcept -> std::size_t { return std::hash<std::string_view>{}(name); }
 
 // Elements with equal names share a probe chain in insertion order, so the
 // first match is the earliest element with that kind and name.
-[[nodiscard]] inline auto find_element(model_storage const &storage, const element_kind kind,
-                                       const std::string_view name) noexcept -> element_id {
+[[nodiscard]] inline auto find_element(model_storage const &storage, const element_kind kind, const std::string_view name) noexcept -> element_id {
     auto const &slots = storage.name_slots;
     if (slots.empty()) {
         return element_id::invalid();
@@ -145,59 +141,29 @@ class model final {
     [[nodiscard]] explicit operator bool() const noexcept { return valid(); }
     [[nodiscard]] auto descriptor() const noexcept -> ir::descriptor const & { return descriptor_; }
     [[nodiscard]] auto summary() const noexcept -> model_summary const & { return summary_; }
-    [[nodiscard]] auto project() const noexcept -> project_metadata {
-        return storage_ == nullptr ? project_metadata{} : storage_->project;
-    }
+    [[nodiscard]] auto project() const noexcept -> project_metadata { return storage_ == nullptr ? project_metadata{} : storage_->project; }
 
     [[nodiscard]] auto text(const text_ref ref) const noexcept -> std::string_view {
         return storage_ == nullptr ? std::string_view{} : detail::text_of(*storage_, ref);
     }
 
-    [[nodiscard]] auto elements() const noexcept -> std::span<element_metadata const> {
-        return column(&detail::model_storage::elements);
-    }
-    [[nodiscard]] auto attributes() const noexcept -> std::span<attribute const> {
-        return column(&detail::model_storage::attributes);
-    }
-    [[nodiscard]] auto source_files() const noexcept -> std::span<source_file const> {
-        return column(&detail::model_storage::source_files);
-    }
-    [[nodiscard]] auto source_locations() const noexcept -> std::span<source_location const> {
-        return column(&detail::model_storage::source_locations);
-    }
-    [[nodiscard]] auto expressions() const noexcept -> std::span<expression const> {
-        return column(&detail::model_storage::expressions);
-    }
-    [[nodiscard]] auto basic_events() const noexcept -> std::span<basic_event const> {
-        return column(&detail::model_storage::basic_events);
-    }
-    [[nodiscard]] auto house_events() const noexcept -> std::span<house_event const> {
-        return column(&detail::model_storage::house_events);
-    }
-    [[nodiscard]] auto initiating_events() const noexcept -> std::span<initiating_event const> {
-        return column(&detail::model_storage::initiating_events);
-    }
+    [[nodiscard]] auto elements() const noexcept -> std::span<element_metadata const> { return column(&detail::model_storage::elements); }
+    [[nodiscard]] auto attributes() const noexcept -> std::span<attribute const> { return column(&detail::model_storage::attributes); }
+    [[nodiscard]] auto source_files() const noexcept -> std::span<source_file const> { return column(&detail::model_storage::source_files); }
+    [[nodiscard]] auto source_locations() const noexcept -> std::span<source_location const> { return column(&detail::model_storage::source_locations); }
+    [[nodiscard]] auto expressions() const noexcept -> std::span<expression const> { return column(&detail::model_storage::expressions); }
+    [[nodiscard]] auto basic_events() const noexcept -> std::span<basic_event const> { return column(&detail::model_storage::basic_events); }
+    [[nodiscard]] auto house_events() const noexcept -> std::span<house_event const> { return column(&detail::model_storage::house_events); }
+    [[nodiscard]] auto initiating_events() const noexcept -> std::span<initiating_event const> { return column(&detail::model_storage::initiating_events); }
     [[nodiscard]] auto gates() const noexcept -> std::span<gate const> { return column(&detail::model_storage::gates); }
-    [[nodiscard]] auto gate_operands() const noexcept -> std::span<gate_operand const> {
-        return column(&detail::model_storage::gate_operands);
-    }
-    [[nodiscard]] auto fault_trees() const noexcept -> std::span<fault_tree const> {
-        return column(&detail::model_storage::fault_trees);
-    }
-    [[nodiscard]] auto fault_tree_gates() const noexcept -> std::span<gate_id const> {
-        return column(&detail::model_storage::fault_tree_gates);
-    }
-    [[nodiscard]] auto fault_tree_top_gates() const noexcept -> std::span<gate_id const> {
-        return column(&detail::model_storage::fault_tree_top_gates);
-    }
-    [[nodiscard]] auto targets() const noexcept -> std::span<domain_target const> {
-        return column(&detail::model_storage::targets);
-    }
+    [[nodiscard]] auto gate_operands() const noexcept -> std::span<gate_operand const> { return column(&detail::model_storage::gate_operands); }
+    [[nodiscard]] auto fault_trees() const noexcept -> std::span<fault_tree const> { return column(&detail::model_storage::fault_trees); }
+    [[nodiscard]] auto fault_tree_gates() const noexcept -> std::span<gate_id const> { return column(&detail::model_storage::fault_tree_gates); }
+    [[nodiscard]] auto fault_tree_top_gates() const noexcept -> std::span<gate_id const> { return column(&detail::model_storage::fault_tree_top_gates); }
+    [[nodiscard]] auto targets() const noexcept -> std::span<domain_target const> { return column(&detail::model_storage::targets); }
 
     // Every gate appears after all gates among its operands.
-    [[nodiscard]] auto topological_gates() const noexcept -> std::span<gate_id const> {
-        return column(&detail::model_storage::topological_gates);
-    }
+    [[nodiscard]] auto topological_gates() const noexcept -> std::span<gate_id const> { return column(&detail::model_storage::topological_gates); }
 
     [[nodiscard]] auto operands(const gate_id gate) const noexcept -> std::span<gate_operand const> {
         if (storage_ == nullptr || !gate.valid() || gate.raw() >= storage_->gates.size()) {
@@ -214,8 +180,7 @@ class model final {
     }
 
     [[nodiscard]] auto project_attributes() const noexcept -> std::span<attribute const> {
-        return storage_ == nullptr ? std::span<attribute const>{}
-                                   : detail::slice(storage_->attributes, storage_->project.attributes);
+        return storage_ == nullptr ? std::span<attribute const>{} : detail::slice(storage_->attributes, storage_->project.attributes);
     }
 
     [[nodiscard]] auto sources(const element_id element) const noexcept -> std::span<source_location const> {
@@ -250,9 +215,7 @@ class model final {
         return detail::text_of(*storage_, storage_->elements[element.raw()].stable_name);
     }
 
-    [[nodiscard]] auto stable_name(const domain_ref ref) const noexcept -> std::string_view {
-        return stable_name(element_of(ref));
-    }
+    [[nodiscard]] auto stable_name(const domain_ref ref) const noexcept -> std::string_view { return stable_name(element_of(ref)); }
 
     // Exact, case-sensitive lookup of a stable name within one kind; invalid
     // when absent. Expected O(1).
@@ -273,12 +236,8 @@ class model final {
     [[nodiscard]] auto find_initiating_event(const std::string_view name) const -> initiating_event_id {
         return find(element_kind::initiating_event, name).as<initiating_event_id>();
     }
-    [[nodiscard]] auto find_gate(const std::string_view name) const -> gate_id {
-        return find(element_kind::gate, name).as<gate_id>();
-    }
-    [[nodiscard]] auto find_fault_tree(const std::string_view name) const -> fault_tree_id {
-        return find(element_kind::fault_tree, name).as<fault_tree_id>();
-    }
+    [[nodiscard]] auto find_gate(const std::string_view name) const -> gate_id { return find(element_kind::gate, name).as<gate_id>(); }
+    [[nodiscard]] auto find_fault_tree(const std::string_view name) const -> fault_tree_id { return find(element_kind::fault_tree, name).as<fault_tree_id>(); }
     [[nodiscard]] auto find_target(const std::string_view name) const -> domain_target_id {
         return find(element_kind::domain_target, name).as<domain_target_id>();
     }
@@ -307,12 +266,9 @@ class model final {
   private:
     friend class builder;
 
-    model(std::shared_ptr<detail::model_storage const> storage, model_summary summary)
-        : storage_(std::move(storage)), summary_(std::move(summary)) {}
+    model(std::shared_ptr<detail::model_storage const> storage, model_summary summary) : storage_(std::move(storage)), summary_(std::move(summary)) {}
 
-    template <typename row_type>
-    [[nodiscard]] auto column(std::vector<row_type> detail::model_storage::*member) const noexcept
-        -> std::span<row_type const> {
+    template <typename row_type> [[nodiscard]] auto column(std::vector<row_type> detail::model_storage::*member) const noexcept -> std::span<row_type const> {
         return storage_ == nullptr ? std::span<row_type const>{} : std::span<row_type const>{(*storage_).*member};
     }
 
@@ -321,12 +277,8 @@ class model final {
     ir::descriptor descriptor_ = make_descriptor();
 };
 
-[[nodiscard]] inline auto is_pra(ir::handle const &handle) -> bool {
-    return handle.valid() && handle.storage_type() == storage_type_id();
-}
+[[nodiscard]] inline auto is_pra(ir::handle const &handle) -> bool { return handle.valid() && handle.storage_type() == storage_type_id(); }
 
-[[nodiscard]] inline auto model_from(ir::handle const &handle) -> model const * {
-    return is_pra(handle) ? handle.storage_as<model>() : nullptr;
-}
+[[nodiscard]] inline auto model_from(ir::handle const &handle) -> model const * { return is_pra(handle) ? handle.storage_as<model>() : nullptr; }
 
 } // namespace fuzzybits::ir::pra

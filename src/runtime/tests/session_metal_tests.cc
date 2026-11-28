@@ -12,15 +12,12 @@
 
 namespace {
 
-std::string aralia(const char *name) {
-    return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string();
-}
+std::string aralia(const char *name) { return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string(); }
 
 } // namespace
 
 // Runs as fzb_runtime_tests.metal_step_n; skipped without a Metal device.
-TEST_CASE("Session::step(n) matches n single steps on chinese, on Metal (#171)",
-          "[runtime][mc][bit-identity][issue-171]") {
+TEST_CASE("Session::step(n) matches n single steps on chinese, on Metal (#171)", "[runtime][mc][bit-identity][issue-171]") {
     constexpr std::uint64_t kTrialsPerPass = 65536;
     fuzzybits::compile::Options opt;
     opt.compilation_level = 2;
@@ -45,8 +42,7 @@ TEST_CASE("Session::step(n) matches n single steps on chinese, on Metal (#171)",
 
     REQUIRE(once.nodes.size() == last.nodes.size());
     for (const auto &node : once.nodes) {
-        const auto match = std::find_if(last.nodes.begin(), last.nodes.end(),
-                                        [&](const auto &other) { return other.index == node.index; });
+        const auto match = std::find_if(last.nodes.begin(), last.nodes.end(), [&](const auto &other) { return other.index == node.index; });
         REQUIRE(match != last.nodes.end());
         CHECK(node.num_one_bits == match->num_one_bits);
         CHECK(node.total_bits == match->total_bits);

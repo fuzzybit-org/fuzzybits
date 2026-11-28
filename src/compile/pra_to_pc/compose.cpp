@@ -8,8 +8,7 @@
 
 namespace fuzzybits::compile::backend::fuzzybits::pra_to_pc {
 
-auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options, ir::pc::circuit const &input,
-                           ir::pc::passes::pipeline_result const &passes)
+auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options, ir::pc::circuit const &input, ir::pc::passes::pipeline_result const &passes)
     -> io::backend::fuzzybits::pcfb::write_options {
     using namespace ir::pc;
 
@@ -51,8 +50,7 @@ auto compose_write_options(io::backend::fuzzybits::pcfb::write_options options, 
             continue;
         }
         auto const &image = passes.node_map[node.raw()];
-        if (image.kind != passes::image_kind::reference || image.edge.complement ||
-            image.edge.source.raw() >= output_ops.size()) {
+        if (image.kind != passes::image_kind::reference || image.edge.complement || image.edge.source.raw() >= output_ops.size()) {
             continue;
         }
         const bool event_image = output_ops[image.edge.source.raw()] == op_code::basic_event;

@@ -50,7 +50,6 @@ struct ParsedModel final {
 
 [[nodiscard]] auto parse(std::istream &input) -> ParsedModel;
 [[nodiscard]] auto build_pc(ParsedModel const &model) -> ir::pc::finalize_result;
-[[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 } // namespace fuzzybits::io::backend::fuzzybits::aiger::detail

@@ -311,10 +311,10 @@ may flatten through shared subgraphs, except modules are still preserved.
 | `CustomPreprocessor<Bdd>::Run()` | Base preprocessing, then `MarkCoherence`, then `TopologicalOrder`. |
 | `CustomPreprocessor<Zbdd>::Run()` | Base preprocessing, then conditional Phase IV, Phase V, `MarkCoherence`, `TopologicalOrder`. |
 | `CustomPreprocessor<Mocus>::Run()` | ZBDD preprocessing, then `InvertOrder()`. |
-| `CustomPreprocessor<mc::DirectEval>::Run()` | Settings-controlled pipeline with compilation levels and expansion flags. |
+| `CustomPreprocessor<DirectEval>::Run()` | Settings-controlled pipeline with compilation levels and expansion flags. |
 | `CustomPreprocessor<Mocus>::InvertOrder()` | Reorders final node orders for MOCUS traversal semantics rather than standard topological order. |
-| `CustomPreprocessor<mc::DirectEval>::InvertOrder()` | Defined but not used by the shown DirectEval pipeline. |
-| `CustomPreprocessor<mc::DirectEval>::remove_null_gates()` | Defined but not called. Therefore `settings_->keep_null_gates()` currently has no visible effect in the shown pipeline. |
+| `CustomPreprocessor<DirectEval>::InvertOrder()` | Defined but not used by the shown DirectEval pipeline. |
+| `CustomPreprocessor<DirectEval>::remove_null_gates()` | Defined but not called. Therefore `settings_->keep_null_gates()` currently has no visible effect in the shown pipeline. |
 
 ---
 
@@ -545,7 +545,7 @@ Because `RegisterToClear(clone)` is checked **before** `ProcessConstantArg()`, t
 |---|---|
 | `GatherNodes()` | Collects reachable gates and variables, used by order inversion. |
 | `CustomPreprocessor<Mocus>::InvertOrder()` | Partitions gates into modules and non-modules, reverses non-module gate order, shifts module/variable orders. |
-| `CustomPreprocessor<mc::DirectEval>::InvertOrder()` | Same logic as MOCUS but unused in DirectEval pipeline. |
+| `CustomPreprocessor<DirectEval>::InvertOrder()` | Same logic as MOCUS but unused in DirectEval pipeline. |
 
 MOCUS order after `InvertOrder()` is **not** a standard topological order. It is a MOCUS-specific traversal order.
 
@@ -859,7 +859,7 @@ At level `>=6`, either flag can cause `RunPhaseThree()`, which expands all non-n
 
 ### 5. `keep_null_gates()` appears unused
 
-`CustomPreprocessor<mc::DirectEval>::remove_null_gates()` references `settings_->keep_null_gates()`, but `remove_null_gates()` is not called in `Run()`. Therefore, in the shown implementation, that setting has no effect.
+`CustomPreprocessor<DirectEval>::remove_null_gates()` references `settings_->keep_null_gates()`, but `remove_null_gates()` is not called in `Run()`. Therefore, in the shown implementation, that setting has no effect.
 
 ### 6. MOCUS final order is not topological
 
@@ -875,7 +875,7 @@ Notable examples:
 
 - `assert("More complex gates are considered impossible to sub-modularize!")` is effectively a no-op.
 - The decomposition cloning path checks `RegisterToClear(clone)` before applying `ProcessConstantArg()`, so it likely rarely executes as intended.
-- `CustomPreprocessor<mc::DirectEval>::InvertOrder()` is implemented but not used.
+- `CustomPreprocessor<DirectEval>::InvertOrder()` is implemented but not used.
 - DirectEval dereferences `settings_` unconditionally.
 
 These do not necessarily make the whole pipeline incorrect, but they matter for maintenance, testing, and interpreting guarantees.

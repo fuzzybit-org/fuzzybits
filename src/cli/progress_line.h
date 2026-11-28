@@ -45,8 +45,7 @@ struct display_policy {
 /// Same policy with every input supplied, so it is testable without a terminal.
 /// `progress_env == nullptr` means unset; `0/false/no/off` disables, `1/true/yes/on` forces the
 /// display on without a TTY (stderr only). Flags win over the environment.
-[[nodiscard]] display_policy resolve_display(bool no_progress, bool quiet, const char *progress_env, const char *term,
-                                             bool is_tty);
+[[nodiscard]] display_policy resolve_display(bool no_progress, bool quiet, const char *progress_env, const char *term, bool is_tty);
 
 /// Glyphs for the current stderr locale.
 [[nodiscard]] line_style style_from_environment();
@@ -68,8 +67,7 @@ struct display_policy {
 /// watches several targets. The line count depends only on the query count and the style, so the
 /// height is fixed for the run and every redraw moves the cursor by an exact count.
 /// `height` (0 = unknown) caps the block so it never exceeds the terminal.
-[[nodiscard]] std::vector<std::string> format_block(const snapshot &s, std::size_t width, const line_style &style,
-                                                    std::size_t height = 0);
+[[nodiscard]] std::vector<std::string> format_block(const snapshot &s, std::size_t width, const line_style &style, std::size_t height = 0);
 
 /// One line that replaces the block when the run ends. `width` (0 = unbounded) truncates it, so a
 /// narrow terminal cannot wrap it either; the per-target tail is dropped before the timing is.

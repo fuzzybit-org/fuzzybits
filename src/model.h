@@ -42,10 +42,9 @@
 namespace scram::mef {
 
 /// This class represents a risk analysis model.
-class Model
-    : public Element,
-      public MultiContainer<Model, InitiatingEvent, EventTree, Sequence, Rule, Alignment, Substitution, FaultTree,
-                            BasicEvent, Gate, HouseEvent, Parameter, CcfGroup, ExternLibrary, ExternFunction<void>> {
+class Model : public Element,
+              public MultiContainer<Model, InitiatingEvent, EventTree, Sequence, Rule, Alignment, Substitution, FaultTree, BasicEvent, Gate, HouseEvent,
+                                    Parameter, CcfGroup, ExternLibrary, ExternFunction<void>> {
   public:
     /// Container type identifier string for error messages.
     static constexpr const char *kTypeString = "model";

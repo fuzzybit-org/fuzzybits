@@ -47,8 +47,7 @@ namespace {
 
 [[nodiscard]] auto hasFtpExtension(std::filesystem::path const &path) -> bool {
     auto extension = path.extension().string();
-    std::ranges::transform(extension, extension.begin(),
-                           [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::ranges::transform(extension, extension.begin(), [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return extension == ".ftp";
 }
 
@@ -56,8 +55,7 @@ namespace {
 
 void collectFtpFiles(std::filesystem::path const &root, std::vector<std::filesystem::path> &files) {
     std::error_code error;
-    auto iterator =
-        std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error);
+    auto iterator = std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error);
     if (error) {
         return;
     }
@@ -99,12 +97,10 @@ struct corpus_project final {
     std::ranges::sort(files);
     std::vector<corpus_project> projects;
     for (auto const &file : files) {
-        projects.push_back(
-            corpus_project{.label = file.lexically_relative(projectRoot()).generic_string(), .files = {file}});
+        projects.push_back(corpus_project{.label = file.lexically_relative(projectRoot()).generic_string(), .files = {file}});
     }
 
-    if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR");
-        privateDir != nullptr && privateDir[0] != '\0') {
+    if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR"); privateDir != nullptr && privateDir[0] != '\0') {
         files.clear();
         collectFtpFiles(privateDir, files);
         std::map<std::filesystem::path, std::vector<std::filesystem::path>> byDirectory;
@@ -113,8 +109,7 @@ struct corpus_project final {
         }
         for (auto &[directory, members] : byDirectory) {
             std::ranges::sort(members);
-            projects.push_back(
-                corpus_project{.label = "private project " + std::to_string(projects.size()), .files = members});
+            projects.push_back(corpus_project{.label = "private project " + std::to_string(projects.size()), .files = members});
         }
     }
     return projects;
@@ -125,8 +120,7 @@ struct corpus_project final {
     for (auto const &file : project.files) {
         std::ifstream input(file, std::ios::binary);
         REQUIRE(input);
-        sources.push_back({.path = file.generic_string(),
-                           .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
+        sources.push_back({.path = file.generic_string(), .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
     }
     return ftp_lowering_test::lower(sources);
 }
@@ -143,8 +137,7 @@ struct corpus_project final {
     return pc;
 }
 
-[[nodiscard]] auto writeOutput(fuzzybits::ir::pc::circuit const &model,
-                               std::optional<double> truncationLimit = std::nullopt) -> std::string {
+[[nodiscard]] auto writeOutput(fuzzybits::ir::pc::circuit const &model, std::optional<double> truncationLimit = std::nullopt) -> std::string {
     fuzzybits::io::write_request request{
         .format = fuzzybits::io::formats::ftp(),
     };
@@ -220,8 +213,7 @@ TEST_CASE("FTP input corpus round-trips to stable write checksums", "[io][ftp][c
             auto firstRead = readProject(project);
             INFO(diagnosticsText(firstRead.diagnostics()));
             if (!firstRead && std::ranges::all_of(firstRead.diagnostics().items(), [](auto const &item) {
-                    return item.severity != fuzzybits::api::diagnostic_severity::error ||
-                           item.code == "compile.pra_to_pc.frequency-out-of-range";
+                    return item.severity != fuzzybits::api::diagnostic_severity::error || item.code == "compile.pra_to_pc.frequency-out-of-range";
                 })) {
                 SUCCEED("an initiator frequency above 1 is not a probability; the lowering rejects it");
                 continue;
@@ -230,9 +222,8 @@ TEST_CASE("FTP input corpus round-trips to stable write checksums", "[io][ftp][c
 
             const auto firstPc = requirePcModel(firstRead.value());
             const auto firstLimit = ftp_lowering_test::limit_of(firstRead.value());
-            if (!std::ranges::all_of(firstPc.probability_sources(), [](auto const &source) {
-                    return source.kind == fuzzybits::ir::pc::probability_source_kind::literal;
-                })) {
+            if (!std::ranges::all_of(firstPc.probability_sources(),
+                                     [](auto const &source) { return source.kind == fuzzybits::ir::pc::probability_source_kind::literal; })) {
                 SUCCEED("frequencies are not literal probabilities; the FTP writer cannot round-trip them");
                 continue;
             }

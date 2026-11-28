@@ -261,9 +261,7 @@ class Histogram : public RandomDeviate {
     void Validate() const override;
 
     double value() override;
-    Interval interval() override {
-        return Interval::closed((*boundaries_.begin())->value(), (*std::prev(boundaries_.end()))->value());
-    }
+    Interval interval() override { return Interval::closed((*boundaries_.begin())->value(), (*std::prev(boundaries_.end()))->value()); }
 
   private:
     /// Access to args.

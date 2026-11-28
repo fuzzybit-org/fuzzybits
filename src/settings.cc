@@ -50,8 +50,7 @@ Settings &Settings::algorithm(Algorithm value) {
 Settings &Settings::algorithm(std::string_view value) {
     auto it = boost::find(kAlgorithmToString, value);
     if (it == std::end(kAlgorithmToString))
-        SCRAM_THROW(SettingsError("The qualitative analysis algorithm is not recognized."))
-            << errinfo_value(std::string(value));
+        SCRAM_THROW(SettingsError("The qualitative analysis algorithm is not recognized.")) << errinfo_value(std::string(value));
 
     return algorithm(static_cast<Algorithm>(std::distance(kAlgorithmToString, it)));
 }
@@ -67,8 +66,7 @@ Settings &Settings::approximation(Approximation value) {
 Settings &Settings::approximation(std::string_view value) {
     auto it = boost::find(kApproximationToString, value);
     if (it == std::end(kApproximationToString))
-        SCRAM_THROW(SettingsError("The probability approximation is not recognized."))
-            << errinfo_value(std::string(value));
+        SCRAM_THROW(SettingsError("The probability approximation is not recognized.")) << errinfo_value(std::string(value));
 
     return approximation(static_cast<Approximation>(std::distance(kApproximationToString, it)));
 }
@@ -82,8 +80,7 @@ Settings &Settings::prime_implicants(bool flag) {
 
 Settings &Settings::limit_order(int order) {
     if (order < 0)
-        SCRAM_THROW(SettingsError("The limit on the order of products cannot be less than 0."))
-            << errinfo_value(std::to_string(order));
+        SCRAM_THROW(SettingsError("The limit on the order of products cannot be less than 0.")) << errinfo_value(std::to_string(order));
 
     limit_order_ = order;
     return *this;
@@ -91,8 +88,7 @@ Settings &Settings::limit_order(int order) {
 
 Settings &Settings::cut_off(double prob) {
     if (prob < 0 || prob > 1)
-        SCRAM_THROW(SettingsError("The cut-off probability cannot be negative or more than 1."))
-            << errinfo_value(std::to_string(prob));
+        SCRAM_THROW(SettingsError("The cut-off probability cannot be negative or more than 1.")) << errinfo_value(std::to_string(prob));
 
     cut_off_ = prob;
     return *this;
@@ -100,8 +96,7 @@ Settings &Settings::cut_off(double prob) {
 
 Settings &Settings::num_trials(const std::double_t n) {
     if (n < 0)
-        SCRAM_THROW(SettingsError("The number of trials cannot be negative (0 = unbounded)."))
-            << errinfo_value(std::to_string(n));
+        SCRAM_THROW(SettingsError("The number of trials cannot be negative (0 = unbounded).")) << errinfo_value(std::to_string(n));
 
     const std::size_t nt = static_cast<std::size_t>(std::round(n));
     if (!nt) {
@@ -113,8 +108,7 @@ Settings &Settings::num_trials(const std::double_t n) {
 
 Settings &Settings::num_quantiles(int n) {
     if (n < 1)
-        SCRAM_THROW(SettingsError("The number of quantiles cannot be less than 1."))
-            << errinfo_value(std::to_string(n));
+        SCRAM_THROW(SettingsError("The number of quantiles cannot be less than 1.")) << errinfo_value(std::to_string(n));
 
     num_quantiles_ = n;
     return *this;
@@ -148,8 +142,7 @@ Settings &Settings::time_step(double time) {
     if (time < 0)
         SCRAM_THROW(SettingsError("The time step cannot be negative.")) << errinfo_value(std::to_string(time));
     if (!time && safety_integrity_levels_)
-        SCRAM_THROW(SettingsError("The time step cannot be disabled for the SIL"))
-            << errinfo_value(std::to_string(time));
+        SCRAM_THROW(SettingsError("The time step cannot be disabled for the SIL")) << errinfo_value(std::to_string(time));
 
     time_step_ = time;
     return *this;

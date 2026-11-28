@@ -123,7 +123,9 @@ JIT volume, the first timed call matched a second one within 0.5–1.4%.
 has no Nsight Systems and falls back to `sample_s`. CPU perf trial counts are
 sized per model so in-process sampling is ~2–5 s (`trials.cpu_perf` in the
 manifest). Warm and cold AdaptiveCpp cache times are reported separately;
-comparisons use **warm** numbers.
+comparisons use **warm** numbers. The `basic_event` bucket holds the sampling kernels by name
+(`benchmarks/harness/profile.py`): `kernel::basic_event` in builds before the per-form kernels of
+`src/mc/kernel/sampler/`, `kernel::sampler::strided`, `::lockstep` and `::chunked` after.
 
 With `--metric kernel`, the **metric is `gpu_total_ms`** (all compute kernels; memcpy
 excluded), not `basic_event` alone. On das9701 at 1e8, `basic_event` is 81.5 ms

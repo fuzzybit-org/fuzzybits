@@ -43,16 +43,13 @@ constexpr std::size_t kMaxCycleNodesShown = 8;
         const auto offset = std::uint64_t{graph.operand_offsets[node]};
         const auto count = std::uint64_t{graph.operand_counts[node]};
         if (offset + count > graph.edges.size()) {
-            diagnostics.push(api::make_error("io.pcfb.invalid-ir", "node " + std::to_string(node) +
-                                                                       " operand range exceeds the edge column"));
+            diagnostics.push(api::make_error("io.pcfb.invalid-ir", "node " + std::to_string(node) + " operand range exceeds the edge column"));
             continue;
         }
         for (std::uint64_t edge = offset; edge < offset + count; ++edge) {
             if (const auto source = graph.edges[edge].source; !source.valid() || source.raw() >= nodeCount) {
-                diagnostics.push(
-                    api::make_error("io.pcfb.invalid-edge",
-                                    "node " + std::to_string(node) + " references invalid operand node " +
-                                        (source.valid() ? std::to_string(source.raw()) : std::string("<invalid>"))));
+                diagnostics.push(api::make_error("io.pcfb.invalid-edge", "node " + std::to_string(node) + " references invalid operand node " +
+                                                                             (source.valid() ? std::to_string(source.raw()) : std::string("<invalid>"))));
             }
         }
     }

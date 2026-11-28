@@ -33,8 +33,8 @@ namespace ScramCLI {
 /// Helper macro for ConstructSettings
 /// to set the flag in "settings"
 /// only if provided by "vm" arguments.
-#define SET(tag, type, member)                                                                                         \
-    if (vm.contains(tag))                                                                                              \
+#define SET(tag, type, member)                                                                                                                                 \
+    if (vm.contains(tag))                                                                                                                                      \
     settings->member(vm[tag].as<type>())
 // clang-format on
 
@@ -112,8 +112,7 @@ inline void ConstructSettings(const po::variables_map &vm, scram::core::Settings
     SET("oracle", double, oracle_p);
 
     if (vm.contains("num-trials")) {
-        settings->early_stop(
-            vm.contains("early-stop")); // if user passed --early-stop along with --num-trials, intent is clear
+        settings->early_stop(vm.contains("early-stop")); // if user passed --early-stop along with --num-trials, intent is clear
         // otherwise, turn off --early-stop with --num-trials
         SET("num-trials", std::double_t, num_trials); // this will also set early-stop to true if num-trials = 0
     } else {

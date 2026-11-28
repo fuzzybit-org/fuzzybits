@@ -102,8 +102,7 @@ std::map<std::string, double> RiskAnalysisTest::sequences() {
     assert(model->alignments().empty());
     assert(analysis->event_tree_results().size() == 1);
     std::map<std::string, double> results;
-    for (const core::EventTreeAnalysis::Result &result :
-         analysis->event_tree_results().front().event_tree_analysis->sequences()) {
+    for (const core::EventTreeAnalysis::Result &result : analysis->event_tree_results().front().event_tree_analysis->sequences()) {
         results.emplace(result.sequence.name(), result.p_sequence);
     }
     return results;
@@ -178,8 +177,7 @@ TEST_P(RiskAnalysisTest, AnalyzeDefault) {
     std::string tree_input = "tests/input/fta/correct_tree_input.xml";
     REQUIRE_NOTHROW(ProcessInputFiles({tree_input}));
     REQUIRE_NOTHROW(analysis->Analyze());
-    std::set<std::set<std::string>> mcs = {
-        {"PumpOne", "PumpTwo"}, {"PumpOne", "ValveTwo"}, {"PumpTwo", "ValveOne"}, {"ValveOne", "ValveTwo"}};
+    std::set<std::set<std::string>> mcs = {{"PumpOne", "PumpTwo"}, {"PumpOne", "ValveTwo"}, {"PumpTwo", "ValveOne"}, {"ValveOne", "ValveTwo"}};
     CHECK(products() == mcs);
     PrintProducts(); // Quick visual verification.
 }
@@ -189,11 +187,8 @@ TEST_P(RiskAnalysisTest, AnalyzeNonCoherentDefault) {
     REQUIRE_NOTHROW(ProcessInputFiles({tree_input}));
     REQUIRE_NOTHROW(analysis->Analyze());
     if (settings.prime_implicants()) {
-        std::set<std::set<std::string>> pi = {{"not PumpOne", "ValveOne"},
-                                              {"PumpOne", "PumpTwo"},
-                                              {"PumpOne", "ValveTwo"},
-                                              {"PumpTwo", "ValveOne"},
-                                              {"ValveOne", "ValveTwo"}};
+        std::set<std::set<std::string>> pi = {
+            {"not PumpOne", "ValveOne"}, {"PumpOne", "PumpTwo"}, {"PumpOne", "ValveTwo"}, {"PumpTwo", "ValveOne"}, {"ValveOne", "ValveTwo"}};
         CHECK(products().size() == 5);
         CHECK(products() == pi);
     } else {
@@ -448,8 +443,7 @@ TEST_P(RiskAnalysisTest, AnalyzeTestInitatingEvent) {
 }
 
 TEST_P(RiskAnalysisTest, AnalyzeTestFunctionalEvent) {
-    const char *tree_input[] = {"tests/input/eta/test_functional_event.xml",
-                                "tests/input/eta/test_functional_event_link.xml"};
+    const char *tree_input[] = {"tests/input/eta/test_functional_event.xml", "tests/input/eta/test_functional_event_link.xml"};
     settings.probability_analysis(true);
     for (auto input : tree_input) {
         REQUIRE_NOTHROW(ProcessInputFiles({input}));
@@ -587,8 +581,7 @@ TEST_P(RiskAnalysisTest, ChildNandNorGates) {
     REQUIRE_NOTHROW(ProcessInputFiles({tree_input}));
     REQUIRE_NOTHROW(analysis->Analyze());
     if (settings.prime_implicants()) {
-        std::set<std::set<std::string>> pi = {{"not PumpOne", "not PumpTwo", "not ValveOne"},
-                                              {"not PumpOne", "not ValveTwo", "not ValveOne"}};
+        std::set<std::set<std::string>> pi = {{"not PumpOne", "not PumpTwo", "not ValveOne"}, {"not PumpOne", "not ValveTwo", "not ValveOne"}};
         CHECK(products() == pi);
     } else {
         CHECK(products() == kUnity);
@@ -617,8 +610,7 @@ TEST_F(RiskAnalysisTest, UndefinedEventsMixedRoles) {
     std::string tree_input = "tests/input/fta/ambiguous_events_with_roles.xml";
     REQUIRE_NOTHROW(ProcessInputFiles({tree_input}));
     REQUIRE_NOTHROW(analysis->Analyze());
-    std::set<std::set<std::string>> mcs = {{"C", "Ambiguous.Private.A", "Ambiguous.Private.B"},
-                                           {"G", "Ambiguous.Private.A", "Ambiguous.Private.B"}};
+    std::set<std::set<std::string>> mcs = {{"C", "Ambiguous.Private.A", "Ambiguous.Private.B"}, {"G", "Ambiguous.Private.A", "Ambiguous.Private.B"}};
     CHECK(products() == mcs);
 }
 

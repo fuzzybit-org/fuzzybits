@@ -17,7 +17,7 @@ from benchmarks.harness.inject import (  # noqa: E402
     pass_size_from_n_pair,
     pass_size_from_run,
 )
-from benchmarks.harness.profile import parse_nvprof, parse_nsys  # noqa: E402
+from benchmarks.harness.profile import classify_kernel, parse_nvprof, parse_nsys  # noqa: E402
 from benchmarks.harness.stats import (  # noqa: E402
     bootstrap_median_ratio_ci,
     iqr,
@@ -248,6 +248,17 @@ def test_nvprof_parser_basic_event():
     assert parsed["primary_ms"] == parsed["total_gpu_kernel_ms"]
     assert parsed["gpu_total_ms"] == parsed["total_gpu_kernel_ms"]
     assert parsed["total_gpu_kernel_ms"] > 40.0
+
+
+def test_classify_kernel_sampling_kernels():
+    # The sampling kernels reach the profiler through iterable_queueable's lambda, demangled or mangled; before the
+    # per-form split their class was kernel::basic_event.
+    queueable = "fuzzybits::mc::executor::iterable_queueable<fuzzybits::mc::kernel::sampler::{}<fuzzybits::mc::event::node_types<unsigned long, int, unsigned int> >, 1>::handle_submission(sycl::handler&, unsigned int)::{{lambda(sycl::nd_item<1> const&)#1}}"
+    for form in ("strided", "lockstep", "chunked"):
+        assert classify_kernel(queueable.format(form)) == "basic_event"
+    assert classify_kernel("_ZN9fuzzybits2mc6kernel7sampler7stridedINS0_5event10node_typesImijEEEclERKN4sycl7nd_itemILi1EEEj") == "basic_event"
+    assert classify_kernel("scram::mc::queue::iterable_queueable<scram::mc::kernel::basic_event<T, (sampler_form)0>, 1>") == "basic_event"
+    assert classify_kernel("fuzzybits::mc::kernel::tally<T>") == "tally"
 
 
 def test_nsys_parser_kernel_summary():

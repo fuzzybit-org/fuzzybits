@@ -85,8 +85,7 @@ class Reporter {
     ///
     /// @param[in] settings  The whole analysis settings.
     /// @param[in,out] information  The XML element to append the results.
-    template <class T = core::RiskAnalysis>
-    void ReportCalculatedQuantity(const core::Settings &settings, xml::StreamElement *information);
+    template <class T = core::RiskAnalysis> void ReportCalculatedQuantity(const core::Settings &settings, xml::StreamElement *information);
 
     /// Reports summary of the model and its constructs.
     ///
@@ -109,8 +108,7 @@ class Reporter {
     /// @param[in] container  The container with pointers to elements.
     /// @param[in] header  The header message to identify elements in the message.
     /// @param[in,out] information  The XML element to append the results.
-    template <class T>
-    void ReportUnusedElements(const T &container, const std::string &header, xml::StreamElement *information);
+    template <class T> void ReportUnusedElements(const T &container, const std::string &header, xml::StreamElement *information);
 
     /// Reports the results of event tree analysis
     /// to a specified output destination.
@@ -129,32 +127,29 @@ class Reporter {
     /// @param[in] prob_analysis  Probability Analysis with results.
     ///                           Null pointer for no probability analysis.
     /// @param[in,out] results  XML element to for all results.
-    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::FaultTreeAnalysis &fta,
-                       const core::ProbabilityAnalysis *prob_analysis, xml::StreamElement *results);
+    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::FaultTreeAnalysis &fta, const core::ProbabilityAnalysis *prob_analysis,
+                       xml::StreamElement *results);
 
     /// Reports results of probability analysis.
     ///
     /// @param[in] id  The analysis id.
     /// @param[in] prob_analysis  Probability Analysis with results.
     /// @param[in,out] results  XML element to for all results.
-    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ProbabilityAnalysis &prob_analysis,
-                       xml::StreamElement *results);
+    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ProbabilityAnalysis &prob_analysis, xml::StreamElement *results);
 
     /// Reports results of importance analysis.
     ///
     /// @param[in] id  The analysis id.
     /// @param[in] importance_analysis  Importance analysis with results.
     /// @param[in,out] results  XML element to for all results.
-    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ImportanceAnalysis &importance_analysis,
-                       xml::StreamElement *results);
+    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ImportanceAnalysis &importance_analysis, xml::StreamElement *results);
 
     /// Reports the results of uncertainty analysis.
     ///
     /// @param[in] id  The analysis id.
     /// @param[in] uncert_analysis  Uncertainty analysis with results.
     /// @param[in,out] results  XML element to for all results.
-    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::UncertaintyAnalysis &uncert_analysis,
-                       xml::StreamElement *results);
+    void ReportResults(const core::RiskAnalysis::Result::Id &id, const core::UncertaintyAnalysis &uncert_analysis, xml::StreamElement *results);
 
     /// Reports literal in products.
     ///
@@ -175,8 +170,7 @@ class Reporter {
     ///       due to the streaming nature of the XML reporting.
     ///       No information can be added after the stream is closed.
     ///       The callback function puts the extra information in-between.
-    template <class T>
-    void ReportBasicEvent(const mef::BasicEvent &basic_event, xml::StreamElement *parent, const T &add_data);
+    template <class T> void ReportBasicEvent(const mef::BasicEvent &basic_event, xml::StreamElement *parent, const T &add_data);
 };
 
 } // namespace scram

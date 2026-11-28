@@ -47,8 +47,7 @@ class bdd_manager final {
     [[nodiscard]] auto conjunction(std::uint32_t left, std::uint32_t right) -> std::uint32_t;
     [[nodiscard]] auto exclusive_or(std::uint32_t left, std::uint32_t right) -> std::uint32_t;
     [[nodiscard]] auto disjunction(std::uint32_t left, std::uint32_t right) -> std::uint32_t;
-    [[nodiscard]] auto lookup(std::uint32_t operation, std::uint32_t left, std::uint32_t right,
-                              std::uint32_t &result) const noexcept -> bool;
+    [[nodiscard]] auto lookup(std::uint32_t operation, std::uint32_t left, std::uint32_t right, std::uint32_t &result) const noexcept -> bool;
     void store(std::uint32_t operation, std::uint32_t left, std::uint32_t right, std::uint32_t result) noexcept;
 
     std::vector<node> nodes_;

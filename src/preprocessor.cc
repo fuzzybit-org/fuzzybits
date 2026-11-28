@@ -264,9 +264,7 @@ class Preprocessor::GateSet {
         ///
         /// @returns Hash value of the gate
         ///          from its arguments but not logic.
-        std::size_t operator()(const GatePtr &gate) const {
-            return boost::hash_range(gate->args().begin(), gate->args().end());
-        }
+        std::size_t operator()(const GatePtr &gate) const { return boost::hash_range(gate->args().begin(), gate->args().end()); }
     };
     /// Functor for equality test for gates by their arguments.
     ///
@@ -358,13 +356,13 @@ class TestGateStructure {
 } // namespace
 
 /// A collection of sanity checks between preprocessing phases.
-#define SANITY_ASSERT                                                                                                  \
-    assert(graph_->root() && "Corrupted pointer to the root gate.");                                                   \
-    assert(graph_->root()->parents().empty() && "Root can't have parents.");                                           \
-    assert(!(graph_->coherent() && graph_->complement()));                                                             \
-    assert(!graph_->HasConstants() && "Const gate cleanup is broken!");                                                \
-    assert(!graph_->HasNullGates() && "Null gate cleanup is broken!");                                                 \
-    assert(TestGateStructure()(*graph_->root()));                                                                      \
+#define SANITY_ASSERT                                                                                                                                          \
+    assert(graph_->root() && "Corrupted pointer to the root gate.");                                                                                           \
+    assert(graph_->root()->parents().empty() && "Root can't have parents.");                                                                                   \
+    assert(!(graph_->coherent() && graph_->complement()));                                                                                                     \
+    assert(!graph_->HasConstants() && "Const gate cleanup is broken!");                                                                                        \
+    assert(!graph_->HasNullGates() && "Null gate cleanup is broken!");                                                                                         \
+    assert(TestGateStructure()(*graph_->root()));                                                                                                              \
     assert(TestGateMarks()(*graph_->root(), graph_->root()->mark()))
 
 void Preprocessor::RunPhaseOne() {
@@ -397,9 +395,8 @@ void Preprocessor::RunPhaseTwo() {
             while (CoalesceGates(/*common=*/false))
                 continue;
         },
-        [this](Pdag *) { MergeCommonArgs(); }, [this](Pdag *) { DetectDistributivity(); },
-        [this](Pdag *) { DetectModules(); }, [this](Pdag *) { BooleanOptimization(); },
-        [this](Pdag *) { DecomposeCommonNodes(); }, [this](Pdag *) { DetectModules(); },
+        [this](Pdag *) { MergeCommonArgs(); }, [this](Pdag *) { DetectDistributivity(); }, [this](Pdag *) { DetectModules(); },
+        [this](Pdag *) { BooleanOptimization(); }, [this](Pdag *) { DecomposeCommonNodes(); }, [this](Pdag *) { DetectModules(); },
         [this](Pdag *) {
             while (CoalesceGates(/*common=*/false))
                 continue;
@@ -542,8 +539,7 @@ void Preprocessor::NormalizeGates(NormalizationType normalization_type) {
         graph_->complement() ^= true;
         break;
     default: // All other types keep the sign of the root.
-        assert((type == kAnd || type == kOr || type == kAtleast || type == kXor || type == kNull) &&
-               "Update the logic if new gate types are introduced.");
+        assert((type == kAnd || type == kOr || type == kAtleast || type == kXor || type == kNull) && "Update the logic if new gate types are introduced.");
     }
     // Process negative gates.
     // Note that root's negative gate is processed in the above lines.
@@ -560,9 +556,7 @@ void Preprocessor::NormalizeGates(NormalizationType normalization_type) {
     }
 }
 
-void Preprocessor::NormalizeGates(const bool full) {
-    Preprocessor::NormalizeGates(full ? NormalizationType::ALL : NormalizationType::NONE);
-}
+void Preprocessor::NormalizeGates(const bool full) { Preprocessor::NormalizeGates(full ? NormalizationType::ALL : NormalizationType::NONE); }
 
 void Preprocessor::NotifyParentsOfNegativeGates(const GatePtr &gate) {
     if (gate->mark())
@@ -615,9 +609,7 @@ void Preprocessor::NormalizeGate(const GatePtr &gate, NormalizationType normaliz
     }
 }
 
-void Preprocessor::NormalizeGate(const GatePtr &gate, bool full) {
-    Preprocessor::NormalizeGate(gate, full ? NormalizationType::ALL : NormalizationType::NONE);
-}
+void Preprocessor::NormalizeGate(const GatePtr &gate, bool full) { Preprocessor::NormalizeGate(gate, full ? NormalizationType::ALL : NormalizationType::NONE); }
 
 void Preprocessor::NormalizeXorGate(const GatePtr &gate) {
     assert(gate->args().size() == 2);
@@ -784,8 +776,8 @@ std::vector<std::vector<GatePtr>> GroupConnectedAtleastCandidates(const std::vec
     return groups;
 }
 
-bool TryBuildAtleastMatchForUniverse(const std::vector<int> &universe, int arity, Connective parent_type,
-                                     const std::map<std::vector<int>, GatePtr> &terms, AtleastGroupMatch *match) {
+bool TryBuildAtleastMatchForUniverse(const std::vector<int> &universe, int arity, Connective parent_type, const std::map<std::vector<int>, GatePtr> &terms,
+                                     AtleastGroupMatch *match) {
     const int n = static_cast<int>(universe.size());
     if (arity <= 0 || arity > n)
         return false;
@@ -1133,8 +1125,7 @@ void Preprocessor::NormalizeAtleastGate(const GatePtr &gate) {
         return;
     }
 
-    auto it = boost::max_element(
-        gate->args(), [&gate](int lhs, int rhs) { return gate->GetArg(lhs)->order() < gate->GetArg(rhs)->order(); });
+    auto it = boost::max_element(gate->args(), [&gate](int lhs, int rhs) { return gate->GetArg(lhs)->order() < gate->GetArg(rhs)->order(); });
     assert(it != gate->args().cend());
     auto first_arg = std::make_shared<Gate>(kAnd, graph_);
     gate->TransferArg(*it, first_arg);
@@ -1164,8 +1155,7 @@ void Preprocessor::NormalizeAtleastGate(const GatePtr &gate) {
     NormalizeAtleastGate(second_arg);
 }
 
-void Preprocessor::PropagateComplements(const GatePtr &gate, bool keep_modules,
-                                        std::unordered_map<int, GatePtr> *complements) {
+void Preprocessor::PropagateComplements(const GatePtr &gate, bool keep_modules, std::unordered_map<int, GatePtr> *complements) {
     if (gate->mark())
         return;
     gate->mark(true);
@@ -1309,9 +1299,7 @@ bool Preprocessor::ProcessMultipleDefinitions() {
     return true;
 }
 
-void Preprocessor::DetectMultipleDefinitions(const GatePtr &gate,
-                                             std::unordered_map<GatePtr, std::vector<GateWeakPtr>> *multi_def,
-                                             GateSet *unique_gates) {
+void Preprocessor::DetectMultipleDefinitions(const GatePtr &gate, std::unordered_map<GatePtr, std::vector<GateWeakPtr>> *multi_def, GateSet *unique_gates) {
     if (gate->mark())
         return;
     gate->mark(true);
@@ -1433,8 +1421,7 @@ void Preprocessor::FindModules(const GatePtr &gate) {
 }
 
 void Preprocessor::ProcessModularArgs(const GatePtr &gate, const std::vector<std::pair<int, NodePtr>> &non_shared_args,
-                                      std::vector<std::pair<int, NodePtr>> *modular_args,
-                                      std::vector<std::pair<int, NodePtr>> *non_modular_args) {
+                                      std::vector<std::pair<int, NodePtr>> *modular_args, std::vector<std::pair<int, NodePtr>> *non_modular_args) {
     assert(gate->args().size() == (non_shared_args.size() + modular_args->size() + non_modular_args->size()) &&
            "Module detection has messed up grouping of arguments.");
     // Attempting to create new modules for specific gate types.
@@ -1488,26 +1475,20 @@ GatePtr Preprocessor::CreateNewModule(const GatePtr &gate, const std::vector<std
     }
     gate->AddArg(module);
     assert(gate->args().size() > 1);
-    LOG(DEBUG4) << "Created a module G" << module->index() << " with " << args.size() << " arguments for G"
-                << gate->index();
+    LOG(DEBUG4) << "Created a module G" << module->index() << " with " << args.size() << " arguments for G" << gate->index();
     return module;
 }
 
-void Preprocessor::FilterModularArgs(std::vector<std::pair<int, NodePtr>> *modular_args,
-                                     std::vector<std::pair<int, NodePtr>> *non_modular_args) {
+void Preprocessor::FilterModularArgs(std::vector<std::pair<int, NodePtr>> *modular_args, std::vector<std::pair<int, NodePtr>> *non_modular_args) {
     if (modular_args->empty() || non_modular_args->empty())
         return;
     auto it_end = modular_args->end();
-    for (auto it_begin = modular_args->begin(), check_begin = non_modular_args->begin(),
-              check_end = non_modular_args->end();
-         check_begin != check_end;) {
-        check_begin =
-            std::partition(it_begin, it_end, [check_begin, check_end](const std::pair<int, NodePtr> &mod_arg) {
-                return std::none_of(check_begin, check_end, [&mod_arg](const std::pair<int, NodePtr> &arg) {
-                    return DetectOverlap(mod_arg.second->min_time(), mod_arg.second->max_time(), arg.second->min_time(),
-                                         arg.second->max_time());
-                });
+    for (auto it_begin = modular_args->begin(), check_begin = non_modular_args->begin(), check_end = non_modular_args->end(); check_begin != check_end;) {
+        check_begin = std::partition(it_begin, it_end, [check_begin, check_end](const std::pair<int, NodePtr> &mod_arg) {
+            return std::none_of(check_begin, check_end, [&mod_arg](const std::pair<int, NodePtr> &arg) {
+                return DetectOverlap(mod_arg.second->min_time(), mod_arg.second->max_time(), arg.second->min_time(), arg.second->max_time());
             });
+        });
         check_end = it_end;
         it_end = check_begin;
     }
@@ -1515,8 +1496,7 @@ void Preprocessor::FilterModularArgs(std::vector<std::pair<int, NodePtr>> *modul
     modular_args->erase(it_end, modular_args->end());
 }
 
-void Preprocessor::GroupModularArgs(std::vector<std::pair<int, NodePtr>> *modular_args,
-                                    std::vector<std::vector<std::pair<int, NodePtr>>> *groups) {
+void Preprocessor::GroupModularArgs(std::vector<std::pair<int, NodePtr>> *modular_args, std::vector<std::vector<std::pair<int, NodePtr>>> *groups) {
     if (modular_args->empty())
         return;
     assert(modular_args->size() > 1);
@@ -1735,9 +1715,7 @@ void Preprocessor::GatherCommonArgs(const GatePtr &gate, Connective op, MergeTab
 
 void Preprocessor::FilterMergeCandidates(MergeTable::Candidates *candidates) {
     assert(candidates->size() > 1);
-    boost::stable_sort(*candidates, [](const MergeTable::Candidate &lhs, const MergeTable::Candidate &rhs) {
-        return lhs.second.size() < rhs.second.size();
-    });
+    boost::stable_sort(*candidates, [](const MergeTable::Candidate &lhs, const MergeTable::Candidate &rhs) { return lhs.second.size() < rhs.second.size(); });
     bool cleanup = false; // Clean constant or NULL type gates.
     for (auto it = candidates->begin(); it != candidates->end(); ++it) {
         const GatePtr &gate = it->first;
@@ -1782,33 +1760,30 @@ void Preprocessor::FilterMergeCandidates(MergeTable::Candidates *candidates) {
     }
     if (!cleanup)
         return;
-    boost::remove_erase_if(*candidates, [](const MergeTable::Candidate &mem) {
-        return mem.first->constant() || mem.first->type() == kNull || mem.second.size() == 1;
-    });
+    boost::remove_erase_if(*candidates,
+                           [](const MergeTable::Candidate &mem) { return mem.first->constant() || mem.first->type() == kNull || mem.second.size() == 1; });
 }
 
-void Preprocessor::GroupCandidatesByArgs(MergeTable::Candidates *candidates,
-                                         std::vector<MergeTable::Candidates> *groups) {
+void Preprocessor::GroupCandidatesByArgs(MergeTable::Candidates *candidates, std::vector<MergeTable::Candidates> *groups) {
     if (candidates->empty())
         return;
     assert(candidates->size() > 1);
     assert(groups->empty());
     // Group candidates by the intersection of their [min_arg, max_arg] ranges.
-    boost::sort(*candidates,
-                [](const MergeTable::Candidate &lhs_candidate, const MergeTable::Candidate &rhs_candidate) {
-                    const MergeTable::CommonArgs &lhs_args = lhs_candidate.second;
-                    const MergeTable::CommonArgs &rhs_args = rhs_candidate.second;
-                    if (lhs_args.back() < rhs_args.front())
-                        return true;
-                    if (lhs_args.front() > rhs_args.back())
-                        return false;
-                    // Considering the intersection.
-                    if (lhs_args.back() < rhs_args.back())
-                        return true;
-                    if (lhs_args.back() > rhs_args.back())
-                        return false;
-                    return lhs_args.front() > rhs_args.front();
-                });
+    boost::sort(*candidates, [](const MergeTable::Candidate &lhs_candidate, const MergeTable::Candidate &rhs_candidate) {
+        const MergeTable::CommonArgs &lhs_args = lhs_candidate.second;
+        const MergeTable::CommonArgs &rhs_args = rhs_candidate.second;
+        if (lhs_args.back() < rhs_args.front())
+            return true;
+        if (lhs_args.front() > rhs_args.back())
+            return false;
+        // Considering the intersection.
+        if (lhs_args.back() < rhs_args.back())
+            return true;
+        if (lhs_args.back() > rhs_args.back())
+            return false;
+        return lhs_args.front() > rhs_args.front();
+    });
 
     std::vector<std::list<MergeTable::Candidate *>> super_groups;
     for (auto it = candidates->rbegin(), it_end = candidates->rend(); it != it_end;) {
@@ -1851,8 +1826,7 @@ void Preprocessor::GroupCandidatesByArgs(MergeTable::Candidates *candidates,
     BLOG(DEBUG4, !groups->empty()) << "Grouped merge candidates in " << groups->size() << " group(s).";
 }
 
-void Preprocessor::GroupCommonParents(int num_common_args, const MergeTable::Candidates &group,
-                                      MergeTable::Collection *parents) {
+void Preprocessor::GroupCommonParents(int num_common_args, const MergeTable::Candidates &group, MergeTable::Collection *parents) {
     for (int i = 0; i < static_cast<int>(group.size()); ++i) {
         const std::vector<int> &args_gate = group[i].second;
         assert(args_gate.size() > 1);
@@ -1875,9 +1849,7 @@ void Preprocessor::GroupCommonParents(int num_common_args, const MergeTable::Can
 void Preprocessor::GroupCommonArgs(const MergeTable::Collection &options, MergeTable *table) {
     assert(!options.empty());
     MergeTable::MergeGroup all_options(options.begin(), options.end());
-    boost::stable_sort(all_options, [](const MergeTable::Option &lhs, const MergeTable::Option &rhs) {
-        return lhs.first.size() < rhs.first.size();
-    });
+    boost::stable_sort(all_options, [](const MergeTable::Option &lhs, const MergeTable::Option &rhs) { return lhs.first.size() < rhs.first.size(); });
 
     while (!all_options.empty()) {
         MergeTable::OptionGroup best_group;
@@ -2056,8 +2028,7 @@ bool Preprocessor::DetectDistributivity(const GatePtr &gate) {
     return changed;
 }
 
-bool Preprocessor::HandleDistributiveArgs(const GatePtr &gate, Connective distr_type,
-                                          std::vector<GatePtr> *candidates) {
+bool Preprocessor::HandleDistributiveArgs(const GatePtr &gate, Connective distr_type, std::vector<GatePtr> *candidates) {
     if (candidates->empty())
         return false;
     assert(gate->args().size() > 1 && "Malformed parent gate.");
@@ -2122,15 +2093,12 @@ bool Preprocessor::FilterDistributiveArgs(const GatePtr &gate, std::vector<GateP
             to_erase.push_back(candidate->index());
     }
     bool changed = !to_erase.empty();
-    boost::remove_erase_if(*candidates, [&to_erase](const GatePtr &candidate) {
-        return boost::find(to_erase, candidate->index()) != to_erase.end();
-    });
+    boost::remove_erase_if(*candidates, [&to_erase](const GatePtr &candidate) { return boost::find(to_erase, candidate->index()) != to_erase.end(); });
     for (int index : to_erase)
         gate->EraseArg(index);
 
     // Sort in descending size of gate arguments.
-    boost::sort(*candidates,
-                [](const GatePtr &lhs, const GatePtr rhs) { return lhs->args().size() > rhs->args().size(); });
+    boost::sort(*candidates, [](const GatePtr &lhs, const GatePtr rhs) { return lhs->args().size() > rhs->args().size(); });
     std::vector<GatePtr> exclusive; // No candidate is a subset of another.
     while (!candidates->empty()) {
         GatePtr sub = std::move(candidates->back());
@@ -2142,8 +2110,7 @@ bool Preprocessor::FilterDistributiveArgs(const GatePtr &gate, std::vector<GateP
                 gate->EraseArg(super->index());
             }
         }
-        boost::remove_erase_if(*candidates,
-                               [&sub](const GatePtr &super) { return boost::includes(super->args(), sub->args()); });
+        boost::remove_erase_if(*candidates, [&sub](const GatePtr &super) { return boost::includes(super->args(), sub->args()); });
     }
     *candidates = std::move(exclusive);
     assert(!gate->args().empty());
@@ -2168,9 +2135,7 @@ bool Preprocessor::FilterDistributiveArgs(const GatePtr &gate, std::vector<GateP
 void Preprocessor::GroupDistributiveArgs(const MergeTable::Collection &options, MergeTable *table) {
     assert(!options.empty());
     MergeTable::MergeGroup all_options(options.begin(), options.end());
-    boost::stable_sort(all_options, [](const MergeTable::Option &lhs, const MergeTable::Option &rhs) {
-        return lhs.first.size() < rhs.first.size();
-    });
+    boost::stable_sort(all_options, [](const MergeTable::Option &lhs, const MergeTable::Option &rhs) { return lhs.first.size() < rhs.first.size(); });
 
     while (!all_options.empty()) {
         MergeTable::OptionGroup best_group;
@@ -2192,8 +2157,7 @@ void Preprocessor::GroupDistributiveArgs(const MergeTable::Collection &options, 
     }
 }
 
-void Preprocessor::TransformDistributiveArgs(const GatePtr &gate, Connective distr_type,
-                                             MergeTable::MergeGroup *group) {
+void Preprocessor::TransformDistributiveArgs(const GatePtr &gate, Connective distr_type, MergeTable::MergeGroup *group) {
     if (group->empty())
         return;
     assert(distr_type == kAnd || distr_type == kOr);
@@ -2275,8 +2239,7 @@ void Preprocessor::BooleanOptimization() {
         ProcessCommonNode(var);
 }
 
-void Preprocessor::GatherCommonNodes(std::vector<GateWeakPtr> *common_gates,
-                                     std::vector<std::weak_ptr<Variable>> *common_variables) {
+void Preprocessor::GatherCommonNodes(std::vector<GateWeakPtr> *common_gates, std::vector<std::weak_ptr<Variable>> *common_variables) {
     graph_->Clear<Pdag::kVisit>();
     std::queue<Gate *> gates_queue;
     gates_queue.push(graph_->root().get());
@@ -2342,8 +2305,8 @@ template <class N> void Preprocessor::ProcessCommonNode(const std::weak_ptr<N> &
         std::vector<GateWeakPtr> redundant_parents;
         CollectRedundantParents(node, &destinations, &redundant_parents);
         if (!redundant_parents.empty()) { // Note: empty destinations is OK!
-            LOG(DEBUG4) << "Node " << node->index() << ": " << redundant_parents.size() << " redundant parent(s) and "
-                        << destinations.size() << " failure destination(s)";
+            LOG(DEBUG4) << "Node " << node->index() << ": " << redundant_parents.size() << " redundant parent(s) and " << destinations.size()
+                        << " failure destination(s)";
             ProcessRedundantParents(node, redundant_parents);
             ProcessStateDestinations(node, destinations);
         }
@@ -2460,8 +2423,7 @@ void Preprocessor::DetermineGateState(const GatePtr &gate, int num_failure, int 
     }
 }
 
-int Preprocessor::CollectStateDestinations(const GatePtr &gate, int index,
-                                           std::unordered_map<int, GateWeakPtr> *destinations) {
+int Preprocessor::CollectStateDestinations(const GatePtr &gate, int index, std::unordered_map<int, GateWeakPtr> *destinations) {
     if (!gate->descendant())
         return 0; // Deal with ancestors only.
     assert(gate->descendant() == index && "Corrupted descendant marks.");
@@ -2517,9 +2479,7 @@ void Preprocessor::ProcessRedundantParents(const NodePtr &node, const std::vecto
     }
 }
 
-template <class N>
-void Preprocessor::ProcessStateDestinations(const std::shared_ptr<N> &node,
-                                            const std::unordered_map<int, GateWeakPtr> &destinations) {
+template <class N> void Preprocessor::ProcessStateDestinations(const std::shared_ptr<N> &node, const std::unordered_map<int, GateWeakPtr> &destinations) {
     for (const auto &ptr : destinations) {
         if (ptr.second.expired())
             continue;
@@ -2617,14 +2577,12 @@ bool Preprocessor::DecompositionProcessor::operator()( // clang-format confuse?
         }
     };
     // Determine if the decomposition setups are possible.
-    auto it = boost::find_if(node_->parents(), [&is_decomposition_type](const Node::Parent &member) {
-        return is_decomposition_type(member.second.lock()->type());
-    });
+    auto it =
+        boost::find_if(node_->parents(), [&is_decomposition_type](const Node::Parent &member) { return is_decomposition_type(member.second.lock()->type()); });
     if (it == node_->parents().end())
         return false; // No setups possible.
 
-    assert(2 > boost::count_if(node_->parents(),
-                               [](const Node::Parent &member) { return member.second.lock()->module(); }));
+    assert(2 > boost::count_if(node_->parents(), [](const Node::Parent &member) { return member.second.lock()->module(); }));
 
     // Mark parents and ancestors.
     for (const Node::Parent &member : node_->parents()) {
@@ -2746,8 +2704,7 @@ bool Preprocessor::DecompositionProcessor::ProcessAncestors(const GatePtr &ances
         ancestor->AddArg(arg.second, arg.first < 0);
     }
     if (!node_->parents().count(ancestor->index()) &&
-        ext::none_of(ancestor->args<Gate>(),
-                     [this](const Gate::Arg<Gate> &arg) { return arg.second->descendant() == this->node_->index(); })) {
+        ext::none_of(ancestor->args<Gate>(), [this](const Gate::Arg<Gate> &arg) { return arg.second->descendant() == this->node_->index(); })) {
         ancestor->descendant(0); // Lose ancestorship if the descendant is gone.
     }
     return changed;
@@ -2762,9 +2719,7 @@ bool Preprocessor::DecompositionProcessor::IsAncestryWithinGraph(const GatePtr &
         return false;
 
     if (IsNodeWithinGraph(gate, root->EnterTime(), root->ExitTime()) &&
-        ext::all_of(gate->parents(), [&root](const Node::Parent &member) {
-            return IsAncestryWithinGraph(member.second.lock(), root);
-        })) {
+        ext::all_of(gate->parents(), [&root](const Node::Parent &member) { return IsAncestryWithinGraph(member.second.lock(), root); })) {
         gate->ancestor(root->index());
         return true;
     }
@@ -2858,7 +2813,7 @@ void CustomPreprocessor<Mocus>::InvertOrder() {
         var->order(shift + var->order());
 }
 
-void CustomPreprocessor<mc::DirectEval>::InvertOrder() {
+void CustomPreprocessor<DirectEval>::InvertOrder() {
     std::vector<GatePtr> gates;
     std::vector<VariablePtr> variables;
     Preprocessor::GatherNodes(&gates, &variables);

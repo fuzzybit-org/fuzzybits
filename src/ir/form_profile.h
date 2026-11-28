@@ -54,13 +54,9 @@ struct form_entry final {
     std::uint8_t parent_count = 0;
 };
 
-[[nodiscard]] constexpr auto form_node_index(const form_node node) -> std::size_t {
-    return static_cast<std::size_t>(node);
-}
+[[nodiscard]] constexpr auto form_node_index(const form_node node) -> std::size_t { return static_cast<std::size_t>(node); }
 
-[[nodiscard]] constexpr auto form_node_bit(const form_node node) -> form_mask {
-    return form_mask{1} << form_node_index(node);
-}
+[[nodiscard]] constexpr auto form_node_bit(const form_node node) -> form_mask { return form_mask{1} << form_node_index(node); }
 
 [[nodiscard]] inline auto form_entries() -> std::span<form_entry const> {
     static constexpr std::array entries{
@@ -77,19 +73,13 @@ struct form_entry final {
         form_entry{form_node::cnf, forms::cnf, {form_node::flat_nnf}, 1},
         form_entry{form_node::dnf, forms::dnf, {form_node::flat_nnf, form_node::dnnf}, 2},
         form_entry{form_node::smooth_dnnf, forms::smooth_dnnf, {form_node::dnnf}, 1},
-        form_entry{form_node::deterministic_dnnf,
-                   forms::deterministic_dnnf,
-                   {form_node::dnnf, form_node::deterministic_nnf},
-                   2},
+        form_entry{form_node::deterministic_dnnf, forms::deterministic_dnnf, {form_node::dnnf, form_node::deterministic_nnf}, 2},
         form_entry{form_node::pi, forms::pi, {form_node::cnf}, 1},
         form_entry{form_node::implicant_cover, forms::implicant_cover, {form_node::dnf}, 1},
         form_entry{form_node::pprm, forms::pprm, {form_node::fprm}, 1},
         form_entry{form_node::epi, forms::epi, {form_node::pi}, 1},
         form_entry{form_node::essential_implicant, forms::essential_implicant, {form_node::implicant_cover}, 1},
-        form_entry{form_node::smooth_deterministic_dnnf,
-                   forms::smooth_deterministic_dnnf,
-                   {form_node::smooth_dnnf, form_node::deterministic_dnnf},
-                   2},
+        form_entry{form_node::smooth_deterministic_dnnf, forms::smooth_deterministic_dnnf, {form_node::smooth_dnnf, form_node::deterministic_dnnf}, 2},
         form_entry{form_node::bdd, forms::bdd, {form_node::deterministic_dnnf}, 1},
         form_entry{form_node::free_bdd, forms::free_bdd, {form_node::bdd}, 1},
         form_entry{form_node::obdd, forms::obdd, {form_node::free_bdd}, 1},
@@ -195,9 +185,7 @@ class form_profile final {
 
     [[nodiscard]] auto is_bool_dag() const noexcept -> bool { return satisfies(detail::form_node::bool_dag); }
 
-    [[nodiscard]] auto is_probabilistic_boolean_dag() const noexcept -> bool {
-        return satisfies(detail::form_node::probabilistic_boolean_dag);
-    }
+    [[nodiscard]] auto is_probabilistic_boolean_dag() const noexcept -> bool { return satisfies(detail::form_node::probabilistic_boolean_dag); }
 
     [[nodiscard]] auto is_nnf() const noexcept -> bool { return satisfies(detail::form_node::nnf); }
 
@@ -218,9 +206,7 @@ class form_profile final {
     [[nodiscard]] auto is_robdd() const noexcept -> bool { return satisfies(detail::form_node::robdd); }
 
   private:
-    [[nodiscard]] auto satisfies(detail::form_node const node) const noexcept -> bool {
-        return (mask_ & detail::form_node_bit(node)) != 0;
-    }
+    [[nodiscard]] auto satisfies(detail::form_node const node) const noexcept -> bool { return (mask_ & detail::form_node_bit(node)) != 0; }
 
     api::form_id exact_form_;
     detail::form_mask mask_ = 0;
@@ -236,8 +222,7 @@ class form_profile final {
 }
 
 [[nodiscard]] inline auto descriptor_satisfies_form(descriptor const &descriptor, api::form_id const &form) -> bool {
-    if (descriptor.form == form ||
-        std::ranges::find(descriptor.satisfied_forms, form) != descriptor.satisfied_forms.end()) {
+    if (descriptor.form == form || std::ranges::find(descriptor.satisfied_forms, form) != descriptor.satisfied_forms.end()) {
         return true;
     }
     return form_profile_for(descriptor).satisfies(form);

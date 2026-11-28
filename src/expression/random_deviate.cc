@@ -47,12 +47,9 @@ void UniformDeviate::Validate() const {
     }
 }
 
-double UniformDeviate::DoSample() {
-    return std::uniform_real_distribution(min_.value(), max_.value())(RandomDeviate::rng());
-}
+double UniformDeviate::DoSample() { return std::uniform_real_distribution(min_.value(), max_.value())(RandomDeviate::rng()); }
 
-NormalDeviate::NormalDeviate(Expression *mean, Expression *sigma)
-    : RandomDeviate({mean, sigma}), mean_(*mean), sigma_(*sigma) {}
+NormalDeviate::NormalDeviate(Expression *mean, Expression *sigma) : RandomDeviate({mean, sigma}), mean_(*mean), sigma_(*sigma) {}
 
 void NormalDeviate::Validate() const {
     if (sigma_.value() <= 0) {
@@ -60,15 +57,12 @@ void NormalDeviate::Validate() const {
     }
 }
 
-double NormalDeviate::DoSample() {
-    return std::normal_distribution(mean_.value(), sigma_.value())(RandomDeviate::rng());
-}
+double NormalDeviate::DoSample() { return std::normal_distribution(mean_.value(), sigma_.value())(RandomDeviate::rng()); }
 
 LognormalDeviate::LognormalDeviate(Expression *mean, Expression *ef, Expression *level)
     : RandomDeviate({mean, ef, level}), flavor_(new LognormalDeviate::Logarithmic(mean, ef, level)) {}
 
-LognormalDeviate::LognormalDeviate(Expression *mu, Expression *sigma)
-    : RandomDeviate({mu, sigma}), flavor_(new LognormalDeviate::Normal(mu, sigma)) {}
+LognormalDeviate::LognormalDeviate(Expression *mu, Expression *sigma) : RandomDeviate({mu, sigma}), flavor_(new LognormalDeviate::Normal(mu, sigma)) {}
 
 void LognormalDeviate::Logarithmic::Validate() const {
     if (level_.value() <= 0 || level_.value() >= 1) {
@@ -80,9 +74,7 @@ void LognormalDeviate::Logarithmic::Validate() const {
     }
 }
 
-double LognormalDeviate::DoSample() {
-    return std::lognormal_distribution(flavor_->location(), flavor_->scale())(RandomDeviate::rng());
-}
+double LognormalDeviate::DoSample() { return std::lognormal_distribution(flavor_->location(), flavor_->scale())(RandomDeviate::rng()); }
 
 Interval LognormalDeviate::interval() {
     double high_estimate = std::exp(3 * flavor_->scale() + flavor_->location());
@@ -124,8 +116,7 @@ Interval GammaDeviate::interval() {
 
 double GammaDeviate::DoSample() { return std::gamma_distribution(k_.value())(RandomDeviate::rng()) * theta_.value(); }
 
-BetaDeviate::BetaDeviate(Expression *alpha, Expression *beta)
-    : RandomDeviate({alpha, beta}), alpha_(*alpha), beta_(*beta) {}
+BetaDeviate::BetaDeviate(Expression *alpha, Expression *beta) : RandomDeviate({alpha, beta}), alpha_(*alpha), beta_(*beta) {}
 
 void BetaDeviate::Validate() const {
     if (alpha_.value() <= 0) {
@@ -142,13 +133,10 @@ Interval BetaDeviate::interval() {
     return Interval::closed(0, high_estimate);
 }
 
-double BetaDeviate::DoSample() {
-    return boost::random::beta_distribution(alpha_.value(), beta_.value())(RandomDeviate::rng());
-}
+double BetaDeviate::DoSample() { return boost::random::beta_distribution(alpha_.value(), beta_.value())(RandomDeviate::rng()); }
 
 Histogram::Histogram(std::vector<Expression *> boundaries,
-                     std::vector<Expression *> weights)
-    : RandomDeviate(std::move(boundaries)) { // Partial registration!
+                     std::vector<Expression *> weights) : RandomDeviate(std::move(boundaries)) { // Partial registration!
     int num_intervals = Expression::args().size() - 1;
     if (weights.size() != num_intervals) {
         SCRAM_THROW(ValidityError("The number of weights is not equal to the number of intervals."));
@@ -190,9 +178,7 @@ double Histogram::value() {
 namespace {
 
 /// Provides a helper iterator adaptor for retrieving mean values.
-template <class Iterator> auto make_sampler(const Iterator &it) {
-    return boost::make_transform_iterator(it, std::mem_fn(&Expression::value));
-}
+template <class Iterator> auto make_sampler(const Iterator &it) { return boost::make_transform_iterator(it, std::mem_fn(&Expression::value)); }
 
 } // namespace
 

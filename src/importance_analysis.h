@@ -103,8 +103,7 @@ class ImportanceAnalyzerBase : public ImportanceAnalysis {
     /// to calculate the total and conditional probabilities for factors.
     ///
     /// @param[in] prob_analyzer  Instantiated probability analyzer.
-    explicit ImportanceAnalyzerBase(ProbabilityAnalyzerBase *prob_analyzer)
-        : ImportanceAnalysis(prob_analyzer), prob_analyzer_(prob_analyzer) {}
+    explicit ImportanceAnalyzerBase(ProbabilityAnalyzerBase *prob_analyzer) : ImportanceAnalysis(prob_analyzer), prob_analyzer_(prob_analyzer) {}
 
   protected:
     virtual ~ImportanceAnalyzerBase() = default;
@@ -114,9 +113,7 @@ class ImportanceAnalyzerBase : public ImportanceAnalysis {
 
   private:
     double p_total() override { return prob_analyzer_->p_total(); }
-    const std::vector<const mef::BasicEvent *> &basic_events() override {
-        return prob_analyzer_->graph()->basic_events();
-    }
+    const std::vector<const mef::BasicEvent *> &basic_events() override { return prob_analyzer_->graph()->basic_events(); }
     std::vector<int> occurrences() override;
 
     /// Calculator of the total probability.
@@ -130,8 +127,7 @@ class ImportanceAnalyzerBase : public ImportanceAnalysis {
 template <class Calculator> class ImportanceAnalyzer : public ImportanceAnalyzerBase {
   public:
     /// @copydoc ImportanceAnalyzerBase::ImportanceAnalyzerBase
-    explicit ImportanceAnalyzer(ProbabilityAnalyzer<Calculator> *prob_analyzer)
-        : ImportanceAnalyzerBase(prob_analyzer), p_vars_(prob_analyzer->p_vars()) {}
+    explicit ImportanceAnalyzer(ProbabilityAnalyzer<Calculator> *prob_analyzer) : ImportanceAnalyzerBase(prob_analyzer), p_vars_(prob_analyzer->p_vars()) {}
 
   private:
     double CalculateMif(int index) override;
@@ -158,8 +154,7 @@ template <> class ImportanceAnalyzer<Bdd> : public ImportanceAnalyzerBase {
     /// to calculate the total and conditional probabilities for factors.
     ///
     /// @param[in] prob_analyzer  Instantiated probability analyzer.
-    explicit ImportanceAnalyzer(ProbabilityAnalyzer<Bdd> *prob_analyzer)
-        : ImportanceAnalyzerBase(prob_analyzer), bdd_graph_(prob_analyzer->bdd_graph()) {}
+    explicit ImportanceAnalyzer(ProbabilityAnalyzer<Bdd> *prob_analyzer) : ImportanceAnalyzerBase(prob_analyzer), bdd_graph_(prob_analyzer->bdd_graph()) {}
 
   private:
     double CalculateMif(int index) override;
@@ -188,10 +183,9 @@ template <> class ImportanceAnalyzer<Bdd> : public ImportanceAnalyzerBase {
 };
 
 // Forward declaration – implemented below.
-template <> class ImportanceAnalyzer<scram::mc::DirectEval> : public ImportanceAnalyzerBase {
+template <> class ImportanceAnalyzer<DirectEval> : public ImportanceAnalyzerBase {
   public:
-    explicit ImportanceAnalyzer(ProbabilityAnalyzer<scram::mc::DirectEval> *prob_analyzer)
-        : ImportanceAnalyzerBase(prob_analyzer), prob_analyzer_(prob_analyzer) {}
+    explicit ImportanceAnalyzer(ProbabilityAnalyzer<DirectEval> *prob_analyzer) : ImportanceAnalyzerBase(prob_analyzer), prob_analyzer_(prob_analyzer) {}
 
   private:
     //  Temporary implementation – returns zero so that the analysis completes.
@@ -210,7 +204,7 @@ template <> class ImportanceAnalyzer<scram::mc::DirectEval> : public ImportanceA
         return std::vector<int>(events.size(), 1);
     }
 
-    ProbabilityAnalyzer<scram::mc::DirectEval> *prob_analyzer_;
+    ProbabilityAnalyzer<DirectEval> *prob_analyzer_;
 };
 
 } // namespace scram::core

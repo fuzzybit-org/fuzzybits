@@ -112,8 +112,7 @@ int main(const int argc, char *argv[]) {
         LOG(scram::ERROR) << "Unexpected Boost Exception:\n" << boost::diagnostic_information(boost_err);
         return 1;
     } catch (const std::exception &err) {
-        LOG(scram::ERROR) << "Unexpected Exception: " << boost::core::demangled_name(typeid(err)) << ":\n"
-                          << err.what();
+        LOG(scram::ERROR) << "Unexpected Exception: " << boost::core::demangled_name(typeid(err)) << ":\n" << err.what();
         return 1;
     }
     return 0;

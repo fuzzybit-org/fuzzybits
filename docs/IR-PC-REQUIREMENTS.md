@@ -165,6 +165,8 @@ Forbidden from canonical PC v1:
 
 Such operations may appear in compatibility layers, derived views, or compiled artifacts, but they are not part of the FuzzyBits probabilistic Boolean interoperability layer unless a later RFC proves their semantics belong here.
 
+Op code values are pinned (`src/ir/pc/op_code.h`), as the pcfb schema pins its opcodes: a value is never renumbered or reused, and a new code takes the next free value below `first_extension_op_code` (64). Values from 64 up belong to representations that extend the IR outside it. The executor's `mc::kernel::op_code` keeps every IR code at its value and adds, from 64, the execution operations it computes nodes by: `sample`, the constants `ones` and `zeros`, `null_gate`, and the counting specializations `atleast`, `atmost`, `exactly`, `majority` and `minority`.
+
 ## 5) Probability Sources
 
 The v1 semantic core needs probability sources sufficient for current probability ingestion without freezing a full expression DAG.

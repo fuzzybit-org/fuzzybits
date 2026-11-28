@@ -183,8 +183,7 @@ template <class Finish> class finish_guard {
 
     finish_guard(const finish_guard &) = delete;
     finish_guard &operator=(const finish_guard &) = delete;
-    finish_guard(finish_guard &&other) noexcept
-        : finish_(std::move(other.finish_)), armed_(std::exchange(other.armed_, false)) {}
+    finish_guard(finish_guard &&other) noexcept : finish_(std::move(other.finish_)), armed_(std::exchange(other.armed_, false)) {}
     finish_guard &operator=(finish_guard &&) = delete;
 
     // The normal path already ran `finish()`.

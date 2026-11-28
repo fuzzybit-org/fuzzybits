@@ -26,7 +26,6 @@ using aiger_read_result = api::result<read_output>;
 [[nodiscard]] auto read(io::read_request const &request) -> io::read_result;
 
 [[nodiscard]] auto write(ir::handle const &model, std::ostream &output) -> io::write_result;
-[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 } // namespace fuzzybits::io::backend::fuzzybits::aiger

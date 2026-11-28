@@ -26,8 +26,7 @@
 
 namespace scram::core {
 
-EventTreeAnalysis::EventTreeAnalysis(const mef::InitiatingEvent &initiating_event, const Settings &settings,
-                                     mef::Context *context)
+EventTreeAnalysis::EventTreeAnalysis(const mef::InitiatingEvent &initiating_event, const Settings &settings, mef::Context *context)
     : Analysis(settings), initiating_event_(initiating_event), context_(context) {}
 
 namespace { // The model cloning functions.
@@ -39,8 +38,7 @@ namespace { // The model cloning functions.
 /// @param[in] clones  The storage container for newly created clones.
 ///
 /// @returns The deep-copy of the argument formula with new (changed) arguments.
-std::unique_ptr<mef::Formula> Clone(const mef::Formula &formula,
-                                    const std::unordered_map<std::string, bool> &set_instructions,
+std::unique_ptr<mef::Formula> Clone(const mef::Formula &formula, const std::unordered_map<std::string, bool> &set_instructions,
                                     std::vector<std::unique_ptr<mef::Event>> *clones) {
     struct {
         mef::Formula::ArgEvent operator()(mef::BasicEvent *arg) { return arg; }
@@ -48,8 +46,7 @@ std::unique_ptr<mef::Formula> Clone(const mef::Formula &formula,
             if (auto it = ext::find(set_house, arg->id())) {
                 if (it->second == arg->state())
                     return arg;
-                auto clone = std::make_unique<mef::HouseEvent>(arg->name(), "__clone__." + arg->id(),
-                                                               mef::RoleSpecifier::kPrivate);
+                auto clone = std::make_unique<mef::HouseEvent>(arg->name(), "__clone__." + arg->id(), mef::RoleSpecifier::kPrivate);
                 clone->state(it->second);
                 auto *ptr = clone.get();
                 event_register->emplace_back(std::move(clone));
@@ -60,8 +57,7 @@ std::unique_ptr<mef::Formula> Clone(const mef::Formula &formula,
         mef::Formula::ArgEvent operator()(mef::Gate *arg) {
             if (set_house.empty())
                 return arg;
-            auto clone =
-                std::make_unique<mef::Gate>(arg->name(), "__clone__." + arg->id(), mef::RoleSpecifier::kPrivate);
+            auto clone = std::make_unique<mef::Gate>(arg->name(), "__clone__." + arg->id(), mef::RoleSpecifier::kPrivate);
             clone->formula(Clone(arg->formula(), set_house, event_register));
             auto *ptr = clone.get();
             event_register->emplace_back(std::move(clone));
@@ -76,14 +72,12 @@ std::unique_ptr<mef::Formula> Clone(const mef::Formula &formula,
     for (const mef::Formula::Arg &arg : formula.args())
         arg_set.Add(std::visit(cloner, arg.event), arg.complement);
 
-    return std::make_unique<mef::Formula>(formula.connective(), std::move(arg_set), formula.min_number(),
-                                          formula.max_number());
+    return std::make_unique<mef::Formula>(formula.connective(), std::move(arg_set), formula.min_number(), formula.max_number());
 }
 
 } // namespace
 
-EventTreeAnalysis::PathCollector::PathCollector(const PathCollector &other)
-    : expressions(other.expressions), set_instructions(other.set_instructions) {
+EventTreeAnalysis::PathCollector::PathCollector(const PathCollector &other) : expressions(other.expressions), set_instructions(other.set_instructions) {
     for (const mef::FormulaPtr &formula : other.formulas)
         formulas.push_back(std::make_unique<mef::Formula>(*formula));
 }

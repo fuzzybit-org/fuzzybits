@@ -43,14 +43,11 @@ auto writer_descriptor() -> io::writer_descriptor {
     };
 }
 
-auto write(ir::handle const &model, std::ostream &output) -> io::write_result {
-    return write(model, output, io::write_request{.format = formats::ftp()});
-}
+auto write(ir::handle const &model, std::ostream &output) -> io::write_result { return write(model, output, io::write_request{.format = formats::ftp()}); }
 
 auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result {
     if (!request.format.empty() && request.format != formats::ftp()) {
-        return io::write_result::fail(
-            api::make_error("io.ftp.format-mismatch", "FTP writer received a non-FTP format request"));
+        return io::write_result::fail(api::make_error("io.ftp.format-mismatch", "FTP writer received a non-FTP format request"));
     }
 
     auto const *pc = ir::pc::circuit_from(model);

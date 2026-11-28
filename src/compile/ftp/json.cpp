@@ -30,8 +30,7 @@ class parser final {
         }
         skip();
         if (cursor_ != text_.size()) {
-            return api::result<value>::fail(
-                api::make_error("compile.ftp.invalid-json", at("unexpected trailing characters")));
+            return api::result<value>::fail(api::make_error("compile.ftp.invalid-json", at("unexpected trailing characters")));
         }
         return api::result<value>::ok(std::move(*document));
     }
@@ -57,8 +56,7 @@ class parser final {
     }
 
     void skip() {
-        while (cursor_ < text_.size() &&
-               (text_[cursor_] == ' ' || text_[cursor_] == '\n' || text_[cursor_] == '\r' || text_[cursor_] == '\t')) {
+        while (cursor_ < text_.size() && (text_[cursor_] == ' ' || text_[cursor_] == '\n' || text_[cursor_] == '\r' || text_[cursor_] == '\t')) {
             ++cursor_;
         }
     }
@@ -288,6 +286,7 @@ class parser final {
     auto parse_number() -> std::optional<value> {
         const auto start = cursor_;
         bool integral = true;
+        // TODO:: fix warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
         consume('-');
         if (cursor_ >= text_.size() || text_[cursor_] < '0' || text_[cursor_] > '9') {
             cursor_ = start;
@@ -328,14 +327,12 @@ class parser final {
         const auto end = text_.data() + cursor_;
         if (integral) {
             std::int64_t integer = 0;
-            if (const auto [pointer, status] = std::from_chars(begin, end, integer);
-                status == std::errc{} && pointer == end) {
+            if (const auto [pointer, status] = std::from_chars(begin, end, integer); status == std::errc{} && pointer == end) {
                 return value::make_int(integer);
             }
         }
         double number = 0.0;
-        if (const auto [pointer, status] = ::fuzzybits::io::from_chars(begin, end, number);
-            status != std::errc{} || pointer != end || !std::isfinite(number)) {
+        if (const auto [pointer, status] = ::fuzzybits::io::from_chars(begin, end, number); status != std::errc{} || pointer != end || !std::isfinite(number)) {
             cursor_ = start;
             return fail("number out of range");
         }
@@ -375,8 +372,7 @@ void escape(std::string &out, std::string_view text) {
         default:
             if (static_cast<unsigned char>(c) < 0x20) {
                 std::array<char, 8> buffer{};
-                std::snprintf(buffer.data(), buffer.size(), "\\u%04x",
-                              static_cast<unsigned>(static_cast<unsigned char>(c)));
+                std::snprintf(buffer.data(), buffer.size(), "\\u%04x", static_cast<unsigned>(static_cast<unsigned char>(c)));
                 out += buffer.data();
             } else {
                 out.push_back(c);

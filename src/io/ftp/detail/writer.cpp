@@ -21,9 +21,8 @@ namespace fuzzybits::io::backend::fuzzybits::ftp::detail {
 namespace {
 
 [[nodiscard]] auto nodeName(ir::pc::circuit const &model, const ir::pc::bool_node_id node) -> std::string {
-    if (const auto code = model.op_codes()[node.raw()]; code == ir::pc::op_code::basic_event ||
-                                                        code == ir::pc::op_code::constant ||
-                                                        code == ir::pc::op_code::house_event) {
+    if (const auto code = model.op_codes()[node.raw()];
+        code == ir::pc::op_code::basic_event || code == ir::pc::op_code::constant || code == ir::pc::op_code::house_event) {
         return std::string(1, kFtpBasicEventNodePrefix) + std::to_string(node.raw());
     }
     return std::string(1, kFtpCompositeNodePrefix) + std::to_string(node.raw());
@@ -37,14 +36,11 @@ namespace {
         case ir::pc::op_code::basic_event: {
             const auto source = model.probability_source_refs()[node];
             if (!source.valid() || source.raw() >= model.probability_sources().size()) {
-                diagnostics.push(api::make_error("io.ftp.unsupported-probability",
-                                                 "FTP writer requires a probability source for every basic event"));
+                diagnostics.push(api::make_error("io.ftp.unsupported-probability", "FTP writer requires a probability source for every basic event"));
                 break;
             }
-            if (const auto kind = model.probability_sources()[source.raw()].kind;
-                kind == ir::pc::probability_source_kind::unsupported) {
-                diagnostics.push(api::make_error("io.ftp.unsupported-probability",
-                                                 "FTP writer cannot serialize unsupported probability sources"));
+            if (const auto kind = model.probability_sources()[source.raw()].kind; kind == ir::pc::probability_source_kind::unsupported) {
+                diagnostics.push(api::make_error("io.ftp.unsupported-probability", "FTP writer cannot serialize unsupported probability sources"));
             }
             break;
         }
@@ -55,8 +51,7 @@ namespace {
             break;
         case ir::pc::op_code::cardinality:
             if (model.cardinality_high()[node] != model.operand_counts()[node]) {
-                diagnostics.push(api::make_error("io.ftp.unsupported-cardinality",
-                                                 "FTP writer can serialize only at-least-k cardinality gates"));
+                diagnostics.push(api::make_error("io.ftp.unsupported-cardinality", "FTP writer can serialize only at-least-k cardinality gates"));
             }
             break;
         case ir::pc::op_code::xor_gate:
@@ -64,8 +59,7 @@ namespace {
         case ir::pc::op_code::nand_gate:
         case ir::pc::op_code::nor_gate:
         case ir::pc::op_code::xnor_gate:
-            diagnostics.push(api::make_error("io.ftp.unsupported-opcode",
-                                             "FTP writer cannot serialize this PC opcode without a lossy transform"));
+            diagnostics.push(api::make_error("io.ftp.unsupported-opcode", "FTP writer cannot serialize this PC opcode without a lossy transform"));
             break;
         }
     }
@@ -74,8 +68,7 @@ namespace {
 
 void writeGateLine(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std::ostream &output) {
     const auto code = model.op_codes()[node.raw()];
-    if (code == ir::pc::op_code::basic_event || code == ir::pc::op_code::constant ||
-        code == ir::pc::op_code::house_event) {
+    if (code == ir::pc::op_code::basic_event || code == ir::pc::op_code::constant || code == ir::pc::op_code::house_event) {
         return;
     }
 
@@ -101,8 +94,7 @@ void writeGateLine(ir::pc::circuit const &model, const ir::pc::bool_node_id node
 void writeProbabilityLine(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std::ostream &output) {
     const auto code = model.op_codes()[node.raw()];
     if (code == ir::pc::op_code::constant || code == ir::pc::op_code::house_event) {
-        output << std::scientific << std::setprecision(6) << (model.constant_values()[node.raw()] != 0 ? 1.0 : 0.0)
-               << ' ' << nodeName(model, node) << '\n';
+        output << std::scientific << std::setprecision(6) << (model.constant_values()[node.raw()] != 0 ? 1.0 : 0.0) << ' ' << nodeName(model, node) << '\n';
         return;
     }
     if (code != ir::pc::op_code::basic_event) {
@@ -119,11 +111,9 @@ void writeProbabilityLine(ir::pc::circuit const &model, const ir::pc::bool_node_
 
 } // namespace
 
-auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result {
+auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request) -> io::write_result {
     if (!request.format.empty() && request.format != formats::ftp()) {
-        return io::write_result::fail(
-            api::make_error("io.ftp.format-mismatch", "FTP writer received a non-FTP format request"));
+        return io::write_result::fail(api::make_error("io.ftp.format-mismatch", "FTP writer received a non-FTP format request"));
     }
 
     if (auto diagnostics = validateSerializable(model); diagnostics.has_errors()) {
@@ -132,8 +122,7 @@ auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_requ
 
     output << kFtpEncodingLine;
     for (auto const &target : model.targets()) {
-        output << kFtpGeneratedTargetPrefix << target.id.raw() << kFtpTargetLineJoin << nodeName(model, target.node)
-               << '\n';
+        output << kFtpGeneratedTargetPrefix << target.id.raw() << kFtpTargetLineJoin << nodeName(model, target.node) << '\n';
     }
     for (std::uint32_t node = 0; node < model.node_count(); ++node) {
         writeGateLine(model, ir::pc::bool_node_id(node), output);

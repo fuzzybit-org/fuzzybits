@@ -50,8 +50,7 @@ void evaluate_kleene(residual const &circuit, std::span<std::uint8_t> values) {
     }
 }
 
-auto evaluate(residual const &circuit, std::span<std::uint8_t const> assignment, std::vector<std::uint8_t> &scratch)
-    -> bool {
+auto evaluate(residual const &circuit, std::span<std::uint8_t const> assignment, std::vector<std::uint8_t> &scratch) -> bool {
     scratch.resize(circuit.nodes.size());
     for (std::size_t index = 0; index < circuit.nodes.size(); ++index) {
         auto const &node = circuit.nodes[index];
@@ -92,8 +91,7 @@ void polarities(residual const &circuit, std::vector<std::uint8_t> &out) {
         if (polarity == 0 || node.kind == residual_kind::variable) {
             continue;
         }
-        if (node.kind == residual_kind::xor_gate ||
-            (node.kind == residual_kind::cardinality && node.high < node.count)) {
+        if (node.kind == residual_kind::xor_gate || (node.kind == residual_kind::cardinality && node.high < node.count)) {
             polarity = polarity_positive | polarity_negative;
         }
         for (const auto literal : circuit.inputs(node)) {
@@ -104,8 +102,7 @@ void polarities(residual const &circuit, std::vector<std::uint8_t> &out) {
 
 auto truth_table_satisfiable(residual const &circuit, std::vector<std::uint64_t> &scratch) -> bool {
     static constexpr std::uint64_t patterns[6] = {
-        0xAAAAAAAAAAAAAAAAULL, 0xCCCCCCCCCCCCCCCCULL, 0xF0F0F0F0F0F0F0F0ULL,
-        0xFF00FF00FF00FF00ULL, 0xFFFF0000FFFF0000ULL, 0xFFFFFFFF00000000ULL,
+        0xAAAAAAAAAAAAAAAAULL, 0xCCCCCCCCCCCCCCCCULL, 0xF0F0F0F0F0F0F0F0ULL, 0xFF00FF00FF00FF00ULL, 0xFFFF0000FFFF0000ULL, 0xFFFFFFFF00000000ULL,
     };
     const auto variables = circuit.variable_count();
     const std::uint64_t chunks = variables <= 6 ? 1 : std::uint64_t{1} << (variables - 6);
@@ -114,14 +111,11 @@ auto truth_table_satisfiable(residual const &circuit, std::vector<std::uint64_t>
     for (std::uint64_t chunk = 0; chunk < chunks; ++chunk) {
         for (std::size_t index = 0; index < circuit.nodes.size(); ++index) {
             auto const &node = circuit.nodes[index];
-            const auto input = [&](const std::uint32_t literal) {
-                return scratch[literal >> 1] ^ ((literal & 1U) != 0 ? all_ones : 0);
-            };
+            const auto input = [&](const std::uint32_t literal) { return scratch[literal >> 1] ^ ((literal & 1U) != 0 ? all_ones : 0); };
             std::uint64_t word = 0;
             switch (node.kind) {
             case residual_kind::variable:
-                word = node.variable < 6 ? patterns[node.variable]
-                                         : (((chunk >> (node.variable - 6)) & 1U) != 0 ? all_ones : 0);
+                word = node.variable < 6 ? patterns[node.variable] : (((chunk >> (node.variable - 6)) & 1U) != 0 ? all_ones : 0);
                 break;
             case residual_kind::and_gate:
                 word = all_ones;

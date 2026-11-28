@@ -82,8 +82,7 @@ void Formula::ArgSet::Remove(ArgEvent event) {
 }
 
 Formula::Formula(Connective connective, ArgSet args, std::optional<int> min_number, std::optional<int> max_number)
-    : connective_(connective), min_number_(min_number.value_or(0)), max_number_(max_number.value_or(0)),
-      args_(std::move(args)) {
+    : connective_(connective), min_number_(min_number.value_or(0)), max_number_(max_number.value_or(0)), args_(std::move(args)) {
     ValidateMinMaxNumber(min_number, max_number);
 
     try {
@@ -115,9 +114,7 @@ void Formula::Swap(ArgEvent current, ArgEvent other) {
         SCRAM_THROW(LogicError("The current event is not in the formula."));
 
     Event *base = ext::as<Event *>(other);
-    if (ext::any_of(args_.data(), [&current, &base](const Arg &arg) {
-            return arg.event != current && ext::as<Event *>(arg.event)->id() == base->id();
-        })) {
+    if (ext::any_of(args_.data(), [&current, &base](const Arg &arg) { return arg.event != current && ext::as<Event *>(arg.event)->id() == base->id(); })) {
         SCRAM_THROW(DuplicateElementError()) << errinfo_element(base->id(), "event");
     }
 
@@ -149,8 +146,7 @@ void Formula::ValidateMinMaxNumber(std::optional<int> min_number, std::optional<
             SCRAM_THROW(LogicError("The max number cannot be negative.")) << errinfo_value(std::to_string(*max_number));
 
         if (connective_ != kCardinality) {
-            SCRAM_THROW(LogicError("The max number can only be defined for 'cardinality' connective."))
-                << errinfo_connective(kConnectiveToString[connective_]);
+            SCRAM_THROW(LogicError("The max number can only be defined for 'cardinality' connective.")) << errinfo_connective(kConnectiveToString[connective_]);
         }
 
         if (min_number && *min_number > *max_number)
@@ -184,8 +180,7 @@ void Formula::ValidateConnective(std::optional<int> min_number, std::optional<in
             SCRAM_THROW(ValidityError("The connective requires min number for its args."));
 
         if (min_number_ < 2)
-            SCRAM_THROW(ValidityError("Min number cannot be less than 2."))
-                << errinfo_value(std::to_string(min_number_));
+            SCRAM_THROW(ValidityError("Min number cannot be less than 2.")) << errinfo_value(std::to_string(min_number_));
 
         if (args_.size() <= min_number_) {
             SCRAM_THROW(ValidityError("The connective must have more arguments "

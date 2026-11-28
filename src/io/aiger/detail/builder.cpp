@@ -55,8 +55,7 @@ class PcBuilder final {
         }
 
         if (model_.inputLiterals.empty() && model_.andDefinitions.empty() && model_.outputLiterals.empty()) {
-            diagnostics_.push(api::make_error("io.aiger.empty-circuit",
-                                              "empty AIGER files cannot be represented by the current PC storage"));
+            diagnostics_.push(api::make_error("io.aiger.empty-circuit", "empty AIGER files cannot be represented by the current PC storage"));
         }
         if (diagnostics_.has_errors()) {
             return ir::pc::finalize_result{
@@ -72,8 +71,7 @@ class PcBuilder final {
 
   private:
     [[nodiscard]] auto estimatedNodeCount() const -> std::uint32_t {
-        const auto count = static_cast<std::uint64_t>(model_.inputLiterals.size()) + model_.andDefinitions.size() +
-                           model_.outputLiterals.size() + 2U;
+        const auto count = static_cast<std::uint64_t>(model_.inputLiterals.size()) + model_.andDefinitions.size() + model_.outputLiterals.size() + 2U;
         if (count > std::numeric_limits<std::uint32_t>::max()) {
             return std::numeric_limits<std::uint32_t>::max();
         }
@@ -143,15 +141,12 @@ class PcBuilder final {
             return found->second;
         }
         if (visitingVariables_.contains(variable)) {
-            diagnostics_.push(api::make_error("io.aiger.cycle", "AIGER AND dependency cycle involving variable " +
-                                                                    std::to_string(variable)));
+            diagnostics_.push(api::make_error("io.aiger.cycle", "AIGER AND dependency cycle involving variable " + std::to_string(variable)));
             return ir::pc::bool_node_id::invalid();
         }
         const auto definition = definitionByVariable(variable);
         if (definition == nullptr) {
-            diagnostics_.push(
-                api::make_error("io.aiger.undefined-literal",
-                                "AIGER literal references undefined variable " + std::to_string(variable)));
+            diagnostics_.push(api::make_error("io.aiger.undefined-literal", "AIGER literal references undefined variable " + std::to_string(variable)));
             return ir::pc::bool_node_id::invalid();
         }
 

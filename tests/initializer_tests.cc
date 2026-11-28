@@ -396,8 +396,7 @@ TEST_CASE("InitializerTest.IncorrectModelEmptyInputs", "[mef::initializer]") {
 
 TEST_CASE("InitializerTest.ExternDLError", "[mef::initializer]") {
     CHECK_THROWS_AS(Initializer({"tests/input/model/extern_library_ioerror.xml"}, core::Settings(), true), DLError);
-    CHECK_THROWS_AS(Initializer({"tests/input/model/undefined_symbol_extern_function.xml"}, core::Settings(), true),
-                    DLError);
+    CHECK_THROWS_AS(Initializer({"tests/input/model/undefined_symbol_extern_function.xml"}, core::Settings(), true), DLError);
 }
 
 // Tests that external libraries are disabled by default.

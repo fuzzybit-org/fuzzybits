@@ -1,7 +1,7 @@
-diff --git a/src/mc/queue/sample_shaper.h b/src/mc/queue/sample_shaper.h
+diff --git a/src/mc/executor/sample_shaper.h b/src/mc/executor/sample_shaper.h
 index 6b078322..ec0822fe 100644
---- a/src/mc/queue/sample_shaper.h
-+++ b/src/mc/queue/sample_shaper.h
+--- a/src/mc/executor/sample_shaper.h
++++ b/src/mc/executor/sample_shaper.h
 @@ -42,6 +42,8 @@
  
  #pragma once

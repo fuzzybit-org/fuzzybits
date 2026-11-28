@@ -38,9 +38,7 @@ using Interval = boost::icl::continuous_interval<double>;
 using IntervalBounds = boost::icl::interval_bounds;
 
 /// Returns true if a given interval contains a given value.
-inline bool Contains(const Interval &interval, double value) {
-    return boost::icl::contains(interval, Interval::closed(value, value));
-}
+inline bool Contains(const Interval &interval, double value) { return boost::icl::contains(interval, Interval::closed(value, value)); }
 
 /// Checks if a given interval is within the probability domain.
 inline bool IsProbability(const Interval &interval) { return boost::icl::within(interval, Interval::closed(0, 1)); }
@@ -156,8 +154,7 @@ template <typename T, int N> class NaryExpression;
 template <typename T> class NaryExpression<T, 1> : public ExpressionFormula<NaryExpression<T, 1>> {
   public:
     /// @param[in] expression  The single argument.
-    explicit NaryExpression(Expression *expression)
-        : ExpressionFormula<NaryExpression<T, 1>>({expression}), expression_(*expression) {}
+    explicit NaryExpression(Expression *expression) : ExpressionFormula<NaryExpression<T, 1>>({expression}), expression_(*expression) {}
 
     void Validate() const override {}
 
@@ -180,8 +177,7 @@ template <typename T> class NaryExpression<T, 1> : public ExpressionFormula<Nary
 template <typename T> class NaryExpression<T, 2> : public ExpressionFormula<NaryExpression<T, 2>> {
   public:
     /// Two expression argument constructor.
-    explicit NaryExpression(Expression *arg_one, Expression *arg_two)
-        : ExpressionFormula<NaryExpression<T, 2>>({arg_one, arg_two}) {}
+    explicit NaryExpression(Expression *arg_one, Expression *arg_two) : ExpressionFormula<NaryExpression<T, 2>>({arg_one, arg_two}) {}
 
     void Validate() const override {}
 
@@ -197,9 +193,7 @@ template <typename T> class NaryExpression<T, 2> : public ExpressionFormula<Nary
     }
 
     /// Computes the expression value with a given argument value extractor.
-    template <typename F> double Compute(F &&eval) {
-        return T()(eval(Expression::args().front()), eval(Expression::args().back()));
-    }
+    template <typename F> double Compute(F &&eval) { return T()(eval(Expression::args().front()), eval(Expression::args().back())); }
 };
 
 namespace detail {
@@ -221,8 +215,7 @@ template <typename T> class NaryExpression<T, -1> : public ExpressionFormula<Nar
     /// @param[in] args  Arguments of this expression.
     ///
     /// @throws ValidityError  The number of arguments is fewer than 2.
-    explicit NaryExpression(std::vector<Expression *> args)
-        : ExpressionFormula<NaryExpression<T, -1>>(std::move(args)) {
+    explicit NaryExpression(std::vector<Expression *> args) : ExpressionFormula<NaryExpression<T, -1>>(std::move(args)) {
         detail::EnsureMultivariateArgs(Expression::args());
     }
 

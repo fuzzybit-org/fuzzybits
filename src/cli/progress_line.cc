@@ -324,8 +324,7 @@ struct marks {
 
 const marks &marks_for(glyphs g) {
     static constexpr marks kAscii{"#", "-", "...", "ok", "+/-", "->", "<- slowest", "<-"};
-    static constexpr marks kUtf8{"\u2501", "\u2500", "\u2026",         "\u2713",
-                                 "\u00b1", "\u2192", "\u2190 slowest", "\u2190"};
+    static constexpr marks kUtf8{"\u2501", "\u2500", "\u2026", "\u2713", "\u00b1", "\u2192", "\u2190 slowest", "\u2190"};
     return g == glyphs::ascii ? kAscii : kUtf8;
 }
 
@@ -354,8 +353,7 @@ std::string fmt_percent(const snapshot &s) {
     if (s.trials_total == 0) {
         return {};
     }
-    const double fraction =
-        std::clamp(static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total), 0.0, 1.0);
+    const double fraction = std::clamp(static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total), 0.0, 1.0);
     std::array<char, 16> buffer{};
     std::snprintf(buffer.data(), buffer.size(), "%.0f%%", fraction * 100.0);
     return std::string(buffer.data());
@@ -363,8 +361,7 @@ std::string fmt_percent(const snapshot &s) {
 
 std::string bar(double fraction, std::size_t cells, glyphs g) {
     const marks &m = marks_for(g);
-    const auto filled =
-        static_cast<std::size_t>(std::llround(std::clamp(fraction, 0.0, 1.0) * static_cast<double>(cells)));
+    const auto filled = static_cast<std::size_t>(std::llround(std::clamp(fraction, 0.0, 1.0) * static_cast<double>(cells)));
     std::string out;
     out.reserve(cells * 3);
     for (std::size_t i = 0; i < cells; ++i) {
@@ -393,8 +390,7 @@ std::size_t slowest_index(const std::vector<query_state> &queries) {
     std::size_t best = 0;
     double best_width = -1.0;
     for (std::size_t i = 0; i < queries.size(); ++i) {
-        const double width = std::isfinite(queries[i].rel_half_width) ? queries[i].rel_half_width
-                                                                      : std::numeric_limits<double>::infinity();
+        const double width = std::isfinite(queries[i].rel_half_width) ? queries[i].rel_half_width : std::numeric_limits<double>::infinity();
         if (width > best_width) {
             best_width = width;
             best = i;
@@ -444,8 +440,7 @@ row_plan pick_rows(const snapshot &s, std::size_t max_rows) {
 /// `    NAME  estimate ±width  [check]  [marker]`. The marker is the last thing added, so it is
 /// also the first thing given up when the terminal is narrow; the estimate and its precision,
 /// which are what the row is for, are never traded away for it.
-std::string target_row(const query_state &q, std::size_t name_width, bool slowest, const line_style &style,
-                       std::size_t width) {
+std::string target_row(const query_state &q, std::size_t name_width, bool slowest, const line_style &style, std::size_t width) {
     const marks &m = marks_for(style.glyph_set);
     std::string row = "    ";
     row += fit_name(q.name, name_width, style.glyph_set);
@@ -539,13 +534,11 @@ std::string shared_line(const snapshot &s, std::size_t width, const line_style &
     // With a single target the estimate and its precision fold into the shared line.
     std::string fold;
     if (s.queries.size() == 1) {
-        fold = "TOP " + fmt_estimate(s.queries.front().estimate) + " " + std::string(m.plus_minus) +
-               fmt_rel_half_width(s.queries.front().rel_half_width);
+        fold = "TOP " + fmt_estimate(s.queries.front().estimate) + " " + std::string(m.plus_minus) + fmt_rel_half_width(s.queries.front().rel_half_width);
     }
 
     const std::string label = phase_label(s.stage);
-    const double fraction =
-        s.trials_total > 0 ? static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total) : 0.0;
+    const double fraction = s.trials_total > 0 ? static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total) : 0.0;
 
     auto compose = [&](std::size_t bar_cells, bool with_counts, bool with_fold, bool with_rate, bool with_eta) {
         std::string line = "  " + label;
@@ -607,8 +600,7 @@ std::string summary_targets(const snapshot &s) {
         return {};
     }
     const query_state &top = s.queries.front();
-    std::string text = "TOP " + fmt_estimate(top.estimate) + " " + std::string(marks_for(glyphs::utf8).plus_minus) +
-                       fmt_rel_half_width(top.rel_half_width);
+    std::string text = "TOP " + fmt_estimate(top.estimate) + " " + std::string(marks_for(glyphs::utf8).plus_minus) + fmt_rel_half_width(top.rel_half_width);
     if (s.queries.size() > 1) {
         text += "  +" + std::to_string(s.queries.size() - 1) + " more";
     }
@@ -861,8 +853,7 @@ std::string truncate_to_width(std::string_view text, std::size_t width, glyphs g
     return out;
 }
 
-std::vector<std::string> format_block(const snapshot &s, std::size_t width, const line_style &style,
-                                      std::size_t height) {
+std::vector<std::string> format_block(const snapshot &s, std::size_t width, const line_style &style, std::size_t height) {
     const std::size_t usable = std::max<std::size_t>(width, 8);
     std::vector<std::string> lines;
     if (s.stage == phase::compile && s.queries.empty()) {
@@ -894,13 +885,12 @@ std::vector<std::string> format_block(const snapshot &s, std::size_t width, cons
     name_width = std::clamp<std::size_t>(std::min(name_width, room), 3, 12);
 
     for (const std::size_t index : rows) {
-        lines.push_back(truncate_to_width(target_row(s.queries[index], name_width, index == slowest, style, usable),
-                                          usable, style.glyph_set));
+        lines.push_back(truncate_to_width(target_row(s.queries[index], name_width, index == slowest, style, usable), usable, style.glyph_set));
     }
     if (plan.more) {
-        lines.push_back(truncate_to_width("    " + std::string(marks_for(style.glyph_set).ellipsis) + " +" +
-                                              std::to_string(s.queries.size() - rows.size()) + " more",
-                                          usable, style.glyph_set));
+        lines.push_back(
+            truncate_to_width("    " + std::string(marks_for(style.glyph_set).ellipsis) + " +" + std::to_string(s.queries.size() - rows.size()) + " more",
+                              usable, style.glyph_set));
     }
     return lines;
 }
@@ -963,9 +953,7 @@ std::string_view signal_payload::current() const {
 
 bool stderr_is_tty() { return fd_is_tty(2); }
 
-bool locale_uses_utf8(const char *lc_all, const char *lc_ctype, const char *lang) {
-    return locale_is_utf8(lc_all, lc_ctype, lang);
-}
+bool locale_uses_utf8(const char *lc_all, const char *lc_ctype, const char *lang) { return locale_is_utf8(lc_all, lc_ctype, lang); }
 
 display_policy resolve_display(bool no_progress, bool quiet) {
     return resolve_display(no_progress, quiet, std::getenv("FUZZYBITS_PROGRESS"), std::getenv("TERM"), stderr_is_tty());
@@ -990,9 +978,7 @@ display_policy resolve_display(bool no_progress, bool quiet, const char *progres
 
 line_style style_from_environment() {
     line_style style;
-    style.glyph_set = locale_uses_utf8(std::getenv("LC_ALL"), std::getenv("LC_CTYPE"), std::getenv("LANG"))
-                          ? glyphs::utf8
-                          : glyphs::ascii;
+    style.glyph_set = locale_uses_utf8(std::getenv("LC_ALL"), std::getenv("LC_CTYPE"), std::getenv("LANG")) ? glyphs::utf8 : glyphs::ascii;
     return style;
 }
 
@@ -1078,8 +1064,7 @@ void line_sink::erase_block(std::string &out) {
 }
 
 void line_sink::draw(const snapshot &s) {
-    const std::vector<std::string> lines =
-        format_block(s, width(), opt_.style, opt_.terminal_height ? opt_.terminal_height() : 0);
+    const std::vector<std::string> lines = format_block(s, width(), opt_.style, opt_.terminal_height ? opt_.terminal_height() : 0);
     std::string out;
     if (rows_ > 0) {
         erase_block(out);

@@ -24,9 +24,7 @@ class capability_set final {
         }
     }
 
-    [[nodiscard]] auto contains(capability_id const &capability) const -> bool {
-        return std::ranges::find(values_, capability) != values_.end();
-    }
+    [[nodiscard]] auto contains(capability_id const &capability) const -> bool { return std::ranges::find(values_, capability) != values_.end(); }
 
     [[nodiscard]] auto contains_all(capability_set const &other) const -> bool {
         for (auto const &capability : other.values_) {

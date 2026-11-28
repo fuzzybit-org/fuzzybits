@@ -1,7 +1,8 @@
 #pragma once
 
+#include "mc/executor/descriptor/device.h"
+#include "mc/executor/working_set.h"
 #include "mc/logger/csv.h"
-#include "mc/queue/working_set.h"
 
 #include <ostream>
 #include <sstream>
@@ -10,59 +11,13 @@
 
 namespace scram::log::working_set {
 
-template <typename size_type, typename bitpack_type>
-inline auto csv_pairs(const mc::working_set<size_type, bitpack_type> &ws) {
+template <typename size_type, typename bitpack_type> inline auto csv_pairs(const fuzzybits::mc::working_set<size_type, bitpack_type> &ws) {
     using pair_t = std::pair<std::string, std::string>;
 
-    // Helper function to convert device_type enum to string
-    auto device_type_to_string = [](sycl::info::device_type dt) -> std::string {
-        switch (dt) {
-        case sycl::info::device_type::cpu:
-            return "cpu";
-        case sycl::info::device_type::gpu:
-            return "gpu";
-        case sycl::info::device_type::all:
-            return "all";
-        case sycl::info::device_type::custom:
-            return "custom";
-        case sycl::info::device_type::automatic:
-            return "automatic";
-        case sycl::info::device_type::accelerator:
-            return "accelerator";
-        case sycl::info::device_type::host:
-            return "host";
-        default:
-            return "unknown";
-        }
-    };
-
-    // Helper function to convert global_mem_cache_type enum to string
-    auto cache_type_to_string = [](sycl::info::global_mem_cache_type ct) -> std::string {
-        switch (ct) {
-        case sycl::info::global_mem_cache_type::none:
-            return "none";
-        case sycl::info::global_mem_cache_type::read_only:
-            return "read_only";
-        case sycl::info::global_mem_cache_type::read_write:
-            return "read_write";
-        default:
-            return "unknown";
-        }
-    };
-
-    // Helper function to convert local_mem_type enum to string
-    auto local_mem_type_to_string = [](sycl::info::local_mem_type lt) -> std::string {
-        switch (lt) {
-        case sycl::info::local_mem_type::none:
-            return "none";
-        case sycl::info::local_mem_type::local:
-            return "local";
-        case sycl::info::local_mem_type::global:
-            return "global";
-        default:
-            return "unknown";
-        }
-    };
+    // The names descriptions give these enumerations (descriptor/device.h).
+    const auto device_type_to_string = [](const sycl::info::device_type dt) { return std::string(fuzzybits::mc::executor::descriptor::name_of(dt)); };
+    const auto cache_type_to_string = [](const sycl::info::global_mem_cache_type ct) { return std::string(fuzzybits::mc::executor::descriptor::name_of(ct)); };
+    const auto local_mem_type_to_string = [](const sycl::info::local_mem_type lt) { return std::string(fuzzybits::mc::executor::descriptor::name_of(lt)); };
 
     // Helper function to serialize vector of sub_group_sizes
     auto sub_group_sizes_to_string = [](const std::vector<std::size_t> &sizes) -> std::string {

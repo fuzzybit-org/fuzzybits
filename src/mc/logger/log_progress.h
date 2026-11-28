@@ -7,16 +7,12 @@
 #include <utility>
 #include <vector>
 
-namespace scram {
-namespace mc {
-namespace scheduler {
+namespace fuzzybits::mc::scheduler {
 
 // Forward declaration to avoid heavy include and circular dependency
 template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_> class convergence_controller;
 
-} // namespace scheduler
-} // namespace mc
-} // namespace scram
+} // namespace fuzzybits::mc::scheduler
 
 namespace scram::log::progress {
 
@@ -29,7 +25,7 @@ namespace scram::log::progress {
  */
 template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_>
 inline std::vector<std::pair<std::string, std::string>>
-csv_pairs(const scram::mc::scheduler::convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &c) {
+csv_pairs(const fuzzybits::mc::scheduler::convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &c) {
     using pair_t = std::pair<std::string, std::string>;
     std::vector<pair_t> kv;
     kv.reserve(32);
@@ -59,11 +55,9 @@ csv_pairs(const scram::mc::scheduler::convergence_controller<policy_t_, bitpack_
     kv.emplace_back("target_epsilon_log10", csv_string(tar_state.half_width_epsilon_log10));
 
     // Convergence flags
-    const bool epsilon_converged_flag =
-        (cur_state.half_width_epsilon > 0) && (cur_state.half_width_epsilon <= tar_state.half_width_epsilon);
+    const bool epsilon_converged_flag = (cur_state.half_width_epsilon > 0) && (cur_state.half_width_epsilon <= tar_state.half_width_epsilon);
     const bool epsilon_log10_converged_flag =
-        (cur_state.half_width_epsilon_log10 > 0) &&
-        (cur_state.half_width_epsilon_log10 <= tar_state.half_width_epsilon_log10);
+        (cur_state.half_width_epsilon_log10 > 0) && (cur_state.half_width_epsilon_log10 <= tar_state.half_width_epsilon_log10);
     kv.emplace_back("epsilon_converged", csv_string(epsilon_converged_flag));
     kv.emplace_back("epsilon_log10_converged", csv_string(epsilon_log10_converged_flag));
 

@@ -20,7 +20,7 @@
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
-namespace scram::mc::scheduler {
+namespace fuzzybits::mc::scheduler {
 
 template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_> class convergence_controller;
 
@@ -28,9 +28,8 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
     using progress_pairs_t = std::vector<std::pair<std::string, std::string>>;
     using progress_callback_t = std::function<void(const progress_pairs_t &)>;
 
-    void initialize(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> *controller,
-                    const bool watch_mode, const std::optional<std::string> &log_to_file = std::nullopt,
-                    progress_callback_t progress_callback = {}) {
+    void initialize(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> *controller, const bool watch_mode,
+                    const std::optional<std::string> &log_to_file = std::nullopt, progress_callback_t progress_callback = {}) {
         // Initialize timing for throughput tracking
         last_tick_time_ = std::chrono::high_resolution_clock::now();
         first_tick_ = true;
@@ -42,18 +41,18 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         if (log_to_file) {
             const std::string &filepath = *log_to_file;
             progress_logger_.emplace(filepath);
-            LOG(DEBUG2) << "Progress log in :: " << filepath;
+            LOG(scram::DEBUG2) << "Progress log in :: " << filepath;
         }
 
         // Configure terminal rendering only when explicitly requested and attached to a TTY.
         if (watch_mode && (!isatty(fileno(stdout)) || !isatty(fileno(stderr)))) {
-            LOG(WARNING) << "Disabling progressbar since neither STDOUT nor STDERR are TTYs.";
+            LOG(scram::WARNING) << "Disabling progressbar since neither STDOUT nor STDERR are TTYs.";
             return;
         }
 
         if (!watch_mode) {
             if (!log_to_file && !progress_callback_) {
-                LOG(WARNING) << "Disabling progressbar since watch mode is disabled. Enable with --watch flag";
+                LOG(scram::WARNING) << "Disabling progressbar since watch mode is disabled. Enable with --watch flag";
             }
             return;
         }
@@ -84,7 +83,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         // Fast path: if we are *not* in watch mode, behave exactly as before.
         if (!watch_mode_) {
             // No terminal attached – fallback to lightweight logging only.
-            LOG(DEBUG2) << controller->current_tally();
+            LOG(scram::DEBUG2) << controller->current_tally();
             return;
         }
 
@@ -146,8 +145,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
     }
 
     // Mark the iterations bar as complete when the planned iterations finish.
-    void mark_fixed_iterations_complete(
-        const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void mark_fixed_iterations_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!bars_) {
             return;
         }
@@ -157,8 +155,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
     }
 
-    void
-    mark_burn_in_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void mark_burn_in_complete(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!bars_) {
             return;
         }
@@ -171,7 +168,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
     void tick_burn_in(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         // If watch mode is disabled we can perform the update synchronously.
         if (!watch_mode_) {
-            LOG(DEBUG2) << controller.current_tally();
+            LOG(scram::DEBUG2) << controller.current_tally();
             return;
         }
 
@@ -184,8 +181,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         cv_.notify_one();
     }
 
-    void
-    perform_normal_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void perform_normal_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (bars_) {
             tick_fixed_bar(controller);
             tick_convergence_bar(controller);
@@ -205,8 +201,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
     }
 
-    void
-    perform_burn_in_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void perform_burn_in_update(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (bars_) {
             tick_fixed_bar(controller);
             tick_text(&controller);
@@ -216,17 +211,14 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
             auto &bar = bars_->operator[](*burn_in_);
 
             std::ostringstream tar_ss;
-            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.target_state().half_width_epsilon;
+            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.target_state().half_width_epsilon;
             const std::string t = tar_ss.str();
 
             std::ostringstream cur_ss;
-            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.current_state().half_width_epsilon;
+            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.current_state().half_width_epsilon;
             const std::string c = cur_ss.str();
 
-            bar.set_option(
-                indicators::option::PrefixText{"[burn-in]     ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
+            bar.set_option(indicators::option::PrefixText{"[burn-in]     ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
 
             const auto cur_ite = controller.current_steps().iterations();
             const auto tot_ite = controller.burn_in_trials_shape().iterations();
@@ -378,9 +370,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
     }
 
-    static progress_pairs_t
-    progress_pairs(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller,
-                   const std::string &phase) {
+    static progress_pairs_t progress_pairs(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller, const std::string &phase) {
         auto pairs = scram::log::progress::csv_pairs(controller);
         pairs.emplace_back("phase", phase);
         return pairs;
@@ -481,15 +471,12 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
             const auto projected_ite = controller.projected_steps_epsilon().iterations();
             const std::string ite = std::to_string(cur_ite) + "/" + std::to_string(projected_ite);
             std::ostringstream tar_ss;
-            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.target_state().half_width_epsilon;
+            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.target_state().half_width_epsilon;
             const std::string t = tar_ss.str();
             std::ostringstream cur_ss;
-            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.current_state().half_width_epsilon;
+            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.current_state().half_width_epsilon;
             const std::string c = cur_ss.str();
-            bar.set_option(
-                indicators::option::PrefixText{"[convergence] ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
+            bar.set_option(indicators::option::PrefixText{"[convergence] ::      (ε)= " + c + " |      (ε₀)= " + t + " :: "});
             bar.set_option(indicators::option::PostfixText{"[" + ite + "]"});
             bar.set_option(indicators::option::MinProgress{0});
             bar.set_option(indicators::option::MaxProgress{projected_ite}); // moving target
@@ -500,23 +487,19 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
     }
 
-    void
-    tick_log_convergence_bar(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void tick_log_convergence_bar(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (log_convergence_ && !bars_->operator[](*log_convergence_).is_completed()) {
             auto &bar = bars_->operator[](*log_convergence_);
             const auto cur_ite = controller.current_steps().iterations();
             const auto projected_ite = controller.projected_steps_epsilon_log10().iterations();
             const std::string ite = std::to_string(cur_ite) + "/" + std::to_string(projected_ite);
             std::ostringstream tar_ss;
-            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.target_state().half_width_epsilon_log10;
+            tar_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.target_state().half_width_epsilon_log10;
             const std::string t = tar_ss.str();
             std::ostringstream cur_ss;
-            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << controller.current_state().half_width_epsilon_log10;
+            cur_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << controller.current_state().half_width_epsilon_log10;
             const std::string c = cur_ss.str();
-            bar.set_option(
-                indicators::option::PrefixText{"[log10-conv]  :: log10(ε)= " + c + " | log10(ε₀)= " + t + " :: "});
+            bar.set_option(indicators::option::PrefixText{"[log10-conv]  :: log10(ε)= " + c + " | log10(ε₀)= " + t + " :: "});
             bar.set_option(indicators::option::PostfixText{"[" + ite + "]"});
             bar.set_option(indicators::option::MinProgress{0});
             bar.set_option(indicators::option::MaxProgress{projected_ite}); // moving target
@@ -554,20 +537,17 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
         auto &bar = bars_->operator[](*diagnostics_);
         std::ostringstream ss;
-        ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-           << *controller.sampling_diagnostics();
+        ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << *controller.sampling_diagnostics();
         bar.set_option(indicators::option::PostfixText{ss.str()});
     }
 
-    void
-    tick_accuracy_metrics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
+    void tick_accuracy_metrics(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         if (!accuracy_metrics_) {
             return;
         }
         auto &bar = bars_->operator[](*accuracy_metrics_);
         std::ostringstream metrics_ss;
-        metrics_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS)
-                   << *controller.accuracy_metrics();
+        metrics_ss << std::scientific << std::setprecision(PRECISION_LOG_SCIENTIFIC_DIGITS) << *controller.accuracy_metrics();
         bar.set_option(indicators::option::PostfixText{metrics_ss.str()});
     }
 
@@ -589,8 +569,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
             return;
         }
 
-        const auto elapsed_time =
-            std::chrono::duration_cast<std::chrono::duration<double>>(current_time - last_tick_time_).count();
+        const auto elapsed_time = std::chrono::duration_cast<std::chrono::duration<double>>(current_time - last_tick_time_).count();
         const auto iterations_delta = current_iteration - last_iteration_;
 
         if (elapsed_time <= 0.0 || iterations_delta == 0) {
@@ -614,20 +593,17 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         //  Calculate bits per iteration with appropriate units
         // const std::double_t bits_per_iteration_whole_graph =
         // static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
-        const std::double_t bits_per_iteration_per_node =
-            static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
+        const std::double_t bits_per_iteration_per_node = static_cast<double_t>(controller.fixed_iterations_shape().trials_per_iteration());
         const std::double_t nodes_per_graph = static_cast<double_t>(controller.node_count());
         // const std::double_t bits_per_iteration = bits_per_iteration_whole_graph;
         std::string bits_iter_node_str;
         if (bits_per_iteration_per_node >= 1024 * 1024 * 1024) {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0 * 1024.0)
-               << " Gbit/node/it";
+            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0 * 1024.0) << " Gbit/node/it";
             bits_iter_node_str = ss.str();
         } else if (bits_per_iteration_per_node >= 1024 * 1024) {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0)
-               << " Mbit/node/it";
+            ss << std::fixed << std::setprecision(2) << bits_per_iteration_per_node / (1024.0 * 1024.0) << " Mbit/node/it";
             bits_iter_node_str = ss.str();
         } else if (bits_per_iteration_per_node >= 1024) {
             std::ostringstream ss;
@@ -640,13 +616,11 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         }
 
         // Calculate bits per second with appropriate units
-        const double bits_per_node_sec =
-            static_cast<double>(bits_per_iteration_per_node * iterations_delta) / elapsed_time;
+        const double bits_per_node_sec = static_cast<double>(bits_per_iteration_per_node * iterations_delta) / elapsed_time;
         std::string bits_sec_node_str;
         if (bits_per_node_sec >= 1024.0 * 1024.0 * 1024.0) {
             std::ostringstream ss;
-            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0 * 1024.0)
-               << " Gbit/node/s";
+            ss << std::fixed << std::setprecision(2) << bits_per_node_sec / (1024.0 * 1024.0 * 1024.0) << " Gbit/node/s";
             bits_sec_node_str = ss.str();
         } else if (bits_per_node_sec >= 1024.0 * 1024.0) {
             std::ostringstream ss;
@@ -789,18 +763,17 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
     static std::unique_ptr<indicators::ProgressBar> make_iterations_progress_bar(const std::size_t max_iterations = 0) {
         // const std::string str_ite = "0/" + max_iterations;
         // const std::string str_prefix = "["+str_ite+"] :: ";
-        return std::make_unique<indicators::ProgressBar>(
-            indicators::option::BarWidth{bar_width_}, indicators::option::Start{"["}, indicators::option::Fill{"■"},
-            indicators::option::Lead{"■"}, indicators::option::Remainder{"-"}, indicators::option::End{"]"});
+        return std::make_unique<indicators::ProgressBar>(indicators::option::BarWidth{bar_width_}, indicators::option::Start{"["},
+                                                         indicators::option::Fill{"■"}, indicators::option::Lead{"■"}, indicators::option::Remainder{"-"},
+                                                         indicators::option::End{"]"});
     }
 
     static std::unique_ptr<indicators::ProgressBar> make_text(const std::optional<std::string> &pretext) {
         return std::make_unique<indicators::ProgressBar>(
-            indicators::option::BarWidth{0}, indicators::option::PrefixText{pretext ? *pretext : ""},
-            indicators::option::Start{""}, indicators::option::Fill{""}, indicators::option::Lead{""},
-            indicators::option::Remainder{""}, indicators::option::End{""},
+            indicators::option::BarWidth{0}, indicators::option::PrefixText{pretext ? *pretext : ""}, indicators::option::Start{""},
+            indicators::option::Fill{""}, indicators::option::Lead{""}, indicators::option::Remainder{""}, indicators::option::End{""},
             indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::ShowPercentage{false},
             indicators::option::ShowElapsedTime{false}, indicators::option::ShowRemainingTime{false});
     }
 };
-} // namespace scram::mc::scheduler
+} // namespace fuzzybits::mc::scheduler

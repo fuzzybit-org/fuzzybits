@@ -26,8 +26,8 @@ namespace fuzzybits::ir::pc::hull::testing {
 // (the atom-split reading).
 inline constexpr std::uint8_t unset = 2;
 
-inline auto evaluate_nodes(circuit const &model, std::span<std::uint8_t const> event_values,
-                           std::span<std::uint8_t const> complement_values = {}) -> std::vector<std::uint8_t> {
+inline auto evaluate_nodes(circuit const &model, std::span<std::uint8_t const> event_values, std::span<std::uint8_t const> complement_values = {})
+    -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> value(model.node_count(), 0);
     std::vector<std::uint32_t> event_of(model.node_count(), 0);
     std::uint32_t event = 0;
@@ -257,8 +257,7 @@ class json_reader final {
             position_ += 5;
             value.type = json::kind::boolean;
         } else {
-            const std::string token(
-                input_.substr(position_, input_.find_first_of(",]} \n\r\t", position_) - position_));
+            const std::string token(input_.substr(position_, input_.find_first_of(",]} \n\r\t", position_) - position_));
             char *end = nullptr;
             value.number = std::strtod(token.c_str(), &end);
             if (token.empty() || end != token.c_str() + token.size()) {

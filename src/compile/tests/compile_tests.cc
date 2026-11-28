@@ -12,15 +12,11 @@
 
 namespace {
 
-std::string aralia(const char *name) {
-    return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string();
-}
+std::string aralia(const char *name) { return (std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "Aralia" / name).string(); }
 
 std::string repo_input(const char *relative) { return (std::filesystem::path(PROJECT_SOURCE_DIR) / relative).string(); }
 
-double exp_unreliability(double lambda, double mission_hours = 8760.0) {
-    return 1.0 - std::exp(-lambda * mission_hours);
-}
+double exp_unreliability(double lambda, double mission_hours = 8760.0) { return 1.0 - std::exp(-lambda * mission_hours); }
 
 std::map<std::string, double> sample_probabilities(const pcfb::ir::Circuit &circuit) {
     std::map<std::string, double> out;

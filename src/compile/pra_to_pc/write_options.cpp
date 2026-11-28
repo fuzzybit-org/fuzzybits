@@ -19,8 +19,7 @@ namespace {
 namespace writer = io::backend::fuzzybits::pcfb;
 
 [[nodiscard]] auto writer_kind(const ir::pc::query_kind kind) noexcept -> writer::query_kind {
-    return kind == ir::pc::query_kind::probability ? writer::query_kind::probability
-                                                   : writer::query_kind::monotone_hull_probability;
+    return kind == ir::pc::query_kind::probability ? writer::query_kind::probability : writer::query_kind::monotone_hull_probability;
 }
 
 } // namespace
@@ -29,8 +28,7 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
     using options_result = api::result<writer::write_options>;
     auto const *model = ir::pra::model_from(lowering.pra_model);
     if (model == nullptr || !model->valid()) {
-        return options_result::fail(api::make_error("compile.pra_to_pc.invalid-artifact",
-                                                    "the lowering artifact does not hold an ir::pra model"));
+        return options_result::fail(api::make_error("compile.pra_to_pc.invalid-artifact", "the lowering artifact does not hold an ir::pra model"));
     }
 
     writer::write_options options;
@@ -45,8 +43,7 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
     std::vector<pending_group> groups;
     std::map<std::tuple<ir::pra::domain_target_id, ir::pra::domain_ref, ir::pc::query_kind>, std::size_t> group_of;
     for (auto const &target : lowering.projection.target_bindings()) {
-        const auto base = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target))
-                                                       : model->stable_name(target.subject);
+        const auto base = target.domain_target.valid() ? model->stable_name(ir::pra::domain_ref(target.domain_target)) : model->stable_name(target.subject);
         std::string name(base);
         // The target's name, the hull reading of a hull query, and the initiator rule where the lowering
         // put its delete term into this target.
@@ -57,13 +54,12 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
             // reads marked operands as plain complements: the plain reading, not split or fixed.
             const auto literals = lowering.projection.literal_events(target);
             if (target.hull->literals != ir::pra::hull_literals::plain && !literals.empty()) {
-                diagnostics.push(api::make_error(
-                    "compile.pra_to_pc.hull-literals-unsupported",
-                    "target '" + std::string(name) + "' asks for a hull query that reads marked literals as " +
-                        std::string(ir::pra::to_string(target.hull->literals)) + ", and its cone has " +
-                        std::to_string(literals.size()) + " event(s) with marked literal operands (first: '" +
-                        std::string(model->stable_name(ir::pra::domain_ref(literals.front()))) +
-                        "'); the .pcfb writer cannot record literal atoms yet"));
+                diagnostics.push(api::make_error("compile.pra_to_pc.hull-literals-unsupported",
+                                                 "target '" + std::string(name) + "' asks for a hull query that reads marked literals as " +
+                                                     std::string(ir::pra::to_string(target.hull->literals)) + ", and its cone has " +
+                                                     std::to_string(literals.size()) + " event(s) with marked literal operands (first: '" +
+                                                     std::string(model->stable_name(ir::pra::domain_ref(literals.front()))) +
+                                                     "'); the .pcfb writer cannot record literal atoms yet"));
             }
             if (target.initiator_delete_term.valid()) {
                 quantification.max_initiators_per_cutset = target.hull->max_initiators;
@@ -71,8 +67,7 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
         }
         if (target.condition.valid()) {
             const auto initiator = std::string(model->stable_name(ir::pra::domain_ref(target.condition)));
-            const auto frequency =
-                model->expressions()[model->basic_events()[target.condition.raw()].expression.raw()].value;
+            const auto frequency = model->expressions()[model->basic_events()[target.condition.raw()].expression.raw()].value;
             name += "|" + initiator;
             quantification.initiator = initiator;
             quantification.initiator_frequency = frequency;
@@ -89,8 +84,7 @@ auto pcfb_write_options(pra_pc_lowering const &lowering) -> api::result<writer::
     }
     const auto unit = lowering.report.initiator_unit.value_or(std::string{});
     for (auto &group : groups) {
-        options.query_groups.push_back(writer::query_group{
-            .name = group.name, .unit = unit, .kind = writer_kind(group.kind), .terms = std::move(group.terms)});
+        options.query_groups.push_back(writer::query_group{.name = group.name, .unit = unit, .kind = writer_kind(group.kind), .terms = std::move(group.terms)});
     }
     for (auto const &event : lowering.projection.event_bindings()) {
         options.node_names.emplace(event.node, std::string(model->stable_name(event.element)));

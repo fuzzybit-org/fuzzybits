@@ -61,9 +61,8 @@ auto generate(std::mt19937_64 &random) -> generated {
     if (percent(random) < 30) {
         nodes.push_back(builder.add_house_event(percent(random) < 50));
     }
-    constexpr std::array kinds{pc::op_code::and_gate,  pc::op_code::or_gate,    pc::op_code::xor_gate,
-                               pc::op_code::not_gate,  pc::op_code::nand_gate,  pc::op_code::nor_gate,
-                               pc::op_code::xnor_gate, pc::op_code::cardinality};
+    constexpr std::array kinds{pc::op_code::and_gate,  pc::op_code::or_gate,  pc::op_code::xor_gate,  pc::op_code::not_gate,
+                               pc::op_code::nand_gate, pc::op_code::nor_gate, pc::op_code::xnor_gate, pc::op_code::cardinality};
     std::vector<pc::edge_ref> operands;
     for (std::uint32_t gate = 0; gate < gates; ++gate) {
         const auto kind = kinds[random() % kinds.size()];
@@ -73,8 +72,7 @@ auto generate(std::mt19937_64 &random) -> generated {
             // Prefer recent nodes so that deep, shared structure appears.
             const auto span = static_cast<std::uint32_t>(nodes.size());
             const auto recent = std::min<std::uint32_t>(span, 8);
-            const auto index = percent(random) < 60 ? span - 1 - static_cast<std::uint32_t>(random() % recent)
-                                                    : static_cast<std::uint32_t>(random() % span);
+            const auto index = percent(random) < 60 ? span - 1 - static_cast<std::uint32_t>(random() % recent) : static_cast<std::uint32_t>(random() % span);
             operands.push_back(pc::edge_ref{.source = nodes[index], .complement = percent(random) < 30});
         }
         if (kind == pc::op_code::cardinality) {
@@ -240,16 +238,14 @@ auto seal(pc::builder &builder) -> pc::circuit {
     return sealed.output;
 }
 
-auto hull_probability(pc::circuit const &model, pc::bool_node_id target, std::vector<event_mode> const &modes = {})
-    -> double {
+auto hull_probability(pc::circuit const &model, pc::bool_node_id target, std::vector<event_mode> const &modes = {}) -> double {
     auto made = hull::checker::make(model, target, modes);
     REQUIRE(made);
     return hull::testing::exact_probability(model, made.value());
 }
 
 // Answers for all 2^n samples of an n-event circuit, lane-major, one word per lane.
-auto all_samples(hull::checker const &check, std::uint32_t events, hull::lane_layout layout,
-                 hull::check_stats *stats = nullptr) -> std::vector<std::uint64_t> {
+auto all_samples(hull::checker const &check, std::uint32_t events, hull::lane_layout layout, hull::check_stats *stats = nullptr) -> std::vector<std::uint64_t> {
     const std::size_t lanes = std::size_t{1} << events;
     const std::size_t blocks = (lanes + 63) / 64;
     std::vector<std::uint64_t> words;
@@ -284,10 +280,8 @@ TEST_CASE("hull check equals brute force on random circuits", "[ir][pc][hull]") 
     std::size_t splits = 0;
     for (int round = 0; round < 160; ++round) {
         const auto case_ = generate(random);
-        std::vector<std::vector<event_mode>> mode_vectors{{},
-                                                          random_modes(random, case_.events),
-                                                          std::vector<event_mode>(case_.events, event_mode::fixed),
-                                                          split_complemented(case_.model, case_.events)};
+        std::vector<std::vector<event_mode>> mode_vectors{
+            {}, random_modes(random, case_.events), std::vector<event_mode>(case_.events, event_mode::fixed), split_complemented(case_.model, case_.events)};
         for (auto &modes : mode_vectors) {
             limit_splits(modes, case_.events);
             const reference expected_value(case_, modes);
@@ -307,8 +301,7 @@ TEST_CASE("hull check equals brute force on random circuits", "[ir][pc][hull]") 
                     for (std::size_t x = 0; x < lanes; ++x) {
                         const bool got = ((out[x / 64] >> (x % 64)) & 1U) != 0;
                         if (got != (expected[x] != 0)) {
-                            FAIL("round " << round << " options " << configuration.name << " sample " << x
-                                          << " expected " << int{expected[x]});
+                            FAIL("round " << round << " options " << configuration.name << " sample " << x << " expected " << int{expected[x]});
                         }
                     }
                     if (lanes % 64 != 0) {
@@ -331,8 +324,7 @@ TEST_CASE("hull check equals brute force on random circuits", "[ir][pc][hull]") 
     REQUIRE(totals[3].search > 0);
     REQUIRE(totals[4].bdd_budget_exceeded > 0);
     for (auto const &total : totals) {
-        REQUIRE(total.lanes ==
-                total.bounds + total.reduction + total.witness + total.truth_table + total.bdd + total.search);
+        REQUIRE(total.lanes == total.bounds + total.reduction + total.witness + total.truth_table + total.bdd + total.search);
     }
 }
 
@@ -348,8 +340,7 @@ TEST_CASE("hull check is independent of the thread count", "[ir][pc][hull]") {
         REQUIRE(serial_check);
         hull::check_stats parallel_stats;
         hull::check_stats serial_stats;
-        const auto a =
-            all_samples(parallel_check.value(), case_.events, hull::lane_layout::lane_major, &parallel_stats);
+        const auto a = all_samples(parallel_check.value(), case_.events, hull::lane_layout::lane_major, &parallel_stats);
         const auto b = all_samples(serial_check.value(), case_.events, hull::lane_layout::lane_major, &serial_stats);
         REQUIRE(a == b);
         REQUIRE(parallel_stats.hits == serial_stats.hits);
@@ -391,8 +382,7 @@ TEST_CASE("hull check reproduces the RFC worked examples", "[ir][pc][hull]") {
     SECTION("8.2 two-flag delete term") {
         pc::builder builder;
         const auto e = build({0.01, 0.02, 1.0, 1.0}, builder);
-        const auto g = builder.add_and(
-            {pos(builder.add_or({pos(e[0]), pos(e[1])})), neg(builder.add_and({pos(e[2]), pos(e[3])}))});
+        const auto g = builder.add_and({pos(builder.add_or({pos(e[0]), pos(e[1])})), neg(builder.add_and({pos(e[2]), pos(e[3])}))});
         const auto model = seal(builder);
         REQUIRE(hull_probability(model, g) == Catch::Approx(0.0298).epsilon(1e-12));
         const std::vector<event_mode> fixed(4, event_mode::fixed);
@@ -401,8 +391,7 @@ TEST_CASE("hull check reproduces the RFC worked examples", "[ir][pc][hull]") {
     SECTION("8.3 exclusion between high-probability events") {
         pc::builder builder;
         const auto e = build({0.9, 0.9, 0.01, 0.01}, builder);
-        const auto f = builder.add_or(
-            {pos(builder.add_and({pos(e[0]), pos(e[2])})), pos(builder.add_and({pos(e[1]), pos(e[3])}))});
+        const auto f = builder.add_or({pos(builder.add_and({pos(e[0]), pos(e[2])})), pos(builder.add_and({pos(e[1]), pos(e[3])}))});
         const auto g = builder.add_and({pos(f), neg(builder.add_and({pos(e[0]), pos(e[1])}))});
         const auto model = seal(builder);
         REQUIRE(hull_probability(model, g) == Catch::Approx(0.017919).epsilon(1e-12));
@@ -434,8 +423,7 @@ TEST_CASE("hull check reproduces the RFC worked examples", "[ir][pc][hull]") {
     SECTION("8.6 probability-0 event") {
         pc::builder builder;
         const auto e = build({0.1, 0.0, 0.5}, builder);
-        const auto g = builder.add_and(
-            {pos(builder.add_or({pos(e[0]), pos(e[1])})), neg(builder.add_and({pos(e[1]), pos(e[2])}))});
+        const auto g = builder.add_and({pos(builder.add_or({pos(e[0]), pos(e[1])})), neg(builder.add_and({pos(e[1]), pos(e[2])}))});
         const auto model = seal(builder);
         REQUIRE(hull_probability(model, g) == Catch::Approx(0.1).epsilon(1e-12));
         const std::vector<event_mode> up(3, event_mode::up);
@@ -454,8 +442,7 @@ TEST_CASE("hull check matches the closed forms of the RFC's examples", "[ir][pc]
     SECTION("Rauzy: up(ab or not(a) c) = ab or c") {
         pc::builder builder;
         const auto e = build({0.5, 0.5, 0.5}, builder);
-        const auto g = builder.add_or(
-            {pos(builder.add_and({pos(e[0]), pos(e[1])})), pos(builder.add_and({neg(e[0]), pos(e[2])}))});
+        const auto g = builder.add_or({pos(builder.add_and({pos(e[0]), pos(e[1])})), pos(builder.add_and({neg(e[0]), pos(e[2])}))});
         const auto model = seal(builder);
         auto made = hull::checker::make(model, g);
         REQUIRE(made);
@@ -469,9 +456,8 @@ TEST_CASE("hull check matches the closed forms of the RFC's examples", "[ir][pc]
         pc::builder builder;
         // IE A B C D E F' G
         const auto e = build({0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5}, builder);
-        const auto f =
-            builder.add_and({pos(e[0]), pos(builder.add_or({pos(e[3]), pos(builder.add_and({pos(e[2]), pos(e[5])}))})),
-                             pos(builder.add_or({pos(e[6]), pos(builder.add_and({pos(e[4]), pos(e[7])}))}))});
+        const auto f = builder.add_and({pos(e[0]), pos(builder.add_or({pos(e[3]), pos(builder.add_and({pos(e[2]), pos(e[5])}))})),
+                                        pos(builder.add_or({pos(e[6]), pos(builder.add_and({pos(e[4]), pos(e[7])}))}))});
         const auto s = builder.add_or({pos(e[1]), pos(e[3]), pos(builder.add_and({pos(e[2]), pos(e[4])}))});
         const auto g = builder.add_and({pos(f), neg(s)});
         const auto model = seal(builder);
@@ -490,14 +476,13 @@ TEST_CASE("hull check matches the closed forms of the RFC's examples", "[ir][pc]
         const auto t2 = builder.add_and({pos(builder.add_or({pos(e[2]), pos(e[3])})), neg(e[1])});
         const auto model = seal(builder);
         REQUIRE(hull_probability(model, t2) == Catch::Approx(0.58).epsilon(1e-12));
-        const std::vector<event_mode> literal_b{event_mode::down, event_mode::fixed, event_mode::down,
-                                                event_mode::down};
+        const std::vector<event_mode> literal_b{event_mode::down, event_mode::fixed, event_mode::down, event_mode::down};
         REQUIRE(hull_probability(model, t2, literal_b) == Catch::Approx(0.464).epsilon(1e-12));
 
         pc::builder special;
         const auto s = build({0.1, 0.2, 0.3, 0.4, 0.5, 0.6}, special);
-        const auto top = special.add_or({pos(special.add_and({pos(s[0]), pos(s[1]), neg(s[2])})),
-                                         pos(special.add_cardinality(2, 3, {pos(s[3]), pos(s[4]), pos(s[5])}))});
+        const auto top =
+            special.add_or({pos(special.add_and({pos(s[0]), pos(s[1]), neg(s[2])})), pos(special.add_cardinality(2, 3, {pos(s[3]), pos(s[4]), pos(s[5])}))});
         const auto special_model = seal(special);
         REQUIRE(hull_probability(special_model, top) == Catch::Approx(0.51).epsilon(1e-12));
         std::vector<event_mode> literal_6h(6, event_mode::down);
@@ -532,8 +517,7 @@ TEST_CASE("hull check decides the Theorem 8 reduction of pigeonhole formulas", "
         for (std::uint32_t hole = 0; hole < holes; ++hole) {
             for (std::uint32_t first = 0; first < pigeons; ++first) {
                 for (std::uint32_t second = first + 1; second < pigeons; ++second) {
-                    clauses.push_back(
-                        pos(builder.add_or({pos(negative[at(first, hole)]), pos(negative[at(second, hole)])})));
+                    clauses.push_back(pos(builder.add_or({pos(negative[at(first, hole)]), pos(negative[at(second, hole)])})));
                 }
             }
         }
@@ -557,8 +541,7 @@ TEST_CASE("hull check decides the Theorem 8 reduction of pigeonhole formulas", "
         std::vector<std::uint64_t> all((made.value().event_count() + 63) / 64, ~std::uint64_t{0});
         hull::check_stats stats;
         std::uint64_t out = 0;
-        made.value().check(hull::lane_matrix{.words = all, .lane_count = 1, .stride = all.size()},
-                           std::span<std::uint64_t>{&out, 1}, &stats);
+        made.value().check(hull::lane_matrix{.words = all, .lane_count = 1, .stride = all.size()}, std::span<std::uint64_t>{&out, 1}, &stats);
         REQUIRE((out == 1) == satisfiable);
         if (!satisfiable) {
             REQUIRE(stats.search + stats.bdd == 1);
@@ -568,8 +551,7 @@ TEST_CASE("hull check decides the Theorem 8 reduction of pigeonhole formulas", "
 
 // #190 decision: atom-split hull. Each case is checked for every sample.
 TEST_CASE("hull check implements the atom-split hull", "[ir][pc][hull]") {
-    const auto every_sample = [](pc::circuit const &model, pc::bool_node_id target,
-                                 std::vector<event_mode> const &modes, std::uint32_t events, auto expected) {
+    const auto every_sample = [](pc::circuit const &model, pc::bool_node_id target, std::vector<event_mode> const &modes, std::uint32_t events, auto expected) {
         auto made = hull::checker::make(model, target, modes);
         REQUIRE(made);
         for (std::uint64_t x = 0; x < (1U << events); ++x) {
@@ -583,8 +565,8 @@ TEST_CASE("hull check implements the atom-split hull", "[ir][pc][hull]") {
         // A B D E
         pc::builder builder;
         const auto e = build({0.5, 0.5, 0.5, 0.5}, builder);
-        const auto t = builder.add_or({pos(builder.add_and({pos(e[0]), neg(builder.add_or({pos(e[1]), pos(e[3])}))})),
-                                       pos(builder.add_and({pos(e[2]), neg(e[1])}))});
+        const auto t =
+            builder.add_or({pos(builder.add_and({pos(e[0]), neg(builder.add_or({pos(e[1]), pos(e[3])}))})), pos(builder.add_and({pos(e[2]), neg(e[1])}))});
         const auto model = seal(builder);
         const std::vector<event_mode> modes{event_mode::down, event_mode::split, event_mode::down, event_mode::down};
         every_sample(model, t, modes, 4, [&](std::uint64_t x) { return bit(x, 0) || (bit(x, 2) && !bit(x, 1)); });
@@ -603,12 +585,10 @@ TEST_CASE("hull check implements the atom-split hull", "[ir][pc][hull]") {
         // A B C
         pc::builder builder;
         const auto e = build({0.5, 0.5, 0.5}, builder);
-        const auto g = builder.add_or(
-            {pos(builder.add_and({pos(e[0]), pos(e[1])})), pos(builder.add_and({pos(e[2]), neg(e[1])}))});
+        const auto g = builder.add_or({pos(builder.add_and({pos(e[0]), pos(e[1])})), pos(builder.add_and({pos(e[2]), neg(e[1])}))});
         const auto model = seal(builder);
         const std::vector<event_mode> modes{event_mode::down, event_mode::split, event_mode::down};
-        every_sample(model, g, modes, 3,
-                     [&](std::uint64_t x) { return (bit(x, 0) && bit(x, 1)) || (bit(x, 2) && !bit(x, 1)); });
+        every_sample(model, g, modes, 3, [&](std::uint64_t x) { return (bit(x, 0) && bit(x, 1)) || (bit(x, 2) && !bit(x, 1)); });
     }
     SECTION("probability of the #190 fixtures under split") {
         pc::builder builder;

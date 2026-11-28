@@ -68,8 +68,7 @@ std::unique_ptr<zbdd::CutSetContainer> Mocus::AnalyzeModule(const Gate &gate, co
         const Gate *next_gate = gates.find(next_gate_index)->second;
         add_gates(next_gate->args<Gate>());
 
-        container->Merge(container->ExpandGate(container->ConvertGate(*next_gate),
-                                               container->ExtractIntermediateCutSets(next_gate_index)));
+        container->Merge(container->ExpandGate(container->ConvertGate(*next_gate), container->ExtractIntermediateCutSets(next_gate_index)));
     }
     container->Minimize();
     container->Log();

@@ -104,8 +104,7 @@ void Reporter::Report(const core::RiskAnalysis &risk_an, const std::string &file
     std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(file.c_str(), "w"), &std::fclose);
     try {
         if (!fp) {
-            SCRAM_THROW(IOError("Cannot open the output file for report."))
-                << boost::errinfo_errno(errno) << boost::errinfo_file_open_mode("w");
+            SCRAM_THROW(IOError("Cannot open the output file for report.")) << boost::errinfo_errno(errno) << boost::errinfo_file_open_mode("w");
         }
         Report(risk_an, fp.get(), indent);
     } catch (IOError &err) {
@@ -115,9 +114,7 @@ void Reporter::Report(const core::RiskAnalysis &risk_an, const std::string &file
 }
 
 /// Describes the fault tree analysis and techniques.
-template <>
-void Reporter::ReportCalculatedQuantity<core::FaultTreeAnalysis>(const core::Settings &settings,
-                                                                 xml::StreamElement *information) {
+template <> void Reporter::ReportCalculatedQuantity<core::FaultTreeAnalysis>(const core::Settings &settings, xml::StreamElement *information) {
     {
         xml::StreamElement quant = information->AddChild("calculated-quantity");
         if (settings.prime_implicants()) {
@@ -150,9 +147,7 @@ void Reporter::ReportCalculatedQuantity<core::FaultTreeAnalysis>(const core::Set
 }
 
 /// Describes the probability analysis and techniques.
-template <>
-void Reporter::ReportCalculatedQuantity<core::ProbabilityAnalysis>(const core::Settings &settings,
-                                                                   xml::StreamElement *information) {
+template <> void Reporter::ReportCalculatedQuantity<core::ProbabilityAnalysis>(const core::Settings &settings, xml::StreamElement *information) {
     xml::StreamElement quant = information->AddChild("calculated-quantity");
     quant.SetAttribute("name", "Probability Analysis")
         .SetAttribute("definition", "Quantitative analysis of"
@@ -181,9 +176,7 @@ void Reporter::ReportCalculatedQuantity<core::ProbabilityAnalysis>(const core::S
 }
 
 /// Describes the importance analysis and techniques.
-template <>
-void Reporter::ReportCalculatedQuantity<core::ImportanceAnalysis>(const core::Settings & /*settings*/,
-                                                                  xml::StreamElement *information) {
+template <> void Reporter::ReportCalculatedQuantity<core::ImportanceAnalysis>(const core::Settings & /*settings*/, xml::StreamElement *information) {
     information->AddChild("calculated-quantity")
         .SetAttribute("name", "Importance Analysis")
         .SetAttribute("definition", "Quantitative analysis of contributions and "
@@ -191,12 +184,9 @@ void Reporter::ReportCalculatedQuantity<core::ImportanceAnalysis>(const core::Se
 }
 
 /// Describes the uncertainty analysis and techniques.
-template <>
-void Reporter::ReportCalculatedQuantity<core::UncertaintyAnalysis>(const core::Settings &settings,
-                                                                   xml::StreamElement *information) {
+template <> void Reporter::ReportCalculatedQuantity<core::UncertaintyAnalysis>(const core::Settings &settings, xml::StreamElement *information) {
     xml::StreamElement quant = information->AddChild("calculated-quantity");
-    quant.SetAttribute("name", "Uncertainty Analysis")
-        .SetAttribute("definition", "Calculation of uncertainties with the Monte Carlo method");
+    quant.SetAttribute("name", "Uncertainty Analysis").SetAttribute("definition", "Calculation of uncertainties with the Monte Carlo method");
 
     xml::StreamElement methods = quant.AddChild("calculation-method");
     methods.SetAttribute("name", "Monte Carlo");
@@ -208,9 +198,7 @@ void Reporter::ReportCalculatedQuantity<core::UncertaintyAnalysis>(const core::S
 }
 
 /// Describes all performed analyses deduced from settings.
-template <>
-void Reporter::ReportCalculatedQuantity<core::RiskAnalysis>(const core::Settings &settings,
-                                                            xml::StreamElement *information) {
+template <> void Reporter::ReportCalculatedQuantity<core::RiskAnalysis>(const core::Settings &settings, xml::StreamElement *information) {
     // Report the fault tree analysis by default.
     ReportCalculatedQuantity<core::FaultTreeAnalysis>(settings, information);
     // Report optional analyses.
@@ -251,10 +239,7 @@ void Reporter::ReportInformation(const core::RiskAnalysis &risk_an, xml::StreamE
 }
 
 void Reporter::ReportSoftwareInformation(xml::StreamElement *information) {
-    information->AddChild("software")
-        .SetAttribute("name", "SCRAM")
-        .SetAttribute("version", "UNSET")
-        .SetAttribute("contacts", "");
+    information->AddChild("software").SetAttribute("name", "SCRAM").SetAttribute("version", "UNSET").SetAttribute("contacts", "");
 
     std::time_t current_time = std::time(nullptr);
     char iso_extended[20] = {};
@@ -313,12 +298,10 @@ void Reporter::ReportPerformance(const core::RiskAnalysis &risk_an, xml::StreamE
     }
 }
 
-template <class T>
-void Reporter::ReportUnusedElements(const T &container, const std::string &header, xml::StreamElement *information) {
-    std::string out = boost::join(
-        container | boost::adaptors::filtered([](const auto &arg) { return !arg.usage(); }) |
-            boost::adaptors::transformed([](const auto &arg) -> decltype(auto) { return mef::Id::unique_name(arg); }),
-        " ");
+template <class T> void Reporter::ReportUnusedElements(const T &container, const std::string &header, xml::StreamElement *information) {
+    std::string out = boost::join(container | boost::adaptors::filtered([](const auto &arg) { return !arg.usage(); }) |
+                                      boost::adaptors::transformed([](const auto &arg) -> decltype(auto) { return mef::Id::unique_name(arg); }),
+                                  " ");
     if (!out.empty())
         information->AddChild("warning").AddText(header + out);
 }
@@ -329,20 +312,17 @@ void Reporter::ReportResults(const core::RiskAnalysis::EtaResult &eta_result, xm
     initiating_event.SetAttribute("name", eta.initiating_event().name());
 
     if (eta_result.context) {
-        initiating_event.SetAttribute("alignment", eta_result.context->alignment.name())
-            .SetAttribute("phase", eta_result.context->phase.name());
+        initiating_event.SetAttribute("alignment", eta_result.context->alignment.name()).SetAttribute("phase", eta_result.context->phase.name());
     }
 
     initiating_event.SetAttribute("sequences", eta.sequences().size());
     for (const core::EventTreeAnalysis::Result &result_sequence : eta.sequences()) {
-        initiating_event.AddChild("sequence")
-            .SetAttribute("name", result_sequence.sequence.name())
-            .SetAttribute("value", result_sequence.p_sequence);
+        initiating_event.AddChild("sequence").SetAttribute("name", result_sequence.sequence.name()).SetAttribute("value", result_sequence.p_sequence);
     }
 }
 
-void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::FaultTreeAnalysis &fta,
-                             const core::ProbabilityAnalysis *prob_analysis, xml::StreamElement *results) {
+void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::FaultTreeAnalysis &fta, const core::ProbabilityAnalysis *prob_analysis,
+                             xml::StreamElement *results) {
     TIMER(DEBUG2, "Reporting products");
     xml::StreamElement sum_of_products = results->AddChild("sum-of-products");
     scram::PutId(id, &sum_of_products);
@@ -353,18 +333,14 @@ void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const cor
     if (!warning.empty())
         sum_of_products.SetAttribute("warning", warning);
 
-    sum_of_products.SetAttribute("basic-events", fta.products().product_events().size())
-        .SetAttribute("products", fta.products().size());
+    sum_of_products.SetAttribute("basic-events", fta.products().product_events().size()).SetAttribute("products", fta.products().size());
 
     if (prob_analysis)
         sum_of_products.SetAttribute("probability", prob_analysis->p_total());
 
     if (fta.products().empty() == false) {
         sum_of_products.SetAttribute(
-            "distribution", boost::join(fta.products().distribution() | boost::adaptors::transformed([](int number) {
-                                            return std::to_string(number);
-                                        }),
-                                        " "));
+            "distribution", boost::join(fta.products().distribution() | boost::adaptors::transformed([](int number) { return std::to_string(number); }), " "));
     }
 
     double sum = 0; // Sum of probabilities for contribution calculations.
@@ -387,8 +363,7 @@ void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const cor
     }
 }
 
-void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ProbabilityAnalysis &prob_analysis,
-                             xml::StreamElement *results) {
+void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ProbabilityAnalysis &prob_analysis, xml::StreamElement *results) {
     if (!prob_analysis.p_time().empty()) {
         xml::StreamElement curve = results->AddChild("curve");
         scram::PutId(id, &curve);
@@ -425,8 +400,7 @@ void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const cor
     }
 }
 
-void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id,
-                             const core::ImportanceAnalysis &importance_analysis, xml::StreamElement *results) {
+void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::ImportanceAnalysis &importance_analysis, xml::StreamElement *results) {
     xml::StreamElement importance = results->AddChild("importance");
     scram::PutId(id, &importance);
     if (!importance_analysis.warnings().empty()) {
@@ -450,8 +424,7 @@ void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id,
     }
 }
 
-void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::UncertaintyAnalysis &uncert_analysis,
-                             xml::StreamElement *results) {
+void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const core::UncertaintyAnalysis &uncert_analysis, xml::StreamElement *results) {
     xml::StreamElement measure = results->AddChild("measure");
     scram::PutId(id, &measure);
     if (!uncert_analysis.warnings().empty()) {
@@ -465,9 +438,7 @@ void Reporter::ReportResults(const core::RiskAnalysis::Result::Id &id, const cor
         .SetAttribute("lower-bound", uncert_analysis.confidence_interval().first)
         .SetAttribute("upper-bound", uncert_analysis.confidence_interval().second);
 
-    measure.AddChild("error-factor")
-        .SetAttribute("percentage", "95")
-        .SetAttribute("value", uncert_analysis.error_factor());
+    measure.AddChild("error-factor").SetAttribute("percentage", "95").SetAttribute("value", uncert_analysis.error_factor());
     {
         xml::StreamElement quantiles = measure.AddChild("quantiles");
         int num_quantiles = uncert_analysis.quantiles().size();
@@ -512,8 +483,7 @@ void Reporter::ReportLiteral(const core::Literal &literal, xml::StreamElement *p
     }
 }
 
-template <class T>
-void Reporter::ReportBasicEvent(const mef::BasicEvent &basic_event, xml::StreamElement *parent, const T &add_data) {
+template <class T> void Reporter::ReportBasicEvent(const mef::BasicEvent &basic_event, xml::StreamElement *parent, const T &add_data) {
     const auto *ccf_event = dynamic_cast<const mef::CcfEvent *>(&basic_event);
     if (!ccf_event) {
         xml::StreamElement element = parent->AddChild("basic-event");

@@ -114,17 +114,14 @@ auto synthetic(const std::uint32_t nodes, const double exclusive_probability, st
         const auto node = add_event(probability);
         (probability == 1.0 ? flags : probability >= 0.02 ? frequent : rare).push_back(node);
     }
-    std::vector<pc::bool_node_id> exclusive(frequent.begin(),
-                                            frequent.begin() + std::min<std::size_t>(60, frequent.size()));
+    std::vector<pc::bool_node_id> exclusive(frequent.begin(), frequent.begin() + std::min<std::size_t>(60, frequent.size()));
     if (exclusive_probability > 0.0) {
         for (auto &node : exclusive) {
             node = add_event(std::clamp(exclusive_probability * (0.75 + 0.5 * unit(random)), 0.0, 1.0));
         }
     }
     const auto pick = [&](std::vector<pc::bool_node_id> const &from) { return from[random() % from.size()]; };
-    const auto edge = [](pc::bool_node_id node, bool complement = false) {
-        return pc::edge_ref{.source = node, .complement = complement};
-    };
+    const auto edge = [](pc::bool_node_id node, bool complement = false) { return pc::edge_ref{.source = node, .complement = complement}; };
     const auto add_gate = [&](pc::op_code code, std::vector<pc::edge_ref> const &operands) {
         double p = code == pc::op_code::and_gate ? 1.0 : 0.0;
         if (code == pc::op_code::or_gate) {
@@ -150,9 +147,8 @@ auto synthetic(const std::uint32_t nodes, const double exclusive_probability, st
             }
             p = 1.0 - count[0] - count[1];
         }
-        const auto node = code == pc::op_code::cardinality
-                              ? builder.add_cardinality(2, static_cast<std::uint32_t>(operands.size()), operands)
-                              : builder.add_gate(code, operands);
+        const auto node = code == pc::op_code::cardinality ? builder.add_cardinality(2, static_cast<std::uint32_t>(operands.size()), operands)
+                                                           : builder.add_gate(code, operands);
         estimate.resize(node.raw() + 1, 0.0);
         estimate[node.raw()] = p;
         return node;
@@ -175,8 +171,7 @@ auto synthetic(const std::uint32_t nodes, const double exclusive_probability, st
         }
         level.push_back(add_gate(pc::op_code::or_gate, operands));
     }
-    constexpr std::array<pc::op_code, 4> cycle{pc::op_code::or_gate, pc::op_code::and_gate, pc::op_code::or_gate,
-                                               pc::op_code::cardinality};
+    constexpr std::array<pc::op_code, 4> cycle{pc::op_code::or_gate, pc::op_code::and_gate, pc::op_code::or_gate, pc::op_code::cardinality};
     for (std::size_t depth = 0; level.size() > 64; ++depth) {
         const auto code = cycle[depth % cycle.size()];
         const std::size_t width = code == pc::op_code::and_gate ? 2 : 3;
@@ -248,8 +243,8 @@ auto read_sources(std::vector<std::string> const &files) -> std::vector<ftp_lowe
             std::fprintf(stderr, "cannot open an input file\n");
             std::exit(1);
         }
-        sources.push_back(ftp_lowering_test::reader::source_text{
-            .path = file, .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
+        sources.push_back(
+            ftp_lowering_test::reader::source_text{.path = file, .text = {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()}});
     }
     return sources;
 }
@@ -285,8 +280,8 @@ auto probabilities(pc::circuit const &circuit) -> std::vector<double> {
 // `split` (by node, may be empty) marks atom-split events: a complemented
 // edge into one reads the atom, whose polarity is its parent's and goes to
 // `atoms` instead.
-auto polarities(pc::circuit const &circuit, pc::bool_node_id target, std::vector<std::uint8_t> const &split = {},
-                std::vector<std::uint8_t> *atoms = nullptr) -> std::vector<std::uint8_t> {
+auto polarities(pc::circuit const &circuit, pc::bool_node_id target, std::vector<std::uint8_t> const &split = {}, std::vector<std::uint8_t> *atoms = nullptr)
+    -> std::vector<std::uint8_t> {
     std::vector<std::uint8_t> polarity(circuit.node_count(), 0);
     if (atoms != nullptr) {
         atoms->assign(circuit.node_count(), 0);
@@ -332,8 +327,8 @@ auto polarities(pc::circuit const &circuit, pc::bool_node_id target, std::vector
 class bounds final {
   public:
     bounds(pc::circuit const &circuit, pc::bool_node_id target, std::span<hull::event_mode const> modes = {})
-        : circuit_(circuit), target_(target), modes_(modes.begin(), modes.end()), plain_(circuit.node_count()),
-          positive_(circuit.node_count()), negative_(circuit.node_count()) {
+        : circuit_(circuit), target_(target), modes_(modes.begin(), modes.end()), plain_(circuit.node_count()), positive_(circuit.node_count()),
+          negative_(circuit.node_count()) {
         std::vector<std::uint8_t> split;
         if (std::ranges::find(modes_, hull::event_mode::split) != modes_.end()) {
             split.assign(circuit.node_count(), 0);
@@ -482,8 +477,8 @@ struct run final {
     hull::check_stats stats;
 };
 
-auto time_check(hull::checker const &check, std::vector<std::uint64_t> const &words, std::size_t lanes,
-                std::size_t stride, std::vector<std::uint64_t> *answers = nullptr) -> run {
+auto time_check(hull::checker const &check, std::vector<std::uint64_t> const &words, std::size_t lanes, std::size_t stride,
+                std::vector<std::uint64_t> *answers = nullptr) -> run {
     std::vector<std::uint64_t> out((lanes + 63) / 64, 0);
     run result;
     const auto start = std::chrono::steady_clock::now();
@@ -498,23 +493,18 @@ auto time_check(hull::checker const &check, std::vector<std::uint64_t> const &wo
 void report(char const *label, run const &result, int threads) {
     auto const &s = result.stats;
     const auto exact = s.truth_table + s.bdd + s.search;
-    std::printf("%-28s lanes %9llu  %8.3f s  %12.0f lanes/s  %12.0f lanes/s/core  hit %.4f\n", label,
-                static_cast<unsigned long long>(s.lanes), result.seconds, s.lanes / result.seconds,
-                s.lanes / result.seconds / threads, s.lanes != 0 ? double(s.hits) / double(s.lanes) : 0.0);
+    std::printf("%-28s lanes %9llu  %8.3f s  %12.0f lanes/s  %12.0f lanes/s/core  hit %.4f\n", label, static_cast<unsigned long long>(s.lanes), result.seconds,
+                s.lanes / result.seconds, s.lanes / result.seconds / threads, s.lanes != 0 ? double(s.hits) / double(s.lanes) : 0.0);
     std::printf("%-28s decided by: bounds %llu, reduction %llu, witness %llu, truth table %llu, bdd %llu "
                 "(over budget %llu), search %llu; free events mean %.2f max %u\n",
-                "", static_cast<unsigned long long>(s.bounds), static_cast<unsigned long long>(s.reduction),
-                static_cast<unsigned long long>(s.witness), static_cast<unsigned long long>(s.truth_table),
-                static_cast<unsigned long long>(s.bdd), static_cast<unsigned long long>(s.bdd_budget_exceeded),
-                static_cast<unsigned long long>(s.search),
-                exact != 0 ? double(s.residual_variables_total) / double(exact) : 0.0, s.residual_variables_max);
+                "", static_cast<unsigned long long>(s.bounds), static_cast<unsigned long long>(s.reduction), static_cast<unsigned long long>(s.witness),
+                static_cast<unsigned long long>(s.truth_table), static_cast<unsigned long long>(s.bdd), static_cast<unsigned long long>(s.bdd_budget_exceeded),
+                static_cast<unsigned long long>(s.search), exact != 0 ? double(s.residual_variables_total) / double(exact) : 0.0, s.residual_variables_max);
 }
 
 using clock = std::chrono::steady_clock;
 
-auto seconds_since(clock::time_point start) -> double {
-    return std::chrono::duration<double>(clock::now() - start).count();
-}
+auto seconds_since(clock::time_point start) -> double { return std::chrono::duration<double>(clock::now() - start).count(); }
 
 constexpr std::uint32_t outside = ~std::uint32_t{0};
 constexpr std::size_t block_groups = 256;
@@ -539,8 +529,7 @@ struct restricted final {
     std::vector<std::uint32_t> image;
 };
 
-auto restrict_cone(pc::circuit const &source, pc::bool_node_id target, std::span<std::int8_t const> fixed = {})
-    -> restricted {
+auto restrict_cone(pc::circuit const &source, pc::bool_node_id target, std::span<std::int8_t const> fixed = {}) -> restricted {
     restricted out;
     out.image.assign(source.node_count(), outside);
     std::vector<std::uint8_t> seen(source.node_count(), 0);
@@ -574,11 +563,9 @@ auto restrict_cone(pc::circuit const &source, pc::bool_node_id target, std::span
         } else {
             operands.clear();
             for (auto const &operand : children) {
-                operands.push_back(pc::edge_ref{.source = pc::bool_node_id(out.image[operand.source.raw()]),
-                                                .complement = operand.complement});
+                operands.push_back(pc::edge_ref{.source = pc::bool_node_id(out.image[operand.source.raw()]), .complement = operand.complement});
             }
-            made = code == pc::op_code::cardinality ? builder.add_cardinality(source.cardinality_low()[node],
-                                                                              source.cardinality_high()[node], operands)
+            made = code == pc::op_code::cardinality ? builder.add_cardinality(source.cardinality_low()[node], source.cardinality_high()[node], operands)
                                                     : builder.add_gate(code, operands);
         }
         out.image[node] = made.raw();
@@ -597,12 +584,10 @@ auto restrict_cone(pc::circuit const &source, pc::bool_node_id target, std::span
 
 // Source node of each event node that a pass pipeline kept as itself
 // (`outside` for every other output node).
-auto event_origin(pc::circuit const &input, std::span<passes::node_image const> map, pc::circuit const &output)
-    -> std::vector<std::uint32_t> {
+auto event_origin(pc::circuit const &input, std::span<passes::node_image const> map, pc::circuit const &output) -> std::vector<std::uint32_t> {
     std::vector<std::uint32_t> origin(output.node_count(), outside);
     for (std::uint32_t node = 0; node < input.node_count(); ++node) {
-        if (input.op_codes()[node] != pc::op_code::basic_event || map[node].kind != passes::image_kind::reference ||
-            map[node].edge.complement) {
+        if (input.op_codes()[node] != pc::op_code::basic_event || map[node].kind != passes::image_kind::reference || map[node].edge.complement) {
             continue;
         }
         const auto image = map[node].edge.source.raw();
@@ -622,8 +607,8 @@ struct subject final {
     std::vector<hull::event_mode> modes;
 };
 
-auto make_subject(pc::circuit circuit, pc::bool_node_id target, std::span<std::uint32_t const> source_of_node,
-                  std::vector<std::uint8_t> const &literal, hull::event_mode literal_mode) -> subject {
+auto make_subject(pc::circuit circuit, pc::bool_node_id target, std::span<std::uint32_t const> source_of_node, std::vector<std::uint8_t> const &literal,
+                  hull::event_mode literal_mode) -> subject {
     subject out{.circuit = std::move(circuit), .target = target, .source = {}, .modes = {}};
     for (std::uint32_t node = 0; node < out.circuit.node_count(); ++node) {
         if (out.circuit.op_codes()[node] != pc::op_code::basic_event) {
@@ -641,11 +626,9 @@ auto make_subject(pc::circuit circuit, pc::bool_node_id target, std::span<std::u
 
 class sampler final {
   public:
-    sampler(std::vector<double> probability, std::uint64_t seed)
-        : probability_(std::move(probability)), random_(seed), log_miss_(probability_.size()) {
+    sampler(std::vector<double> probability, std::uint64_t seed) : probability_(std::move(probability)), random_(seed), log_miss_(probability_.size()) {
         for (std::size_t event = 0; event < probability_.size(); ++event) {
-            log_miss_[event] =
-                probability_[event] > 0.0 && probability_[event] < 1.0 ? std::log1p(-probability_[event]) : 0.0;
+            log_miss_[event] = probability_[event] > 0.0 && probability_[event] < 1.0 ? std::log1p(-probability_[event]) : 0.0;
         }
     }
 
@@ -679,8 +662,7 @@ class sampler final {
 
 // Appends, for each lane in `mask` in ascending order, its row (bit e is
 // event e) to `out`. `words` holds one word per event, padded to `stride` * 64.
-void append_rows(std::span<std::uint64_t const> words, std::size_t stride, std::uint64_t mask,
-                 std::vector<std::uint64_t> &out) {
+void append_rows(std::span<std::uint64_t const> words, std::size_t stride, std::uint64_t mask, std::vector<std::uint64_t> &out) {
     if (mask == 0) {
         return;
     }
@@ -723,8 +705,8 @@ struct way final {
     hull::check_stats stats;
 };
 
-void decide(checkers const &check, std::vector<std::uint64_t> const &rows, std::size_t count, std::size_t stride,
-            std::vector<std::uint64_t> &answers, way &cost) {
+void decide(checkers const &check, std::vector<std::uint64_t> const &rows, std::size_t count, std::size_t stride, std::vector<std::uint64_t> &answers,
+            way &cost) {
     answers.assign((count + 63) / 64, 0);
     if (count == 0) {
         return;
@@ -766,9 +748,8 @@ struct hull_options final {
 // the part, `outside` for g∅.
 struct part final {
     part(subject view_, std::vector<std::uint32_t> from_rule_, std::uint32_t initiator_)
-        : view(std::move(view_)), from_rule(std::move(from_rule_)), initiator(initiator_),
-          bound(view.circuit, view.target, view.modes), stride((view.source.size() + 63) / 64), events(stride * 64, 0) {
-    }
+        : view(std::move(view_)), from_rule(std::move(from_rule_)), initiator(initiator_), bound(view.circuit, view.target, view.modes),
+          stride((view.source.size() + 63) / 64), events(stride * 64, 0) {}
 
     subject view;
     std::vector<std::uint32_t> from_rule;
@@ -791,8 +772,8 @@ void print_run(char const *label, double seconds, hull::check_stats const &stats
     report(label, run{.seconds = seconds, .stats = stats}, threads);
 }
 
-auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_result const &compiled,
-                 std::size_t index, hull_options const &options, int threads) -> int {
+auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_result const &compiled, std::size_t index, hull_options const &options,
+                 int threads) -> int {
     auto const &binding = lowering.projection.target_bindings()[index];
     std::printf("target %zu:\n", index);
     const auto literals = binding.hull ? binding.hull->literals : pra::hull_literals::plain;
@@ -830,9 +811,8 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
     const auto rule = make_subject(std::move(cone.circuit), cone.target, source_of_node, literal, literal_mode);
     const auto events = rule.source.size();
     const auto stride = (events + 63) / 64;
-    std::printf("circuit: %u nodes, %u edges, %zu events (%td split, %td fixed); %zu initiating events in the cone\n",
-                rule.circuit.node_count(), rule.circuit.edge_count(), events,
-                std::ranges::count(rule.modes, hull::event_mode::split),
+    std::printf("circuit: %u nodes, %u edges, %zu events (%td split, %td fixed); %zu initiating events in the cone\n", rule.circuit.node_count(),
+                rule.circuit.edge_count(), events, std::ranges::count(rule.modes, hull::event_mode::split),
                 std::ranges::count(rule.modes, hull::event_mode::fixed), initiator_nodes.size());
 
     checkers rule_check;
@@ -844,8 +824,7 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
             continue;
         }
         const auto start = clock::now();
-        auto made = hull::checker::make(rule.circuit, rule.target, rule.modes,
-                                        parallel ? hull::check_options{} : serial_options);
+        auto made = hull::checker::make(rule.circuit, rule.target, rule.modes, parallel ? hull::check_options{} : serial_options);
         if (!made) {
             std::fprintf(stderr, "checker preparation failed\n");
             return 1;
@@ -854,8 +833,7 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
         prepare_seconds += seconds_since(start);
     }
     auto const &any = rule_check.serial ? *rule_check.serial : *rule_check.parallel;
-    std::printf("checker: cone %u positions, %zu events; prepare %.3f s\n", any.cone_size(), any.cone_events().size(),
-                prepare_seconds);
+    std::printf("checker: cone %u positions, %zu events; prepare %.3f s\n", any.cone_size(), any.cone_events().size(), prepare_seconds);
 
     std::vector<std::unique_ptr<part>> parts;
     std::size_t zero_initiators = 0;
@@ -879,8 +857,7 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
             }
         }
         if (refused != 0) {
-            std::printf("decomposition refused: %zu of %zu initiating events are not in mode down\n", refused,
-                        initiator_nodes.size());
+            std::printf("decomposition refused: %zu of %zu initiating events are not in mode down\n", refused, initiator_nodes.size());
             active_nodes.clear();
         } else {
             const auto whole = restrict_cone(lowering.circuit, binding.root);
@@ -898,8 +875,8 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                 dependent[node] = depends ? 1 : 0;
                 dependent_nodes += depends ? 1 : 0;
             }
-            std::printf("g without the rule, as lowered: %u nodes, %u edges, %zu depend on an initiating event\n",
-                        whole.circuit.node_count(), whole.circuit.edge_count(), dependent_nodes);
+            std::printf("g without the rule, as lowered: %u nodes, %u edges, %zu depend on an initiating event\n", whole.circuit.node_count(),
+                        whole.circuit.edge_count(), dependent_nodes);
             const auto start = clock::now();
             double passes_seconds = 0.0;
             for (std::size_t which = 0; which <= active_nodes.size(); ++which) {
@@ -922,24 +899,20 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                     }
                 }
                 const auto passes_start = clock::now();
-                auto lowered_part = passes::compile(
-                    restricted_part.circuit, options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1,
-                    pipeline);
+                auto lowered_part =
+                    passes::compile(restricted_part.circuit, options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1, pipeline);
                 passes_seconds += seconds_since(passes_start);
                 if (!lowered_part.ok() || !lowered_part.target_map[0].valid()) {
                     std::fprintf(stderr, "the passes failed on a part of the decomposition\n");
                     return 1;
                 }
-                const auto part_origin =
-                    event_origin(restricted_part.circuit, lowered_part.node_map, lowered_part.output);
+                const auto part_origin = event_origin(restricted_part.circuit, lowered_part.node_map, lowered_part.output);
                 std::vector<std::uint32_t> part_source(lowered_part.output.node_count(), outside);
                 for (std::uint32_t node = 0; node < part_source.size(); ++node) {
-                    part_source[node] =
-                        part_origin[node] == outside ? outside : restricted_part.origin[part_origin[node]];
+                    part_source[node] = part_origin[node] == outside ? outside : restricted_part.origin[part_origin[node]];
                 }
-                auto view = make_subject(lowered_part.output,
-                                         lowered_part.output.targets()[lowered_part.target_map[0].raw()].node,
-                                         part_source, literal, literal_mode);
+                auto view =
+                    make_subject(lowered_part.output, lowered_part.output.targets()[lowered_part.target_map[0].raw()].node, part_source, literal, literal_mode);
                 std::vector<std::uint32_t> from_rule;
                 for (const auto node : view.source) {
                     if (event_of[node] == outside) {
@@ -948,14 +921,14 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                     }
                     from_rule.push_back(event_of[node]);
                 }
-                auto &added = parts.emplace_back(std::make_unique<part>(
-                    std::move(view), std::move(from_rule), which == 0 ? outside : event_of[active_nodes[which - 1]]));
+                auto &added =
+                    parts.emplace_back(std::make_unique<part>(std::move(view), std::move(from_rule), which == 0 ? outside : event_of[active_nodes[which - 1]]));
                 for (const auto parallel : {false, true}) {
                     if (!(parallel ? options.parallel : options.serial)) {
                         continue;
                     }
-                    auto made = hull::checker::make(added->view.circuit, added->view.target, added->view.modes,
-                                                    parallel ? hull::check_options{} : serial_options);
+                    auto made =
+                        hull::checker::make(added->view.circuit, added->view.target, added->view.modes, parallel ? hull::check_options{} : serial_options);
                     if (!made) {
                         std::fprintf(stderr, "checker preparation failed\n");
                         return 1;
@@ -972,8 +945,7 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
             std::printf("decomposition: %zu parts (%zu initiating events, %zu with probability 0 left out), %zu nodes, "
                         "%zu edges "
                         "in all; passes %.3f s, parts and checkers prepared in %.3f s\n",
-                        parts.size(), initiator_nodes.size(), zero_initiators, nodes, edges, passes_seconds,
-                        seconds_since(start));
+                        parts.size(), initiator_nodes.size(), zero_initiators, nodes, edges, passes_seconds, seconds_since(start));
         }
     }
     std::fflush(stdout);
@@ -1049,8 +1021,7 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
                 for (std::size_t event = 0; event < item->from_rule.size(); ++event) {
                     item->events[event] = lane_words[item->from_rule[event]];
                 }
-                const auto [lower, upper] =
-                    item->bound.evaluate(std::span<std::uint64_t const>(item->events).first(item->from_rule.size()));
+                const auto [lower, upper] = item->bound.evaluate(std::span<std::uint64_t const>(item->events).first(item->from_rule.size()));
                 decomposed[group] |= active & lower;
                 item->candidate_lanes[group] = active & ~decomposed[group] & upper;
                 part_candidates += static_cast<std::size_t>(std::popcount(item->candidate_lanes[group]));
@@ -1075,19 +1046,16 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
 
     const auto lanes = static_cast<double>(options.lanes);
     std::printf("sampling: %.3f s for %zu lanes\n", sampling_seconds, options.lanes);
-    std::printf("rule: N %zu; L = 1 %.6f; U = 1 %.6f; candidates %.6f (%zu); hits %.6f; bounds %.3f s\n", options.lanes,
-                double(lower_ones) / lanes, double(upper_ones) / lanes, double(rule_candidate_count) / lanes,
-                rule_candidate_count, double(rule_hits) / lanes, rule_way.bounds_seconds);
+    std::printf("rule: N %zu; L = 1 %.6f; U = 1 %.6f; candidates %.6f (%zu); hits %.6f; bounds %.3f s\n", options.lanes, double(lower_ones) / lanes,
+                double(upper_ones) / lanes, double(rule_candidate_count) / lanes, rule_candidate_count, double(rule_hits) / lanes, rule_way.bounds_seconds);
     if (options.serial) {
         print_run("rule checks, 1 thread", rule_way.serial_seconds, rule_way.stats, 1);
-        std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, 1 thread",
-                    rule_way.bounds_seconds + rule_way.serial_seconds,
+        std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, 1 thread", rule_way.bounds_seconds + rule_way.serial_seconds,
                     lanes / (rule_way.bounds_seconds + rule_way.serial_seconds));
     }
     if (options.parallel) {
         print_run("rule checks, all threads", rule_way.parallel_seconds, rule_way.stats, threads);
-        std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, all thr.",
-                    rule_way.bounds_seconds + rule_way.parallel_seconds,
+        std::printf("%-28s %.3f s, %.0f lanes/s\n", "rule bounds + checks, all thr.", rule_way.bounds_seconds + rule_way.parallel_seconds,
                     lanes / (rule_way.bounds_seconds + rule_way.parallel_seconds));
     }
     if (parts.empty()) {
@@ -1106,19 +1074,16 @@ auto hull_target(ftp_lowering_test::lowering const &lowering, passes::pipeline_r
     }
     std::printf("decomposition: N %zu; %zu parts; candidates per part: mean %.6f max %.6f of N; active mean %.6f of N; "
                 "checks per lane %.6f (rule %.6f); hits %.6f; bounds %.3f s\n",
-                options.lanes, parts.size(), candidate_sum / double(parts.size()), candidate_max,
-                active_sum / double(parts.size()), double(checks) / lanes, double(rule_candidate_count) / lanes,
-                double(decomposition_hits) / lanes, decomposition_way.bounds_seconds);
+                options.lanes, parts.size(), candidate_sum / double(parts.size()), candidate_max, active_sum / double(parts.size()), double(checks) / lanes,
+                double(rule_candidate_count) / lanes, double(decomposition_hits) / lanes, decomposition_way.bounds_seconds);
     if (options.serial) {
         print_run("part checks, 1 thread", decomposition_way.serial_seconds, decomposition_way.stats, 1);
-        std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, 1 thread",
-                    decomposition_way.bounds_seconds + decomposition_way.serial_seconds,
+        std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, 1 thread", decomposition_way.bounds_seconds + decomposition_way.serial_seconds,
                     lanes / (decomposition_way.bounds_seconds + decomposition_way.serial_seconds));
     }
     if (options.parallel) {
         print_run("part checks, all threads", decomposition_way.parallel_seconds, decomposition_way.stats, threads);
-        std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, all threads",
-                    decomposition_way.bounds_seconds + decomposition_way.parallel_seconds,
+        std::printf("%-28s %.3f s, %.0f lanes/s\n", "decision, all threads", decomposition_way.bounds_seconds + decomposition_way.parallel_seconds,
                     lanes / (decomposition_way.bounds_seconds + decomposition_way.parallel_seconds));
     }
     if (options.verify) {
@@ -1165,19 +1130,17 @@ auto run_hull(std::vector<std::string> const &files, hull_options const &options
         }
     }
     const auto rule_text = rule ? "k = " + std::to_string(*rule) : std::string("none");
-    std::printf("lowered: %u nodes, %u edges, %zu targets; initiator rule %s (%zu nodes, %zu edges); lower %.3f s\n",
-                lowering.circuit.node_count(), lowering.circuit.edge_count(), bindings.size(), rule_text.c_str(),
-                lowering.report.generated_nodes, lowering.report.generated_edges, lower_seconds);
+    std::printf("lowered: %u nodes, %u edges, %zu targets; initiator rule %s (%zu nodes, %zu edges); lower %.3f s\n", lowering.circuit.node_count(),
+                lowering.circuit.edge_count(), bindings.size(), rule_text.c_str(), lowering.report.generated_nodes, lowering.report.generated_edges,
+                lower_seconds);
     start = clock::now();
-    auto compiled = passes::compile(
-        lowering.circuit, options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1, pipeline);
+    auto compiled = passes::compile(lowering.circuit, options.level == 0 ? passes::compile_level::c0 : passes::compile_level::c1, pipeline);
     const auto passes_seconds = seconds_since(start);
     if (!compiled.ok()) {
         std::fprintf(stderr, "the passes failed\n");
         return 1;
     }
-    std::printf("level %d: %u nodes, %u edges; passes %.3f s\n", options.level, compiled.nodes_after,
-                compiled.edges_after, passes_seconds);
+    std::printf("level %d: %u nodes, %u edges; passes %.3f s\n", options.level, compiled.nodes_after, compiled.edges_after, passes_seconds);
     int threads = 1;
 #if defined(_OPENMP)
     threads = omp_get_max_threads();
@@ -1236,8 +1199,7 @@ auto main(int argc, char **argv) -> int {
         } else if (argument == "--max-initiators") {
             const auto value = next();
             hull_settings.max_initiators =
-                value == "none" ? std::optional<std::uint32_t>{}
-                                : std::optional<std::uint32_t>{static_cast<std::uint32_t>(std::stoul(value))};
+                value == "none" ? std::optional<std::uint32_t>{} : std::optional<std::uint32_t>{static_cast<std::uint32_t>(std::stoul(value))};
         } else if (argument == "--literals") {
             hull_settings.literals = next();
         } else if (argument == "--level") {
@@ -1262,8 +1224,8 @@ auto main(int argc, char **argv) -> int {
     lanes = std::max<std::size_t>(64, (lanes + 63) / 64 * 64);
 
     if (hull_mode) {
-        if (files.empty() || (hull_settings.level != 0 && hull_settings.level != 1) ||
-            !pra::parse_hull_literals(hull_settings.literals) || (hull_settings.verify && !hull_settings.decompose)) {
+        if (files.empty() || (hull_settings.level != 0 && hull_settings.level != 1) || !pra::parse_hull_literals(hull_settings.literals) ||
+            (hull_settings.verify && !hull_settings.decompose)) {
             std::fprintf(stderr, "--hull needs --ftp, --level 0|1, --literals split|fixed|plain, and "
                                  "--verify-decomposition needs --decompose-initiators\n");
             return 2;
@@ -1279,8 +1241,8 @@ auto main(int argc, char **argv) -> int {
     }
 
     std::mt19937_64 random(seed);
-    const auto subject = files.empty() ? synthetic(nodes, exclusive_probability, random)
-                                       : read_ftp(files, target_names.empty() ? std::string{} : target_names.front());
+    const auto subject =
+        files.empty() ? synthetic(nodes, exclusive_probability, random) : read_ftp(files, target_names.empty() ? std::string{} : target_names.front());
     const auto probability = probabilities(subject.circuit);
     const auto events = static_cast<std::uint32_t>(probability.size());
 
@@ -1304,16 +1266,14 @@ auto main(int argc, char **argv) -> int {
     serial_options.parallel = false;
     const auto prepare_start = std::chrono::steady_clock::now();
     auto serial = hull::checker::make(subject.circuit, subject.target, modes, serial_options);
-    const auto prepare_seconds =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - prepare_start).count();
+    const auto prepare_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - prepare_start).count();
     auto parallel = hull::checker::make(subject.circuit, subject.target, modes);
     if (!serial || !parallel) {
         std::fprintf(stderr, "checker preparation failed\n");
         return 1;
     }
-    std::printf("circuit: %u nodes, %u edges, %u events; cone %u positions, %zu events; prepare %.3f s\n",
-                subject.circuit.node_count(), subject.circuit.edge_count(), events, serial.value().cone_size(),
-                serial.value().cone_events().size(), prepare_seconds);
+    std::printf("circuit: %u nodes, %u edges, %u events; cone %u positions, %zu events; prepare %.3f s\n", subject.circuit.node_count(),
+                subject.circuit.edge_count(), events, serial.value().cone_size(), serial.value().cone_events().size(), prepare_seconds);
 
     // Sample lanes; keep the first `lanes` and the candidates (L = 0, U = 1).
     const std::size_t stride = (std::size_t{events} + 63) / 64;
@@ -1381,9 +1341,8 @@ auto main(int argc, char **argv) -> int {
         candidates += static_cast<std::size_t>(std::popcount(keep_candidates));
     }
     const auto bounds_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - bounds_start).count();
-    std::printf("sampling + bounds: %.3f s for %zu lanes; P(L) ~ %.5f, P(U) ~ %.5f; %zu candidate lanes kept\n",
-                bounds_seconds, drawn, double(lower_true) / double(lanes), double(upper_true) / double(lanes),
-                candidates);
+    std::printf("sampling + bounds: %.3f s for %zu lanes; P(L) ~ %.5f, P(U) ~ %.5f; %zu candidate lanes kept\n", bounds_seconds, drawn,
+                double(lower_true) / double(lanes), double(upper_true) / double(lanes), candidates);
 
     int threads = 1;
 #if defined(_OPENMP)
@@ -1405,8 +1364,7 @@ auto main(int argc, char **argv) -> int {
         hull::check_options bdd_only = plain;
         bdd_only.bdd_max_variables = 1U << 20;
         bdd_only.bdd_node_budget = 1U << 24;
-        for (auto const &[label, options] :
-             {std::pair{"verify: search only", plain}, std::pair{"verify: bdd only", bdd_only}}) {
+        for (auto const &[label, options] : {std::pair{"verify: search only", plain}, std::pair{"verify: bdd only", bdd_only}}) {
             auto other = hull::checker::make(subject.circuit, subject.target, modes, options);
             std::vector<std::uint64_t> other_answers;
             report(label, time_check(other.value(), candidate_words, candidates, stride, &other_answers), threads);

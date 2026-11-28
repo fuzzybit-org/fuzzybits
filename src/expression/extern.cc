@@ -27,9 +27,7 @@ namespace fs = boost::filesystem;
 
 namespace scram::mef {
 
-ExternLibrary::ExternLibrary(std::string name, std::string lib_path, const fs::path &reference_dir, bool system,
-                             bool decorate)
-    : Element(std::move(name)) {
+ExternLibrary::ExternLibrary(std::string name, std::string lib_path, const fs::path &reference_dir, bool system, bool decorate) : Element(std::move(name)) {
     fs::path fs_path(lib_path);
     std::string filename = fs_path.filename().string();
     // clang-format off
@@ -58,8 +56,7 @@ ExternLibrary::ExternLibrary(std::string name, std::string lib_path, const fs::p
     try {
         lib_handle_.load(ref_path, load_type);
     } catch (const boost::system::system_error &err) {
-        SCRAM_THROW(DLError(err.what())) << boost::errinfo_nested_exception(boost::current_exception())
-                                         << errinfo_element(Element::name(), kTypeString);
+        SCRAM_THROW(DLError(err.what())) << boost::errinfo_nested_exception(boost::current_exception()) << errinfo_element(Element::name(), kTypeString);
     }
 }
 

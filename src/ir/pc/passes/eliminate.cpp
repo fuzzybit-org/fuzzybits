@@ -100,12 +100,10 @@ auto eliminate_single_input(circuit const &input, pass_options const &options) -
             ++report.skipped;
         }
         detail::remap_operands(input, node, map, operands);
-        map[node] = detail::reference(
-            emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
+        map[node] = detail::reference(emitter.gate(code, operands, input.cardinality_low()[node], input.cardinality_high()[node]));
     }
 
-    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(operands) +
-                           detail::bytes_of(complemented_reference) + split->bytes();
+    report.scratch_bytes = detail::bytes_of(order) + detail::bytes_of(operands) + detail::bytes_of(complemented_reference) + split->bytes();
     return std::move(emitter).finish(std::move(report));
 }
 

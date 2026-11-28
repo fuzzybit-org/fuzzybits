@@ -12,9 +12,7 @@
 
 namespace pra_to_pc_test {
 
-[[nodiscard]] inline auto ids(std::span<pra::basic_event_id const> events) -> std::vector<pra::basic_event_id> {
-    return {events.begin(), events.end()};
-}
+[[nodiscard]] inline auto ids(std::span<pra::basic_event_id const> events) -> std::vector<pra::basic_event_id> { return {events.begin(), events.end()}; }
 
 // Every R1 connective, complements on events and gates, house events, a
 // non-monotone cardinality range, a complemented single-input gate and
@@ -43,30 +41,21 @@ struct connective_model final {
     out.house_true = builder.add_house_event({.stable_name = "H_TRUE"}, true);
     out.house_false = builder.add_house_event({.stable_name = "H_FALSE"}, false);
     out.tree = builder.add_fault_tree({.stable_name = "FT"});
-    out.both = builder.add_gate({.stable_name = "G_AND"}, pra::gate_kind::and_gate,
-                                {{.event = out.a}, {.event = out.b, .complement = true}}, out.tree);
-    out.either = builder.add_gate({.stable_name = "G_OR"}, pra::gate_kind::or_gate,
-                                  {{.event = out.both}, {.event = out.house_false}, {.event = out.c}}, out.tree);
-    out.vote =
-        builder.add_cardinality({.stable_name = "G_2OF3"}, {.low = 2, .high = 3},
-                                {{.event = out.a}, {.event = out.c, .complement = true}, {.event = out.d}}, out.tree);
-    out.range =
-        builder.add_cardinality({.stable_name = "G_RANGE"}, {.low = 1, .high = 2},
-                                {{.event = out.b}, {.event = out.d}, {.event = out.e}, {.event = out.f}}, out.tree);
-    out.negation =
-        builder.add_gate({.stable_name = "G_NOT"}, pra::gate_kind::not_gate, {{.event = out.vote}}, out.tree);
+    out.both = builder.add_gate({.stable_name = "G_AND"}, pra::gate_kind::and_gate, {{.event = out.a}, {.event = out.b, .complement = true}}, out.tree);
+    out.either =
+        builder.add_gate({.stable_name = "G_OR"}, pra::gate_kind::or_gate, {{.event = out.both}, {.event = out.house_false}, {.event = out.c}}, out.tree);
+    out.vote = builder.add_cardinality({.stable_name = "G_2OF3"}, {.low = 2, .high = 3},
+                                       {{.event = out.a}, {.event = out.c, .complement = true}, {.event = out.d}}, out.tree);
+    out.range = builder.add_cardinality({.stable_name = "G_RANGE"}, {.low = 1, .high = 2},
+                                        {{.event = out.b}, {.event = out.d}, {.event = out.e}, {.event = out.f}}, out.tree);
+    out.negation = builder.add_gate({.stable_name = "G_NOT"}, pra::gate_kind::not_gate, {{.event = out.vote}}, out.tree);
     out.parity = builder.add_gate({.stable_name = "G_XOR"}, pra::gate_kind::xor_gate,
                                   {{.event = out.a}, {.event = out.d}, {.event = out.e, .complement = true}}, out.tree);
-    out.nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate,
-                                {{.event = out.both}, {.event = out.f, .complement = true}}, out.tree);
-    out.nor = builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate,
-                               {{.event = out.c}, {.event = out.d, .complement = true}}, out.tree);
-    out.single = builder.add_gate({.stable_name = "G_SINGLE"}, pra::gate_kind::or_gate,
-                                  {{.event = out.either, .complement = true}}, out.tree);
-    out.shared = builder.add_gate({.stable_name = "G_SHARED"}, pra::gate_kind::and_gate,
-                                  {{.event = out.either}, {.event = out.vote}}, out.tree);
-    out.with_house = builder.add_gate({.stable_name = "G_HOUSE"}, pra::gate_kind::and_gate,
-                                      {{.event = out.house_true}, {.event = out.e}}, out.tree);
+    out.nand = builder.add_gate({.stable_name = "G_NAND"}, pra::gate_kind::nand_gate, {{.event = out.both}, {.event = out.f, .complement = true}}, out.tree);
+    out.nor = builder.add_gate({.stable_name = "G_NOR"}, pra::gate_kind::nor_gate, {{.event = out.c}, {.event = out.d, .complement = true}}, out.tree);
+    out.single = builder.add_gate({.stable_name = "G_SINGLE"}, pra::gate_kind::or_gate, {{.event = out.either, .complement = true}}, out.tree);
+    out.shared = builder.add_gate({.stable_name = "G_SHARED"}, pra::gate_kind::and_gate, {{.event = out.either}, {.event = out.vote}}, out.tree);
+    out.with_house = builder.add_gate({.stable_name = "G_HOUSE"}, pra::gate_kind::and_gate, {{.event = out.house_true}, {.event = out.e}}, out.tree);
     out.top = builder.add_gate({.stable_name = "TOP"}, pra::gate_kind::or_gate,
                                {{.event = out.shared},
                                 {.event = out.negation},
@@ -81,8 +70,7 @@ struct connective_model final {
     out.tree_target = builder.add_target({.stable_name = "FT"}, pra::domain_target_kind::fault_tree_top, out.tree);
     out.vote_target = builder.add_target({.stable_name = "VOTE"}, pra::domain_target_kind::gate, out.vote);
     out.single_target = builder.add_target({.stable_name = "SINGLE"}, pra::domain_target_kind::gate, out.single);
-    out.event_target = builder.add_target({.stable_name = "D_WATCH"}, pra::domain_target_kind::basic_event, out.d,
-                                          pra::target_role::watch);
+    out.event_target = builder.add_target({.stable_name = "D_WATCH"}, pra::domain_target_kind::basic_event, out.d, pra::target_role::watch);
     out.model = seal(std::move(builder));
     return out;
 }

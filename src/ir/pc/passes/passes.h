@@ -121,10 +121,8 @@ struct pipeline_result final {
 // Runs `schedule` in order. Refuses (error pc.pipeline.incompatible-pass, no
 // output) if a distribution-preserving pass does not preserve the query kind
 // of some target. Atom events are carried through each pass's node map.
-[[nodiscard]] auto run_pipeline(circuit const &input, std::span<pass_id const> schedule,
-                                pipeline_options const &options = {}) -> pipeline_result;
+[[nodiscard]] auto run_pipeline(circuit const &input, std::span<pass_id const> schedule, pipeline_options const &options = {}) -> pipeline_result;
 
-[[nodiscard]] auto compile(circuit const &input, compile_level level, pipeline_options const &options = {})
-    -> pipeline_result;
+[[nodiscard]] auto compile(circuit const &input, compile_level level, pipeline_options const &options = {}) -> pipeline_result;
 
 } // namespace fuzzybits::ir::pc::passes

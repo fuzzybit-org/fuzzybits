@@ -39,8 +39,7 @@ int GetPrimeNumber(int n) {
     return n;
 }
 
-Bdd::Bdd(const Pdag *graph, const Settings &settings)
-    : kSettings_(settings), coherent_(graph->coherent()), kOne_(new Terminal<Ite>(true)), function_id_(2) {
+Bdd::Bdd(const Pdag *graph, const Settings &settings) : kSettings_(settings), coherent_(graph->coherent()), kOne_(new Terminal<Ite>(true)), function_id_(2) {
     TIMER(DEBUG3, "Converting PDAG into BDD");
     if (graph->IsTrivial()) {
         const Gate &top_gate = graph->root();
@@ -166,8 +165,7 @@ Bdd::Function Bdd::ConvertGraph(const Gate &gate, std::unordered_map<int, std::p
     return result;
 }
 
-std::pair<int, int> Bdd::GetMinMaxId(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                                     bool complement_two) {
+std::pair<int, int> Bdd::GetMinMaxId(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two) {
     assert(!arg_one->terminal() && !arg_two->terminal());
     assert(arg_one->id() && arg_two->id());
     assert(arg_one->id() != arg_two->id());
@@ -179,9 +177,7 @@ std::pair<int, int> Bdd::GetMinMaxId(const VertexPtr &arg_one, const VertexPtr &
 }
 
 /// Specialization of Apply for AND connective with BDD vertices.
-template <>
-Bdd::Function Bdd::Apply<kAnd>(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                               bool complement_two) {
+template <> Bdd::Function Bdd::Apply<kAnd>(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two) {
     assert(arg_one->id() && arg_two->id()); // Both are reduced function graphs.
     if (arg_one->terminal()) {
         if (complement_one)
@@ -207,9 +203,7 @@ Bdd::Function Bdd::Apply<kAnd>(const VertexPtr &arg_one, const VertexPtr &arg_tw
 }
 
 /// Specialization of Apply for OR connective with BDD vertices.
-template <>
-Bdd::Function Bdd::Apply<kOr>(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                              bool complement_two) {
+template <> Bdd::Function Bdd::Apply<kOr>(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two) {
     assert(arg_one->id() && arg_two->id()); // Both are reduced function graphs.
     if (arg_one->terminal()) {
         if (!complement_one)
@@ -234,8 +228,7 @@ Bdd::Function Bdd::Apply<kOr>(const VertexPtr &arg_one, const VertexPtr &arg_two
     return result;
 }
 
-template <Connective Type>
-Bdd::Function Bdd::Apply(ItePtr ite_one, ItePtr ite_two, bool complement_one, bool complement_two) {
+template <Connective Type> Bdd::Function Bdd::Apply(ItePtr ite_one, ItePtr ite_two, bool complement_one, bool complement_two) {
     if (ite_one->order() > ite_two->order()) {
         ite_one.swap(ite_two);
         std::swap(complement_one, complement_two);
@@ -246,8 +239,7 @@ Bdd::Function Bdd::Apply(ItePtr ite_one, ItePtr ite_two, bool complement_one, bo
     if (ite_one->order() == ite_two->order()) { // The same variable.
         assert(ite_one->index() == ite_two->index());
         high = Apply<Type>(ite_one->high(), ite_two->high(), complement_one, complement_two);
-        low = Apply<Type>(ite_one->low(), ite_two->low(), complement_one ^ ite_one->complement_edge(),
-                          complement_two ^ ite_two->complement_edge());
+        low = Apply<Type>(ite_one->low(), ite_two->low(), complement_one ^ ite_one->complement_edge(), complement_two ^ ite_two->complement_edge());
     } else {
         assert(ite_one->order() < ite_two->order());
         high = Apply<Type>(ite_one->high(), ite_two, complement_one, complement_two);
@@ -262,8 +254,7 @@ Bdd::Function Bdd::Apply(ItePtr ite_one, ItePtr ite_two, bool complement_one, bo
     return high;
 }
 
-Bdd::Function Bdd::Apply(Connective type, const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                         bool complement_two) {
+Bdd::Function Bdd::Apply(Connective type, const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two) {
     assert(arg_one->id() && arg_two->id()); // Both are reduced function graphs.
     if (type == kAnd) {
         return Apply<kAnd>(arg_one, arg_two, complement_one, complement_two);

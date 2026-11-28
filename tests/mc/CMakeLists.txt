@@ -94,17 +94,33 @@ set_tests_properties(mc.bernoulli_sampler PROPERTIES
   TIMEOUT ${MC_TEST_TIMEOUT}
 )
 
-add_executable(mc_atleast_gate_tests atleast_gate_tests.cc)
-target_link_libraries(mc_atleast_gate_tests PRIVATE Catch2::Catch2WithMain mc)
-target_include_directories(mc_atleast_gate_tests PRIVATE
+add_executable(mc_cardinality_gate_tests cardinality_gate_tests.cc)
+target_link_libraries(mc_cardinality_gate_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_cardinality_gate_tests PRIVATE
   "${PROJECT_SOURCE_DIR}/src"
   "${PROJECT_SOURCE_DIR}/tests"
 )
-add_sycl_to_target(TARGET mc_atleast_gate_tests SOURCES atleast_gate_tests.cc)
-add_test(NAME mc.atleast_gate COMMAND mc_atleast_gate_tests)
-set_tests_properties(mc.atleast_gate PROPERTIES
+add_sycl_to_target(TARGET mc_cardinality_gate_tests SOURCES cardinality_gate_tests.cc)
+add_test(NAME mc.cardinality_gate COMMAND mc_cardinality_gate_tests)
+# 80 kernels (4 widths x 10 forms and slot counts x 2 lane forms) are JIT-compiled on first launch, and run
+# in both work-group orders.
+set_tests_properties(mc.cardinality_gate PROPERTIES
   LABELS "mc"
-  TIMEOUT ${MC_TEST_TIMEOUT}
+  TIMEOUT 600
+)
+
+add_executable(mc_gate_kernel_tests gate_kernel_tests.cc)
+target_link_libraries(mc_gate_kernel_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_gate_kernel_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_sycl_to_target(TARGET mc_gate_kernel_tests SOURCES gate_kernel_tests.cc)
+add_test(NAME mc.gate_kernel COMMAND mc_gate_kernel_tests)
+# About 100 kernels (connectives x slot counts x lane forms x widths) are JIT-compiled on first launch.
+set_tests_properties(mc.gate_kernel PROPERTIES
+  LABELS "mc"
+  TIMEOUT 600
 )
 
 add_executable(mc_tally_kernel_tests tally_kernel_tests.cc)
@@ -120,16 +136,63 @@ set_tests_properties(mc.tally_kernel PROPERTIES
   TIMEOUT ${MC_TEST_TIMEOUT}
 )
 
+# The event blocks (src/mc/event): USM ownership, the output arena and its slots, node, gate and tally blocks and
+# their views, and the refusals of their builders; the Bernoulli law's compile-time refusals.
+add_executable(mc_event_block_tests event_block_tests.cc)
+target_link_libraries(mc_event_block_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_event_block_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_sycl_to_target(TARGET mc_event_block_tests SOURCES event_block_tests.cc)
+add_test(NAME mc.event_block COMMAND mc_event_block_tests)
+set_tests_properties(mc.event_block PROPERTIES
+  LABELS "mc"
+  TIMEOUT ${MC_TEST_TIMEOUT}
+)
+
+# The kernel builder and its descriptions without a PDAG: the plan's order and edges, a partition's derived numbers,
+# the choice among kernel instantiations, and a two-layer program built on the device.
+add_executable(mc_executor_builder_tests executor_builder_tests.cc)
+target_link_libraries(mc_executor_builder_tests PRIVATE Catch2::Catch2WithMain mc)
+target_include_directories(mc_executor_builder_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_sycl_to_target(TARGET mc_executor_builder_tests SOURCES executor_builder_tests.cc)
+add_test(NAME mc.executor_builder COMMAND mc_executor_builder_tests)
+set_tests_properties(mc.executor_builder PROPERTIES
+  LABELS "mc"
+  TIMEOUT ${MC_TEST_TIMEOUT}
+)
+
+# The random stream's plumbing through queue::layer_manager: a one-event pcfb model, reconstructed by the runtime and
+# sampled over three passes with a seed and device that are not the defaults; its exact tally counts must equal the
+# host reference (prng/bernoulli/sample.h) for pass p at bitpacks [p*B, (p + 1)*B) of that stream.
+add_executable(mc_layer_manager_stream_tests layer_manager_stream_tests.cc)
+target_link_libraries(mc_layer_manager_stream_tests PRIVATE Catch2::Catch2WithMain mc fuzzybits_runtime)
+target_include_directories(mc_layer_manager_stream_tests PRIVATE
+  "${PROJECT_SOURCE_DIR}/src"
+  "${PROJECT_SOURCE_DIR}/tests"
+)
+add_sycl_to_target(TARGET mc_layer_manager_stream_tests SOURCES layer_manager_stream_tests.cc)
+add_test(NAME mc.layer_manager_stream COMMAND mc_layer_manager_stream_tests)
+set_tests_properties(mc.layer_manager_stream PROPERTIES
+  LABELS "mc"
+  TIMEOUT ${MC_TEST_TIMEOUT}
+)
+
 # 128- and 256-bit bitpacks must be rejected at compile time, and only for the
-# stated reason: the at-least gate's split 32-bit reduction static_asserts on
-# width, and sycl::popcount is constrained to the standard integer types. Each
+# stated reason: the kernels take their bitpack type from event::node_types,
+# whose bitpack_word constraint refuses a word wider than 64 bits. Each
 # test builds an EXCLUDE_FROM_ALL object target and passes iff that build fails
 # and every compiler error matches the expected diagnostic.
 # Locations are file:line:col (clang) or file(line,col) (clang-cl).
 set(_compile_fail_loc "[:(][0-9]+[:,][0-9]+\\)?: error: ")
-set(_compile_fail_regex_atleast "gate\\.h${_compile_fail_loc}static assertion failed due to requirement 'sizeof\\(.*\\) == 2 \\* sizeof\\(unsigned int\\)'")
-set(_compile_fail_regex_tally "tally\\.h${_compile_fail_loc}no matching function for call to 'popcount'")
-foreach(_kernel atleast tally)
+set(_compile_fail_regex_node_types "bitpack_width_compile_fail\\.cc${_compile_fail_loc}constraints not satisfied for class template 'node_types'")
+set(_compile_fail_regex_cardinality "${_compile_fail_regex_node_types}")
+set(_compile_fail_regex_tally "${_compile_fail_regex_node_types}")
+foreach(_kernel cardinality tally)
   string(TOUPPER "${_kernel}" _kernel_upper)
   foreach(_bits 128 256)
     set(_target mc_compile_fail_${_kernel}_u${_bits})

@@ -1,15 +1,14 @@
 #pragma once
 
+#include "mc/executor/sample_shaper.h"
 #include "mc/logger/csv.h"
-#include "mc/queue/sample_shaper.h"
 
 #include <string>
 #include <vector>
 
 namespace scram::log::sample_shaper {
 
-template <typename bitpack_t_>
-inline std::vector<std::pair<std::string, std::string>> csv_pairs(const mc::queue::sample_shaper<bitpack_t_> &s) {
+template <typename bitpack_t_> inline std::vector<std::pair<std::string, std::string>> csv_pairs(const fuzzybits::mc::executor::sample_shaper<bitpack_t_> &s) {
     return std::vector<std::pair<std::string, std::string>>{
         {"requested_num_trials", csv_string(s.requested_num_trials_)},
         {"requested_trials_per_pass", csv_string(s.requested_trials_per_pass_)},

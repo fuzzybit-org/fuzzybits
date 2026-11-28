@@ -54,9 +54,8 @@ class RiskAnalysis : public Analysis {
     struct Result {
         /// The analysis target type as a unique identifier.
         struct Id {
-            std::variant<const mef::Gate *, std::pair<const mef::InitiatingEvent &, const mef::Sequence &>>
-                target;                     ///< The main input to the analysis.
-            std::optional<Context> context; ///< Optional analysis context.
+            std::variant<const mef::Gate *, std::pair<const mef::InitiatingEvent &, const mef::Sequence &>> target; ///< The main input to the analysis.
+            std::optional<Context> context;                                                                         ///< Optional analysis context.
         };
 
         const Id id; ///< The main analysis input or target.
@@ -190,8 +189,7 @@ class RiskAnalysis : public Analysis {
     /// @param[in,out] eta       The completed event-tree analysis whose sequence
     ///                          gates will be merged.
     /// @param[in] context       The optional alignment/phase context.
-    void RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating_event, EventTreeAnalysis *eta,
-                                const std::optional<Context> &context);
+    void RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating_event, EventTreeAnalysis *eta, const std::optional<Context> &context);
 
     mef::Model *model_;                         ///< The model with constructs.
     std::vector<Result> results_;               ///< The analysis result storage.

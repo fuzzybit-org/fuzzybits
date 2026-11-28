@@ -8,8 +8,7 @@
 
 namespace scram::log::convergence {
 
-inline std::vector<std::pair<std::string, std::string>>
-csv_pairs(std::vector<std::pair<std::string, std::string>> &kv) {
+inline std::vector<std::pair<std::string, std::string>> csv_pairs(std::vector<std::pair<std::string, std::string>> &kv) {
     // compression factors
     // Helper function to find value in kv pairs
     auto find_value = [&kv](const std::string &key) -> double {

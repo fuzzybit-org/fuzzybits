@@ -116,20 +116,20 @@ using pcfb_write_result = api::result<write_output>;
 [[nodiscard]] auto write(ir::handle const &model, write_options const &options) -> pcfb_write_result;
 
 [[nodiscard]] auto write(ir::handle const &model, std::ostream &output) -> io::write_result;
-[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result;
+[[nodiscard]] auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result;
 
 // Diagnostic ids of the reader. Errors: no ir::pc circuit is produced.
 namespace diag {
 // The bytes are not a verifiable FlatBuffer, or the file cannot be read.
 inline constexpr std::string_view unreadable = "io.pcfb.unreadable";
-// pcfb::validate reported a finding other than an unknown query kind (one error per finding).
+// pcfb::validate reported a finding other than an unknown query kind or opcode (one error per finding), such as a reserved
+// opcode or a MAJORITY or MINORITY operator in a file that declares minor 1.
 inline constexpr std::string_view invalid_file = "io.pcfb.invalid-file";
 // A query kind the pinned pcfb library does not define, or a minor too old for its kind.
 inline constexpr std::string_view unknown_query_kind = "io.pcfb.unknown-query-kind";
 // The subcircuit lists externally supplied input tensors; ir::pc has no such leaf.
 inline constexpr std::string_view external_inputs = "io.pcfb.external-inputs";
-// An operator that core-1.1 reserves or ir::pc has no op code for.
+// An operator ir::pc has no op code for, such as an opcode the pinned pcfb does not define.
 inline constexpr std::string_view unsupported_opcode = "io.pcfb.unsupported-opcode";
 // The file has more tensors than a 32-bit ir::pc node id can address.
 inline constexpr std::string_view too_large = "io.pcfb.too-large";

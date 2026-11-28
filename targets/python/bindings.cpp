@@ -17,7 +17,7 @@
 #include "io/pcfb/frequency.h"
 #include "io/pcfb/query_groups.h"
 #include "mc/core/direct_eval.h"
-#include "mc/queue/layer_manager.h"
+#include "mc/executor/layer_manager.h"
 #include "mc/stats/tally_node_map.h"
 #include "model.h"
 #include "pdag.h"
@@ -69,9 +69,7 @@ struct RunSummary {
 };
 
 struct PdagWatchGuard {
-    explicit PdagWatchGuard(const std::unordered_set<const scram::mef::Gate *> *watched_gates) {
-        scram::core::Pdag::SetWatchedGates(watched_gates);
-    }
+    explicit PdagWatchGuard(const std::unordered_set<const scram::mef::Gate *> *watched_gates) { scram::core::Pdag::SetWatchedGates(watched_gates); }
 
     ~PdagWatchGuard() { scram::core::Pdag::SetWatchedGates(nullptr); }
 };
@@ -102,17 +100,16 @@ using PyLayerBitpack = std::uint64_t;
 using PyLayerProb = std::double_t;
 using PyLayerSize = std::size_t;
 using PyLayerIndex = std::int32_t;
-using PyLayerManagerNative = scram::mc::queue::layer_manager<PyLayerBitpack, PyLayerProb, PyLayerSize>;
+using PyLayerManagerNative = fuzzybits::mc::executor::layer_manager<PyLayerBitpack, PyLayerProb, PyLayerSize>;
 
-py::dict tally_counter_dict(const scram::mc::event::tally<PyLayerBitpack> &tally) {
+py::dict tally_counter_dict(const fuzzybits::mc::event::tally_estimate &tally) {
     py::dict result;
     result["num_one_bits"] = tally.num_one_bits;
     result["total_bits"] = tally.total_bits;
     return result;
 }
 
-void collect_tallyable_nodes(const scram::core::GatePtr &gate,
-                             std::unordered_map<PyLayerIndex, std::shared_ptr<scram::core::Node>> &nodes) {
+void collect_tallyable_nodes(const scram::core::GatePtr &gate, std::unordered_map<PyLayerIndex, std::shared_ptr<scram::core::Node>> &nodes) {
     if (!gate) {
         return;
     }
@@ -129,8 +126,7 @@ void collect_tallyable_nodes(const scram::core::GatePtr &gate,
     }
 }
 
-scram::mc::stats::TallyNodeMap tally_map_for_indices(const scram::core::Pdag &graph,
-                                                     const std::vector<PyLayerIndex> &event_ids) {
+fuzzybits::mc::stats::TallyNodeMap tally_map_for_indices(const scram::core::Pdag &graph, const std::vector<PyLayerIndex> &event_ids) {
     if (!graph.root_ptr()) {
         throw std::runtime_error("cannot create a layer manager for a PDAG without a root");
     }
@@ -143,15 +139,15 @@ scram::mc::stats::TallyNodeMap tally_map_for_indices(const scram::core::Pdag &gr
     std::unordered_map<PyLayerIndex, std::shared_ptr<scram::core::Node>> nodes_by_index;
     collect_tallyable_nodes(graph.root_ptr(), nodes_by_index);
 
-    scram::mc::stats::TallyNodeMap tallies;
+    fuzzybits::mc::stats::TallyNodeMap tallies;
     for (const PyLayerIndex index : indices) {
         auto node = nodes_by_index.find(index);
         if (node == nodes_by_index.end()) {
             throw std::invalid_argument("cannot tally unknown PDAG node index: " + std::to_string(index));
         }
-        tallies.insert_or_assign(index, scram::mc::stats::TallyNode{
-                                            .status = scram::mc::stats::convergence::not_tracked,
-                                            .tally_stats = scram::mc::stats::tally{},
+        tallies.insert_or_assign(index, fuzzybits::mc::stats::TallyNode{
+                                            .status = fuzzybits::mc::stats::convergence::not_tracked,
+                                            .tally_stats = fuzzybits::mc::stats::tally{},
                                             .node = node->second,
                                         });
     }
@@ -169,7 +165,7 @@ py::dict sample_shape_dict(const PyLayerManagerNative &manager) {
     return result;
 }
 
-py::dict range3_dict(const scram::mc::queue::range3_description &range) {
+py::dict range3_dict(const fuzzybits::mc::executor::descriptor::range3 &range) {
     py::dict result;
     result["x"] = range.x;
     result["y"] = range.y;
@@ -178,7 +174,7 @@ py::dict range3_dict(const scram::mc::queue::range3_description &range) {
     return result;
 }
 
-py::dict device_dict(const scram::mc::queue::device_description &device) {
+py::dict device_dict(const fuzzybits::mc::executor::descriptor::device_profile &device) {
     py::dict result;
     result["type"] = device.type;
     result["name"] = device.name;
@@ -250,44 +246,44 @@ py::dict sample_shaper_description_dict(const PyLayerManagerNative::execution_pl
     return result;
 }
 
-py::dict partition_dict(const scram::mc::queue::kernel_partition_description &partition) {
+py::dict partition_dict(const fuzzybits::mc::executor::descriptor::partition &partition) {
     py::dict result;
     result["id"] = partition.id;
     result["layer"] = partition.layer;
-    result["kind"] = partition.kind;
-    result["connective"] = partition.connective;
-    result["operation"] = partition.connective;
-    result["node_indices"] = partition.node_indices;
-    result["dependency_partition_ids"] = partition.dependency_partition_ids;
-    result["node_count"] = partition.node_count;
-    result["logical_range"] = range3_dict(partition.logical_range);
-    result["local_range"] = range3_dict(partition.local_range);
-    result["global_range"] = range3_dict(partition.global_range);
-    result["work_group_count"] = partition.work_group_count;
-    result["work_item_count"] = partition.work_item_count;
-    result["logical_work_item_count"] = partition.logical_work_item_count;
-    result["overprovisioned_work_items"] = partition.overprovisioned_work_items;
-    result["bitpacks_per_node"] = partition.bitpacks_per_node;
-    result["bits_per_node"] = partition.bits_per_node;
-    result["bytes_per_node"] = partition.bytes_per_node;
-    result["resident_bytes"] = partition.resident_bytes;
-    result["min_fan_in"] = partition.min_fan_in;
-    result["max_fan_in"] = partition.max_fan_in;
-    result["total_fan_in"] = partition.total_fan_in;
-    result["positive_input_count"] = partition.positive_input_count;
-    result["negated_input_count"] = partition.negated_input_count;
+    result["kind"] = std::string(fuzzybits::mc::executor::descriptor::name_of(partition.kind));
+    result["connective"] = partition.operation;
+    result["operation"] = partition.operation;
+    result["node_indices"] = partition.nodes;
+    result["dependency_partition_ids"] = partition.dependencies;
+    result["node_count"] = partition.node_count();
+    result["logical_range"] = range3_dict(partition.logical_range());
+    result["local_range"] = range3_dict(partition.shape.local);
+    result["global_range"] = range3_dict(partition.shape.global);
+    result["work_group_count"] = partition.work_groups();
+    result["work_item_count"] = partition.work_items();
+    result["logical_work_item_count"] = partition.logical_work_items();
+    result["overprovisioned_work_items"] = partition.overprovisioned_work_items();
+    result["bitpacks_per_node"] = partition.bitpacks_per_node();
+    result["bits_per_node"] = partition.bits_per_node();
+    result["bytes_per_node"] = partition.bytes_per_node();
+    result["resident_bytes"] = partition.resident_bytes();
+    result["min_fan_in"] = partition.inputs.min;
+    result["max_fan_in"] = partition.inputs.max;
+    result["total_fan_in"] = partition.inputs.total;
+    result["positive_input_count"] = partition.inputs.positive;
+    result["negated_input_count"] = partition.inputs.negated;
     return result;
 }
 
-py::dict dependency_edge_dict(const scram::mc::queue::kernel_dependency_edge &edge) {
+py::dict dependency_edge_dict(const fuzzybits::mc::executor::descriptor::edge &edge) {
     py::dict result;
-    result["source_partition"] = edge.source_partition;
-    result["target_partition"] = edge.target_partition;
-    result["reason"] = edge.reason;
+    result["source_partition"] = edge.source;
+    result["target_partition"] = edge.target;
+    result["reason"] = std::string(fuzzybits::mc::executor::descriptor::edge::reason);
     return result;
 }
 
-py::dict execution_node_dict(const scram::mc::queue::execution_node_description &node) {
+py::dict execution_node_dict(const fuzzybits::mc::executor::descriptor::node &node) {
     py::dict result;
     result["index"] = node.index;
     result["layer"] = node.layer;
@@ -299,6 +295,56 @@ py::dict execution_node_dict(const scram::mc::queue::execution_node_description 
     result["negated_input_count"] = node.negated_input_count;
     result["atleast_min"] = node.atleast_min;
     result["module"] = node.module;
+    return result;
+}
+
+/// `result`, a PDAG graph, with each node's layer, group and kernel from `dag`, and the groups and the pass's shape.
+py::dict with_kernel_dag(py::dict result, const fuzzybits::mc::executor::descriptor::kernel_dag &dag) {
+    result["graph_kind"] = "kernel_dag";
+
+    std::unordered_map<PyLayerIndex, const fuzzybits::mc::executor::descriptor::kernel_dag::node *> kernel_node_by_index;
+    for (const auto &node : dag.nodes) {
+        kernel_node_by_index[node.index] = &node;
+    }
+
+    py::list graph_nodes = result["nodes"].cast<py::list>();
+    for (py::handle item : graph_nodes) {
+        py::dict node = py::reinterpret_borrow<py::dict>(item);
+        const PyLayerIndex index = node["index"].cast<PyLayerIndex>();
+        auto kernel_node = kernel_node_by_index.find(index);
+        if (kernel_node == kernel_node_by_index.end()) {
+            continue;
+        }
+        node["layer"] = kernel_node->second->layer;
+        node["partition"] = kernel_node->second->partition;
+        node["kernel_kind"] = kernel_node->second->kind;
+        node["kernel_connective"] = kernel_node->second->connective;
+    }
+
+    py::list partitions;
+    for (const auto &partition : dag.partitions) {
+        py::dict item;
+        item["id"] = partition.id;
+        item["layer"] = partition.layer;
+        item["kind"] = partition.kind;
+        item["connective"] = partition.connective;
+        item["node_indices"] = partition.node_indices;
+        item["node_count"] = partition.node_indices.size();
+        partitions.append(std::move(item));
+    }
+
+    py::dict sample_shape;
+    sample_shape["batch_size"] = dag.batch_size;
+    sample_shape["bitpacks_per_batch"] = dag.bitpacks_per_batch;
+    sample_shape["bits_per_bitpack"] = sizeof(PyLayerBitpack) * 8;
+    sample_shape["trials_per_pass"] = dag.batch_size * dag.bitpacks_per_batch * sizeof(PyLayerBitpack) * 8;
+    sample_shape["total_iterations"] = dag.total_iterations;
+
+    py::dict kernel;
+    kernel["partitions"] = partitions;
+    kernel["partition_count"] = dag.partitions.size();
+    kernel["sample_shape"] = sample_shape;
+    result["kernel"] = kernel;
     return result;
 }
 
@@ -319,7 +365,7 @@ py::dict execution_plan_dict(const PyLayerManagerNative::execution_plan_descript
     }
 
     py::dict result;
-    result["schema"] = plan.schema;
+    result["schema"] = std::string(plan.schema);
     result["bitpack_type"] = plan.bitpack_type;
     result["bits_per_bitpack"] = plan.bits_per_bitpack;
     result["node_count"] = plan.node_count;
@@ -333,8 +379,7 @@ py::dict execution_plan_dict(const PyLayerManagerNative::execution_plan_descript
 }
 
 struct PyLayerManager {
-    PyLayerManager(scram::core::Pdag *graph, std::size_t num_trials, const std::vector<PyLayerIndex> &event_ids,
-                   std::size_t requested_trials_per_pass) {
+    PyLayerManager(scram::core::Pdag *graph, std::size_t num_trials, const std::vector<PyLayerIndex> &event_ids, std::size_t requested_trials_per_pass) {
         if (!graph) {
             throw std::runtime_error("cannot create a layer manager for an empty compiled PDAG");
         }
@@ -354,7 +399,7 @@ struct PyLayerManager {
         if (!tally_indices.contains(target)) {
             throw std::invalid_argument("PDAG node index was not registered for tallying: " + std::to_string(target));
         }
-        scram::mc::event::tally<PyLayerBitpack> tally;
+        fuzzybits::mc::event::tally_estimate tally;
         {
             py::gil_scoped_release release;
             tally = manager->single_pass_and_tally(target);
@@ -371,7 +416,7 @@ struct PyLayerManager {
         if (passes == 0) {
             throw std::invalid_argument("single_pass_all: passes must be at least 1");
         }
-        scram::mc::stats::TallyNodeMap tallies;
+        fuzzybits::mc::stats::TallyNodeMap tallies;
         {
             py::gil_scoped_release release;
             manager->pass_wait_collect(tallies, passes, 0);
@@ -477,8 +522,8 @@ void append_edge(py::list &edges, int source, int signed_target) {
     edges.append(std::move(edge));
 }
 
-void collect_pdag_graph(const scram::core::Pdag &graph, const scram::core::GatePtr &gate, py::list &nodes,
-                        py::list &edges, std::unordered_set<int> &seen_nodes, std::unordered_set<int> &expanded_gates) {
+void collect_pdag_graph(const scram::core::Pdag &graph, const scram::core::GatePtr &gate, py::list &nodes, py::list &edges, std::unordered_set<int> &seen_nodes,
+                        std::unordered_set<int> &expanded_gates) {
     if (!gate) {
         return;
     }
@@ -544,58 +589,8 @@ py::dict CompiledPdag::to_graph() const {
 }
 
 py::dict CompiledPdag::to_kernel_graph() const {
-
     PyLayerManagerNative manager(graph.get(), num_trials, tally_map_for_indices(*graph, {}), requested_trials_per_pass);
-    const auto kernel_dag = manager.describe_kernel_dag();
-
-    py::dict result = to_graph();
-    result["graph_kind"] = "kernel_dag";
-
-    std::unordered_map<PyLayerIndex, const PyLayerManagerNative::kernel_dag_node *> kernel_node_by_index;
-    for (const auto &node : kernel_dag.nodes) {
-        kernel_node_by_index[node.index] = &node;
-    }
-
-    py::list graph_nodes = result["nodes"].cast<py::list>();
-    for (py::handle item : graph_nodes) {
-        py::dict node = py::reinterpret_borrow<py::dict>(item);
-        const PyLayerIndex index = node["index"].cast<PyLayerIndex>();
-        auto kernel_node = kernel_node_by_index.find(index);
-        if (kernel_node == kernel_node_by_index.end()) {
-            continue;
-        }
-        node["layer"] = kernel_node->second->layer;
-        node["partition"] = kernel_node->second->partition;
-        node["kernel_kind"] = kernel_node->second->kind;
-        node["kernel_connective"] = kernel_node->second->connective;
-    }
-
-    py::list partitions;
-    for (const auto &partition : kernel_dag.partitions) {
-        py::dict item;
-        item["id"] = partition.id;
-        item["layer"] = partition.layer;
-        item["kind"] = partition.kind;
-        item["connective"] = partition.connective;
-        item["node_indices"] = partition.node_indices;
-        item["node_count"] = partition.node_indices.size();
-        partitions.append(std::move(item));
-    }
-
-    py::dict sample_shape;
-    sample_shape["batch_size"] = kernel_dag.batch_size;
-    sample_shape["bitpacks_per_batch"] = kernel_dag.bitpacks_per_batch;
-    sample_shape["bits_per_bitpack"] = sizeof(PyLayerBitpack) * 8;
-    sample_shape["trials_per_pass"] =
-        kernel_dag.batch_size * kernel_dag.bitpacks_per_batch * sizeof(PyLayerBitpack) * 8;
-    sample_shape["total_iterations"] = kernel_dag.total_iterations;
-
-    py::dict kernel;
-    kernel["partitions"] = partitions;
-    kernel["partition_count"] = kernel_dag.partitions.size();
-    kernel["sample_shape"] = sample_shape;
-    result["kernel"] = kernel;
-    return result;
+    return with_kernel_dag(to_graph(), manager.describe_kernel_dag());
 }
 
 py::dict CompiledPdag::to_execution_plan() const {
@@ -631,16 +626,14 @@ std::optional<py::object> get_option(const py::dict &options, std::initializer_l
     return std::nullopt;
 }
 
-template <typename T>
-void set_option(const py::dict &options, std::initializer_list<const char *> keys, const auto &setter) {
+template <typename T> void set_option(const py::dict &options, std::initializer_list<const char *> keys, const auto &setter) {
     if (auto value = get_option(options, keys)) {
         setter(value->cast<T>());
     }
 }
 
 bool is_bool_field(const std::string &key) {
-    return key == "epsilon_converged" || key == "epsilon_log10_converged" || key == "ci95_covered" ||
-           key == "ci99_covered";
+    return key == "epsilon_converged" || key == "epsilon_log10_converged" || key == "ci95_covered" || key == "ci99_covered";
 }
 
 py::object progress_scalar(const std::string &key, const std::string &value) {
@@ -699,11 +692,9 @@ scram::core::Settings settings_from_options(const py::dict &options, py::object 
 
     set_option<int>(options, {"seed"}, [&](int value) { settings.seed(value); });
     set_option<double>(options, {"num_trials", "num-trials", "N"}, [&](double value) { settings.num_trials(value); });
-    set_option<double>(options,
-                       {"requested_trials_per_pass", "requested-trials-per-pass", "trials_per_pass", "trials-per-pass"},
+    set_option<double>(options, {"requested_trials_per_pass", "requested-trials-per-pass", "trials_per_pass", "trials-per-pass"},
                        [&](double value) { settings.requested_trials_per_pass(value); });
-    set_option<double>(options, {"passes_per_step", "passes-per-step"},
-                       [&](double value) { settings.passes_per_step(value); });
+    set_option<double>(options, {"passes_per_step", "passes-per-step"}, [&](double value) { settings.passes_per_step(value); });
     set_option<double>(options, {"delta", "d"}, [&](double value) { settings.ci_rel_margin_error(value); });
     set_option<double>(options, {"burn_in", "burn-in", "b"}, [&](double value) { settings.ci_burnin_trials(value); });
     set_option<double>(options, {"confidence", "a"}, [&](double value) { settings.ci_confidence(value); });
@@ -713,25 +704,21 @@ scram::core::Settings settings_from_options(const py::dict &options, py::object 
     set_option<double>(options, {"time_step", "time-step"}, [&](double value) { settings.time_step(value); });
     set_option<int>(options, {"limit_order", "limit-order", "l"}, [&](int value) { settings.limit_order(value); });
     set_option<double>(options, {"cut_off", "cut-off"}, [&](double value) { settings.cut_off(value); });
-    set_option<int>(options,
-                    {"compilation_level", "compilation-level", "compilation_passes", "compilation-passes", "c"},
+    set_option<int>(options, {"compilation_level", "compilation-level", "compilation_passes", "compilation-passes", "c"},
                     [&](int value) { settings.compilation_level(value); });
 
     set_option<bool>(options, {"early_stop", "early-stop"}, [&](bool value) { settings.early_stop(value); });
     set_option<bool>(options, {"watch", "watch_mode"}, [&](bool value) { settings.watch_mode(value); });
-    set_option<bool>(options,
-                     {"expand_atleast_gates", "expand-atleast-gates", "expand_kn", "expand-kn", "no_kn", "no-kn"},
+    set_option<bool>(options, {"expand_atleast_gates", "expand-atleast-gates", "expand_kn", "expand-kn", "no_kn", "no-kn"},
                      [&](bool value) { settings.expand_atleast_gates(value); });
     set_option<bool>(options, {"expand_xor_gates", "expand-xor-gates", "expand_xor", "expand-xor", "no_xor", "no-xor"},
                      [&](bool value) { settings.expand_xor_gates(value); });
     set_option<bool>(options,
-                     {"recognize_atleast_groups", "recognize-atleast-groups", "recognize_atleast", "recognize-atleast",
-                      "recognize_kn", "recognize-kn"},
+                     {"recognize_atleast_groups", "recognize-atleast-groups", "recognize_atleast", "recognize-atleast", "recognize_kn", "recognize-kn"},
                      [&](bool value) { settings.recognize_atleast_groups(value); });
     set_option<bool>(options, {"recognize_xor_groups", "recognize-xor-groups", "recognize_xor", "recognize-xor"},
                      [&](bool value) { settings.recognize_xor_groups(value); });
-    set_option<bool>(options, {"keep_null_gates", "keep-null-gates", "keep_null", "keep-null"},
-                     [&](bool value) { settings.keep_null_gates(value); });
+    set_option<bool>(options, {"keep_null_gates", "keep-null-gates", "keep_null", "keep-null"}, [&](bool value) { settings.keep_null_gates(value); });
     set_option<bool>(options, {"preprocessor"}, [&](bool value) { settings.preprocessor = value; });
     set_option<bool>(options, {"print"}, [&](bool value) { settings.print = value; });
     set_option<bool>(options, {"importance"}, [&](bool value) { settings.importance_analysis(value); });
@@ -741,15 +728,13 @@ scram::core::Settings settings_from_options(const py::dict &options, py::object 
 
     if (!on_progress.is_none()) {
         auto callback = std::make_shared<PyProgressCallback>(std::move(on_progress));
-        settings.progress_callback(
-            [callback](const scram::core::Settings::ProgressPairs &pairs) { (*callback)(pairs); });
+        settings.progress_callback([callback](const scram::core::Settings::ProgressPairs &pairs) { (*callback)(pairs); });
     }
 
     return settings;
 }
 
-RunSummary execute_probability(std::vector<std::string> input_files, scram::core::Settings settings,
-                               bool allow_extern) {
+RunSummary execute_probability(std::vector<std::string> input_files, scram::core::Settings settings, bool allow_extern) {
     initialize_xml_once();
 
     settings.input_files(input_files);
@@ -805,8 +790,7 @@ std::unique_ptr<CompiledPdag> run_compile(const std::vector<std::string> &input_
     }
 
     std::optional<std::string> requested_target;
-    if (auto value = get_option(options, {"target", "target_gate", "target-gate", "top", "top_event", "top-event",
-                                          "gate", "gate_id", "gate-id"})) {
+    if (auto value = get_option(options, {"target", "target_gate", "target-gate", "top", "top_event", "top-event", "gate", "gate_id", "gate-id"})) {
         requested_target = value->cast<std::string>();
     }
 
@@ -841,7 +825,7 @@ std::unique_ptr<CompiledPdag> run_compile(const std::vector<std::string> &input_
         graph->root_ptr()->mef_origin_ptr(target);
     }
 
-    scram::core::CustomPreprocessor<scram::mc::DirectEval> preprocessor(graph.get(), settings);
+    scram::core::CustomPreprocessor<scram::core::DirectEval> preprocessor(graph.get(), settings);
     preprocessor();
 
     auto compiled = std::make_unique<CompiledPdag>();
@@ -894,12 +878,10 @@ std::string sycl_backend_name(const sycl::device &dev) {
     const auto vendor = dev.get_info<sycl::info::device::vendor>();
     const auto name = dev.get_info<sycl::info::device::name>();
     std::string blob = vendor + " " + name;
-    std::transform(blob.begin(), blob.end(), blob.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(blob.begin(), blob.end(), blob.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     const bool nvidia = blob.find("nvidia") != std::string::npos;
-    const bool metal = blob.find("metal") != std::string::npos || blob.find("apple") != std::string::npos ||
-                       blob.find("paravirtual") != std::string::npos || blob.find("mac2") != std::string::npos ||
-                       blob.find("common3") != std::string::npos;
+    const bool metal = blob.find("metal") != std::string::npos || blob.find("apple") != std::string::npos || blob.find("paravirtual") != std::string::npos ||
+                       blob.find("mac2") != std::string::npos || blob.find("common3") != std::string::npos;
     if (type == sycl::info::device_type::gpu && nvidia) {
         return "cuda";
     }
@@ -973,28 +955,23 @@ py::dict run_probability(const std::vector<std::string> &input_files, const py::
 
 fuzzybits::compile::Options compile_options_from_py(const py::dict &options) {
     fuzzybits::compile::Options out;
-    set_option<int>(
-        options, {"compilation_level", "compilation-level", "compilation_passes", "compilation-passes", "pdag_c", "c"},
-        [&](int value) { out.compilation_level = value; });
-    set_option<bool>(options,
-                     {"expand_atleast_gates", "expand-atleast-gates", "expand_kn", "expand-kn", "no_kn", "no-kn"},
+    set_option<int>(options, {"compilation_level", "compilation-level", "compilation_passes", "compilation-passes", "pdag_c", "c"},
+                    [&](int value) { out.compilation_level = value; });
+    set_option<bool>(options, {"expand_atleast_gates", "expand-atleast-gates", "expand_kn", "expand-kn", "no_kn", "no-kn"},
                      [&](bool value) { out.expand_atleast_gates = value; });
     set_option<bool>(options, {"expand_xor_gates", "expand-xor-gates", "expand_xor", "expand-xor", "no_xor", "no-xor"},
                      [&](bool value) { out.expand_xor_gates = value; });
     set_option<bool>(options,
-                     {"recognize_atleast_groups", "recognize-atleast-groups", "recognize_atleast", "recognize-atleast",
-                      "recognize_kn", "recognize-kn"},
+                     {"recognize_atleast_groups", "recognize-atleast-groups", "recognize_atleast", "recognize-atleast", "recognize_kn", "recognize-kn"},
                      [&](bool value) { out.recognize_atleast_groups = value; });
     set_option<bool>(options, {"recognize_xor_groups", "recognize-xor-groups", "recognize_xor", "recognize-xor"},
                      [&](bool value) { out.recognize_xor_groups = value; });
-    set_option<bool>(options, {"keep_null_gates", "keep-null-gates", "keep_null", "keep-null"},
-                     [&](bool value) { out.keep_null_gates = value; });
+    set_option<bool>(options, {"keep_null_gates", "keep-null-gates", "keep_null", "keep-null"}, [&](bool value) { out.keep_null_gates = value; });
     set_option<bool>(options, {"ccf"}, [&](bool value) { out.ccf = value; });
     set_option<bool>(options, {"allow_extern", "allow-extern"}, [&](bool value) { out.allow_extern = value; });
     set_option<std::string>(options, {"target", "target_gate", "target-gate", "top", "top_event", "top-event"},
                             [&](const std::string &value) { out.target = value; });
-    set_option<std::string>(options, {"weights", "weights_file", "weights-file"},
-                            [&](const std::string &value) { out.weights_file = value; });
+    set_option<std::string>(options, {"weights", "weights_file", "weights-file"}, [&](const std::string &value) { out.weights_file = value; });
     if (auto value = get_option(options, {"watch", "watch_nodes", "watch-nodes"})) {
         py::object obj = *value;
         if (py::isinstance<py::bool_>(obj)) {
@@ -1039,9 +1016,7 @@ std::vector<std::byte> bytes_from_py(const py::bytes &data) {
     return owned;
 }
 
-py::bytes py_bytes_from(const std::vector<std::byte> &bytes) {
-    return py::bytes(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-}
+py::bytes py_bytes_from(const std::vector<std::byte> &bytes) { return py::bytes(reinterpret_cast<const char *>(bytes.data()), bytes.size()); }
 
 const char *opcode_name(pcfb::OpCode op) {
     switch (op) {
@@ -1067,6 +1042,10 @@ const char *opcode_name(pcfb::OpCode op) {
         return "ATMOST";
     case pcfb::OpCode::BITWISE_EXACTLY:
         return "EXACTLY";
+    case pcfb::OpCode::BITWISE_MAJORITY:
+        return "MAJORITY";
+    case pcfb::OpCode::BITWISE_MINORITY:
+        return "MINORITY";
     case pcfb::OpCode::BITWISE_ZEROS:
         return "ZEROS";
     case pcfb::OpCode::BITWISE_ONES:
@@ -1154,6 +1133,8 @@ const char *diagnostic_code_name(pcfb::Diagnostic::Code code) {
         return "QueryGroupBadWeight";
     case C::QueryGroupMixedKinds:
         return "QueryGroupMixedKinds";
+    case C::UnknownOpcode:
+        return "UnknownOpcode";
     }
     return "Unknown";
 }
@@ -1314,12 +1295,9 @@ py::dict progress_snapshot_to_py(const fuzzybits::runtime::progress::snapshot &s
     out["passes_total"] = s.passes_total;
     out["elapsed_seconds"] = s.elapsed_seconds;
     out["trials_per_second"] = s.trials_per_second;
-    out["frac_done"] = s.trials_total > 0
-                           ? std::min(1.0, static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total))
-                           : 0.0;
-    out["eta_seconds"] = s.trials_per_second > 0.0 && s.trials_total > s.trials_done
-                             ? static_cast<double>(s.trials_total - s.trials_done) / s.trials_per_second
-                             : 0.0;
+    out["frac_done"] = s.trials_total > 0 ? std::min(1.0, static_cast<double>(s.trials_done) / static_cast<double>(s.trials_total)) : 0.0;
+    out["eta_seconds"] =
+        s.trials_per_second > 0.0 && s.trials_total > s.trials_done ? static_cast<double>(s.trials_total - s.trials_done) / s.trials_per_second : 0.0;
     py::list queries;
     for (const auto &q : s.queries) {
         py::dict item;
@@ -1485,9 +1463,7 @@ class ProgressSinks {
     /// snapshot the line drew; `on_progress` next; the signal guard last.
     ProgressSinks(py::object on_progress, py::object progress, fuzzybits::runtime::progress::sink *log,
                   std::vector<fuzzybits::runtime::progress::sink *> &sinks) {
-        const bool line_enabled = progress.is_none()
-                                      ? fuzzybits::runtime::progress::resolve_display(false, false).enabled()
-                                      : py::cast<bool>(progress);
+        const bool line_enabled = progress.is_none() ? fuzzybits::runtime::progress::resolve_display(false, false).enabled() : py::cast<bool>(progress);
         if (line_enabled) {
             // `own_signals = false`: CPython owns SIGINT/SIGTERM, and the guard below is what makes
             // the run interruptible. Installing a C handler here would bypass the interpreter.
@@ -1545,8 +1521,8 @@ void close_interrupted(const std::unique_ptr<fuzzybits::runtime::progress::log_s
     }
 }
 
-py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::dict &options, py::object on_progress,
-                       double progress_rate_hz, py::object progress, const std::optional<std::string> &progress_log) {
+py::bytes compile_pcfb(const std::vector<std::string> &input_files, const py::dict &options, py::object on_progress, double progress_rate_hz,
+                       py::object progress, const std::optional<std::string> &progress_log) {
     if (input_files.empty()) {
         throw std::invalid_argument("compile requires at least one input file");
     }
@@ -1650,15 +1626,14 @@ fuzzybits::compile::ftp::options ftp_options_from_py(const py::dict &options) {
     if (auto value = get_option(options, {"hull_max_initiators", "hull-max-initiators"})) {
         if (value->is_none() || (py::isinstance<py::str>(*value) && value->cast<std::string>() == "none")) {
             out.hull_max_initiators = std::optional<std::uint32_t>{};
-        } else if (py::isinstance<py::int_>(*value) && !py::isinstance<py::bool_>(*value) &&
-                   value->cast<long long>() >= 0 && value->cast<long long>() <= 0xFFFFFFFFLL) {
+        } else if (py::isinstance<py::int_>(*value) && !py::isinstance<py::bool_>(*value) && value->cast<long long>() >= 0 &&
+                   value->cast<long long>() <= 0xFFFFFFFFLL) {
             out.hull_max_initiators = std::optional<std::uint32_t>{value->cast<std::uint32_t>()};
         } else {
             throw std::invalid_argument("hull_max_initiators must be a non-negative integer or None");
         }
     }
-    if (auto value = get_option(options, {"compilation_level", "compilation-level", "pdag_c", "c"});
-        value && !value->is_none()) {
+    if (auto value = get_option(options, {"compilation_level", "compilation-level", "pdag_c", "c"}); value && !value->is_none()) {
         out.level = value->cast<int>();
     }
     return out;
@@ -1680,9 +1655,8 @@ std::string classify_compile_inputs(const std::vector<std::string> &input_files)
 
 /// CAFTA FTP project -> (pcfb bytes, report JSON). Diagnostics of a failed compile are raised as
 /// RuntimeError, one `code: message` line each.
-py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py::dict &options, py::object on_progress,
-                           double progress_rate_hz, py::object progress,
-                           const std::optional<std::string> &progress_log) {
+py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py::dict &options, py::object on_progress, double progress_rate_hz,
+                           py::object progress, const std::optional<std::string> &progress_log) {
     namespace ftp = fuzzybits::compile::ftp;
     if (input_files.empty()) {
         throw std::invalid_argument("compile requires at least one input file");
@@ -1730,8 +1704,7 @@ py::tuple compile_ftp_pcfb(const std::vector<std::string> &input_files, const py
 
 /// CAFTA FTP project -> (JSON text, plain text) of the reader's diagnostics, structure and conventions;
 /// the JSON has the content of `fzb inspect --json`. Reader errors are in the content, not raised.
-py::tuple inspect_ftp_project(const std::vector<std::string> &input_files, const std::string &duplicate_import,
-                              const bool counts_only) {
+py::tuple inspect_ftp_project(const std::vector<std::string> &input_files, const std::string &duplicate_import, const bool counts_only) {
     namespace ftp = fuzzybits::compile::ftp;
     if (input_files.empty()) {
         throw std::invalid_argument("inspect requires at least one FTP input");
@@ -1747,8 +1720,7 @@ py::tuple inspect_ftp_project(const std::vector<std::string> &input_files, const
         py::gil_scoped_release release;
         result.emplace(ftp::inspect_project(paths, opt));
     }
-    return py::make_tuple(py::str(ftp::json::dump(ftp::inspection_json(*result, counts_only), 0)),
-                          py::str(ftp::inspection_text(*result, counts_only)));
+    return py::make_tuple(py::str(ftp::json::dump(ftp::inspection_json(*result, counts_only), 0)), py::str(ftp::inspection_text(*result, counts_only)));
 }
 
 py::bytes nombrilo_to_pcfb_path(const std::string &path, const py::dict &options) {
@@ -1889,8 +1861,8 @@ py::list query_results_to_py(const std::vector<fuzzybits::runtime::QueryResult> 
     return out;
 }
 
-py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::string &backend, py::object on_progress,
-                        double progress_rate_hz, py::object progress, const std::optional<std::string> &progress_log) {
+py::list run_pcfb_bytes(const py::bytes &data, std::uint64_t trials, const std::string &backend, py::object on_progress, double progress_rate_hz,
+                        py::object progress, const std::optional<std::string> &progress_log) {
     if (trials == 0) {
         throw std::invalid_argument("run: trials must be positive");
     }
@@ -1965,54 +1937,7 @@ py::dict compilation_from_meta(const fuzzybits::runtime::GraphMeta &meta) {
 }
 
 py::dict annotate_kernel_graph(py::dict result, PyLayerManager &layer_manager) {
-    const auto kernel_dag = layer_manager.manager->describe_kernel_dag();
-    result["graph_kind"] = "kernel_dag";
-
-    std::unordered_map<PyLayerIndex, const PyLayerManagerNative::kernel_dag_node *> kernel_node_by_index;
-    for (const auto &node : kernel_dag.nodes) {
-        kernel_node_by_index[node.index] = &node;
-    }
-
-    py::list graph_nodes = result["nodes"].cast<py::list>();
-    for (py::handle item : graph_nodes) {
-        py::dict node = py::reinterpret_borrow<py::dict>(item);
-        const PyLayerIndex index = node["index"].cast<PyLayerIndex>();
-        auto kernel_node = kernel_node_by_index.find(index);
-        if (kernel_node == kernel_node_by_index.end()) {
-            continue;
-        }
-        node["layer"] = kernel_node->second->layer;
-        node["partition"] = kernel_node->second->partition;
-        node["kernel_kind"] = kernel_node->second->kind;
-        node["kernel_connective"] = kernel_node->second->connective;
-    }
-
-    py::list partitions;
-    for (const auto &partition : kernel_dag.partitions) {
-        py::dict item;
-        item["id"] = partition.id;
-        item["layer"] = partition.layer;
-        item["kind"] = partition.kind;
-        item["connective"] = partition.connective;
-        item["node_indices"] = partition.node_indices;
-        item["node_count"] = partition.node_indices.size();
-        partitions.append(std::move(item));
-    }
-
-    py::dict sample_shape;
-    sample_shape["batch_size"] = kernel_dag.batch_size;
-    sample_shape["bitpacks_per_batch"] = kernel_dag.bitpacks_per_batch;
-    sample_shape["bits_per_bitpack"] = sizeof(PyLayerBitpack) * 8;
-    sample_shape["trials_per_pass"] =
-        kernel_dag.batch_size * kernel_dag.bitpacks_per_batch * sizeof(PyLayerBitpack) * 8;
-    sample_shape["total_iterations"] = kernel_dag.total_iterations;
-
-    py::dict kernel;
-    kernel["partitions"] = partitions;
-    kernel["partition_count"] = kernel_dag.partitions.size();
-    kernel["sample_shape"] = sample_shape;
-    result["kernel"] = kernel;
-    return result;
+    return with_kernel_dag(std::move(result), layer_manager.manager->describe_kernel_dag());
 }
 
 struct PyPcfbSession {
@@ -2027,9 +1952,8 @@ struct PyPcfbSession {
     std::string target_name;
     std::string model_name;
 
-    explicit PyPcfbSession(const py::bytes &data, const std::string &backend,
-                           std::optional<std::uint64_t> trials_per_pass, const std::vector<std::string> &watch = {},
-                           std::optional<std::uint64_t> num_trials = std::nullopt) {
+    explicit PyPcfbSession(const py::bytes &data, const std::string &backend, std::optional<std::uint64_t> trials_per_pass,
+                           const std::vector<std::string> &watch = {}, std::optional<std::uint64_t> num_trials = std::nullopt) {
         owned_bytes = bytes_from_py(data);
         auto circuit = pcfb::io::from_bytes(owned_bytes);
         if (!circuit) {
@@ -2047,9 +1971,7 @@ struct PyPcfbSession {
         fuzzybits::runtime::apply_backend_mask(backend);
         reconstructed = fuzzybits::runtime::pdag_from_circuit(*circuit);
         const auto &meta = reconstructed.meta;
-        target_name = meta.target.empty()
-                          ? (reconstructed.queries.empty() ? std::string() : reconstructed.queries.front().name)
-                          : meta.target;
+        target_name = meta.target.empty() ? (reconstructed.queries.empty() ? std::string() : reconstructed.queries.front().name) : meta.target;
         model_name = meta.model_name.empty() ? target_name : meta.model_name;
         n_trials = static_cast<std::size_t>(num_trials.value_or(0));
         requested_tpp = static_cast<std::size_t>(trials_per_pass.value_or(0));
@@ -2098,8 +2020,7 @@ struct PyPcfbSession {
         py::list edges;
         std::unordered_set<int> seen_nodes;
         std::unordered_set<int> expanded_gates;
-        collect_pdag_graph(*reconstructed.graph, reconstructed.graph->root_ptr(), nodes, edges, seen_nodes,
-                           expanded_gates);
+        collect_pdag_graph(*reconstructed.graph, reconstructed.graph->root_ptr(), nodes, edges, seen_nodes, expanded_gates);
 
         py::dict result;
         result["model"] = model_name.empty() ? py::object(py::none()) : py::cast(model_name);
@@ -2107,8 +2028,7 @@ struct PyPcfbSession {
         result["input_files"] = meta.input_files;
         result["target"] = target_name;
         result["target_name"] = meta.target_name.empty() ? target_name : meta.target_name;
-        result["top"] = reconstructed.graph->root_ptr() ? py::cast(reconstructed.graph->root_ptr()->index())
-                                                        : py::object(py::none());
+        result["top"] = reconstructed.graph->root_ptr() ? py::cast(reconstructed.graph->root_ptr()->index()) : py::object(py::none());
         result["root_complement"] = reconstructed.graph->complement();
         result["coherent"] = reconstructed.graph->coherent();
         result["normal"] = reconstructed.graph->normal();
@@ -2165,8 +2085,7 @@ struct PyPcfbSession {
         py::dict out;
         out["pass_index"] = pass_index;
         out["trials_per_pass"] = sample_shape()["trials_per_pass"];
-        out["target_index"] =
-            reconstructed.queries.empty() ? manager->root_index : reconstructed.queries.front().node_index;
+        out["target_index"] = reconstructed.queries.empty() ? manager->root_index : reconstructed.queries.front().node_index;
         out["nodes"] = std::move(nodes);
         return out;
     }
@@ -2194,17 +2113,11 @@ and memory/compute attributes.
 )pbdoc");
 
     py::class_<PyLayerManager>(m, "LayerManager")
-        .def_property_readonly("root_index",
-                               [](const PyLayerManager &layer_manager) { return layer_manager.root_index; })
-        .def_property_readonly("tally_indices",
-                               [](const PyLayerManager &layer_manager) { return layer_manager.tally_indices; })
-        .def_property_readonly("node_count",
-                               [](const PyLayerManager &layer_manager) { return layer_manager.manager->node_count(); })
-        .def_property_readonly(
-            "sample_shape",
-            [](const PyLayerManager &layer_manager) { return sample_shape_dict(*layer_manager.manager); })
-        .def_property_readonly("execution_plan",
-                               [](const PyLayerManager &layer_manager) { return layer_manager.execution_plan(); })
+        .def_property_readonly("root_index", [](const PyLayerManager &layer_manager) { return layer_manager.root_index; })
+        .def_property_readonly("tally_indices", [](const PyLayerManager &layer_manager) { return layer_manager.tally_indices; })
+        .def_property_readonly("node_count", [](const PyLayerManager &layer_manager) { return layer_manager.manager->node_count(); })
+        .def_property_readonly("sample_shape", [](const PyLayerManager &layer_manager) { return sample_shape_dict(*layer_manager.manager); })
+        .def_property_readonly("execution_plan", [](const PyLayerManager &layer_manager) { return layer_manager.execution_plan(); })
         .def("single_pass", &PyLayerManager::single_pass, py::arg("event_id") = py::none(), R"pbdoc(
 Run exactly one native DirectEval layer-manager pass and return raw cumulative tally counters.
 
@@ -2285,8 +2198,7 @@ Returns:
     A Pdag object that owns the MEF model and compiled native PDAG.
 )pbdoc");
 
-    m.def("run_probability", &run_probability, py::arg("input_files"), py::arg("options") = py::dict(),
-          py::arg("on_progress") = py::none(),
+    m.def("run_probability", &run_probability, py::arg("input_files"), py::arg("options") = py::dict(), py::arg("on_progress") = py::none(),
           R"pbdoc(
 Run a Monte Carlo probability analysis in-process.
 
@@ -2302,8 +2214,7 @@ Returns:
     m.def("classify_compile_inputs", &classify_compile_inputs, py::arg("input_files"),
           "Returns 'ftp' (CAFTA FTP files or directories), 'mef' (anything else) or 'mixed'.");
 
-    m.def("inspect_ftp_project", &inspect_ftp_project, py::arg("input_files"), py::arg("duplicate_import") = "last",
-          py::arg("counts_only") = false,
+    m.def("inspect_ftp_project", &inspect_ftp_project, py::arg("input_files"), py::arg("duplicate_import") = "last", py::arg("counts_only") = false,
           R"pbdoc(
 Read a CAFTA FTP project (files or directories of `*.ftp`) without compiling it.
 
@@ -2311,9 +2222,8 @@ Returns:
     `(JSON text, plain text)`: the content of `fzb inspect --json` and of `fzb inspect`.
 )pbdoc");
 
-    m.def("compile_ftp_pcfb", &compile_ftp_pcfb, py::arg("input_files"), py::arg("options") = py::dict(),
-          py::arg("on_progress") = py::none(), py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(),
-          py::arg("progress_log") = py::none(),
+    m.def("compile_ftp_pcfb", &compile_ftp_pcfb, py::arg("input_files"), py::arg("options") = py::dict(), py::arg("on_progress") = py::none(),
+          py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(), py::arg("progress_log") = py::none(),
           R"pbdoc(
 Compile a CAFTA FTP project (files or directories of `*.ftp`) into a pcfb buffer.
 
@@ -2327,9 +2237,8 @@ Returns:
     `(pcfb bytes, report JSON text)`.
 )pbdoc");
 
-    m.def("compile_pcfb", &compile_pcfb, py::arg("input_files"), py::arg("options") = py::dict(),
-          py::arg("on_progress") = py::none(), py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(),
-          py::arg("progress_log") = py::none(),
+    m.def("compile_pcfb", &compile_pcfb, py::arg("input_files"), py::arg("options") = py::dict(), py::arg("on_progress") = py::none(),
+          py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(), py::arg("progress_log") = py::none(),
           R"pbdoc(
 Compile OpenPSA/MEF XML or nombrilo.circuit into a pcfb 1.1 buffer.
 
@@ -2399,9 +2308,8 @@ The initiator units of `fzb compile --initiator-unit`: {unit, duration, label, h
 Exhaustive exact P(query) for a small `.pcfb` file (≤ 30 random SAMPLE events).
 )pbdoc");
 
-    m.def("run_pcfb", &run_pcfb_bytes, py::arg("data"), py::arg("trials"), py::arg("backend") = "",
-          py::arg("on_progress") = py::none(), py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(),
-          py::arg("progress_log") = py::none(),
+    m.def("run_pcfb", &run_pcfb_bytes, py::arg("data"), py::arg("trials"), py::arg("backend") = "", py::arg("on_progress") = py::none(),
+          py::arg("progress_max_rate_hz") = 10.0, py::arg("progress") = py::none(), py::arg("progress_log") = py::none(),
           R"pbdoc(
 One-shot Monte Carlo of an in-memory `.pcfb`. Same numbers as `fzb run`.
 
@@ -2422,10 +2330,9 @@ automatic policy (stderr is a terminal, `TERM` is not `dumb`,
 )pbdoc");
 
     py::class_<PyPcfbSession>(m, "PcfbSession")
-        .def(py::init<const py::bytes &, const std::string &, std::optional<std::uint64_t>,
-                      const std::vector<std::string> &, std::optional<std::uint64_t>>(),
-             py::arg("data"), py::arg("backend") = "", py::arg("trials_per_pass") = py::none(),
-             py::arg("watch") = std::vector<std::string>{}, py::arg("num_trials") = py::none())
+        .def(py::init<const py::bytes &, const std::string &, std::optional<std::uint64_t>, const std::vector<std::string> &, std::optional<std::uint64_t>>(),
+             py::arg("data"), py::arg("backend") = "", py::arg("trials_per_pass") = py::none(), py::arg("watch") = std::vector<std::string>{},
+             py::arg("num_trials") = py::none())
         .def_property_readonly("sample_shape", &PyPcfbSession::sample_shape)
         .def("graph", &PyPcfbSession::graph)
         .def("kernel_graph", &PyPcfbSession::kernel_graph)

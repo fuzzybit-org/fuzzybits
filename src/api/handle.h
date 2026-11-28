@@ -11,8 +11,7 @@ class handle final {
   public:
     handle() = default;
 
-    template <typename storage_type>
-    [[nodiscard]] static auto make(std::shared_ptr<storage_type const> storage, type_id storage_type_id) -> handle {
+    template <typename storage_type> [[nodiscard]] static auto make(std::shared_ptr<storage_type const> storage, type_id storage_type_id) -> handle {
         return handle(std::move(storage), std::move(storage_type_id));
     }
 
@@ -26,8 +25,7 @@ class handle final {
     }
 
   private:
-    handle(std::shared_ptr<void const> storage, type_id storage_type_id)
-        : storage_(std::move(storage)), storage_type_(std::move(storage_type_id)) {}
+    handle(std::shared_ptr<void const> storage, type_id storage_type_id) : storage_(std::move(storage)), storage_type_(std::move(storage_type_id)) {}
 
     std::shared_ptr<void const> storage_;
     type_id storage_type_;

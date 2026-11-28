@@ -71,8 +71,7 @@ class TestFunctionalEvent : public TestEvent {
     /// @copydoc TestEvent::TestEvent
     /// @param[in] name  The public element name of the functional event to test.
     /// @param[in] state  One of the valid states of the functional event.
-    TestFunctionalEvent(std::string name, std::string state, const Context *context)
-        : TestEvent(context), name_(std::move(name)), state_(std::move(state)) {}
+    TestFunctionalEvent(std::string name, std::string state, const Context *context) : TestEvent(context), name_(std::move(name)), state_(std::move(state)) {}
 
     /// @returns true if the functional event has occurred and is in given state.
     double value() override;

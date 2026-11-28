@@ -32,8 +32,7 @@ TEST_P(RiskAnalysisTest, TwoTrain) {
     } else {
         EXPECT_DOUBLE_EQ(0.7225, p_total());
     }
-    std::set<std::set<std::string>> mcs = {
-        {"ValveOne", "ValveTwo"}, {"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"PumpOne", "PumpTwo"}};
+    std::set<std::set<std::string>> mcs = {{"ValveOne", "ValveTwo"}, {"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"PumpOne", "PumpTwo"}};
     EXPECT_EQ(4, products().size());
     EXPECT_EQ(mcs, products());
 }
@@ -62,8 +61,7 @@ TEST_P(RiskAnalysisTest, TwoTrainSubstitutions) {
     } else {
         EXPECT_DOUBLE_EQ(0.329175, p_total());
     }
-    std::set<std::set<std::string>> mcs = {
-        {"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"PumpOne", "PumpTwo", "HotBackupPump", "ColdBackupPump"}};
+    std::set<std::set<std::string>> mcs = {{"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"PumpOne", "PumpTwo", "HotBackupPump", "ColdBackupPump"}};
     EXPECT_EQ(3, products().size());
     EXPECT_EQ(mcs, products());
 }
@@ -78,8 +76,7 @@ TEST_P(RiskAnalysisTest, TwoTrainNonDeclarativeSubstitutions) {
     ASSERT_NO_THROW(ProcessInputFiles({dir + "nondeclarative_substitutions.xml"}));
     ASSERT_NO_THROW(analysis->Analyze());
     EXPECT_DOUBLE_EQ(1, p_total());
-    std::set<std::set<std::string>> mcs = {
-        {"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"ValveOne", "ValveThree"}, {"HotBackupPump"}};
+    std::set<std::set<std::string>> mcs = {{"ValveOne", "PumpTwo"}, {"ValveTwo", "PumpOne"}, {"ValveOne", "ValveThree"}, {"HotBackupPump"}};
     EXPECT_EQ(4, products().size());
     EXPECT_EQ(mcs, products());
 }

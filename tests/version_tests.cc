@@ -25,9 +25,8 @@
 namespace scram::test {
 
 TEST_CASE("invalid version extraction", "[version]") {
-    auto version =
-        GENERATE(as<const char *>(), "", "string", "1string", "1.string", "0.1.string", "0.1.2string", "0.1.2.string",
-                 " 0.2.3", "1_61", "1,61", "1'61", "1-61", "0.2.2.", ".1", "0..1", "0.1..", "0.1.2a", "-1");
+    auto version = GENERATE(as<const char *>(), "", "string", "1string", "1.string", "0.1.string", "0.1.2string", "0.1.2.string", " 0.2.3", "1_61", "1,61",
+                            "1'61", "1-61", "0.2.2.", ".1", "0..1", "0.1..", "0.1.2a", "-1");
 
     CAPTURE(version);
     CHECK(!ext::extract_version(version));

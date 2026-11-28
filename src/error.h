@@ -43,9 +43,7 @@
 /// the resultant exception type to conform to boost::exception.
 ///
 /// @param[in] err  The error type deriving from boost::exception.
-#define SCRAM_THROW(err)                                                                                               \
-    throw err << ::boost::throw_function(BOOST_CURRENT_FUNCTION) << ::boost::throw_file(FILE_REL_PATH)                 \
-              << ::boost::throw_line(__LINE__)
+#define SCRAM_THROW(err) throw err << ::boost::throw_function(BOOST_CURRENT_FUNCTION) << ::boost::throw_file(FILE_REL_PATH) << ::boost::throw_line(__LINE__)
 
 namespace scram {
 

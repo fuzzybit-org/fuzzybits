@@ -1,10 +1,8 @@
 #pragma once
 
-#include "mc/event/node.h"
+#include "mc/executor/layer_manager.h"
 #include "mc/logger/csv.h"
 #include "mc/logger/log_sample_shaper.h"
-#include "mc/queue/layer_manager.h"
-#include "pdag.h"
 
 #include <memory>
 #include <string>
@@ -14,7 +12,7 @@ namespace scram::log::layers {
 
 /**
  * Return a vector of (header,value) pairs suitable for CSV output that describe
- * the configuration of a `scram::mc::queue::layer_manager` instance.  The
+ * the configuration of a `fuzzybits::mc::executor::layer_manager` instance.  The
  * function is modeled after `scram::log::sample_shaper::csv_pairs()` so that
  * it can be used seamlessly with the generic CSV helpers found in
  * `mc/logger/csv.h`.
@@ -26,8 +24,7 @@ namespace scram::log::layers {
  */
 
 template <typename bitpack_t_, typename prob_t_, typename size_t_>
-inline std::vector<std::pair<std::string, std::string>>
-csv_pairs(const mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_> &lm) {
+inline std::vector<std::pair<std::string, std::string>> csv_pairs(const fuzzybits::mc::executor::layer_manager<bitpack_t_, prob_t_, size_t_> &lm) {
     using scram::log::csv_string;
     using pair_t = std::pair<std::string, std::string>;
 
@@ -37,45 +34,36 @@ csv_pairs(const mc::queue::layer_manager<bitpack_t_, prob_t_, size_t_> &lm) {
     // ---------------------------------------------------------------------
     //  Basic structural information
     // ---------------------------------------------------------------------
-    out.emplace_back("num_nodes", csv_string(lm.pdag_nodes_.size()));
-    out.emplace_back("num_layers", csv_string(lm.pdag_nodes_by_layer_.size()));
-    out.emplace_back("num_kernels", csv_string(lm.queueables_.size()));
+    out.emplace_back("num_nodes", csv_string(lm.graph_.nodes()));
+    out.emplace_back("num_layers", csv_string(lm.graph_.layers()));
+    out.emplace_back("num_kernels", csv_string(lm.program_.queueables.size()));
 
-    const auto avg_kernels_per_layer =
-        static_cast<double>(lm.queueables_.size()) / static_cast<double>(lm.pdag_nodes_by_layer_.size());
+    const auto avg_kernels_per_layer = static_cast<double>(lm.program_.queueables.size()) / static_cast<double>(lm.graph_.layers());
     out.emplace_back("avg_kernels_per_layer", csv_string(avg_kernels_per_layer));
 
     // Device-side resource blocks.
-    out.emplace_back("device_basic_event_blocks", csv_string(lm.device_basic_event_blocks_.size()));
-    out.emplace_back("device_gate_blocks", csv_string(lm.device_gate_blocks_.size()));
-    out.emplace_back("device_atleast_gate_blocks", csv_string(lm.device_atleast_gate_blocks_.size()));
-    out.emplace_back("device_tally_blocks", csv_string(lm.device_tally_blocks_.size()));
+    out.emplace_back("device_basic_event_blocks", csv_string(lm.program_.blocks.sampled_events.size()));
+    // Basic events with a constant law: written once when their slots were allocated, read by no kernel.
+    out.emplace_back("device_constant_event_blocks", csv_string(lm.program_.blocks.constant_events.size()));
+    out.emplace_back("device_gate_blocks", csv_string(lm.program_.blocks.gates.size()));
+    out.emplace_back("device_atleast_gate_blocks", csv_string(lm.program_.blocks.cardinality_gates.size()));
+    out.emplace_back("device_tally_blocks", csv_string(lm.program_.blocks.tallies.size()));
 
-    const auto all_blocks = lm.device_basic_event_blocks_.size() + lm.device_gate_blocks_.size() +
-                            lm.device_atleast_gate_blocks_.size() + lm.device_tally_blocks_.size();
+    const auto all_blocks = lm.program_.blocks.size();
     out.emplace_back("device_total_blocks", csv_string(all_blocks));
 
-    const auto avg_blocks_per_kernel = static_cast<double>(all_blocks) / static_cast<double>(lm.queueables_.size());
-    out.emplace_back("avg_blocks_per_kernel", csv_string(avg_kernels_per_layer));
+    const auto kernel_blocks = all_blocks - lm.program_.blocks.constant_events.size();
+    const auto avg_blocks_per_kernel = static_cast<double>(kernel_blocks) / static_cast<double>(lm.program_.queueables.size());
+    out.emplace_back("avg_blocks_per_kernel", csv_string(avg_blocks_per_kernel));
 
     // Tally-related bookkeeping.
-    out.emplace_back("tally_events_tracked", csv_string(lm.allocated_tally_events_by_index_.size()));
+    out.emplace_back("tally_events_tracked", csv_string(lm.program_.tallies.size()));
 
     // ---------------------------------------------------------------------
     //  Detailed node composition – count variables vs. gates.
     // ---------------------------------------------------------------------
-    std::size_t num_variables = 0;
-    std::size_t num_gates = 0;
-
-    for (const auto &node_ptr : lm.pdag_nodes_) {
-        if (std::dynamic_pointer_cast<scram::core::Variable>(node_ptr)) {
-            ++num_variables;
-        } else if (std::dynamic_pointer_cast<scram::core::Gate>(node_ptr)) {
-            ++num_gates;
-        }
-    }
-    out.emplace_back("num_variables", csv_string(num_variables));
-    out.emplace_back("num_gates", csv_string(num_gates));
+    out.emplace_back("num_variables", csv_string(lm.graph_.variables()));
+    out.emplace_back("num_gates", csv_string(lm.graph_.gates()));
 
     // ---------------------------------------------------------------------
     //  Flatten the associated sample-shaper statistics (prefixed with "shaper_").

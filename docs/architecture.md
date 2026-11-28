@@ -83,29 +83,55 @@ static bitpack_t generate_samples(const sampler_args &args) {
 - **Sample Size**: Bit-packs per batch (configurable: 16, 32, 64 typical)
 - **Dynamic Sizing**: Runtime optimization based on device memory and compute capabilities
 
-### Optimized ATLEAST Gate Implementation
+### Node outputs and random streams
 
-mcSCRAM implements a **direct bit-counting algorithm** for ATLEAST gates (k-out-of-n logic) that significantly outperforms traditional AND/OR expansion methods.
-For example, a 3-out-of-5 ATLEAST gate, if expanded, requires 10 intermediate AND/OR gates. 
-mcSCRAM's implementation uses a single kernel with 5 input reads and parallel bit accumulation.
+Every node's bitpacks for one pass live in one device allocation, the output arena (`src/mc/event/node.h`): slot s
+holds bitpacks [s·B, (s + 1)·B), with B the bitpacks per node per pass. The kernels' records hold no pointers: a gate
+names its inputs by arena slot, through its block's input table (`src/mc/event/gate.h`), and a tally names the slot
+of the node it counts (`src/mc/event/tally.h`).
 
-```cpp
-// Per-bit accumulation instead of combinatorial expansion
-sycl::marray<bitpack_t, NUM_BITS> accumulated_counts(0);
-for (auto i = 0; i < num_inputs; ++i) {
-    const bitpack_t val = inputs[i][index];
-    #pragma unroll
-    for (auto bit_idx = 0; bit_idx < NUM_BITS; ++bit_idx) {
-        accumulated_counts[bit_idx] += ((val >> bit_idx) & 1);
-    }
-}
-```
-- **No Combinatorial Explosion**: Traditional ATLEAST implementations expand k-out-of-n into complex trees of AND/OR gates (C(n,k) combinations)
-- **Parallel Bit Processing**: All 64 bits processed simultaneously vs. sequential popcount operations  
-- **Memory Efficiency**: Single pass through inputs vs. multiple intermediate gate evaluations
-- **Optimal GPU Utilization**: Vectorized accumulation operations match GPU SIMD architecture
+A basic event's bitpack b (its index among all of the node's bitpacks in the run, pass × B plus its index in the
+pass) is drawn from Philox4x32-10 with the run's seed as the key and the counter (node, device, b mod 2^32,
+(b >> 32) << 6 | generation) (`src/mc/prng/stream.h`). Its bits therefore depend on the seed, the device's index in
+the run, the node's PDAG index and b only, not on the node's block, its arena slot, the pass size or the sampler
+form; `mc.bitpack_identity` pins them with a checksum and checks the independence from block, slot and pass size.
 
-**Example**: 
+A basic event whose law is a constant (p = 0, any p below 2^-64, or p = 1) has the same bitpacks in every pass. They
+are written once, when the event's arena slot is allocated, and no kernel is built for it: the sampling kernel's
+records (`event::sampled_event`, `src/mc/event/basic_event.h`) cannot hold a constant law. `fzb compile` folds most
+such events into constants already (`fold_zero_probability`, `fold_unit_probability` in
+[ir-pc-passes.md](ir-pc-passes.md)); `mc.layer_manager_stream` checks the ones that reach the engine.
+
+### Gate kernels
+
+A work-item evaluates one bitpack of one gate (CPUs: 8 consecutive bitpacks as one vector, since their JIT
+does not vectorize across work-items), in a one-dimensional range of gates × work-groups per gate whose gate
+comes from the work-group index (`src/mc/kernel/gate_lanes.h`). On NVIDIA GPUs the work-groups run every gate
+at a block of bitpacks before the next block, so gates that share inputs read them from the cache; elsewhere
+they run gate by gate, except on CPUs for kernels whose gates differ in input count: OpenMP gives each thread a
+contiguous run of work-groups, and block by block every thread gets each gate as often. A layer's gates take
+one kernel per op code (the native IR's, `ir::pc::op_code`; `src/mc/kernel/op_code.h` says which kernel evaluates
+which), and counting gates one per form and slot count. The layer manager reads SCRAM's PDAG into these op codes
+(`src/mc/executor/builder/compat.h`); no other file of `src/mc/executor` names SCRAM's connectives.
+
+- AND, OR, XOR, NAND, NOR, XNOR, NOT, NULL (`src/mc/kernel/gate.h`): one kernel per op code and layer, with the
+  input count read at run time (GPUs: 8 loads at a time; CPUs: the positive inputs, then the negated ones).
+  NOT and NULL have one input slot. A constant gate takes no kernel: it is `ones` or `zeros`, whose bitpacks are
+  written once, as a basic event's of constant law. The kernel also takes a
+  compile-time slot count, where slot j holds an input iff j is below the gate's input count, but a kernel per
+  slot count was no faster at the runtime's pass sizes and multiplied kernel launches, which dominate on models
+  with many layers and small passes.
+- Counting gates (`src/mc/kernel/cardinality.h`; op codes `cardinality`, `atleast`, `atmost`, `exactly`): true
+  where the number of true inputs lies in [low, high], so at least k of n is [k, n], at most k is [0, k] and
+  exactly k is [k, k]. The count is bit-sliced: bit j of a bitpack is trial j, and
+  the per-trial counts are bit planes, so whole-word logic counts all the trials of a bitpack at once. Up to
+  16 inputs the same slot counts; 17 to 255 inputs, carry-save adders over blocks of 8 inputs (Harley-Seal), at
+  most 8 planes, with the input count read at run time; 256 inputs or more, the same with up to 32 planes, in a
+  kernel of its own so that its registers do not lower the occupancy of the others. The planes are compared
+  with low and high through one carry chain each. The PDAG has at-least gates only: `fzb run` reads at most k
+  of n as at least n - k of the complemented inputs, and exactly k as the AND of the two, so neither needs a
+  NOT gate.
+
 </details>
 
 ## Build and Installation

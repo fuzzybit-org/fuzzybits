@@ -79,31 +79,26 @@ class pipeline final {
     // not preserve some target's query kind.
     [[nodiscard]] auto check(std::span<pass_id const> schedule) -> bool {
         if (!current_.valid()) {
-            result_.diagnostics.push(
-                api::make_error("pc.pipeline.invalid-input", "pipeline requires a sealed circuit"));
+            result_.diagnostics.push(api::make_error("pc.pipeline.invalid-input", "pipeline requires a sealed circuit"));
             return false;
         }
         const auto targets = current_.targets().size();
         if (!options_.kinds.empty() && options_.kinds.size() != targets) {
-            result_.diagnostics.push(api::make_error("pc.pipeline.query-kinds-mismatch",
-                                                     "query kinds has " + std::to_string(options_.kinds.size()) +
-                                                         " entries for " + std::to_string(targets) + " targets"));
+            result_.diagnostics.push(api::make_error("pc.pipeline.query-kinds-mismatch", "query kinds has " + std::to_string(options_.kinds.size()) +
+                                                                                             " entries for " + std::to_string(targets) + " targets"));
             return false;
         }
         if (!options_.atom_events.empty() && options_.atom_events.size() != targets) {
-            result_.diagnostics.push(api::make_error("pc.pipeline.atom-events-mismatch",
-                                                     "atom events has " + std::to_string(options_.atom_events.size()) +
-                                                         " entries for " + std::to_string(targets) + " targets"));
+            result_.diagnostics.push(api::make_error("pc.pipeline.atom-events-mismatch", "atom events has " + std::to_string(options_.atom_events.size()) +
+                                                                                             " entries for " + std::to_string(targets) + " targets"));
             return false;
         }
         for (std::uint32_t target = 0; target < options_.atom_events.size(); ++target) {
-            if (options_.atom_events[target].empty() || options_.kinds.empty() ||
-                options_.kinds[target] != query_kind::monotone_hull) {
+            if (options_.atom_events[target].empty() || options_.kinds.empty() || options_.kinds[target] != query_kind::monotone_hull) {
                 continue;
             }
             pass_options_.atoms.targets.push_back(target_id(target));
-            pass_options_.atoms.events.insert(pass_options_.atoms.events.end(), options_.atom_events[target].begin(),
-                                              options_.atom_events[target].end());
+            pass_options_.atoms.events.insert(pass_options_.atoms.events.end(), options_.atom_events[target].begin(), options_.atom_events[target].end());
         }
         deduplicate(pass_options_.atoms.events);
         bool ok = true;
@@ -120,11 +115,9 @@ class pipeline final {
             if (refused.size() > targets_listed) {
                 listed += ", ...";
             }
-            result_.diagnostics.push(api::make_error(
-                "pc.pipeline.incompatible-pass",
-                std::string(pass_name(pass)) + " is distribution-preserving for probability queries only; " +
-                    std::to_string(refused.size()) + " target(s) are monotone-hull queries (target ids " + listed +
-                    ")"));
+            result_.diagnostics.push(api::make_error("pc.pipeline.incompatible-pass",
+                                                     std::string(pass_name(pass)) + " is distribution-preserving for probability queries only; " +
+                                                         std::to_string(refused.size()) + " target(s) are monotone-hull queries (target ids " + listed + ")"));
         }
         return ok;
     }
@@ -149,8 +142,7 @@ class pipeline final {
         std::size_t kept = 0;
         for (const auto event : events) {
             if (auto const &image = applied.report.node_map[event.raw()];
-                image.kind == image_kind::reference &&
-                applied.output.op_codes()[image.edge.source.raw()] == op_code::basic_event) {
+                image.kind == image_kind::reference && applied.output.op_codes()[image.edge.source.raw()] == op_code::basic_event) {
                 events[kept++] = image.edge.source;
             }
         }
@@ -171,13 +163,9 @@ class pipeline final {
         return true;
     }
 
-    void note(std::string code, std::string message) {
-        result_.diagnostics.push(api::make_note(std::move(code), std::move(message)));
-    }
+    void note(std::string code, std::string message) { result_.diagnostics.push(api::make_note(std::move(code), std::move(message))); }
 
-    [[nodiscard]] auto size() const noexcept -> std::pair<std::uint32_t, std::uint32_t> {
-        return {current_.node_count(), current_.edge_count()};
-    }
+    [[nodiscard]] auto size() const noexcept -> std::pair<std::uint32_t, std::uint32_t> { return {current_.node_count(), current_.edge_count()}; }
 
     [[nodiscard]] auto finish(const bool ok) && -> pipeline_result {
         if (!ok) {
@@ -205,8 +193,7 @@ class pipeline final {
 
 } // namespace
 
-auto run_pipeline(circuit const &input, const std::span<pass_id const> schedule, pipeline_options const &options)
-    -> pipeline_result {
+auto run_pipeline(circuit const &input, const std::span<pass_id const> schedule, pipeline_options const &options) -> pipeline_result {
     pipeline state(input, options);
     if (!state.check(schedule)) {
         return std::move(state).finish(false);

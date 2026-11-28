@@ -235,8 +235,7 @@ template <class T> class NonTerminal : public Vertex<T>, public IntrusivePtrCast
     /// @param[in] high  A vertex for the (1/True/then/left) branch.
     /// @param[in] low  A vertex for the (0/False/else/right) branch.
     NonTerminal(int index, int order, int id, const VertexPtr &high, const VertexPtr &low)
-        : Vertex<T>(id), high_(high), low_(low), order_(order), index_(index), module_(false), coherent_(false),
-          mark_(false) {}
+        : Vertex<T>(id), high_(high), low_(low), order_(order), index_(index), module_(false), coherent_(false), mark_(false) {}
 
     /// @returns The index of this vertex.
     int index() const { return index_; }
@@ -376,8 +375,7 @@ template <class T> class UniqueTable {
     /// Constructor for small graphs.
     ///
     /// @param[in] init_capacity  The starting capacity for the table.
-    explicit UniqueTable(int init_capacity = 1000)
-        : capacity_(core::GetPrimeNumber(init_capacity)), size_(0), max_load_factor_(0.75), table_(capacity_) {}
+    explicit UniqueTable(int init_capacity = 1000) : capacity_(core::GetPrimeNumber(init_capacity)), size_(0), max_load_factor_(0.75), table_(capacity_) {}
 
     /// @returns The current number of entries.
     int size() const { return size_; }
@@ -542,8 +540,7 @@ template <class V> class CacheTable {
     /// Constructor with average expectations for computations.
     ///
     /// @param[in] init_capacity
-    explicit CacheTable(int init_capacity = 1000)
-        : size_(0), max_load_factor_(0.75), table_(core::GetPrimeNumber(init_capacity)) {}
+    explicit CacheTable(int init_capacity = 1000) : size_(0), max_load_factor_(0.75), table_(core::GetPrimeNumber(init_capacity)) {}
 
     /// @returns The number of entires in the table.
     int size() const { return size_; }
@@ -681,9 +678,7 @@ class Bdd : private boost::noncopyable {
         /// @param[in] complement  Interpretation of the BDD vertex.
         ///
         /// @returns The consensus BDD function.
-        Function operator()(Bdd *bdd, const ItePtr &ite, bool complement) {
-            return bdd->CalculateConsensus(ite, complement);
-        }
+        Function operator()(Bdd *bdd, const ItePtr &ite, bool complement) { return bdd->CalculateConsensus(ite, complement); }
     };
 
     /// Constructor with the analysis target.
@@ -808,8 +803,7 @@ class Bdd : private boost::noncopyable {
     ///      Equal ID functions are handled by the reduction.
     /// @pre Even though the arguments are not ItePtr type,
     ///      they are if-then-else vertices.
-    std::pair<int, int> GetMinMaxId(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                                    bool complement_two);
+    std::pair<int, int> GetMinMaxId(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two);
 
     /// Applies Boolean operation to BDD graphs.
     /// This is the main function for the operation.
@@ -825,8 +819,7 @@ class Bdd : private boost::noncopyable {
     /// @returns The BDD function as a result of operation.
     ///
     /// @note The order of arguments does not matter for two variable connectives.
-    template <Connective Type>
-    Function Apply(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two);
+    template <Connective Type> Function Apply(const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two);
 
     /// Applies Boolean operation to BDD ITE graphs.
     ///
@@ -855,8 +848,7 @@ class Bdd : private boost::noncopyable {
     /// @pre The connective is either AND or OR.
     ///
     /// @note The order of arguments does not matter for two variable connectives.
-    Function Apply(Connective type, const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one,
-                   bool complement_two);
+    Function Apply(Connective type, const VertexPtr &arg_one, const VertexPtr &arg_two, bool complement_one, bool complement_two);
 
     /// Calculates consensus of high and low of an if-then-else BDD vertex.
     ///

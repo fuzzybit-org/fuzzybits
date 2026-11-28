@@ -34,20 +34,16 @@ auto writer_descriptor() -> io::writer_descriptor {
     };
 }
 
-auto write(ir::handle const &model, std::ostream &output) -> io::write_result {
-    return write(model, output, io::write_request{.format = formats::aiger()});
-}
+auto write(ir::handle const &model, std::ostream &output) -> io::write_result { return write(model, output, io::write_request{.format = formats::aiger()}); }
 
 auto write(ir::handle const &model, std::ostream &output, io::write_request const &request) -> io::write_result {
     if (!request.format.empty() && request.format != formats::aiger()) {
-        return io::write_result::fail(
-            api::make_error("io.aiger.format-mismatch", "AIGER writer received a non-AIGER format request"));
+        return io::write_result::fail(api::make_error("io.aiger.format-mismatch", "AIGER writer received a non-AIGER format request"));
     }
 
     auto const *pc = ir::pc::circuit_from(model);
     if (pc == nullptr) {
-        return io::write_result::fail(
-            api::make_error("io.aiger.unsupported-ir", "AIGER writer requires a PC IR handle"));
+        return io::write_result::fail(api::make_error("io.aiger.unsupported-ir", "AIGER writer requires a PC IR handle"));
     }
     return detail::write_pc(*pc, output, request);
 }

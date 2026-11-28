@@ -78,15 +78,15 @@ The execution shape is determined by four interacting layers.
 Source:
 
 - `layer_manager::layered_toposort()`
-- `layer_manager::gather_layer_nodes()`
-- `layer_manager::map_nodes_by_layer()`
+- `layer_manager::read_layer()` and `for_each_by_kernel()` (the PDAG read into `executor/builder/layer.h`)
+- `builder::program_builder` (`executor/builder/builder.h`)
 
 Effects:
 
 - PDAG nodes are grouped into topological layers.
 - Within each layer:
   - variables become one basic-event kernel partition, if present;
-  - gates are grouped by connective, one kernel partition per connective per layer.
+  - gates are grouped by op code (`builder::name_of`), one kernel partition per op code per layer.
 - Tally kernels are added after graph kernels, based on the tally node map.
 
 Current payload coverage:
@@ -188,11 +188,12 @@ Current payload coverage:
 
 Source:
 
-- `kernel_builder.h`
-- `kernel::basic_event::get_range()`
-- `kernel::op<...>::get_range()`
+- `builder::state::add()` and `descriptor::launch::of()` (`executor/builder/state.h`, `executor/descriptor/partition.h`)
+- `kernel::sampler::strided<...>::get_range()`, `kernel::sampler::chunked<...>::get_range()` (`kernel::sampler::geometry`,
+  `kernel/sampler/geometry.h`)
+- `kernel::op<...>::get_range()`, `kernel::cardinality<...>::get_range()` (`gate_geometry`, `gate_lanes.h`)
 - `kernel::tally::get_range()`
-- `working_set::compute_optimal_local_range_3d()`
+- `working_set::compute_optimal_local_range_3d()` (tally)
 
 For each kernel partition, C++ computes:
 
@@ -200,13 +201,14 @@ For each kernel partition, C++ computes:
 - global range `(x, y, z)`, rounded up to local multiples
 - logical work dimensions:
   - basic event: `(num_events, batch_size, bitpacks_per_batch)`
-  - gate: `(num_gates, batch_size, bitpacks_per_batch)`
+  - gate: `(num_gates, 1, work-items per gate)`, one bitpack per work-item (8 on CPUs); a layer has one gate
+    partition per op code, and counting gates one per form and slot count
   - tally: `(num_tallies, batch_size, bitpacks_per_batch)`
 - work-group count
 - over-provisioned work-items
 - operation kind:
   - basic-event sampling
-  - gate operation by connective
+  - gate operation by op code
   - tally/popcount
 
 Current payload coverage:
@@ -364,7 +366,7 @@ Make it structured at the source.
 
 ### Step 3: Capture launch descriptors when kernels are built
 
-The launch ranges are known in `kernel_builder.h` exactly when each queueable is created.
+The launch ranges are known exactly when each queueable is created (`builder::state::add`, `executor/builder/state.h`).
 Store them immediately instead of trying to recover them later from `queueable_base`.
 
 Minimal native structs:

@@ -7,7 +7,7 @@
 #include <iomanip>
 #include <ostream>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 struct convergence_result {
     std::double_t epsilon = 0.0;        // current half-width ε
@@ -72,10 +72,6 @@ struct tally {
         return to_compute;
     }
 
-    template <typename device_tally_type> tally &update(const device_tally_type &device_tally) {
-        return update(device_tally->num_one_bits, device_tally->total_bits);
-    }
-
     tally &update(const std::size_t ones, const std::size_t all) {
         // clear all
         if (all == 0) {
@@ -112,4 +108,4 @@ inline std::ostream &operator<<(std::ostream &os, const tally &t) {
     return os;
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

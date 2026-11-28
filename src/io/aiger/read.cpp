@@ -57,8 +57,7 @@ auto read(std::istream &input, api::option_set const &options) -> aiger_read_res
 
 auto read(io::read_request const &request) -> io::read_result {
     if (!request.format.empty() && request.format != formats::aiger()) {
-        return io::read_result::fail(
-            api::make_error("io.aiger.format-mismatch", "AIGER reader received a non-AIGER format request"));
+        return io::read_result::fail(api::make_error("io.aiger.format-mismatch", "AIGER reader received a non-AIGER format request"));
     }
 
     std::ifstream input(request.path, std::ios::binary);

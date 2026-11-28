@@ -39,9 +39,8 @@ struct Layout final {
 };
 
 [[nodiscard]] auto isPrintableSymbol(std::string const &symbol) -> bool {
-    return !symbol.empty() && std::ranges::all_of(symbol, [](const unsigned char character) {
-        return character != '\n' && character != '\r' && std::isprint(character) != 0;
-    });
+    return !symbol.empty() &&
+           std::ranges::all_of(symbol, [](const unsigned char character) { return character != '\n' && character != '\r' && std::isprint(character) != 0; });
 }
 
 [[nodiscard]] auto dependentCounts(ir::pc::circuit const &model) -> std::vector<std::uint32_t> {
@@ -54,12 +53,10 @@ struct Layout final {
     return counts;
 }
 
-void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const node,
-                               api::diagnostic_list &diagnostics) {
+void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const node, api::diagnostic_list &diagnostics) {
     const auto source = model.probability_source_refs()[node];
     if (!source.valid() || source.raw() >= model.probability_sources().size()) {
-        diagnostics.push(api::make_error("io.aiger.invalid-input",
-                                         "AIGER writer requires every input to have a probability source"));
+        diagnostics.push(api::make_error("io.aiger.invalid-input", "AIGER writer requires every input to have a probability source"));
         return;
     }
     auto const &probability = model.probability_sources()[source.raw()];
@@ -67,14 +64,12 @@ void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const
         // AIGER has Boolean inputs and an optional symbol table; it has no
         // representation for literal probabilities or unsupported
         // probability payloads. Emitting such inputs would lose PC data.
-        diagnostics.push(api::make_error(
-            "io.aiger.lossy-probability",
-            "AIGER writer can serialize only parameter-named inputs without losing probability payloads"));
+        diagnostics.push(
+            api::make_error("io.aiger.lossy-probability", "AIGER writer can serialize only parameter-named inputs without losing probability payloads"));
         return;
     }
     if (!isPrintableSymbol(probability.parameter_name)) {
-        diagnostics.push(
-            api::make_error("io.aiger.invalid-symbol", "AIGER input symbol must be non-empty printable ASCII"));
+        diagnostics.push(api::make_error("io.aiger.invalid-symbol", "AIGER input symbol must be non-empty printable ASCII"));
     }
 }
 
@@ -89,8 +84,7 @@ void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const
         // AIGs. Even if a circuit could be rewritten using De Morgan or gate
         // decomposition, that transform belongs in compiler/IR code with a
         // transform report.
-        diagnostics.push(api::make_error("io.aiger.non-aig-form",
-                                         "AIGER writer requires a PC circuit that already satisfies ir.aig"));
+        diagnostics.push(api::make_error("io.aiger.non-aig-form", "AIGER writer requires a PC circuit that already satisfies ir.aig"));
         return diagnostics;
     }
 
@@ -110,8 +104,7 @@ void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const
             break;
         case ir::pc::op_code::and_gate:
             if (model.operand_counts()[node] != 2) {
-                diagnostics.push(api::make_error("io.aiger.unsupported-arity",
-                                                 "AIGER writer requires every AND gate to have fan-in 2"));
+                diagnostics.push(api::make_error("io.aiger.unsupported-arity", "AIGER writer requires every AND gate to have fan-in 2"));
             }
             break;
         case ir::pc::op_code::not_gate:
@@ -121,9 +114,8 @@ void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const
                 // Only target-only NOT nodes are accepted because AIGER
                 // outputs are polarized literals, so this is a direct
                 // serialization of already-present PC shape.
-                diagnostics.push(api::make_error("io.aiger.unsupported-not",
-                                                 "AIGER writer can serialize NOT nodes only as target-edge inversions "
-                                                 "already present in an AIG-shaped PC"));
+                diagnostics.push(api::make_error("io.aiger.unsupported-not", "AIGER writer can serialize NOT nodes only as target-edge inversions "
+                                                                             "already present in an AIG-shaped PC"));
             }
             break;
         case ir::pc::op_code::house_event:
@@ -133,17 +125,15 @@ void validateProbabilitySource(ir::pc::circuit const &model, std::uint32_t const
         case ir::pc::op_code::nor_gate:
         case ir::pc::op_code::xnor_gate:
         case ir::pc::op_code::cardinality:
-            diagnostics.push(
-                api::make_error("io.aiger.unsupported-opcode",
-                                "AIGER writer cannot serialize this PC opcode without compiling the circuit"));
+            diagnostics.push(api::make_error("io.aiger.unsupported-opcode", "AIGER writer cannot serialize this PC opcode without compiling the circuit"));
             break;
         }
     }
     return diagnostics;
 }
 
-void visitAnd(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std::vector<VisitState> &states,
-              Layout &layout, api::diagnostic_list &diagnostics) {
+void visitAnd(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std::vector<VisitState> &states, Layout &layout,
+              api::diagnostic_list &diagnostics) {
     const auto raw = node.raw();
     if (states[raw] == VisitState::done) {
         return;
@@ -195,10 +185,8 @@ void visitAnd(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std
     if (diagnostics.has_errors()) {
         return api::result<Layout>::fail(std::move(diagnostics));
     }
-    if (static_cast<std::uint64_t>(layout.inputs.size()) + layout.ands.size() >
-        ((std::numeric_limits<std::uint32_t>::max() - 1U) >> 1U)) {
-        return api::result<Layout>::fail(
-            api::make_error("io.aiger.literal-overflow", "AIGER writer output would exceed the 32-bit literal range"));
+    if (static_cast<std::uint64_t>(layout.inputs.size()) + layout.ands.size() > ((std::numeric_limits<std::uint32_t>::max() - 1U) >> 1U)) {
+        return api::result<Layout>::fail(api::make_error("io.aiger.literal-overflow", "AIGER writer output would exceed the 32-bit literal range"));
     }
 
     const auto inputCount = static_cast<std::uint32_t>(layout.inputs.size());
@@ -208,8 +196,7 @@ void visitAnd(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std
     return api::result<Layout>::ok(std::move(layout));
 }
 
-[[nodiscard]] auto literalForNode(ir::pc::circuit const &model, Layout const &layout, const ir::pc::bool_node_id node)
-    -> std::uint32_t {
+[[nodiscard]] auto literalForNode(ir::pc::circuit const &model, Layout const &layout, const ir::pc::bool_node_id node) -> std::uint32_t {
     switch (model.op_codes()[node.raw()]) {
     case ir::pc::op_code::constant:
         return model.constant_values()[node.raw()] != 0 ? 1U : 0U;
@@ -230,13 +217,11 @@ void visitAnd(ir::pc::circuit const &model, const ir::pc::bool_node_id node, std
     return 0;
 }
 
-[[nodiscard]] auto literalForEdge(ir::pc::circuit const &model, Layout const &layout, ir::pc::edge_ref const edge)
-    -> std::uint32_t {
+[[nodiscard]] auto literalForEdge(ir::pc::circuit const &model, Layout const &layout, ir::pc::edge_ref const edge) -> std::uint32_t {
     return literalForNode(model, layout, edge.source) ^ (edge.complement ? 1U : 0U);
 }
 
-[[nodiscard]] auto literalForTarget(ir::pc::circuit const &model, Layout const &layout, const ir::pc::bool_node_id node)
-    -> std::uint32_t {
+[[nodiscard]] auto literalForTarget(ir::pc::circuit const &model, Layout const &layout, const ir::pc::bool_node_id node) -> std::uint32_t {
     if (model.op_codes()[node.raw()] != ir::pc::op_code::not_gate) {
         return literalForNode(model, layout, node);
     }
@@ -268,11 +253,9 @@ void writeInputSymbols(ir::pc::circuit const &model, Layout const &layout, std::
 
 } // namespace
 
-auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request)
-    -> io::write_result {
+auto write_pc(ir::pc::circuit const &model, std::ostream &output, io::write_request const &request) -> io::write_result {
     if (!request.format.empty() && request.format != formats::aiger()) {
-        return io::write_result::fail(
-            api::make_error("io.aiger.format-mismatch", "AIGER writer received a non-AIGER format request"));
+        return io::write_result::fail(api::make_error("io.aiger.format-mismatch", "AIGER writer received a non-AIGER format request"));
     }
 
     auto layoutResult = makeLayout(model);

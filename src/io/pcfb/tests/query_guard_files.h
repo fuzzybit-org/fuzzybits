@@ -47,8 +47,7 @@ inline constexpr char hull_name[] = "TOP_HULL";
 [[nodiscard]] inline auto mixed() -> std::vector<std::byte> { return build(true, true); }
 
 // `source` after `edit` ran on its object-API form; the builder itself only writes valid combinations.
-[[nodiscard]] inline auto repacked(std::vector<std::byte> const &source,
-                                   std::function<void(pcfb::CircuitT &)> const &edit) -> std::vector<std::byte> {
+[[nodiscard]] inline auto repacked(std::vector<std::byte> const &source, std::function<void(pcfb::CircuitT &)> const &edit) -> std::vector<std::byte> {
     const std::unique_ptr<pcfb::CircuitT> model(pcfb::GetCircuit(source.data())->UnPack());
     edit(*model);
     flatbuffers::FlatBufferBuilder fbb;

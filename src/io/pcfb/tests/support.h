@@ -46,8 +46,7 @@ namespace pc = fuzzybits::ir::pc;
     return std::ranges::any_of(diagnostics.items(), [&](auto const &diagnostic) { return diagnostic.code == code; });
 }
 
-[[nodiscard]] inline auto requireWrite(pc::circuit const &model,
-                                       fuzzybits::io::backend::fuzzybits::pcfb::write_options const &options = {})
+[[nodiscard]] inline auto requireWrite(pc::circuit const &model, fuzzybits::io::backend::fuzzybits::pcfb::write_options const &options = {})
     -> fuzzybits::io::backend::fuzzybits::pcfb::write_output {
     auto written = fuzzybits::io::backend::fuzzybits::pcfb::write(model.to_handle(), options);
     INFO(diagnosticsText(written.diagnostics()));
@@ -163,8 +162,7 @@ namespace pc = fuzzybits::ir::pc;
                 continue;
             }
             const auto total = sum[target] + mass;
-            compensation[target] +=
-                std::abs(sum[target]) >= mass ? (sum[target] - total) + mass : (mass - total) + sum[target];
+            compensation[target] += std::abs(sum[target]) >= mass ? (sum[target] - total) + mass : (mass - total) + sum[target];
             sum[target] = total;
         }
     }
@@ -182,8 +180,7 @@ enum class CardinalityForm : std::uint8_t {
     range,
 };
 
-[[nodiscard]] inline auto cardinalityForm(const std::uint32_t low, const std::uint32_t high, const std::uint32_t fanIn)
-    -> CardinalityForm {
+[[nodiscard]] inline auto cardinalityForm(const std::uint32_t low, const std::uint32_t high, const std::uint32_t fanIn) -> CardinalityForm {
     if (low == 0 && high == fanIn) {
         return CardinalityForm::ones;
     }
@@ -219,8 +216,7 @@ struct RandomSize final {
 // cardinality form, constants, house events, shared nodes and shared
 // probability sources. Node ids are a random permutation of a topological
 // order, so most circuits are not topologically numbered.
-[[nodiscard]] inline auto randomCircuit(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {})
-    -> pc::finalize_result {
+[[nodiscard]] inline auto randomCircuit(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {}) -> pc::finalize_result {
     struct Logical final {
         pc::op_code code = pc::op_code::basic_event;
         std::vector<std::pair<std::uint32_t, bool>> operands;
@@ -266,8 +262,7 @@ struct RandomSize final {
         nodes.push_back(node);
     }
     for (std::uint32_t index = 0; index < constantCount + houseCount; ++index) {
-        nodes.push_back(Logical{.code = index < constantCount ? pc::op_code::constant : pc::op_code::house_event,
-                                .value = chance(0.5)});
+        nodes.push_back(Logical{.code = index < constantCount ? pc::op_code::constant : pc::op_code::house_event, .value = chance(0.5)});
     }
     pcfb_test_random::shuffle(std::span{nodes}, rng);
     const auto leafCount = static_cast<std::uint32_t>(nodes.size());
@@ -293,8 +288,7 @@ struct RandomSize final {
         }
         if (node.code == pc::op_code::cardinality) {
             const auto n = static_cast<std::uint32_t>(node.operands.size());
-            std::vector<CardinalityForm> feasible{CardinalityForm::ones, CardinalityForm::at_least,
-                                                  CardinalityForm::at_most};
+            std::vector<CardinalityForm> feasible{CardinalityForm::ones, CardinalityForm::at_least, CardinalityForm::at_most};
             if (n >= 2) {
                 feasible.push_back(CardinalityForm::exactly);
             }
@@ -335,8 +329,7 @@ struct RandomSize final {
             coverage.complemented_edges += complement ? 1 : 0;
         }
     }
-    coverage.shared_nodes +=
-        static_cast<std::size_t>(std::ranges::count_if(users, [](const auto count) { return count >= 2; }));
+    coverage.shared_nodes += static_cast<std::size_t>(std::ranges::count_if(users, [](const auto count) { return count >= 2; }));
 
     std::vector<std::uint32_t> storage(nodeCount);
     std::iota(storage.begin(), storage.end(), 0U);
@@ -388,14 +381,12 @@ struct RandomSize final {
         }
     }
 
-    constexpr std::array roles{pc::observable_role::primary, pc::observable_role::primary, pc::observable_role::watch,
-                               pc::observable_role::projection_anchor};
+    constexpr std::array roles{pc::observable_role::primary, pc::observable_role::primary, pc::observable_role::watch, pc::observable_role::projection_anchor};
     const auto targetCount = uniform(1, 4);
     coverage.multi_target_circuits += targetCount > 1 ? 1 : 0;
     for (std::uint32_t target = 0; target < targetCount; ++target) {
         const auto logical = chance(0.7) ? uniform(leafCount, nodeCount - 1) : uniform(0, nodeCount - 1);
-        (void)builder.add_target(pc::bool_node_id(storage[logical]),
-                                 roles[uniform(0, static_cast<std::uint32_t>(roles.size()) - 1)]);
+        (void)builder.add_target(pc::bool_node_id(storage[logical]), roles[uniform(0, static_cast<std::uint32_t>(roles.size()) - 1)]);
     }
     return std::move(builder).seal();
 }
@@ -435,8 +426,7 @@ struct RandomModel final {
     pcfb_io::write_options options;
 };
 
-[[nodiscard]] inline auto randomModel(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {})
-    -> RandomModel {
+[[nodiscard]] inline auto randomModel(std::mt19937_64 &rng, Coverage &coverage, const RandomSize size = {}) -> RandomModel {
     auto result = randomCircuit(rng, coverage, size);
     INFO(diagnosticsText(result.diagnostics));
     REQUIRE(result.ok());
@@ -449,8 +439,7 @@ struct RandomModel final {
     constexpr std::array nameStyles{"n", "node ", "Ünï/", "A-B.", "x_"};
     for (std::uint32_t node = 0; node < model.circuit.node_count(); ++node) {
         if (chance(0.5)) {
-            options.node_names[pc::bool_node_id(node)] =
-                std::string(nameStyles[uniform(0, nameStyles.size() - 1)]) + std::to_string(node);
+            options.node_names[pc::bool_node_id(node)] = std::string(nameStyles[uniform(0, nameStyles.size() - 1)]) + std::to_string(node);
         }
     }
     options.query = chance(0.2) ? pcfb_io::query_kind::monotone_hull_probability : pcfb_io::query_kind::probability;
@@ -514,8 +503,7 @@ struct RandomModel final {
         projectRoot() / "input" / "ftp" / "synthetic",
         projectRoot() / "src" / "io" / "ftp" / "tests" / "testdata",
     };
-    if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR");
-        privateDir != nullptr && privateDir[0] != '\0') {
+    if (const char *privateDir = std::getenv("FUZZYBITS_PRIVATE_FIXTURES_DIR"); privateDir != nullptr && privateDir[0] != '\0') {
         roots.emplace_back(privateDir);
     }
     std::vector<std::filesystem::path> files;
@@ -525,8 +513,7 @@ struct RandomModel final {
         for (auto iterator = std::filesystem::recursive_directory_iterator(root, skip, error);
              !error && iterator != std::filesystem::recursive_directory_iterator(); iterator.increment(error)) {
             auto extension = iterator->path().extension().string();
-            std::ranges::transform(extension, extension.begin(),
-                                   [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            std::ranges::transform(extension, extension.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
             std::error_code statusError;
             if (iterator->is_regular_file(statusError) && extension == ".ftp") {
                 files.push_back(iterator->path());

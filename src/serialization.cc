@@ -43,8 +43,7 @@ void Serialize(const Model &model, const std::string &file) {
     std::unique_ptr<std::FILE, decltype(&std::fclose)> fp(std::fopen(file.c_str(), "w"), &std::fclose);
     try {
         if (!fp) {
-            SCRAM_THROW(IOError("Cannot open the output file for serialization."))
-                << boost::errinfo_errno(errno) << boost::errinfo_file_open_mode("w");
+            SCRAM_THROW(IOError("Cannot open the output file for serialization.")) << boost::errinfo_errno(errno) << boost::errinfo_file_open_mode("w");
         }
         Serialize(model, fp.get());
     } catch (IOError &err) {

@@ -1,6 +1,8 @@
 #pragma once
 
-namespace scram::mc::event {
+#include <ostream>
+
+namespace fuzzybits::mc::event {
 /**
  * @struct sample_shape
  * @brief Configuration structure for sampling dimensions and batch processing
@@ -61,4 +63,4 @@ template <typename size_t_> inline std::ostream &operator<<(std::ostream &os, co
        << "num_bitpacks= " << ss.num_bitpacks();
     return os;
 }
-} // namespace scram::mc::event
+} // namespace fuzzybits::mc::event

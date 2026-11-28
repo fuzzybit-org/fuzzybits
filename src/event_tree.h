@@ -152,8 +152,7 @@ class Fork {
 /// Event Tree representation with MEF constructs.
 class EventTree : public Element,
                   public Usage,
-                  public Composite<Container<EventTree, Sequence, false>, Container<EventTree, FunctionalEvent>,
-                                   Container<EventTree, NamedBranch>> {
+                  public Composite<Container<EventTree, Sequence, false>, Container<EventTree, FunctionalEvent>, Container<EventTree, NamedBranch>> {
   public:
     /// Container and element type string for error messages.
     static constexpr const char *kTypeString = "event tree";

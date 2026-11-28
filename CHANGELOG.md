@@ -13,6 +13,12 @@
     releases within sampling error. There is no option to restore the old stream; earlier releases
     reproduce earlier results.
   - The unused SFC64, WyRand and xorshift128 headers in `src/mc/prng` are removed.
+- The random stream changes again: a basic event's trials are drawn at the Philox counter (node, device, run-wide
+  bitpack index), keyed by the run's seed, instead of at (node, position in its kernel block, bitpack in the pass,
+  pass). A trial's bits no longer depend on how the layers group basic events into kernels or on the pass size the
+  device's memory allows. Estimates for a given model and trial count differ from earlier releases within sampling
+  error; earlier releases reproduce earlier results. The seed is 372, the default of every entry point, until
+  `--seed` accepts other values (#65).
 - Common-cause failure groups are expanded by default in `fzb compile`, `fuzzybits.compile`, the
   native `compile_pcfb` / `run_probability` bindings and `fuzzybits-server`. Results change for
   models that define CCF groups and were compiled without `--ccf`.
@@ -111,6 +117,34 @@
 
 ### Changes
 
+- `fzb run`, `fuzzybits.run` and the server evaluate at-least, at-most and exactly gates correctly when a
+  trial's count of true inputs reaches 256 (#279). The kernel counted in 8 bits, so such gates gave wrong
+  results with no diagnostic (100 of 300 inputs at p = 0.9: 0.004 instead of 1). Gates under 256 inputs give
+  the same results as before for a given seed.
+- Runs on HIP no longer fail with `hipMallocManaged() failed` when a layer's AND or OR gates are all constants
+  (#277).
+- The gate kernels evaluate one bitpack per work-item (CPUs: 8 bitpacks as one vector), one kernel per
+  connective and layer (#274, #275). k-of-n gates count bit-sliced instead of one trial per work-item, and at most
+  k and exactly k no longer need NOT passes. In the kernel microbenchmark k-of-n gates are 5.5-56x faster on GPUs
+  and 12-240x on CPUs, and AND, OR, XOR, NAND, NOR, NOT and NULL gates of up to 16 inputs 1.3-3x faster on NVIDIA
+  GPUs, 5-117x on a Radeon Pro 5500M and 1.1-6.6x on CPUs. Gates whose inputs other gates of a small layer share
+  can be slower than before: 64-input AND gates, 32 per layer, up to 1.4x on an RTX 3070, and 64-input OR gates,
+  128 per layer, 1.8x on CPUs (#281).
+- The execution plan and the kernel DAG name what computes a node by the executor's op code (`mc::kernel::op_code`)
+  instead of SCRAM's connective. It keeps every `ir::pc::op_code` at its value and adds, from value 64, the execution
+  operations the IR leaves out (`sample`, `ones`, `zeros`, `null`, `atleast`, `atmost`, `exactly`, `majority`,
+  `minority`); both enums' values are pinned. Partitions of at-least gates report `atleast` instead of `k/n`. Constant
+  gates report `ones` or `zeros`, and no kernel computes them: their bitpacks are written once, as for basic events of
+  constant law. Results are the same for a given seed.
+- `.pcfb` files may use `BITWISE_MAJORITY` (more than half the inputs true) and `BITWISE_MINORITY` (its complement, so
+  a tie is a minority), from pcfb's v1.2 opcode amendment; a file that uses them declares minor 2. The reader reads them
+  as cardinality gates, and `fzb run` and `fuzzybits.run` evaluate them as at-least gates. Either one in a file that
+  declares minor 1 is `io.pcfb.invalid-file`. pcfb's validator reports an opcode the schema does not define as
+  `UnknownOpcode` instead of accepting it; the reader still reports such a file as `io.pcfb.unsupported-opcode`.
+- The Monte Carlo queue is in order, and kernels are submitted without dependency events, so AdaptiveCpp submits
+  each kernel directly to the device instead of through its DAG scheduler (#286). On a model of about 88,000
+  gates at the default device-memory budget, `fzb run` is about 2x faster on a Tesla V100S and 1.7-1.8x on an
+  RTX 3070, and unchanged on CPUs. Results are the same for a given seed.
 - `fzb serve` starts `fuzzybits-server` from the Python `fzb` (#203). Install both with
   `pip install 'fuzzybits[server]'`, a new extra pinned to the same version, then run, for example,
   `fzb serve --data-dir ./models --open`. Its arguments go unchanged to the server's parser, so it

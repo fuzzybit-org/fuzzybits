@@ -51,10 +51,9 @@ struct rejection final {
                 continue;
             }
             auto const name = query->name() != nullptr ? query->name()->str() : "q" + std::to_string(i);
-            return rejection{unsupported_query_kind_id,
-                             "query '" + name + "' has kind " + query_kind_name(query->kind()) +
-                                 ", which this runtime does not implement; only PROBABILITY queries can be " +
-                                 "answered, and a query is never answered as another kind"};
+            return rejection{unsupported_query_kind_id, "query '" + name + "' has kind " + query_kind_name(query->kind()) +
+                                                            ", which this runtime does not implement; only PROBABILITY queries can be " +
+                                                            "answered, and a query is never answered as another kind"};
         }
     }
     return std::nullopt;

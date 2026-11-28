@@ -24,8 +24,7 @@ namespace reader = fuzzybits::io::backend::fuzzybits::ftp;
 using lowering = fuzzybits::compile::backend::fuzzybits::pra_to_pc::pra_pc_lowering;
 
 // `targets` empty: every PROCESS target.
-[[nodiscard]] inline auto probability_options(std::vector<std::string> targets = {},
-                                              std::string duplicate_import = "last") -> ftp::options {
+[[nodiscard]] inline auto probability_options(std::vector<std::string> targets = {}, std::string duplicate_import = "last") -> ftp::options {
     ftp::options options;
     options.kinds = {"probability"};
     // The conformance fixtures tag probabilities with I (#243 keeps them meaningful this way).
@@ -35,14 +34,12 @@ using lowering = fuzzybits::compile::backend::fuzzybits::pra_to_pc::pra_pc_lower
     return options;
 }
 
-[[nodiscard]] inline auto lower(std::span<reader::source_text const> sources,
-                                ftp::options const &options = probability_options())
+[[nodiscard]] inline auto lower(std::span<reader::source_text const> sources, ftp::options const &options = probability_options())
     -> fuzzybits::api::result<lowering> {
     return ftp::lower_sources(sources, options);
 }
 
-[[nodiscard]] inline auto lower_text(std::string text, ftp::options const &options = probability_options())
-    -> fuzzybits::api::result<lowering> {
+[[nodiscard]] inline auto lower_text(std::string text, ftp::options const &options = probability_options()) -> fuzzybits::api::result<lowering> {
     const std::vector<reader::source_text> sources{reader::source_text{.path = "<input>", .text = std::move(text)}};
     return ftp::lower_sources(sources, options);
 }

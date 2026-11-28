@@ -47,8 +47,7 @@ thread_local std::string fail_compile_after_stage;
 /// coalescing rate is irrelevant); `finish` sends the last snapshot and `on_finish`.
 class compile_progress {
   public:
-    explicit compile_progress(const Options &options)
-        : emitter_(options.progress_sinks, options.progress_max_rate_hz), start_(clock::now()) {}
+    explicit compile_progress(const Options &options) : emitter_(options.progress_sinks, options.progress_max_rate_hz), start_(clock::now()) {}
 
     [[nodiscard]] bool active() const noexcept { return emitter_.active(); }
 
@@ -118,9 +117,7 @@ void fail_next_compile_after_stage(std::string_view stage) { fail_compile_after_
 
 namespace {
 
-pcfb::Error compile_error(std::string message) {
-    return pcfb::Error{pcfb::Error::Code::BuilderError, std::move(message)};
-}
+pcfb::Error compile_error(std::string message) { return pcfb::Error{pcfb::Error::Code::BuilderError, std::move(message)}; }
 
 std::string mef_initialize_error(const scram::Error &ex) {
     std::ostringstream msg;
@@ -178,8 +175,7 @@ const scram::mef::BasicEvent *basic_event_for_variable(const scram::core::Pdag &
     return basic_events[index];
 }
 
-void gather_all_nodes(const std::shared_ptr<scram::core::Gate> &gate,
-                      std::vector<std::shared_ptr<scram::core::Node>> &nodes,
+void gather_all_nodes(const std::shared_ptr<scram::core::Gate> &gate, std::vector<std::shared_ptr<scram::core::Node>> &nodes,
                       std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes_by_index) {
     if (!gate || gate->Visited()) {
         return;
@@ -210,35 +206,32 @@ void layered_toposort(scram::core::Pdag *pdag, std::vector<std::shared_ptr<scram
         return;
     }
     std::sort(nodes.begin(), nodes.end(),
-              [](const std::shared_ptr<scram::core::Node> &a, const std::shared_ptr<scram::core::Node> &b) {
-                  return a->order() < b->order();
-              });
+              [](const std::shared_ptr<scram::core::Node> &a, const std::shared_ptr<scram::core::Node> &b) { return a->order() < b->order(); });
     const int max_layer = nodes.back()->order();
     nodes_by_layer.assign(static_cast<std::size_t>(max_layer) + 1, {});
     for (auto &node : nodes) {
         nodes_by_layer[static_cast<std::size_t>(node->order())].push_back(node);
     }
     for (auto &layer : nodes_by_layer) {
-        std::sort(layer.begin(), layer.end(),
-                  [](const std::shared_ptr<scram::core::Node> &lhs, const std::shared_ptr<scram::core::Node> &rhs) {
-                      auto varL = std::dynamic_pointer_cast<scram::core::Variable>(lhs);
-                      auto varR = std::dynamic_pointer_cast<scram::core::Variable>(rhs);
-                      if (varL && !varR) {
-                          return true;
-                      }
-                      if (!varL && varR) {
-                          return false;
-                      }
-                      if (varL && varR) {
-                          return lhs->index() < rhs->index();
-                      }
-                      auto gateL = std::dynamic_pointer_cast<scram::core::Gate>(lhs);
-                      auto gateR = std::dynamic_pointer_cast<scram::core::Gate>(rhs);
-                      if (gateL && gateR && gateL->type() != gateR->type()) {
-                          return gateL->type() < gateR->type();
-                      }
-                      return lhs->index() < rhs->index();
-                  });
+        std::sort(layer.begin(), layer.end(), [](const std::shared_ptr<scram::core::Node> &lhs, const std::shared_ptr<scram::core::Node> &rhs) {
+            auto varL = std::dynamic_pointer_cast<scram::core::Variable>(lhs);
+            auto varR = std::dynamic_pointer_cast<scram::core::Variable>(rhs);
+            if (varL && !varR) {
+                return true;
+            }
+            if (!varL && varR) {
+                return false;
+            }
+            if (varL && varR) {
+                return lhs->index() < rhs->index();
+            }
+            auto gateL = std::dynamic_pointer_cast<scram::core::Gate>(lhs);
+            auto gateR = std::dynamic_pointer_cast<scram::core::Gate>(rhs);
+            if (gateL && gateR && gateL->type() != gateR->type()) {
+                return gateL->type() < gateR->type();
+            }
+            return lhs->index() < rhs->index();
+        });
     }
 }
 
@@ -317,12 +310,9 @@ std::string join_paths(std::span<const std::string> paths) {
     return out;
 }
 
-bool name_matches(std::string_view want, const scram::mef::Id &id) {
-    return id.id() == want || id.name() == want || id.full_path() == want;
-}
+bool name_matches(std::string_view want, const scram::mef::Id &id) { return id.id() == want || id.name() == want || id.full_path() == want; }
 
-bool watch_matches_node(std::string_view want, const scram::core::Pdag &pdag,
-                        const std::shared_ptr<scram::core::Node> &node) {
+bool watch_matches_node(std::string_view want, const scram::core::Pdag &pdag, const std::shared_ptr<scram::core::Node> &node) {
     if (!node) {
         return false;
     }
@@ -344,9 +334,7 @@ bool watch_matches_node(std::string_view want, const scram::core::Pdag &pdag,
     return false;
 }
 
-pcfb::Result<void> set_bool_meta(pcfb::builder &b, std::string_view key, bool value) {
-    return b.set(key, static_cast<std::int64_t>(value ? 1 : 0));
-}
+pcfb::Result<void> set_bool_meta(pcfb::builder &b, std::string_view key, bool value) { return b.set(key, static_cast<std::int64_t>(value ? 1 : 0)); }
 
 /// Bernoulli p stored on a pcfb SAMPLE: the point/mean value the legacy MC
 /// path uses (`BasicEvent::p()` → `Expression::value()`). Exponential with
@@ -356,8 +344,7 @@ pcfb::Result<void> set_bool_meta(pcfb::builder &b, std::string_view key, bool va
 /// NaN/Inf threshold into the sampler (hosted SIGILL / `__builtin_trap`).
 pcfb::Result<double> sample_point_probability(const scram::mef::BasicEvent *event, int pdag_index) {
     if (!event) {
-        return std::unexpected(
-            compile_error("PDAG variable index " + std::to_string(pdag_index) + " is not bound to a MEF basic event"));
+        return std::unexpected(compile_error("PDAG variable index " + std::to_string(pdag_index) + " is not bound to a MEF basic event"));
     }
     const std::string name = event->id();
     if (!event->HasExpression()) {
@@ -367,13 +354,11 @@ pcfb::Result<double> sample_point_probability(const scram::mef::BasicEvent *even
     try {
         p = event->p();
     } catch (const std::exception &ex) {
-        return std::unexpected(
-            compile_error("basic event " + name + ": cannot evaluate point probability: " + ex.what()));
+        return std::unexpected(compile_error("basic event " + name + ": cannot evaluate point probability: " + ex.what()));
     }
     if (!std::isfinite(p) || p < 0.0 || p > 1.0) {
         std::ostringstream os;
-        os << std::scientific << std::setprecision(16) << "basic event " << name << ": point probability " << p
-           << " is not in [0, 1]";
+        os << std::scientific << std::setprecision(16) << "basic event " << name << ": point probability " << p << " is not in [0, 1]";
         return std::unexpected(compile_error(os.str()));
     }
     return p;
@@ -415,10 +400,9 @@ void apply_options(scram::core::Settings &settings, const Options &options) {
     settings.ccf_analysis(options.ccf);
 }
 
-pcfb::Result<std::vector<std::byte>>
-pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name, std::string_view query_name,
-             std::span<const std::byte> source_sha256, std::string_view source_path,
-             std::span<const std::string> input_files, std::string_view target_name) {
+pcfb::Result<std::vector<std::byte>> pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view model_name, std::string_view query_name,
+                                                  std::span<const std::byte> source_sha256, std::string_view source_path,
+                                                  std::span<const std::string> input_files, std::string_view target_name) {
     if (!pdag.root_ptr()) {
         return std::unexpected(compile_error("PDAG has no root"));
     }
@@ -528,8 +512,7 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
             tensor_of[idx] = *t;
             return std::pair{*t, inverted};
         }
-        return std::unexpected(
-            compile_error("missing tensor for PDAG index " + std::to_string(idx) + " (not in topological order)"));
+        return std::unexpected(compile_error("missing tensor for PDAG index " + std::to_string(idx) + " (not in topological order)"));
     };
 
     for (const auto &layer : nodes_by_layer) {
@@ -544,8 +527,7 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
                     return std::unexpected(p.error());
                 }
                 const std::string name = event->id();
-                auto t =
-                    b.add_sample(*p, name, static_cast<std::uint32_t>(var->index()), pcfb::SampleSource::BASIC_EVENT);
+                auto t = b.add_sample(*p, name, static_cast<std::uint32_t>(var->index()), pcfb::SampleSource::BASIC_EVENT);
                 if (!t) {
                     return std::unexpected(t.error());
                 }
@@ -574,17 +556,13 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
                 }
             }
 
-            const std::string gname = gate->mef_origin_ptr() ? std::string(gate->mef_origin_ptr()->id())
-                                                             : ("g" + std::to_string(gate->index()));
+            const std::string gname = gate->mef_origin_ptr() ? std::string(gate->mef_origin_ptr()->id()) : ("g" + std::to_string(gate->index()));
 
             // Constant-folded gate: a single constant argument. Emit NO_OP(ONES) for TRUE and NOT(ONES) for
             // FALSE. FALSE is the complemented constant, so its one argument is the ONES tensor in `inverted`;
             // NOT reads that tensor uncomplemented (NOT over the inverted input would be TRUE, #259).
-            if (gate->constant() && inputs.empty() && inverted.size() == 1 && true_tensor &&
-                inverted.front() == *true_tensor) {
-                auto t =
-                    b.add_op(pcfb::OpCode::BITWISE_NOT,
-                             std::span<const std::uint32_t>{inverted.data(), inverted.size()}, {}, std::nullopt, gname);
+            if (gate->constant() && inputs.empty() && inverted.size() == 1 && true_tensor && inverted.front() == *true_tensor) {
+                auto t = b.add_op(pcfb::OpCode::BITWISE_NOT, std::span<const std::uint32_t>{inverted.data(), inverted.size()}, {}, std::nullopt, gname);
                 if (!t) {
                     return std::unexpected(t.error());
                 }
@@ -592,11 +570,8 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
                 record(*t, gate->index());
                 continue;
             }
-            if (gate->constant() && inputs.size() == 1 && inverted.empty() && true_tensor &&
-                inputs.front() == *true_tensor) {
-                auto t =
-                    b.add_op(pcfb::OpCode::BITWISE_NO_OP, std::span<const std::uint32_t>{inputs.data(), inputs.size()},
-                             {}, std::nullopt, gname);
+            if (gate->constant() && inputs.size() == 1 && inverted.empty() && true_tensor && inputs.front() == *true_tensor) {
+                auto t = b.add_op(pcfb::OpCode::BITWISE_NO_OP, std::span<const std::uint32_t>{inputs.data(), inputs.size()}, {}, std::nullopt, gname);
                 if (!t) {
                     return std::unexpected(t.error());
                 }
@@ -609,11 +584,9 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
             if (inputs.empty() && inverted.empty()) {
                 pcfb::OpCode fill = pcfb::OpCode::BITWISE_ZEROS;
                 if (gate->type() == scram::core::kAnd || gate->type() == scram::core::kNand) {
-                    fill =
-                        (gate->type() == scram::core::kAnd) ? pcfb::OpCode::BITWISE_ONES : pcfb::OpCode::BITWISE_ZEROS;
+                    fill = (gate->type() == scram::core::kAnd) ? pcfb::OpCode::BITWISE_ONES : pcfb::OpCode::BITWISE_ZEROS;
                 } else if (gate->type() == scram::core::kOr || gate->type() == scram::core::kNor) {
-                    fill =
-                        (gate->type() == scram::core::kOr) ? pcfb::OpCode::BITWISE_ZEROS : pcfb::OpCode::BITWISE_ONES;
+                    fill = (gate->type() == scram::core::kOr) ? pcfb::OpCode::BITWISE_ZEROS : pcfb::OpCode::BITWISE_ONES;
                 }
                 auto t = b.add_op(fill, {}, {}, std::nullopt, gname);
                 if (!t) {
@@ -630,10 +603,8 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
                 k = static_cast<std::uint32_t>(gate->min_number());
             }
             // Unary NO_OP / NOT: builder requires exactly one effective input.
-            if ((op == pcfb::OpCode::BITWISE_NO_OP || op == pcfb::OpCode::BITWISE_NOT) &&
-                (inputs.size() + inverted.size()) != 1) {
-                return std::unexpected(compile_error("unary gate " + gname + " has arity " +
-                                                     std::to_string(inputs.size() + inverted.size())));
+            if ((op == pcfb::OpCode::BITWISE_NO_OP || op == pcfb::OpCode::BITWISE_NOT) && (inputs.size() + inverted.size()) != 1) {
+                return std::unexpected(compile_error("unary gate " + gname + " has arity " + std::to_string(inputs.size() + inverted.size())));
             }
             auto t = b.add_op(op, std::span<const std::uint32_t>{inputs.data(), inputs.size()},
                               std::span<const std::uint32_t>{inverted.data(), inverted.size()}, k, gname);
@@ -702,9 +673,8 @@ pdag_to_pcfb(scram::core::Pdag &pdag, const Options &options, std::string_view m
             origins << ',';
         }
         first_origin = false;
-        origins << "{\"index\":" << index << ",\"kind\":\"" << kind << "\",\"id\":\"" << json_escape(id->id())
-                << "\",\"name\":\"" << json_escape(id->name()) << "\",\"label\":\"" << json_escape(id->label())
-                << "\",\"full_path\":\"" << json_escape(std::string(id->full_path())) << "\"}";
+        origins << "{\"index\":" << index << ",\"kind\":\"" << kind << "\",\"id\":\"" << json_escape(id->id()) << "\",\"name\":\"" << json_escape(id->name())
+                << "\",\"label\":\"" << json_escape(id->label()) << "\",\"full_path\":\"" << json_escape(std::string(id->full_path())) << "\"}";
     };
     for (const auto &node : nodes) {
         if (auto gate = std::dynamic_pointer_cast<scram::core::Gate>(node)) {
@@ -739,8 +709,7 @@ CompiledGraph &CompiledGraph::operator=(CompiledGraph &&) noexcept = default;
 CompiledGraph::~CompiledGraph() = default;
 
 namespace {
-pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files, const Options &options,
-                                                  compile_progress &progress);
+pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files, const Options &options, compile_progress &progress);
 } // namespace
 
 pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &input_files, const Options &options) {
@@ -754,8 +723,7 @@ pcfb::Result<CompiledGraph> compile_to_graph(const std::vector<std::string> &inp
 
 namespace {
 
-pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files, const Options &options,
-                                                  compile_progress &progress) {
+pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string> &input_files, const Options &options, compile_progress &progress) {
     if (input_files.empty()) {
         return std::unexpected(compile_error("compile requires at least one input file"));
     }
@@ -780,8 +748,7 @@ pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string>
 
     const scram::mef::Gate *target = options.target ? find_gate(*model, *options.target) : first_top_gate(*model);
     if (!target) {
-        return std::unexpected(
-            compile_error(options.target ? "target gate not found: " + *options.target : "no fault-tree top gate"));
+        return std::unexpected(compile_error(options.target ? "target gate not found: " + *options.target : "no fault-tree top gate"));
     }
 
     std::unordered_set<const scram::mef::Gate *> watched_gates;
@@ -806,7 +773,7 @@ pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string>
 
     progress.stage("passes");
     try {
-        scram::core::CustomPreprocessor<scram::mc::DirectEval> preprocessor(graph.get(), settings);
+        scram::core::CustomPreprocessor<scram::core::DirectEval> preprocessor(graph.get(), settings);
         preprocessor();
     } catch (const std::exception &ex) {
         return std::unexpected(compile_error(std::string("preprocessor: ") + ex.what()));
@@ -832,8 +799,7 @@ pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files
             return std::unexpected(compile_error("nombrilo.circuit input must be a single file"));
         }
         if (!options.watch.empty()) {
-            return std::unexpected(compile_error(
-                "nombrilo.circuit input does not take --watch; watch targets need the new MEF reader (#148)"));
+            return std::unexpected(compile_error("nombrilo.circuit input does not take --watch; watch targets need the new MEF reader (#148)"));
         }
         compile_progress progress(options);
         prog::finish_guard guard([&progress] { progress.finish_interrupted(); });
@@ -877,8 +843,8 @@ pcfb::Result<Compiled> compile_files(const std::vector<std::string> &input_files
 
     progress.stage("write");
     const std::string source_path = input_files.empty() ? std::string() : input_files.front();
-    auto bytes = pdag_to_pcfb(*graph->graph, options, out.model_name, out.target_id,
-                              std::span<const std::byte>{sha_bytes, 32}, source_path, input_files, out.target_name);
+    auto bytes = pdag_to_pcfb(*graph->graph, options, out.model_name, out.target_id, std::span<const std::byte>{sha_bytes, 32}, source_path, input_files,
+                              out.target_name);
     if (!bytes) {
         progress.finish(/*interrupted=*/true);
         guard.complete();

@@ -40,36 +40,30 @@ auto reader_descriptor() -> io::reader_descriptor {
     };
 }
 
-auto read(std::span<std::byte const> bytes, api::option_set const &) -> pcfb_read_result {
-    return detail::read_pcfb(bytes);
-}
+auto read(std::span<std::byte const> bytes, api::option_set const &) -> pcfb_read_result { return detail::read_pcfb(bytes); }
 
 auto read(std::filesystem::path const &path, api::option_set const &options) -> pcfb_read_result {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
-        return pcfb_read_result::fail(
-            api::make_error(std::string(diag::unreadable), "failed to open '" + path.generic_string() + "'"));
+        return pcfb_read_result::fail(api::make_error(std::string(diag::unreadable), "failed to open '" + path.generic_string() + "'"));
     }
     input.seekg(0, std::ios::end);
     const auto size = input.tellg();
     input.seekg(0, std::ios::beg);
     if (!input || size < 0) {
-        return pcfb_read_result::fail(
-            api::make_error(std::string(diag::unreadable), "failed to read '" + path.generic_string() + "'"));
+        return pcfb_read_result::fail(api::make_error(std::string(diag::unreadable), "failed to read '" + path.generic_string() + "'"));
     }
     std::vector<std::byte> bytes(static_cast<std::size_t>(size));
     input.read(reinterpret_cast<char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
     if (!input) {
-        return pcfb_read_result::fail(
-            api::make_error(std::string(diag::unreadable), "failed to read '" + path.generic_string() + "'"));
+        return pcfb_read_result::fail(api::make_error(std::string(diag::unreadable), "failed to read '" + path.generic_string() + "'"));
     }
     return read(std::span<std::byte const>{bytes}, options);
 }
 
 auto read(io::read_request const &request) -> io::read_result {
     if (!request.format.empty() && request.format != formats::pcfb()) {
-        return io::read_result::fail(
-            api::make_error(std::string(diag::format_mismatch), "pcfb reader received a non-pcfb format request"));
+        return io::read_result::fail(api::make_error(std::string(diag::format_mismatch), "pcfb reader received a non-pcfb format request"));
     }
     auto read = pcfb::read(request.path, request.options);
     if (!read.has_value()) {

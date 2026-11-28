@@ -46,19 +46,15 @@ namespace {
 
 [[nodiscard]] auto hasAigerExtension(std::filesystem::path const &path) -> bool {
     auto extension = path.extension().string();
-    std::ranges::transform(extension, extension.begin(),
-                           [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
+    std::ranges::transform(extension, extension.begin(), [](const unsigned char character) { return static_cast<char>(std::tolower(character)); });
     return extension == ".aag" || extension == ".aig";
 }
 
-[[nodiscard]] auto inputRoot() -> std::filesystem::path {
-    return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "aiger";
-}
+[[nodiscard]] auto inputRoot() -> std::filesystem::path { return std::filesystem::path(PROJECT_SOURCE_DIR) / "input" / "aiger"; }
 
 void collectAigerFiles(std::filesystem::path const &root, std::vector<std::filesystem::path> &files) {
     std::error_code error;
-    auto iterator =
-        std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error);
+    auto iterator = std::filesystem::directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, error);
     if (error) {
         return;
     }
@@ -87,20 +83,17 @@ void collectAigerFiles(std::filesystem::path const &root, std::vector<std::files
 [[nodiscard]] auto aigerCorpusFiles() -> std::vector<std::filesystem::path> {
     std::vector<std::filesystem::path> files;
     collectAigerFiles(inputRoot(), files);
-    std::ranges::sort(files,
-                      [](auto const &lhs, auto const &rhs) { return lhs.generic_string() < rhs.generic_string(); });
+    std::ranges::sort(files, [](auto const &lhs, auto const &rhs) { return lhs.generic_string() < rhs.generic_string(); });
     return files;
 }
 
-[[nodiscard]] auto readFile(std::filesystem::path const &path)
-    -> fuzzybits::io::backend::fuzzybits::aiger::aiger_read_result {
+[[nodiscard]] auto readFile(std::filesystem::path const &path) -> fuzzybits::io::backend::fuzzybits::aiger::aiger_read_result {
     std::ifstream input(path, std::ios::binary);
     REQUIRE(input);
     return fuzzybits::io::backend::fuzzybits::aiger::read(input);
 }
 
-[[nodiscard]] auto requirePcModel(fuzzybits::io::backend::fuzzybits::aiger::read_output const &read)
-    -> fuzzybits::ir::pc::circuit const & {
+[[nodiscard]] auto requirePcModel(fuzzybits::io::backend::fuzzybits::aiger::read_output const &read) -> fuzzybits::ir::pc::circuit const & {
     auto const *pc = fuzzybits::ir::pc::circuit_from(read.model);
     REQUIRE(pc != nullptr);
     REQUIRE(pc->valid());
@@ -118,15 +111,12 @@ void collectAigerFiles(std::filesystem::path const &root, std::vector<std::files
     return output.str();
 }
 
-[[nodiscard]] auto hasDiagnosticCode(fuzzybits::api::diagnostic_list const &diagnostics, std::string_view code)
-    -> bool {
-    return std::ranges::any_of(
-        diagnostics.items(), [code](fuzzybits::api::diagnostic const &diagnostic) { return diagnostic.code == code; });
+[[nodiscard]] auto hasDiagnosticCode(fuzzybits::api::diagnostic_list const &diagnostics, std::string_view code) -> bool {
+    return std::ranges::any_of(diagnostics.items(), [code](fuzzybits::api::diagnostic const &diagnostic) { return diagnostic.code == code; });
 }
 
 [[nodiscard]] auto isExpectedUnsupportedCorpusFile(fuzzybits::api::diagnostic_list const &diagnostics) -> bool {
-    return hasDiagnosticCode(diagnostics, "io.aiger.unsupported-latches") ||
-           hasDiagnosticCode(diagnostics, "io.aiger.unsupported-extensions") ||
+    return hasDiagnosticCode(diagnostics, "io.aiger.unsupported-latches") || hasDiagnosticCode(diagnostics, "io.aiger.unsupported-extensions") ||
            hasDiagnosticCode(diagnostics, "io.aiger.empty-circuit");
 }
 

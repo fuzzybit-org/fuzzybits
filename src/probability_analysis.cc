@@ -129,9 +129,7 @@ void ProbabilityAnalysis::ComputeSil() {
     sil_ = std::make_unique<Sil>();
     if (p_time_.size() == 1) {
         sil_->pfd_avg = p_time_.front().first;
-        auto it = boost::find_if(sil_->pfd_fractions, [this](const std::pair<const double, double> &level) {
-            return sil_->pfd_avg <= level.first;
-        });
+        auto it = boost::find_if(sil_->pfd_fractions, [this](const std::pair<const double, double> &level) { return sil_->pfd_avg <= level.first; });
         assert(it != sil_->pfd_fractions.end());
         it->second = 1;
     } else {
@@ -245,8 +243,7 @@ void ProbabilityAnalyzer<Bdd>::CreateBdd(const FaultTreeAnalysis &fta) {
     Analysis::AddAnalysisTime(DUR(total_time));
 }
 
-double ProbabilityAnalyzer<Bdd>::CalculateProbability(const Bdd::VertexPtr &vertex, bool mark,
-                                                      const Pdag::IndexMap<double> &p_vars) {
+double ProbabilityAnalyzer<Bdd>::CalculateProbability(const Bdd::VertexPtr &vertex, bool mark, const Pdag::IndexMap<double> &p_vars) {
     if (vertex->terminal())
         return 1;
     Ite &ite = Ite::Ref(vertex);

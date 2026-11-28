@@ -76,8 +76,7 @@ template <typename T> std::enable_if_t<std::is_arithmetic_v<T>, T> to(const std:
         char *end_char = nullptr;
         std::int64_t ret = std::strtoll(value.data(), &end_char, 10);
         int len = end_char - value.data();
-        if (static_cast<size_t>(len) != value.size() || ret > std::numeric_limits<int>::max() ||
-            ret < std::numeric_limits<int>::min()) {
+        if (static_cast<size_t>(len) != value.size() || ret > std::numeric_limits<int>::max() || ret < std::numeric_limits<int>::min()) {
             SCRAM_THROW(ValidityError("Failed to interpret value to int")) << errinfo_value(std::string(value));
         }
         return ret;
@@ -293,16 +292,15 @@ class Element {
     ///          None if the attribute doesn't exists (optional).
     ///
     /// @throws ValidityError  Casting is unsuccessful.
-    template <typename T>
-    std::enable_if_t<std::is_arithmetic_v<T>, std::optional<T>> attribute(const char *name) const {
+    template <typename T> std::enable_if_t<std::is_arithmetic_v<T>, std::optional<T>> attribute(const char *name) const {
         std::string_view value = attribute(name);
         if (value.empty())
             return {};
         try {
             return detail::to<T>(value);
         } catch (ValidityError &err) {
-            err << errinfo_element(std::string(Element::name())) << errinfo_attribute(name)
-                << boost::errinfo_at_line(line()) << boost::errinfo_file_name(filename());
+            err << errinfo_element(std::string(Element::name())) << errinfo_attribute(name) << boost::errinfo_at_line(line())
+                << boost::errinfo_file_name(filename());
             throw;
         }
     }
@@ -332,8 +330,7 @@ class Element {
         try {
             return detail::to<T>(text());
         } catch (ValidityError &err) {
-            err << errinfo_element(std::string(name())) << boost::errinfo_at_line(line())
-                << boost::errinfo_file_name(filename());
+            err << errinfo_element(std::string(name())) << boost::errinfo_at_line(line()) << boost::errinfo_file_name(filename());
             throw;
         }
     }
@@ -359,8 +356,7 @@ class Element {
     ///
     /// @pre The name must live at least as long as the returned range lives.
     auto children(std::string_view name) const {
-        return children() |
-               boost::adaptors::filtered([name](const Element &element) { return element.name() == name; });
+        return children() | boost::adaptors::filtered([name](const Element &element) { return element.name() == name; });
     }
 
   private:
@@ -371,8 +367,7 @@ class Element {
 };
 
 /// The parser options passed to the library parser.
-const int kParserOptions = XML_PARSE_XINCLUDE | XML_PARSE_NOBASEFIX | XML_PARSE_NONET | XML_PARSE_NOXINCNODE |
-                           XML_PARSE_COMPACT | XML_PARSE_HUGE;
+const int kParserOptions = XML_PARSE_XINCLUDE | XML_PARSE_NOBASEFIX | XML_PARSE_NONET | XML_PARSE_NOXINCNODE | XML_PARSE_COMPACT | XML_PARSE_HUGE;
 
 class Validator; // Forward declaration for validation upon DOM constructions.
 
