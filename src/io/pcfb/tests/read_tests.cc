@@ -704,6 +704,45 @@ TEST_CASE("pcfb reader: a file written by another tool reads with its meaning", 
     CHECK(std::abs(fuzzybits::compile::exact_probability(*file, 0) - referenceProbabilities(circuit)[0]) <= 1.0e-12);
 }
 
+TEST_CASE("pcfb reader: MAJORITY and MINORITY read as cardinality ranges", "[io][pcfb][read]") {
+    // Four operands, one inverted: a majority is at least 3 of 4, a minority at most 2 (a tie is a minority).
+    auto builder = sampleBytes({0.5, 0.25, 0.125, 0.375}, {1, 2, 3, 4});
+    const std::uint32_t positive[] = {0, 1, 2};
+    const std::uint32_t inverted[] = {3};
+    const auto majority = builder.add_op(::pcfb::OpCode::BITWISE_MAJORITY, positive, inverted, std::nullopt, "majority");
+    const auto minority = builder.add_op(::pcfb::OpCode::BITWISE_MINORITY, positive, inverted, std::nullopt, "minority");
+    REQUIRE(majority);
+    REQUIRE(minority);
+    REQUIRE(builder.add_query(*majority, ::pcfb::QueryKind::PROBABILITY, "MAJ"));
+    REQUIRE(builder.add_query(*minority, ::pcfb::QueryKind::PROBABILITY, "MIN"));
+    auto bytes = builder.finish();
+    REQUIRE(bytes);
+
+    auto result = writer::read(*bytes);
+    INFO(diagnosticsText(result.diagnostics()));
+    REQUIRE(result);
+    auto const &circuit = result.value().circuit;
+    REQUIRE(circuit.targets().size() == 2);
+    const auto majorityNode = circuit.targets()[0].node;
+    const auto minorityNode = circuit.targets()[1].node;
+    CHECK(circuit.op_codes()[majorityNode.raw()] == pc::op_code::cardinality);
+    CHECK(circuit.cardinality_low()[majorityNode.raw()] == 3);
+    CHECK(circuit.cardinality_high()[majorityNode.raw()] == 4);
+    CHECK(circuit.op_codes()[minorityNode.raw()] == pc::op_code::cardinality);
+    CHECK(circuit.cardinality_low()[minorityNode.raw()] == 0);
+    CHECK(circuit.cardinality_high()[minorityNode.raw()] == 2);
+    REQUIRE(circuit.operands(majorityNode).size() == 4);
+    CHECK(circuit.operands(majorityNode)[3].complement);
+
+    // Semantics: the file's exact probabilities equal the exhaustive values of the read circuit, and add to 1.
+    auto file = ::pcfb::io::from_bytes(*bytes);
+    REQUIRE(file);
+    const auto reference = referenceProbabilities(circuit);
+    CHECK(std::abs(fuzzybits::compile::exact_probability(*file, 0) - reference[0]) <= 1.0e-12);
+    CHECK(std::abs(fuzzybits::compile::exact_probability(*file, 1) - reference[1]) <= 1.0e-12);
+    CHECK(std::abs(reference[0] + reference[1] - 1.0) <= 1.0e-12);
+}
+
 TEST_CASE("pcfb reader: an unnamed ATLEAST/ATMOST pair over one operand list is one cardinality node", "[io][pcfb][read]") {
     auto builder = sampleBytes({0.1, 0.2, 0.3, 0.4}, {1, 2, 3, 4});
     const std::uint32_t operands[] = {0, 1, 2, 3};
@@ -827,6 +866,31 @@ TEST_CASE("pcfb reader: unreadable and unrepresentable files are errors with sta
         CHECK_FALSE(result);
         CHECK_FALSE(result.has_value());
         CHECK(codeOfError(result.diagnostics()) == writer::diag::invalid_file);
+    }
+
+    SECTION("an opcode the pinned pcfb does not define") {
+        auto model = unpack(written.bytes);
+        model->subcircuits[0]->operators[3]->opcode = static_cast<::pcfb::OpCode>(0x0D);
+        const auto result = writer::read(pack(*model));
+        CHECK_FALSE(result);
+        CHECK(codeOfError(result.diagnostics()) == writer::diag::unsupported_opcode);
+    }
+
+    SECTION("a MAJORITY operator needs a file that declares minor 2") {
+        auto model = unpack(written.bytes);
+        auto &operators = model->subcircuits[0]->operators;
+        const auto gate = std::ranges::find_if(
+            operators, [](auto const &op) { return op->opcode == ::pcfb::OpCode::BITWISE_AND || op->opcode == ::pcfb::OpCode::BITWISE_OR; });
+        REQUIRE(gate != operators.end());
+        (*gate)->opcode = ::pcfb::OpCode::BITWISE_MAJORITY;
+        model->schema_version = 0x00010001U;
+        const auto minor1 = writer::read(pack(*model));
+        CHECK_FALSE(minor1);
+        CHECK(codeOfError(minor1.diagnostics()) == writer::diag::invalid_file);
+        model->schema_version = 0x00010002U;
+        const auto minor2 = writer::read(pack(*model));
+        INFO(diagnosticsText(minor2.diagnostics()));
+        CHECK(minor2);
     }
 
     SECTION("a major version other than 1") {

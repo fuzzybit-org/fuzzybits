@@ -53,7 +53,7 @@ class bernoulli_law {
     }
     [[nodiscard]] constexpr std::uint64_t threshold() const noexcept { return threshold_; }
     /// threshold / 2^64, or 1 for `always`: exact for thresholds of at most 53 significant bits.
-    [[nodiscard]] constexpr double probability() const noexcept { return pcfb::threshold_to_probability(threshold_, always_); }
+    [[nodiscard]] constexpr double probability() const noexcept { return always_ ? 1.0 : pcfb::threshold_to_probability(threshold_); }
 
     friend constexpr bool operator==(const bernoulli_law &, const bernoulli_law &) = default;
 

@@ -130,10 +130,17 @@
   GPUs, 5-117x on a Radeon Pro 5500M and 1.1-6.6x on CPUs. Gates whose inputs other gates of a small layer share
   can be slower than before: 64-input AND gates, 32 per layer, up to 1.4x on an RTX 3070, and 64-input OR gates,
   128 per layer, 1.8x on CPUs (#281).
-- The execution plan and the kernel DAG name what computes a node by the native IR's op code (`ir::pc::op_code`)
-  instead of SCRAM's connective. Partitions of at-least gates report `atleast` instead of `k/n`. Constant gates
-  report `ones` or `zeros`, and no kernel computes them: their bitpacks are written once, as for basic events of
+- The execution plan and the kernel DAG name what computes a node by the executor's op code (`mc::kernel::op_code`)
+  instead of SCRAM's connective. It keeps every `ir::pc::op_code` at its value and adds, from value 64, the execution
+  operations the IR leaves out (`sample`, `ones`, `zeros`, `null`, `atleast`, `atmost`, `exactly`, `majority`,
+  `minority`); both enums' values are pinned. Partitions of at-least gates report `atleast` instead of `k/n`. Constant
+  gates report `ones` or `zeros`, and no kernel computes them: their bitpacks are written once, as for basic events of
   constant law. Results are the same for a given seed.
+- `.pcfb` files may use `BITWISE_MAJORITY` (more than half the inputs true) and `BITWISE_MINORITY` (its complement, so
+  a tie is a minority), from pcfb's v1.2 opcode amendment; a file that uses them declares minor 2. The reader reads them
+  as cardinality gates, and `fzb run` and `fuzzybits.run` evaluate them as at-least gates. Either one in a file that
+  declares minor 1 is `io.pcfb.invalid-file`. pcfb's validator reports an opcode the schema does not define as
+  `UnknownOpcode` instead of accepting it; the reader still reports such a file as `io.pcfb.unsupported-opcode`.
 - The Monte Carlo queue is in order, and kernels are submitted without dependency events, so AdaptiveCpp submits
   each kernel directly to the device instead of through its DAG scheduler (#286). On a model of about 88,000
   gates at the default device-memory budget, `fzb run` is about 2x faster on a Tesla V100S and 1.7-1.8x on an

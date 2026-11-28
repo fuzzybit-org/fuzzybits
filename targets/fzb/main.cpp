@@ -448,6 +448,10 @@ const char *opcode_name(pcfb::OpCode op) {
         return "ATMOST";
     case pcfb::OpCode::BITWISE_EXACTLY:
         return "EXACTLY";
+    case pcfb::OpCode::BITWISE_MAJORITY:
+        return "MAJORITY";
+    case pcfb::OpCode::BITWISE_MINORITY:
+        return "MINORITY";
     case pcfb::OpCode::BITWISE_ZEROS:
         return "ZEROS";
     case pcfb::OpCode::BITWISE_ONES:

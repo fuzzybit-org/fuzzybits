@@ -9,6 +9,7 @@
 #include "ir/pc/op_code.h"
 #include "ir/pc/target.h"
 
+#include "pcfb/count.h"
 #include "pcfb/io.h"
 #include "pcfb/validate.h"
 #include "pcfb_generated.h"
@@ -106,10 +107,13 @@ struct NodeInfo final {
         return ir::pc::op_code::nor_gate;
     case ::pcfb::OpCode::BITWISE_XNOR:
         return ir::pc::op_code::xnor_gate;
+    // The counting ops are not gates of their own: each reads as one cardinality (count_bounds), the IR's only k-of-n
+    // form (docs/IR-PC-REQUIREMENTS.md §4).
     case ::pcfb::OpCode::BITWISE_ATLEAST:
-        // todo:: return
     case ::pcfb::OpCode::BITWISE_ATMOST:
     case ::pcfb::OpCode::BITWISE_EXACTLY:
+    case ::pcfb::OpCode::BITWISE_MAJORITY:
+    case ::pcfb::OpCode::BITWISE_MINORITY:
     default:
         return std::nullopt;
     }
@@ -123,6 +127,8 @@ struct NodeInfo final {
     case ::pcfb::OpCode::BITWISE_ATLEAST:
     case ::pcfb::OpCode::BITWISE_ATMOST:
     case ::pcfb::OpCode::BITWISE_EXACTLY:
+    case ::pcfb::OpCode::BITWISE_MAJORITY:
+    case ::pcfb::OpCode::BITWISE_MINORITY:
         return true;
     default:
         return gateCode(opcode).has_value();
@@ -384,12 +390,14 @@ class Reader final {
                 break;
             case ::pcfb::OpCode::BITWISE_ATLEAST:
             case ::pcfb::OpCode::BITWISE_ATMOST:
-            case ::pcfb::OpCode::BITWISE_EXACTLY: {
+            case ::pcfb::OpCode::BITWISE_EXACTLY:
+            case ::pcfb::OpCode::BITWISE_MAJORITY:
+            case ::pcfb::OpCode::BITWISE_MINORITY: {
                 info.code = ir::pc::op_code::cardinality;
-                const auto fanIn = inputsOf(operation).size() + invertedOf(operation).size();
-                const auto k = kOf(operation);
-                info.low = operation->opcode() == ::pcfb::OpCode::BITWISE_ATMOST ? 0 : k;
-                info.high = operation->opcode() == ::pcfb::OpCode::BITWISE_ATLEAST ? fanIn : k;
+                const auto fanIn = static_cast<std::uint32_t>(inputsOf(operation).size() + invertedOf(operation).size());
+                const auto range = ::pcfb::count_bounds(operation->opcode(), fanIn, kOf(operation)).value();
+                info.low = range.low;
+                info.high = range.high;
                 break;
             }
             default:
@@ -781,6 +789,23 @@ class Reader final {
     std::unordered_map<std::string, std::size_t> metadataIndex_;
 };
 
+// The reader's id for a pcfb::validate finding. SchemaVersionTooOld is an unknown query kind when a query's, and makes
+// the file invalid when an operator's (MAJORITY or MINORITY in a file that declares minor 1): pcfb::Diagnostic::location
+// is a dotted path into the file, so an operator's names `.operators[`. An opcode the pinned pcfb does not define is
+// one ir::pc has no op code for.
+[[nodiscard]] auto findingCode(::pcfb::Diagnostic const &finding) -> std::string_view {
+    switch (finding.code) {
+    case ::pcfb::Diagnostic::Code::UnknownQueryKind:
+        return diag::unknown_query_kind;
+    case ::pcfb::Diagnostic::Code::SchemaVersionTooOld:
+        return finding.location.find(".operators[") == std::string::npos ? diag::unknown_query_kind : diag::invalid_file;
+    case ::pcfb::Diagnostic::Code::UnknownOpcode:
+        return diag::unsupported_opcode;
+    default:
+        return diag::invalid_file;
+    }
+}
+
 } // namespace
 
 auto read_pcfb(std::span<std::byte const> bytes) -> pcfb_read_result {
@@ -790,10 +815,7 @@ auto read_pcfb(std::span<std::byte const> bytes) -> pcfb_read_result {
     }
     api::diagnostic_list diagnostics;
     for (auto const &finding : ::pcfb::validate(*file)) {
-        const auto kind = finding.code == ::pcfb::Diagnostic::Code::UnknownQueryKind || finding.code == ::pcfb::Diagnostic::Code::SchemaVersionTooOld
-                              ? diag::unknown_query_kind
-                              : diag::invalid_file;
-        diagnostics.push(error(kind, finding.location + ": " + finding.message));
+        diagnostics.push(error(findingCode(finding), finding.location + ": " + finding.message));
     }
     if (diagnostics.has_errors()) {
         return pcfb_read_result::fail(std::move(diagnostics));

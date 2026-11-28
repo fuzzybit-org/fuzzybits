@@ -90,8 +90,8 @@ template <op_code Op, event::node_types_like T, typename F> [[nodiscard]] auto w
  * @throws std::logic_error if a gate reads a node that no earlier kernel computes
  */
 template <op_code Op, event::node_types_like T, typename size_t_>
-std::size_t build_gate_kernel(state<T, size_t_> &build, const layer<T> &nodes, const gate_kernel &variant, const std::span<const gate> gates,
-                              const std::size_t layer_index) {
+std::size_t build_kernel_of(state<T, size_t_> &build, const layer<T> &nodes, const gate_kernel &variant, const std::span<const gate> gates,
+                            const std::size_t layer_index) {
     using index_type = typename T::index_type;
     using extent_type = typename T::extent_type;
     using record = std::conditional_t<is_counting(Op), event::cardinality_gate<T>, event::gate<T>>;
@@ -124,6 +124,23 @@ std::size_t build_gate_kernel(state<T, size_t_> &build, const layer<T> &nodes, c
     });
     build.computed(std::move(block), partition);
     return partition;
+}
+
+/**
+ * @brief The kernel for `gates` of op code `Op` (build_kernel_of), or, for an op code without one (has_kernel), the
+ *        stub: it builds nothing and throws
+ *
+ * @throws not_implemented if no kernel computes gates of op code `Op` yet
+ */
+template <op_code Op, event::node_types_like T, typename size_t_>
+std::size_t build_gate_kernel(state<T, size_t_> &build, const layer<T> &nodes, const gate_kernel &variant, const std::span<const gate> gates,
+                              const std::size_t layer_index) {
+    if constexpr (has_kernel(Op)) {
+        return build_kernel_of<Op>(build, nodes, variant, gates, layer_index);
+    } else {
+        // TODO:: a kernel for these gates (kernel::has_kernel).
+        throw not_implemented("kernel builder: " + std::string(name_of(Op)) + " gates are not implemented: no kernel computes them yet");
+    }
 }
 
 /// The kernels of the gates of op code `op` in `nodes` (layer `layer_index`): one per gate_kernel they need, in

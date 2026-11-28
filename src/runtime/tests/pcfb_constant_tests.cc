@@ -119,11 +119,21 @@ struct gate_kind final {
 
 // Four operands: three samples and the constant.
 constexpr std::array kGates{
-    gate_kind{OpCode::BITWISE_AND, std::nullopt},  gate_kind{OpCode::BITWISE_OR, std::nullopt},  gate_kind{OpCode::BITWISE_XOR, std::nullopt},
-    gate_kind{OpCode::BITWISE_NAND, std::nullopt}, gate_kind{OpCode::BITWISE_NOR, std::nullopt}, gate_kind{OpCode::BITWISE_XNOR, std::nullopt},
-    gate_kind{OpCode::BITWISE_ATLEAST, 2},         gate_kind{OpCode::BITWISE_ATLEAST, 1},        gate_kind{OpCode::BITWISE_ATLEAST, 4},
-    gate_kind{OpCode::BITWISE_ATMOST, 1},          gate_kind{OpCode::BITWISE_ATMOST, 3},         gate_kind{OpCode::BITWISE_EXACTLY, 2},
+    gate_kind{OpCode::BITWISE_AND, std::nullopt},
+    gate_kind{OpCode::BITWISE_OR, std::nullopt},
+    gate_kind{OpCode::BITWISE_XOR, std::nullopt},
+    gate_kind{OpCode::BITWISE_NAND, std::nullopt},
+    gate_kind{OpCode::BITWISE_NOR, std::nullopt},
+    gate_kind{OpCode::BITWISE_XNOR, std::nullopt},
+    gate_kind{OpCode::BITWISE_ATLEAST, 2},
+    gate_kind{OpCode::BITWISE_ATLEAST, 1},
+    gate_kind{OpCode::BITWISE_ATLEAST, 4},
+    gate_kind{OpCode::BITWISE_ATMOST, 1},
+    gate_kind{OpCode::BITWISE_ATMOST, 3},
+    gate_kind{OpCode::BITWISE_EXACTLY, 2},
     gate_kind{OpCode::BITWISE_EXACTLY, 0},
+    gate_kind{OpCode::BITWISE_MAJORITY, std::nullopt},
+    gate_kind{OpCode::BITWISE_MINORITY, std::nullopt},
 };
 
 } // namespace
@@ -208,6 +218,9 @@ TEST_CASE("fzb run counts repeated operands as pcfb does (#259)", "[runtime][mc]
     b.query(b.op(OpCode::BITWISE_AND, {.inputs = {x0, x1}, .inverted = {x0}}));
     b.query(b.op(OpCode::BITWISE_OR, {.inputs = {x0}, .inverted = {x0, x1}}));
     b.query(b.op(OpCode::BITWISE_ATLEAST, {.inputs = {x0, x1}, .inverted = {x0}}, 2));
+    // MAJORITY and MINORITY count repeats too: {x0, x0, x1} has n = 3, so x0 alone is a majority.
+    b.query(b.op(OpCode::BITWISE_MAJORITY, {.inputs = {x0, x0, x1}}));
+    b.query(b.op(OpCode::BITWISE_MINORITY, {.inputs = {x0, x0, x1, x2}}));
 
     require_matches_exact(b.finish());
 }
@@ -216,8 +229,9 @@ TEST_CASE("fzb run matches exact enumeration on random circuits with constants a
     namespace random = pcfb_test_random;
     std::mt19937_64 rng(259);
     constexpr std::array kOpcodes{
-        OpCode::BITWISE_AND,     OpCode::BITWISE_OR,     OpCode::BITWISE_XOR,     OpCode::BITWISE_NAND, OpCode::BITWISE_NOR,   OpCode::BITWISE_XNOR,
-        OpCode::BITWISE_ATLEAST, OpCode::BITWISE_ATMOST, OpCode::BITWISE_EXACTLY, OpCode::BITWISE_NOT,  OpCode::BITWISE_NO_OP,
+        OpCode::BITWISE_AND,   OpCode::BITWISE_OR,       OpCode::BITWISE_XOR,      OpCode::BITWISE_NAND,    OpCode::BITWISE_NOR,
+        OpCode::BITWISE_XNOR,  OpCode::BITWISE_ATLEAST,  OpCode::BITWISE_ATMOST,   OpCode::BITWISE_EXACTLY, OpCode::BITWISE_NOT,
+        OpCode::BITWISE_NO_OP, OpCode::BITWISE_MAJORITY, OpCode::BITWISE_MINORITY,
     };
 
     for (int round = 0; round < 4; ++round) {

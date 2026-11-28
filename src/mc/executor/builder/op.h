@@ -5,7 +5,7 @@
  * @author Arjun Earthperson
  * @date 2026
  *
- * @details The builder takes nodes by the native IR's op code (ir::pc::op_code) only. compat.h says SCRAM's PDAG in
+ * @details The builder takes nodes by kernel::op_code only, which extends the native IR's (ir::pc::op_code). compat.h says SCRAM's PDAG in
  * them, for the layer manager.
  */
 
@@ -23,6 +23,7 @@
 
 namespace fuzzybits::mc::executor::builder {
 
+using kernel::has_kernel;
 using kernel::is_boolean;
 using kernel::is_counting;
 using kernel::is_gate;
@@ -104,6 +105,10 @@ inline constexpr auto kGateOps = [] {
         return "atmost";
     case op_code::exactly:
         return "exactly";
+    case op_code::majority:
+        return "majority";
+    case op_code::minority:
+        return "minority";
     }
     return "unknown";
 }

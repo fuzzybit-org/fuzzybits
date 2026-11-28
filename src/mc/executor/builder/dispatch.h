@@ -25,6 +25,12 @@ namespace detail {
 template <auto first, auto...> inline constexpr auto first_of = first;
 } // namespace detail
 
+/// Thrown when a model needs a kernel that does not exist yet (kernel::has_kernel): before any kernel runs.
+class not_implemented : public std::runtime_error {
+  public:
+    using std::runtime_error::runtime_error;
+};
+
 /// `choose.template operator()<v>()` for the value v among `values` equal to `value`. Every choice returns the same type.
 /// Throws std::logic_error, naming `what`, when no value is equal: no kernel is instantiated for `value`.
 template <auto... values, typename F> [[nodiscard]] auto select(const auto value, F &&choose, const char *what) {

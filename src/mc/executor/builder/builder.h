@@ -10,7 +10,7 @@
  * Each kernel becomes a partition of the program: a queueable, submitted after the partitions whose outputs it reads,
  * and its description in the plan.
  *
- *     op.h           the op codes the builder computes nodes by, as the native IR names them (ir::pc::op_code)
+ *     op.h           the op codes the builder computes nodes by (kernel::op_code, which extends ir::pc::op_code)
  *     layer.h        a layer as the builder takes it (the layer manager reads the PDAG into it)
  *     state.h        the build so far: every node's output and the partition that computes it, and the program
  *     program.h      what the builder makes: queueables, node blocks, tallies, and the plan

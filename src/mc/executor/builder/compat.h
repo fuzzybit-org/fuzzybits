@@ -5,7 +5,7 @@
  * @author Arjun Earthperson
  * @date 2026
  *
- * @details The builder names what computes a node by the native IR's op code (ir::pc::op_code); SCRAM's PDAG names a
+ * @details The builder names what computes a node by kernel::op_code, which extends the native IR's (ir::pc::op_code); SCRAM's PDAG names a
  * gate's operation by its connective (core::Connective), and holds its constants as gates. This file says the one in
  * the other. Only executor/compat.h, which reads the PDAG, includes it: no builder file reads SCRAM's code. Retiring
  * SCRAM (#144) deletes it with executor/compat.h.

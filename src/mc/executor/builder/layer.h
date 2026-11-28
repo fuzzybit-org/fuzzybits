@@ -77,8 +77,8 @@ template <event::node_types_like T> class layer {
     /// Adds counting gate `index` of op code `op` (is_counting), with `inputs`: true where the number of its true
     /// inputs lies in `range`.
     ///
-    /// @throws std::invalid_argument if `op` is not a counting gate, or `range` is not low <= high <= the number of
-    ///         inputs (as ir::pc requires of its cardinality gates)
+    /// @throws std::invalid_argument if `op` is not a counting gate, `range` is not low <= high <= the number of inputs
+    ///         (as ir::pc requires of its cardinality gates), or a majority or minority gate's range is not its own
     void add_gate(const op_code op, const std::int32_t index, const std::span<const input> inputs, const bounds range) {
         if (!is_counting(op)) {
             refuse(op, index, "is not a counting gate");
@@ -87,6 +87,16 @@ template <event::node_types_like T> class layer {
             refuse(op, index,
                    "has bounds [" + std::to_string(range.low) + ", " + std::to_string(range.high) + "] outside its " + std::to_string(inputs.size()) +
                        " inputs");
+        }
+        // A majority or minority gate computes one range of its own: more than half its inputs, or not more than half.
+        if (op == op_code::majority || op == op_code::minority) {
+            const std::size_t half = inputs.size() / 2;
+            const bool majority = op == op_code::majority;
+            if (range.low != (majority ? half + 1 : 0) || range.high != (majority ? inputs.size() : half)) {
+                refuse(op, index,
+                       "has bounds [" + std::to_string(range.low) + ", " + std::to_string(range.high) + "], not its own over " + std::to_string(inputs.size()) +
+                           " inputs: a majority is [n / 2 + 1, n], a minority [0, n / 2]");
+            }
         }
         add(op, index, inputs, range);
     }

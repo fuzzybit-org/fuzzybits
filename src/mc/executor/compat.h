@@ -6,7 +6,7 @@
  * @date 2026
  *
  * @details Everything in mc/executor that reads SCRAM's PDAG, MEF or logger does it here, and builder/compat.h says the
- * PDAG's gates in the builder's op codes (the native IR's, ir::pc::op_code); no other file of the executor includes
+ * PDAG's gates in the builder's op codes (kernel::op_code, which extends ir::pc::op_code); no other file of the executor includes
  * SCRAM. The layer manager holds the PDAG as a compat::graph: its nodes in topological layers, which the graph reads
  * into the builder's layers (builder/layer.h) and describes (descriptor/). Retiring SCRAM (#144) deletes these two
  * files.

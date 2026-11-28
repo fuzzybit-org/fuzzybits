@@ -264,11 +264,15 @@ TEST_CASE("a layer takes each node by its op code, and refuses a gate no kernel 
     CHECK_THROWS_AS(nodes.add_gate(op_code::null_gate, 20, std::span<const builder::input>{}), std::invalid_argument);
     CHECK_THROWS_AS(nodes.add_gate(op_code::sample, 20, two), std::invalid_argument);
     CHECK_THROWS_AS(nodes.add_gate(op_code::ones, 20, std::span<const builder::input>{}), std::invalid_argument);
+    // A majority or minority of two inputs computes [2, 2] or [0, 1], and no other range.
+    CHECK_THROWS_AS(nodes.add_gate(op_code::majority, 20, two, {.low = 1, .high = 2}), std::invalid_argument);
+    CHECK_THROWS_AS(nodes.add_gate(op_code::minority, 20, two, {.low = 0, .high = 0}), std::invalid_argument);
     CHECK_THROWS_AS(nodes.gates(op_code::house_event), std::out_of_range);
 
     // The gates, in op code order, are every op code a gate kernel evaluates; descriptions name them without `_gate`.
     CHECK(std::ranges::is_sorted(builder::kGateOps));
-    CHECK(builder::kGateOps.size() == 12);
+    // The seven Boolean gates and NULL, then cardinality, atleast, atmost, exactly, majority and minority.
+    CHECK(builder::kGateOps.size() == 14);
     for (const op_code op : builder::kGateOps) {
         CHECK(builder::is_gate(op));
         CHECK(builder::is_boolean(op) != builder::is_counting(op));
@@ -278,6 +282,8 @@ TEST_CASE("a layer takes each node by its op code, and refuses a gate no kernel 
     CHECK(builder::name_of(op_code::null_gate) == "null");
     CHECK(builder::name_of(op_code::xnor_gate) == "xnor");
     CHECK(builder::name_of(op_code::atleast) == "atleast");
+    CHECK(builder::name_of(op_code::majority) == "majority");
+    CHECK(builder::name_of(op_code::minority) == "minority");
     CHECK(builder::name_of(op_code::sample) == "sample");
     CHECK(builder::name_of(op_code::ones) == "ones");
 }
@@ -311,5 +317,31 @@ TEST_CASE("the builder refuses a node read before it is built, built twice, or t
         builder::program_builder<types, std::size_t> other(queue, shape, {}, arena, 8);
         other.add(events, 0);
         CHECK_THROWS_AS(other.tally(unbuilt, 1), std::logic_error);
+    }
+}
+
+TEST_CASE("majority and minority gates have no kernel yet: the builder refuses them before any kernel runs", "[mc][executor]") {
+    // TODO:: a kernel test instead, once kernels compute them (kernel::has_kernel).
+    CHECK_FALSE(builder::has_kernel(op_code::majority));
+    CHECK_FALSE(builder::has_kernel(op_code::minority));
+    CHECK(builder::has_kernel(op_code::atleast));
+    CHECK(builder::has_kernel(op_code::exactly));
+
+    sycl::queue queue;
+    const ev::sample_shape<std::size_t> shape{.batch_size = 1, .bitpacks_per_batch = 4};
+    const fuzzybits::mc::prng::stream stream = fuzzybits::mc::prng::stream::of(0x243f6a8885a308d3ull, 1);
+    for (const op_code op : {op_code::majority, op_code::minority}) {
+        INFO(builder::name_of(op));
+        auto arena = ev::output_arena<types>::create(queue, 4, shape.num_bitpacks());
+        builder::layer<types> events;
+        events.basic_events.push_back({.id_in_pdag = 1, .law = *ev::bernoulli_law::from_probability(0.5)});
+        events.basic_events.push_back({.id_in_pdag = 2, .law = *ev::bernoulli_law::from_probability(0.25)});
+        events.basic_events.push_back({.id_in_pdag = 3, .law = *ev::bernoulli_law::from_probability(0.125)});
+        builder::layer<types> gates;
+        const std::array<builder::input, 3> inputs{{{.node = 1, .negated = false}, {.node = 2, .negated = false}, {.node = 3, .negated = false}}};
+        gates.add_gate(op, 4, inputs, op == op_code::majority ? builder::bounds{.low = 2, .high = 3} : builder::bounds{.low = 0, .high = 1});
+        builder::program_builder<types, std::size_t> build(queue, shape, stream, arena, 8);
+        build.add(events, 0);
+        CHECK_THROWS_AS(build.add(gates, 1), builder::not_implemented);
     }
 }

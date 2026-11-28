@@ -63,6 +63,11 @@ bool eval_op(pcfb::OpCode opcode, const std::vector<std::uint8_t> &ins, std::uin
         return count() <= k;
     case pcfb::OpCode::BITWISE_EXACTLY:
         return count() == k;
+    // More than half the inputs, and its complement; written apart from pcfb::count_bounds on purpose, as a reference.
+    case pcfb::OpCode::BITWISE_MAJORITY:
+        return 2 * count() > ins.size();
+    case pcfb::OpCode::BITWISE_MINORITY:
+        return 2 * count() <= ins.size();
     case pcfb::OpCode::BITWISE_ZEROS:
         return false;
     case pcfb::OpCode::BITWISE_ONES:

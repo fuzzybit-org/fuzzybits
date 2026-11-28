@@ -5,6 +5,7 @@
 #include "expression/constant.h"
 #include "pdag.h"
 
+#include "pcfb/count.h"
 #include "pcfb/threshold.h"
 
 #include <algorithm>
@@ -707,9 +708,18 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         }
         default: {
             const auto args = collect_args(op);
-            const std::uint32_t k = (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
+            std::uint32_t k = (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
+            auto opcode = op->opcode();
+            // MAJORITY and MINORITY are ATLEAST and ATMOST over their range (pcfb::count_bounds): the PDAG has at-least
+            // gates only, and ATMOST already reaches them through the complements.
+            if (opcode == pcfb::OpCode::BITWISE_MAJORITY || opcode == pcfb::OpCode::BITWISE_MINORITY) {
+                const auto range = pcfb::count_bounds(opcode, static_cast<std::uint32_t>(args.size())).value();
+                const bool majority = opcode == pcfb::OpCode::BITWISE_MAJORITY;
+                k = majority ? range.low : range.high;
+                opcode = majority ? pcfb::OpCode::BITWISE_ATLEAST : pcfb::OpCode::BITWISE_ATMOST;
+            }
             TensorBinding b;
-            b.gate = emit_simple(op->opcode(), args, k, output);
+            b.gate = emit_simple(opcode, args, k, output);
             attach_origin(b.gate, op, output);
             bind_output(output, std::move(b));
             break;
