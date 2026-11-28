@@ -9,15 +9,22 @@ namespace fuzzybits::ir::pc {
 enum class op_code : std::uint8_t {
     basic_event,
     constant,
+    sample,
+    ones,
+    zeros,
     house_event,
     and_gate,
     or_gate,
     xor_gate,
     not_gate,
+    null_gate,
     nand_gate,
     nor_gate,
     xnor_gate,
     cardinality,
+    atleast,
+    atmost,
+    exactly,
 };
 
 // Leaf classification is semantic, not layout-driven: leaves have no Boolean
@@ -27,13 +34,19 @@ enum class op_code : std::uint8_t {
 }
 
 [[nodiscard]] constexpr auto is_boolean_gate(const op_code code) noexcept -> bool {
-    return code == op_code::and_gate || code == op_code::or_gate || code == op_code::xor_gate ||
-           code == op_code::not_gate || code == op_code::nand_gate || code == op_code::nor_gate ||
-           code == op_code::xnor_gate;
+    switch (code) {
+    case op_code::constant:
+    case op_code::sample:
+    case op_code::ones:
+    case op_code::zeros:
+    case op_code::basic_event:
+    case op_code::house_event:
+        return false;
+    default:
+        return true;
+    }
 }
 
-[[nodiscard]] constexpr auto accepts_operands(const op_code code) noexcept -> bool {
-    return is_boolean_gate(code) || code == op_code::cardinality;
-}
+[[nodiscard]] constexpr auto accepts_operands(const op_code code) noexcept -> bool { return is_boolean_gate(code) || code == op_code::cardinality; }
 
 } // namespace fuzzybits::ir::pc

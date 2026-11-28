@@ -1,10 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "mc/queue/layer_manager.h"
+#include "mc/executor/layer_manager.h"
 #include "runtime/runtime.h"
 
 #include <hipSYCL/runtime/settings.hpp>
 
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -51,7 +52,7 @@ std::optional<std::string> mask_token(const sycl::backend backend) {
     return std::nullopt;
 }
 
-sycl::backend mc_queue_backend() { return scram::mc::queue::make_throwing_sycl_queue().get_device().get_backend(); }
+sycl::backend mc_queue_backend() { return fuzzybits::mc::executor::make_throwing_sycl_queue().get_device().get_backend(); }
 
 } // namespace
 
@@ -101,7 +102,7 @@ TEST_CASE("MC queues select each loaded backend from a mask set after start-up",
 TEST_CASE("a mask set after start-up that names no loaded backend is an error", "[mc][device][late-mask]") {
     const restore_mask_on_exit restore;
     set_mask("no-such-backend");
-    CHECK_THROWS(scram::mc::queue::make_throwing_sycl_queue());
+    CHECK_THROWS(fuzzybits::mc::executor::make_throwing_sycl_queue());
 
     const auto backends = loaded_backends();
     for (const char *token : {"hip", "ze", "cuda"}) {
@@ -111,7 +112,7 @@ TEST_CASE("a mask set after start-up that names no loaded backend is an error", 
         if (backends.count(mask.begin()->first) == 0) {
             INFO("ACPP_VISIBILITY_MASK=" << token);
             set_mask(token);
-            CHECK_THROWS(scram::mc::queue::make_throwing_sycl_queue());
+            CHECK_THROWS(fuzzybits::mc::executor::make_throwing_sycl_queue());
             return;
         }
     }
@@ -138,21 +139,19 @@ TEST_CASE("runtime::apply_backend_mask (fzb --backend) selects the MC queue's ba
 namespace {
 
 /// A queueable that submits nothing: these tests only look at the order.
-struct no_kernel final : scram::mc::queue::queueable_base {
+struct no_kernel final : fuzzybits::mc::executor::queueable_base {
     using queueable_base::queueable_base;
-    void handle_submission(sycl::handler &) override {}
+    void handle_submission(sycl::handler &, std::uint32_t /*pass*/) override {}
 };
 
 } // namespace
 
-TEST_CASE("the MC queue is in order", "[mc][queue]") {
-    CHECK(scram::mc::queue::make_throwing_sycl_queue().is_in_order());
-}
+TEST_CASE("the MC queue is in order", "[mc][queue]") { CHECK(fuzzybits::mc::executor::make_throwing_sycl_queue().is_in_order()); }
 
 TEST_CASE("every kernel must be submitted after the kernels it depends on", "[mc][queue]") {
-    using scram::mc::queue::check_submission_order;
-    using scram::mc::queue::queueable_base;
-    sycl::queue queue = scram::mc::queue::make_throwing_sycl_queue();
+    using fuzzybits::mc::executor::check_submission_order;
+    using fuzzybits::mc::executor::queueable_base;
+    sycl::queue queue = fuzzybits::mc::executor::make_throwing_sycl_queue();
     const auto a = std::make_shared<no_kernel>(queue);
     const auto b = std::make_shared<no_kernel>(queue, std::vector<std::shared_ptr<queueable_base>>{a});
     CHECK_NOTHROW(check_submission_order({a, b}));

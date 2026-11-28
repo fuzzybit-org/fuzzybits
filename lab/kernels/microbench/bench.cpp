@@ -1,7 +1,14 @@
 // Philox Bernoulli sampler microbenchmark: launches each sampler variant of samplers.h and the production
-// kernel forms of src/mc/prng/bernoulli.h over events x bitpacks, reports the median launch time and checks
+// forms of src/mc/prng/bernoulli/ over events x bitpacks, reports the median launch time and checks
 // every variant's bits against a host reference. Build and run: see lab/kernels/README.md.
-#include "mc/prng/bernoulli.h"
+//
+// The production forms (pstrided, plockstep) sample kStream at the counters of src/mc/prng/stream.h:
+// launch(it) is pass `it`, bitpacks [it·B, (it + 1)·B) of each event's run. The variants of samplers.h keep
+// lab::counter, the counter of the samplers they replicate, so their bitpacks differ from the production forms':
+// each group is compared with its own first output, and the two bit-sliced host references (lab::bs_reference,
+// prng::bernoulli::sample) are checked against each other at both groups' counters.
+#include "mc/prng/bernoulli/bernoulli.h"
+#include "mc/prng/stream.h"
 #include "samplers.h"
 
 #include <algorithm>
@@ -17,6 +24,22 @@
 #include <vector>
 
 namespace {
+
+namespace prng = fuzzybits::mc::prng;
+
+// The production forms' stream: the key lab::philox has built in (lab::kK0, lab::kK1, the engine's fixed key before
+// runs had seeds), which the cross-checks of the host references need, on device 0; not the default stream (seed
+// stream::kDefaultSeed).
+constexpr prng::stream kStream{.key = {.k0 = lab::kK0, .k1 = lab::kK1}, .device = 0};
+
+// kernel::sampler::stream_argument, repeated because build.sh copies only src/mc/prng: the expanded stream (the key's ten
+// round keys and the device) is specialized where AdaptiveCpp offers it, so the generic JIT folds the round keys into
+// immediates as in production.
+#if defined(ACPP_EXT_SPECIALIZED)
+using stream_argument = sycl::specialized<prng::expanded_stream>;
+#else
+using stream_argument = prng::expanded_stream;
+#endif
 
 std::uint64_t probability_to_threshold(double p) {
     if (!(p > 0.0)) {
@@ -114,9 +137,8 @@ int main(int argc, char **argv) {
     sycl::queue q{sycl::property::queue::enable_profiling{}};
     const auto dev = q.get_device();
     const std::size_t maxwg = dev.get_info<sycl::info::device::max_work_group_size>();
-    std::printf("device: %s | cpu=%d | max_wg=%zu | events=%zu bitpacks=%zu reps=%d p=%s\n",
-                dev.get_info<sycl::info::device::name>().c_str(), dev.is_cpu() ? 1 : 0, maxwg, o.events, o.bitpacks,
-                o.reps, o.pmode.c_str());
+    std::printf("device: %s | cpu=%d | max_wg=%zu | events=%zu bitpacks=%zu reps=%d p=%s\n", dev.get_info<sycl::info::device::name>().c_str(),
+                dev.is_cpu() ? 1 : 0, maxwg, o.events, o.bitpacks, o.reps, o.pmode.c_str());
 
     // Probabilities.
     std::vector<double> p(o.events);
@@ -160,16 +182,12 @@ int main(int argc, char **argv) {
     // Production 3D launch geometry (compute_optimal_local_range_3d_for_gpu).
     const auto log2maxwg = static_cast<unsigned>(std::log2(static_cast<double>(maxwg)));
     const auto wis = dev.get_info<sycl::info::device::max_work_item_sizes<3>>();
-    const unsigned lx2 = std::min<unsigned>(
-        static_cast<unsigned>(std::log2(closest_power_of_2(std::min<std::size_t>(E, wis[0])))), log2maxwg);
-    const unsigned lz2 = std::min<unsigned>(
-        static_cast<unsigned>(std::log2(closest_power_of_2(std::min<std::size_t>(B, wis[2])))), log2maxwg - lx2);
+    const unsigned lx2 = std::min<unsigned>(static_cast<unsigned>(std::log2(closest_power_of_2(std::min<std::size_t>(E, wis[0])))), log2maxwg);
+    const unsigned lz2 = std::min<unsigned>(static_cast<unsigned>(std::log2(closest_power_of_2(std::min<std::size_t>(B, wis[2])))), log2maxwg - lx2);
     const sycl::range<3> local3{std::size_t{1} << lx2, 1, std::size_t{1} << lz2};
-    const sycl::range<3> global3{(E + local3[0] - 1) / local3[0] * local3[0], 1,
-                                 (B + local3[2] - 1) / local3[2] * local3[2]};
+    const sycl::range<3> global3{(E + local3[0] - 1) / local3[0] * local3[0], 1, (B + local3[2] - 1) / local3[2] * local3[2]};
 
-    std::printf("prod local3=(%zu,%zu,%zu) global3=(%zu,%zu,%zu)\n", local3[0], local3[1], local3[2], global3[0],
-                global3[1], global3[2]);
+    std::printf("prod local3=(%zu,%zu,%zu) global3=(%zu,%zu,%zu)\n", local3[0], local3[1], local3[2], global3[0], global3[1], global3[2]);
     using Launch = std::function<sycl::event(std::uint32_t)>;
     std::map<std::string, Launch> launches;
 
@@ -351,13 +369,17 @@ int main(int argc, char **argv) {
     };
     launches["vp8"] = simdp(std::integral_constant<int, 8>{});
     launches["vp16"] = simdp(std::integral_constant<int, 16>{});
-    // Production code (src/mc/prng/bernoulli.h) with the production 1-D geometry of kernel::basic_event.
+    // The production forms (src/mc/prng/bernoulli/) in the 1-D layout of kernel::sampler::geometry (events x work-groups
+    // per event) with the production stream argument. pstrided gives each work-item a run as kernel::sampler::strided
+    // does; plockstep runs the lockstep form 16 bitpacks per work-item in work-groups of 64, the geometry of the
+    // pre-split CPU kernel, which is not kernel::sampler::lockstep's (chunks of up to kMaxChunk, work-groups of 4).
+    const stream_argument stream_arg{prng::expanded_stream::of(kStream)};
     auto production = [&](auto form) -> Launch {
-        constexpr bool lanes_form = decltype(form)::value;
+        constexpr bool lockstep_form = decltype(form)::value;
         const std::size_t units = std::max<std::size_t>(dev.get_info<sycl::info::device::max_compute_units>(), 1);
-        const std::size_t wg_p = lanes_form ? 64 : 128;
+        const std::size_t wg_p = lockstep_form ? 64 : 128;
         std::uint32_t items;
-        if (!lanes_form) {
+        if (!lockstep_form) {
             const auto run = static_cast<std::uint32_t>(std::clamp<std::size_t>(E * B / (units * 2048), 1, 32));
             items = static_cast<std::uint32_t>((B + run - 1) / run);
         } else {
@@ -365,8 +387,8 @@ int main(int argc, char **argv) {
         }
         const auto padded = static_cast<std::uint32_t>((items + wg_p - 1) / wg_p * wg_p);
         const auto B32 = static_cast<std::uint32_t>(B);
-        std::printf("production %s: items/event=%u padded=%u\n", lanes_form ? "lanes" : "strided", items, padded);
-        return [=, &q](std::uint32_t it) {
+        std::printf("production %s: items/event=%u padded=%u\n", lockstep_form ? "lockstep" : "strided", items, padded);
+        return [=, &q](std::uint32_t pass) {
             const auto groups = static_cast<std::uint32_t>(padded / wg_p);
             return q.parallel_for(sycl::nd_range<1>{E * padded, wg_p}, [=](sycl::nd_item<1> item) {
                 // Event from the work-group index, so the compiler sees it uniform across the group.
@@ -380,26 +402,29 @@ int main(int argc, char **argv) {
                 if (always[e] || Tdev[e] == 0) {
                     return; // not in this benchmark's p sets except mix; skip
                 }
-                if constexpr (!lanes_form) {
-                    scram::mc::prng::bernoulli::sample_strided(row, t, items, B32, pdag[e], e, it, Tdev[e]);
+                const prng::expanded_stream run = stream_arg;
+                const prng::bernoulli::pass_stream source(run, pdag[e], std::uint64_t{pass} * B32);
+                if constexpr (!lockstep_form) {
+                    prng::bernoulli::sample_strided(row, t, items, B32, source, Tdev[e]);
                 } else {
                     const std::uint32_t first = t * 16;
                     const std::uint32_t valid = std::min<std::uint32_t>(16, B32 - first);
-                    scram::mc::prng::bernoulli::sample_lanes<16>(row + first, valid, first, pdag[e], e, it, Tdev[e]);
+                    prng::bernoulli::sample_lockstep<16>(row, first, valid, source, Tdev[e]);
                 }
             });
         };
     };
     launches["pstrided"] = production(std::false_type{});
-    launches["planes"] = production(std::true_type{});
+    launches["plockstep"] = production(std::true_type{});
     launches["simd4"] = simd(std::integral_constant<int, 4>{});
     launches["simd8"] = simd(std::integral_constant<int, 8>{});
     launches["simd16"] = simd(std::integral_constant<int, 16>{});
 
     // ---------------------------------------------------------------- run
     std::vector<std::uint64_t> host(E * B);
-    std::vector<std::uint64_t> ref_bs;   // first bit-sliced output, iteration 0
-    std::vector<std::uint64_t> ref_prod; // first production output, iteration 0
+    std::vector<std::uint64_t> ref_bs;              // first bit-sliced variant of samplers.h, iteration 0
+    std::vector<std::uint64_t> ref_prod;            // first 32-bit sampler (prod, prod16), iteration 0
+    std::vector<std::uint64_t> ref_production_form; // first production form (pstrided, plockstep), pass 0
     for (const auto &name : o.variants) {
         auto itl = launches.find(name);
         if (itl == launches.end()) {
@@ -434,7 +459,9 @@ int main(int argc, char **argv) {
             launch(0).wait();
             q.memcpy(host.data(), out, E * B * 8).wait();
             const bool is_prod = name.rfind("prod", 0) == 0;
-            auto &ref = is_prod ? ref_prod : ref_bs;
+            // The production forms' bitpacks are at prng::counter, the other variants' at lab::counter.
+            const bool is_production_form = name == "pstrided" || name == "plockstep";
+            auto &ref = is_prod ? ref_prod : is_production_form ? ref_production_form : ref_bs;
             if (ref.empty()) {
                 ref = host;
                 check = "ref";
@@ -449,17 +476,29 @@ int main(int argc, char **argv) {
             std::size_t bad = 0, checked = 0;
             for (std::size_t e = 0; e < E; e += std::max<std::size_t>(1, E / 16)) {
                 for (std::size_t s = 0; s < B; s += std::max<std::size_t>(1, B / 64)) {
-                    const lab::state128 base =
-                        lab::counter(h_pdag[e], static_cast<std::uint32_t>(e), static_cast<std::uint32_t>(s), 0);
+                    const auto s32 = static_cast<std::uint32_t>(s);
                     std::uint64_t want;
-                    if (is_prod) {
-                        want = lab::sample_production<false>(base, h_thr32[e]);
-                    } else {
-                        want = h_always[e] ? ~0ull : lab::bs_reference(base, h_T[e]);
-                        // The production reference, called from host code, must agree.
-                        const scram::mc::prng::state128 pb{{base.x[0], base.x[1], base.x[2], base.x[3]}};
-                        if (!h_always[e] && scram::mc::prng::bernoulli::sample(pb, h_T[e]) != want) {
+                    if (is_production_form) {
+                        // Bitpack s of pass 0, which launch(0) sampled, from the production reference.
+                        // lab::bs_reference at the same counter, written independently, must agree.
+                        const prng::bernoulli::pass_stream source(kStream, h_pdag[e], 0);
+                        want = h_always[e] ? ~0ull : prng::bernoulli::sample(source, s32, h_T[e]);
+                        const prng::state128 c = source.counter_of(s32);
+                        const lab::state128 lc{{c.x[0], c.x[1], c.x[2], c.x[3]}};
+                        if (!h_always[e] && lab::bs_reference(lc, h_T[e]) != want) {
                             ++bad;
+                        }
+                    } else {
+                        const lab::state128 base = lab::counter(h_pdag[e], static_cast<std::uint32_t>(e), s32, 0);
+                        if (is_prod) {
+                            want = lab::sample_production<false>(base, h_thr32[e]);
+                        } else {
+                            want = h_always[e] ? ~0ull : lab::bs_reference(base, h_T[e]);
+                            // The production reference, called from host code, must agree.
+                            const prng::state128 pb{{base.x[0], base.x[1], base.x[2], base.x[3]}};
+                            if (!h_always[e] && prng::bernoulli::sample(pb, kStream.key, h_T[e]) != want) {
+                                ++bad;
+                            }
                         }
                     }
                     bad += want != host[e * B + s];
@@ -494,8 +533,8 @@ int main(int argc, char **argv) {
             std::snprintf(buf, sizeof buf, " max|z|=%.2f", zmax);
             check += buf;
         }
-        std::printf("%-8s kernel_med=%9.3f ms  min=%9.3f  max=%9.3f  wall=%9.3f ms  %7.3f ns/bitpack  %s\n",
-                    name.c_str(), med, ms.front(), ms.back(), wall, ns_per_bp, check.c_str());
+        std::printf("%-8s kernel_med=%9.3f ms  min=%9.3f  max=%9.3f  wall=%9.3f ms  %7.3f ns/bitpack  %s\n", name.c_str(), med, ms.front(), ms.back(), wall,
+                    ns_per_bp, check.c_str());
         std::fflush(stdout);
     }
     sycl::free(out, q);

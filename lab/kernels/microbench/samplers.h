@@ -1,7 +1,7 @@
 // Sampler variants for the Philox Bernoulli microbenchmark (bench.cpp): a replica of the 32-bit sampler that
 // develop used before the bit-sliced one, the split low multiply (#16), and the bit-sliced variants that were
 // tried for #164 (plain, 16-lane, persistent, explicit SIMD). Not the production code: that is
-// src/mc/prng/bernoulli.h, which bench.cpp includes.
+// src/mc/prng/bernoulli/, which bench.cpp includes.
 #pragma once
 #include <cstdint>
 #include <sycl/sycl.hpp>

@@ -13,6 +13,12 @@
     releases within sampling error. There is no option to restore the old stream; earlier releases
     reproduce earlier results.
   - The unused SFC64, WyRand and xorshift128 headers in `src/mc/prng` are removed.
+- The random stream changes again: a basic event's trials are drawn at the Philox counter (node, device, run-wide
+  bitpack index), keyed by the run's seed, instead of at (node, position in its kernel block, bitpack in the pass,
+  pass). A trial's bits no longer depend on how the layers group basic events into kernels or on the pass size the
+  device's memory allows. Estimates for a given model and trial count differ from earlier releases within sampling
+  error; earlier releases reproduce earlier results. The seed is 372, the default of every entry point, until
+  `--seed` accepts other values (#65).
 - Common-cause failure groups are expanded by default in `fzb compile`, `fuzzybits.compile`, the
   native `compile_pcfb` / `run_probability` bindings and `fuzzybits-server`. Results change for
   models that define CCF groups and were compiled without `--ccf`.
@@ -124,6 +130,10 @@
   GPUs, 5-117x on a Radeon Pro 5500M and 1.1-6.6x on CPUs. Gates whose inputs other gates of a small layer share
   can be slower than before: 64-input AND gates, 32 per layer, up to 1.4x on an RTX 3070, and 64-input OR gates,
   128 per layer, 1.8x on CPUs (#281).
+- The execution plan and the kernel DAG name what computes a node by the native IR's op code (`ir::pc::op_code`)
+  instead of SCRAM's connective. Partitions of at-least gates report `atleast` instead of `k/n`. Constant gates
+  report `ones` or `zeros`, and no kernel computes them: their bitpacks are written once, as for basic events of
+  constant law. Results are the same for a given seed.
 - The Monte Carlo queue is in order, and kernels are submitted without dependency events, so AdaptiveCpp submits
   each kernel directly to the device instead of through its DAG scheduler (#286). On a model of about 88,000
   gates at the default device-memory budget, `fzb run` is about 2x faster on a Tesla V100S and 1.7-1.8x on an

@@ -83,6 +83,25 @@ static bitpack_t generate_samples(const sampler_args &args) {
 - **Sample Size**: Bit-packs per batch (configurable: 16, 32, 64 typical)
 - **Dynamic Sizing**: Runtime optimization based on device memory and compute capabilities
 
+### Node outputs and random streams
+
+Every node's bitpacks for one pass live in one device allocation, the output arena (`src/mc/event/node.h`): slot s
+holds bitpacks [s·B, (s + 1)·B), with B the bitpacks per node per pass. The kernels' records hold no pointers: a gate
+names its inputs by arena slot, through its block's input table (`src/mc/event/gate.h`), and a tally names the slot
+of the node it counts (`src/mc/event/tally.h`).
+
+A basic event's bitpack b (its index among all of the node's bitpacks in the run, pass × B plus its index in the
+pass) is drawn from Philox4x32-10 with the run's seed as the key and the counter (node, device, b mod 2^32,
+(b >> 32) << 6 | generation) (`src/mc/prng/stream.h`). Its bits therefore depend on the seed, the device's index in
+the run, the node's PDAG index and b only, not on the node's block, its arena slot, the pass size or the sampler
+form; `mc.bitpack_identity` pins them with a checksum and checks the independence from block, slot and pass size.
+
+A basic event whose law is a constant (p = 0, any p below 2^-64, or p = 1) has the same bitpacks in every pass. They
+are written once, when the event's arena slot is allocated, and no kernel is built for it: the sampling kernel's
+records (`event::sampled_event`, `src/mc/event/basic_event.h`) cannot hold a constant law. `fzb compile` folds most
+such events into constants already (`fold_zero_probability`, `fold_unit_probability` in
+[ir-pc-passes.md](ir-pc-passes.md)); `mc.layer_manager_stream` checks the ones that reach the engine.
+
 ### Gate kernels
 
 A work-item evaluates one bitpack of one gate (CPUs: 8 consecutive bitpacks as one vector, since their JIT
@@ -91,16 +110,20 @@ comes from the work-group index (`src/mc/kernel/gate_lanes.h`). On NVIDIA GPUs t
 at a block of bitpacks before the next block, so gates that share inputs read them from the cache; elsewhere
 they run gate by gate, except on CPUs for kernels whose gates differ in input count: OpenMP gives each thread a
 contiguous run of work-groups, and block by block every thread gets each gate as often. A layer's gates take
-one kernel per connective, and cardinality gates one per form and slot count:
+one kernel per op code (the native IR's, `ir::pc::op_code`; `src/mc/kernel/op_code.h` says which kernel evaluates
+which), and counting gates one per form and slot count. The layer manager reads SCRAM's PDAG into these op codes
+(`src/mc/executor/builder/compat.h`); no other file of `src/mc/executor` names SCRAM's connectives.
 
-- AND, OR, XOR, NAND, NOR, NOT, NULL (`src/mc/kernel/gate.h`): one kernel per connective and layer, with the
+- AND, OR, XOR, NAND, NOR, XNOR, NOT, NULL (`src/mc/kernel/gate.h`): one kernel per op code and layer, with the
   input count read at run time (GPUs: 8 loads at a time; CPUs: the positive inputs, then the negated ones).
-  NOT and NULL have one input slot, and constant gates are AND or OR over no inputs. The kernel also takes a
-  compile-time slot count, with `gate::input_mask` marking the slots that hold an input, but a kernel per slot
-  count was no faster at the runtime's pass sizes and multiplied kernel launches, which dominate on models with
-  many layers and small passes.
-- Cardinality gates (`src/mc/kernel/cardinality.h`): at least k, at most k and exactly k of n are true where
-  the number of true inputs lies in [low, high]. The count is bit-sliced: bit j of a bitpack is trial j, and
+  NOT and NULL have one input slot. A constant gate takes no kernel: it is `ones` or `zeros`, whose bitpacks are
+  written once, as a basic event's of constant law. The kernel also takes a
+  compile-time slot count, where slot j holds an input iff j is below the gate's input count, but a kernel per
+  slot count was no faster at the runtime's pass sizes and multiplied kernel launches, which dominate on models
+  with many layers and small passes.
+- Counting gates (`src/mc/kernel/cardinality.h`; op codes `cardinality`, `atleast`, `atmost`, `exactly`): true
+  where the number of true inputs lies in [low, high], so at least k of n is [k, n], at most k is [0, k] and
+  exactly k is [k, k]. The count is bit-sliced: bit j of a bitpack is trial j, and
   the per-trial counts are bit planes, so whole-word logic counts all the trials of a bitpack at once. Up to
   16 inputs the same slot counts; 17 to 255 inputs, carry-save adders over blocks of 8 inputs (Harley-Seal), at
   most 8 planes, with the input count read at run time; 256 inputs or more, the same with up to 32 planes, in a

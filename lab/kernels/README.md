@@ -21,7 +21,7 @@ their forms went into #282; [FINDINGS.md](FINDINGS.md) has the measurements.
 
 | tool | what it measures | where it runs |
 |---|---|---|
-| `microbench/bench.cpp`, `samplers.h` | launch time of each sampler variant and of the production `strided` / `lanes` kernel forms, events × bitpacks per launch, every variant checked against a host reference | toolchain container (`microbench/build.sh`) |
+| `microbench/bench.cpp`, `samplers.h` | launch time of each sampler variant and of the production `strided` / `lockstep` forms (`pstrided`, `plockstep`), events × bitpacks per launch, every variant checked against a host reference | toolchain container (`microbench/build.sh`) |
 | `microbench/sweep.sh` | the persistent variant's run length × work-group size | same container |
 | `cardinality/bench.cpp`, `card.h` | k-of-n gates: replicas of the at-least kernel and the at-most/exactly lowering that #274 replaced, against the bit-sliced kernels of `card.h`; G gates × B bitpacks, every variant checked against a host count | toolchain container (`cardinality/build.sh`) |
 | `cardinality/bench_gate.cpp` | AND, OR, XOR, NAND, NOR, NOT, NULL: a replica of the kernel #275 replaced, against fixed and runtime input counts, lane widths, load blocks, both work-group orders, and the cardinality kernels posing as AND/OR | same container |

@@ -42,10 +42,10 @@
 
 #pragma once
 
-#include "mc/event/node.tpp"
+#include "mc/event/sample_shape.h"
 #include "working_set.h"
 
-#include "logger.h"
+#include "mc/executor/compat.h"
 
 #include <algorithm>
 #include <bit>
@@ -56,22 +56,21 @@
 #include <vector>
 
 // Forward declare the sample_shaper template so we can reference it before its full definition.
-namespace scram::mc::queue {
+namespace fuzzybits::mc::executor {
 template <typename bitpack_t_> struct sample_shaper;
 }
 
 namespace scram::log::sample_shaper {
-// Forward declaration so that friend declaration inside mc::queue::sample_shaper
+// Forward declaration so that friend declaration inside mc::executor::sample_shaper
 // can find the template before it is defined in log_sample_shaper.h.
-template <typename bitpack_t_>
-std::vector<std::pair<std::string, std::string>> csv_pairs(const scram::mc::queue::sample_shaper<bitpack_t_> &);
+template <typename bitpack_t_> std::vector<std::pair<std::string, std::string>> csv_pairs(const fuzzybits::mc::executor::sample_shaper<bitpack_t_> &);
 } // namespace scram::log::sample_shaper
 
 /// Hard ceiling on a single device allocation we are willing to request, in bytes.
 /// The realized budget is min(this, device max_mem_alloc_size).
 static constexpr std::size_t MAX_ALLOCATABLE_DEVICE_BYTES = 1024ULL * 1024ULL * 1024ULL;
 
-namespace scram::mc::queue {
+namespace fuzzybits::mc::executor {
 template <typename bitpack_t_> struct sample_shaper {
 
     /// Number of device passes required to reach the requested total (0 → unbounded).
@@ -150,7 +149,7 @@ template <typename bitpack_t_> struct sample_shaper {
         num_iterations_ = ceil_div(total_bits_to_sample_, bits_per_iteration_);
         TOTAL_ITERATIONS = unlimited_iterations_ ? 0 : num_iterations_;
 
-        LOG(DEBUG2) << working_set<std::size_t, bitpack_t_>(queue, num_nodes_, SAMPLE_SHAPE);
+        compat::debug2([&](std::ostream &log) { log << working_set<std::size_t, bitpack_t_>(queue, num_nodes_, SAMPLE_SHAPE); });
     }
 
     [[nodiscard]] description describe() const {
@@ -350,4 +349,4 @@ template <typename bitpack_t_> struct sample_shaper {
     bool unlimited_iterations_ = false;
     std::string shape_strategy_ = "uninitialized";
 };
-} // namespace scram::mc::queue
+} // namespace fuzzybits::mc::executor

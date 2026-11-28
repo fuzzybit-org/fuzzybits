@@ -321,9 +321,9 @@ template <> class ProbabilityAnalyzer<Bdd> : public ProbabilityAnalyzerBase {
 
 /// Specialization of probability analyzer using direct evaluation of the underlying pdag.
 /// The quantitative analysis is done using Monte Carlo sampling.
-template <> class ProbabilityAnalyzer<mc::DirectEval> : public ProbabilityAnalyzerBase {
+template <> class ProbabilityAnalyzer<DirectEval> : public ProbabilityAnalyzerBase {
   public:
-    using TallyNode = mc::stats::TallyNode;
+    using TallyNode = fuzzybits::mc::stats::TallyNode;
     using index_t = int; // pdag index uses 32bit ints, negated values mean compliments
 
     /// Constructs probability analyzer from a fault tree analyzer
@@ -346,7 +346,7 @@ template <> class ProbabilityAnalyzer<mc::DirectEval> : public ProbabilityAnalyz
     ///
     /// @post FaultTreeAnalyzer is not corrupted
     ///       by use of its PDAG internals.
-    ProbabilityAnalyzer(FaultTreeAnalyzer<mc::DirectEval> *fta, mef::MissionTime *mission_time);
+    ProbabilityAnalyzer(FaultTreeAnalyzer<DirectEval> *fta, mef::MissionTime *mission_time);
 
     /// Deletes the PDAG
     /// only if ProbabilityAnalyzer is the owner of them.
@@ -361,14 +361,13 @@ template <> class ProbabilityAnalyzer<mc::DirectEval> : public ProbabilityAnalyz
   protected:
     void ComputeTallies(bool converge_on_root_only = false);
 
-    mc::stats::TallyNodeMap monitored_; // all the monitored/observed nodes. always collect tallies for these.
+    fuzzybits::mc::stats::TallyNodeMap monitored_; // all the monitored/observed nodes. always collect tallies for these.
 
     static auto GatherGates(Pdag *pdag) -> std::unordered_set<index_t>;
     static auto GatherGates(Pdag *pdag, std::unordered_set<index_t> *nodes);
 
-    static auto ObserveNodes(Pdag *pdag, mc::stats::TallyNodeMap &observing,
-                             const std::unordered_set<index_t> &to_observe, bool track_convergence, bool clear_stats)
-        -> std::unordered_set<index_t>;
+    static auto ObserveNodes(Pdag *pdag, fuzzybits::mc::stats::TallyNodeMap &observing, const std::unordered_set<index_t> &to_observe, bool track_convergence,
+                             bool clear_stats) -> std::unordered_set<index_t>;
 
     void SanitizeWatchState();
 
@@ -391,6 +390,6 @@ template <> class ProbabilityAnalyzer<mc::DirectEval> : public ProbabilityAnalyz
         observe(std::unordered_set<index_t>{node_indices.begin(), node_indices.end()}, track_convergence, clear_stats);
     }
 
-    [[nodiscard]] const mc::stats::TallyNodeMap &monitored() const { return monitored_; }
+    [[nodiscard]] const fuzzybits::mc::stats::TallyNodeMap &monitored() const { return monitored_; }
 };
 } // namespace scram::core

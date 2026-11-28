@@ -288,6 +288,7 @@ class parser final {
     auto parse_number() -> std::optional<value> {
         const auto start = cursor_;
         bool integral = true;
+        // TODO:: fix warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
         consume('-');
         if (cursor_ >= text_.size() || text_[cursor_] < '0' || text_[cursor_] > '9') {
             cursor_ = start;

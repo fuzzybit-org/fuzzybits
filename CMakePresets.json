@@ -103,6 +103,7 @@
       "cacheVariables": {
         "CMAKE_OSX_SYSROOT": "$env{SDKROOT}",
         "BUILD_PYTHON_BINDINGS": "OFF",
+        "OPTIMIZE_FOR_NATIVE": "ON",
         "CMAKE_C_COMPILER": "/usr/bin/clang",
         "CMAKE_CXX_COMPILER": "/usr/bin/clang++",
         "CMAKE_C_COMPILER_LAUNCHER": "ccache",

@@ -29,9 +29,14 @@ def parse_duration_ms(text: str) -> float:
     return value * scale
 
 
+# The sampling kernels: kernel::basic_event before src/mc/kernel/sampler/ split it into one kernel per form
+# (kernel::sampler::strided, ::lockstep, ::chunked), demangled or mangled, and the older Philox samplers.
+_SAMPLER_MARKERS = ("basic_event", "kernel::sampler::", "6kernel7sampler", "pack_bernoulli", "philox")
+
+
 def classify_kernel(name: str) -> str:
     lowered = name.lower()
-    if "basic_event" in lowered or "pack_bernoulli" in lowered or "philox" in lowered:
+    if any(marker in lowered for marker in _SAMPLER_MARKERS):
         return "basic_event"
     if "tally" in lowered:
         return "tally"

@@ -92,7 +92,7 @@ endif()
 
 ####################### Begin compiler configurations ################### {{{
 
-# Default to C++23.
+# Default to C++26.
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS ON)

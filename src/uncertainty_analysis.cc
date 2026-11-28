@@ -45,10 +45,10 @@ namespace scram::core {
 UncertaintyAnalysis::UncertaintyAnalysis(const ProbabilityAnalysis *prob_analysis)
     : Analysis(prob_analysis->settings()), mean_(0), sigma_(0), error_factor_(1) {}
 
-UncertaintyAnalysis::UncertaintyAnalysis(const mc::stats::tally &tally)
+UncertaintyAnalysis::UncertaintyAnalysis(const fuzzybits::mc::stats::tally &tally)
     : Analysis(Settings{}), // use default settings – analysis won’t be run
       mean_(tally.mean), sigma_(0), error_factor_(1) {
-    using stats_t = mc::stats::tally;
+    using stats_t = fuzzybits::mc::stats::tally;
     const stats_t &stats = tally;
 
     // Estimate the standard deviation (σ) from the standard error (SE).

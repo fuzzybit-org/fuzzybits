@@ -3,7 +3,7 @@
 #include "mc/stats/ci_utils.h"
 #include "mc/stats/tally.h"
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 // -----------------------------------------------------------------------------
 //  Tag types that identify the statistical strategy at *compile-time*.
@@ -62,4 +62,4 @@ inline void update_convergence(mc::stats::tally &t, const double rel_margin_erro
     ConvergencePolicy<Policy>::update(t, rel_margin_error, z);
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

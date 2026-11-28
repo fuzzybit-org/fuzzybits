@@ -12,10 +12,10 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-using scram::mc::stats::bayes_policy;
-using scram::mc::stats::tally;
-using scram::mc::stats::update_convergence;
-using scram::mc::stats::wald_policy;
+using fuzzybits::mc::stats::bayes_policy;
+using fuzzybits::mc::stats::tally;
+using fuzzybits::mc::stats::update_convergence;
+using fuzzybits::mc::stats::wald_policy;
 
 namespace {
 
@@ -26,7 +26,7 @@ tally make_tally(const std::size_t k, const std::size_t n) {
     return t;
 }
 
-double z99() { return scram::mc::stats::normal_quantile_two_sided(0.99); }
+double z99() { return fuzzybits::mc::stats::normal_quantile_two_sided(0.99); }
 
 } // namespace
 
@@ -112,8 +112,8 @@ TEST_CASE("wald policy is defined at k = 0, 1, n", "[convergence][wald]") {
 TEST_CASE("beta_half_quantile_approx error vs Boost for n = 1e2..1e6", "[convergence][bayes][approx]") {
     using boost::math::beta_distribution;
     using boost::math::quantile;
-    using scram::mc::stats::detail::beta_half_quantile;
-    using scram::mc::stats::detail::beta_half_quantile_approx;
+    using fuzzybits::mc::stats::detail::beta_half_quantile;
+    using fuzzybits::mc::stats::detail::beta_half_quantile_approx;
 
     // Include the Jeffreys-prior two-sided tail used at z = 4
     // (Φ(4) ≈ 0.999968, cred ≈ 0.999936, tail ≈ 3.17e-5) plus a coarse grid.

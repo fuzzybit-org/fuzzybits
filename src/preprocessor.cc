@@ -2858,7 +2858,7 @@ void CustomPreprocessor<Mocus>::InvertOrder() {
         var->order(shift + var->order());
 }
 
-void CustomPreprocessor<mc::DirectEval>::InvertOrder() {
+void CustomPreprocessor<DirectEval>::InvertOrder() {
     std::vector<GatePtr> gates;
     std::vector<VariablePtr> variables;
     Preprocessor::GatherNodes(&gates, &variables);

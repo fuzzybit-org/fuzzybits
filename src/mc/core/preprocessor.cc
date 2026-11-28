@@ -14,7 +14,7 @@
 
 namespace scram::core {
 
-void CustomPreprocessor<mc::DirectEval>::Run() {
+void CustomPreprocessor<DirectEval>::Run() {
 
     graph_->Log();
     // perform the actual run
@@ -264,7 +264,7 @@ void CustomPreprocessor<mc::DirectEval>::Run() {
     }
 }
 
-void core::CustomPreprocessor<mc::DirectEval>::remove_null_gates() const {
+void scram::core::CustomPreprocessor<DirectEval>::remove_null_gates() const {
     if (graph_->HasNullGates()) {
         TIMER(DEBUG3, "NULL gates found");
         graph_->Log();

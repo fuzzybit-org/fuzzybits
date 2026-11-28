@@ -297,8 +297,8 @@ int cmd_run(int argc, char **argv) {
     if (opt.seed != 372) {
         std::cerr << "fzb run: --seed is not supported yet; results are deterministic "
                      "per model and trial count (Philox counters are "
-                     "{pdag_idx+1, event_idx+1, sample_idx+1, (iteration+1)<<6}, "
-                     "not Settings::seed). The only accepted value is 372, the "
+                     "{node, device, run-wide bitpack index} under seed 372). "
+                     "The only accepted value is 372, the "
                      "scram-cli default.\n";
         return 1;
     }

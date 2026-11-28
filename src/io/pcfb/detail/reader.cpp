@@ -106,6 +106,10 @@ struct NodeInfo final {
         return ir::pc::op_code::nor_gate;
     case ::pcfb::OpCode::BITWISE_XNOR:
         return ir::pc::op_code::xnor_gate;
+    case ::pcfb::OpCode::BITWISE_ATLEAST:
+        // todo:: return
+    case ::pcfb::OpCode::BITWISE_ATMOST:
+    case ::pcfb::OpCode::BITWISE_EXACTLY:
     default:
         return std::nullopt;
     }

@@ -26,7 +26,8 @@ gaps = [max(0, kern[i + 1][0] - kern[i][1]) for i in range(len(kern) - 1)]
 classes = {}
 for s, e, n in kern:
     name = strings.get(n, "?")
-    c = "basic_event" if "basic_event" in name else "tally" if "tally" in name else "gate/other"
+    sampler = "basic_event" in name or "kernel::sampler::" in name or "6kernel7sampler" in name
+    c = "basic_event" if sampler else "tally" if "tally" in name else "gate/other"
     t = classes.setdefault(c, [0, 0]); t[0] += 1; t[1] += e - s
 apis = {}
 for s, e, n in api:

@@ -188,10 +188,9 @@ template <> class ImportanceAnalyzer<Bdd> : public ImportanceAnalyzerBase {
 };
 
 // Forward declaration – implemented below.
-template <> class ImportanceAnalyzer<scram::mc::DirectEval> : public ImportanceAnalyzerBase {
+template <> class ImportanceAnalyzer<DirectEval> : public ImportanceAnalyzerBase {
   public:
-    explicit ImportanceAnalyzer(ProbabilityAnalyzer<scram::mc::DirectEval> *prob_analyzer)
-        : ImportanceAnalyzerBase(prob_analyzer), prob_analyzer_(prob_analyzer) {}
+    explicit ImportanceAnalyzer(ProbabilityAnalyzer<DirectEval> *prob_analyzer) : ImportanceAnalyzerBase(prob_analyzer), prob_analyzer_(prob_analyzer) {}
 
   private:
     //  Temporary implementation – returns zero so that the analysis completes.
@@ -210,7 +209,7 @@ template <> class ImportanceAnalyzer<scram::mc::DirectEval> : public ImportanceA
         return std::vector<int>(events.size(), 1);
     }
 
-    ProbabilityAnalyzer<scram::mc::DirectEval> *prob_analyzer_;
+    ProbabilityAnalyzer<DirectEval> *prob_analyzer_;
 };
 
 } // namespace scram::core

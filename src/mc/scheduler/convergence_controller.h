@@ -3,7 +3,7 @@
  * @brief High-level convergence manager for Monte-Carlo sampling runs.
  *
  * @details  This helper class delegates the *numerical* work to an existing
- * scram::mc::queue::layer_manager instance but owns the *policy* of how many
+ * fuzzybits::mc::executor::layer_manager instance but owns the *policy* of how many
  * additional iterations to execute.  It centralizes the classical
  * "half-width ≤ ε with CLT sanity" early-stopping rule that was previously
  * embedded in layer_manager.
@@ -20,7 +20,7 @@
  */
 #pragma once
 
-#include "mc/queue/layer_manager.h"
+#include "mc/executor/layer_manager.h"
 
 #include "mc/scheduler/convergence_policy.h"
 #include "mc/scheduler/iteration_shape.h"
@@ -39,7 +39,7 @@
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
-namespace scram::mc::scheduler {
+namespace fuzzybits::mc::scheduler {
 
 template <typename policy_t_, typename bitpack_t_, typename prob_t_ = std::double_t, typename size_t_ = std::size_t>
 struct progress;
@@ -53,7 +53,7 @@ class convergence_controller {
      * @param mgr        Reference to a fully initialised layer_manager.
      * @param settings   Settings
      */
-    convergence_controller(queue::layer_manager<bitpack_t_, prob_t_, size_t_> &mgr, const core::Settings &settings)
+    convergence_controller(executor::layer_manager<bitpack_t_, prob_t_, size_t_> &mgr, const scram::core::Settings &settings)
         : manager_(mgr), settings_(settings) {
 
         steps_ = {
@@ -100,7 +100,7 @@ class convergence_controller {
         progress_.initialize(this, settings.watch_mode(), progress_log, settings.progress_callback());
     }
 
-    void process_tally(const event::tally<bitpack_t_> &tally) {
+    void process_tally(const event::tally_estimate &tally) {
         current_tally_ = tally;
         // ------------------ update iterations ---------------------------------------
         steps_.current.trials(tally.total_bits);
@@ -387,7 +387,7 @@ class convergence_controller {
      * Run until the stopping criterion is met (or until the original plan is
      * exhausted).  Returns the final tally.
      */
-    [[nodiscard]] event::tally<bitpack_t_> run_to_convergence(stats::TallyNodeMap &tally_node_map) {
+    [[nodiscard]] event::tally_estimate run_to_convergence(stats::TallyNodeMap &tally_node_map) {
         // queue up burn-in trials, but dont check for convergence.
         while (burn_in_step(tally_node_map)) {
             progress_.perform_burn_in_update(*this);
@@ -403,7 +403,7 @@ class convergence_controller {
      * Run until the stopping criterion is met (or until the original plan is
      * exhausted).  Returns the final tally.
      */
-    [[nodiscard]] event::tally<bitpack_t_> run_to_convergence(const index_t_ event_id) {
+    [[nodiscard]] event::tally_estimate run_to_convergence(const index_t_ event_id) {
         // queue up burn-in trials, but dont check for convergence.
         while (burn_in_step(event_id)) {
             progress_.perform_burn_in_update(*this);
@@ -416,9 +416,9 @@ class convergence_controller {
     }
 
   private:
-    queue::layer_manager<bitpack_t_, prob_t_, size_t_> &manager_;
+    executor::layer_manager<bitpack_t_, prob_t_, size_t_> &manager_;
     // const index_t_ evt_idx_;
-    const core::Settings &settings_;
+    const scram::core::Settings &settings_;
     // Information gain tracking
     stats::info_gain info_gain_tracker_{};
     std::size_t prev_one_bits_ = 0;
@@ -430,7 +430,7 @@ class convergence_controller {
     iteration_shape<bitpack_t_> projected_steps_epsilon_{};
     iteration_shape<bitpack_t_> projected_steps_epsilon_log10_{};
 
-    event::tally<bitpack_t_> current_tally_{};
+    event::tally_estimate current_tally_{};
     bool epsilon_log10_converged_ = false;
     bool epsilon_converged_ = false;
     bool fixed_iteration_limited_reached_ = false;
@@ -473,7 +473,7 @@ class convergence_controller {
     [[nodiscard]] const stats::ci &target_state() const { return interval_.target; }
     [[nodiscard]] const stats::ci &current_state() const { return interval_.current; }
 
-    [[nodiscard]] const event::tally<bitpack_t_> &current_tally() const { return current_tally_; }
+    [[nodiscard]] const event::tally_estimate &current_tally() const { return current_tally_; }
 
     [[nodiscard]] double info_gain_last_iteration() const { return last_info_bits_; }
     [[nodiscard]] double info_gain_cumulative() const { return info_gain_tracker_.cumulative_bits(); }
@@ -560,4 +560,4 @@ class convergence_controller {
 
     [[nodiscard]] std::size_t node_count() const { return manager_.node_count(); }
 };
-} // namespace scram::mc::scheduler
+} // namespace fuzzybits::mc::scheduler

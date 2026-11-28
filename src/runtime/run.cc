@@ -1,6 +1,6 @@
 #include "runtime/runtime.h"
 
-#include "mc/queue/layer_manager.h"
+#include "mc/executor/layer_manager.h"
 #include "mc/scheduler/convergence_controller.h"
 #include "mc/stats/tally_node_map.h"
 #include "pdag.h"
@@ -62,7 +62,7 @@ class sampling_progress {
 
     /// Emits at most once per coalescing interval. `tallies` must hold cumulative counters for every
     /// query node.
-    void maybe_emit(const scram::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
+    void maybe_emit(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
         if (!emitter_.active()) {
             return;
         }
@@ -71,7 +71,7 @@ class sampling_progress {
 
     /// Emits `last` regardless of the rate and then `on_finish`. Exceptions from the sinks are
     /// swallowed when the run is already unwinding, so the original error is not replaced.
-    void finish(const scram::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done, bool interrupted) {
+    void finish(const fuzzybits::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done, bool interrupted) {
         if (!emitter_.active()) {
             return;
         }
@@ -89,7 +89,7 @@ class sampling_progress {
     }
 
     /// `finish(..., interrupted=true)`, for the RAII guard. Never throws.
-    void finish_interrupted(const scram::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done) noexcept {
+    void finish_interrupted(const fuzzybits::mc::stats::TallyNodeMap *tallies, std::uint64_t passes_done) noexcept {
         try {
             finish(tallies, passes_done, /*interrupted=*/true);
         } catch (...) {
@@ -116,8 +116,7 @@ class sampling_progress {
 
     /// Fills the per-query states from `tallies`; the only difference between an intermediate and the
     /// final snapshot is the throughput value (resampled vs. the last delivered rate).
-    [[nodiscard]] progress::snapshot build(const scram::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done,
-                                           double trials_per_second) const {
+    [[nodiscard]] progress::snapshot build(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done, double trials_per_second) const {
         progress::snapshot s = snapshot_without_tallies(passes_done);
         for (std::size_t i = 0; i < names_.size(); ++i) {
             const auto &t = tallies.at(names_[i]).tally_stats;
@@ -136,15 +135,13 @@ class sampling_progress {
     }
 
     /// An intermediate snapshot: resamples the throughput window and remembers the result.
-    [[nodiscard]] progress::snapshot build_live(const scram::mc::stats::TallyNodeMap &tallies,
-                                                std::uint64_t passes_done) {
+    [[nodiscard]] progress::snapshot build_live(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) {
         last_rate_ = update_rate(passes_done * trials_per_pass_);
         return build(tallies, passes_done, last_rate_);
     }
 
     /// The final snapshot reuses the last delivered rate (see `update_rate`).
-    [[nodiscard]] progress::snapshot build_final(const scram::mc::stats::TallyNodeMap &tallies,
-                                                 std::uint64_t passes_done) const {
+    [[nodiscard]] progress::snapshot build_final(const fuzzybits::mc::stats::TallyNodeMap &tallies, std::uint64_t passes_done) const {
         return build(tallies, passes_done, last_rate_);
     }
 
@@ -212,21 +209,21 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<Re
     settings.ci_policy(scram::core::CIPolicy::kWald);
     settings.watch_mode(false);
 
-    scram::mc::stats::TallyNodeMap monitored;
+    fuzzybits::mc::stats::TallyNodeMap monitored;
     for (const auto &q : queries) {
         if (!q.node) {
             throw RuntimeError("run: query '" + q.name + "' has no node");
         }
-        monitored.insert_or_assign(q.node->index(), scram::mc::stats::TallyNode{
-                                                        .status = scram::mc::stats::not_tracked,
+        monitored.insert_or_assign(q.node->index(), fuzzybits::mc::stats::TallyNode{
+                                                        .status = fuzzybits::mc::stats::not_tracked,
                                                         .tally_stats = {},
                                                         .node = q.node,
                                                     });
     }
 
     try {
-        scram::mc::queue::layer_manager<bitpack_t, prob_t, size_t_> manager(&pdag, static_cast<size_t_>(options.trials),
-                                                                            monitored, /*requested_trials_per_pass=*/0);
+        fuzzybits::mc::executor::layer_manager<bitpack_t, prob_t, size_t_> manager(&pdag, static_cast<size_t_>(options.trials), monitored,
+                                                                                   /*requested_trials_per_pass=*/0);
 
         const auto total_passes = manager.shaper().TOTAL_ITERATIONS;
         if (total_passes == 0) {
@@ -258,7 +255,7 @@ std::vector<QueryResult> run_graph(scram::core::Pdag &pdag, const std::vector<Re
             // the final tally are unchanged.
             for (std::uint64_t pass = 1; pass <= total_passes; ++pass) {
                 manager.pass(1);
-                scram::mc::queue::wait_sycl_queue(manager.queue());
+                fuzzybits::mc::executor::wait_sycl_queue(manager.queue());
                 if (progress.due()) {
                     manager.collect_tallies(monitored);
                     collected_pass = pass;
@@ -344,7 +341,7 @@ struct Session::Impl {
     using bitpack_t = std::uint64_t;
     using prob_t = std::double_t;
     using size_t_ = std::size_t;
-    using Manager = scram::mc::queue::layer_manager<bitpack_t, prob_t, size_t_>;
+    using Manager = fuzzybits::mc::executor::layer_manager<bitpack_t, prob_t, size_t_>;
 
     ReconstructedPdag reconstructed;
     std::unique_ptr<Manager> manager;
@@ -364,13 +361,13 @@ Session::Session(ReconstructedPdag reconstructed, const std::string &backend, st
         throw RuntimeError("session: no queries");
     }
 
-    scram::mc::stats::TallyNodeMap tallies;
+    fuzzybits::mc::stats::TallyNodeMap tallies;
     for (const auto &q : impl->reconstructed.queries) {
         if (!q.node) {
             throw RuntimeError("session: query '" + q.name + "' has no node");
         }
-        tallies.insert_or_assign(q.node->index(), scram::mc::stats::TallyNode{
-                                                      .status = scram::mc::stats::not_tracked,
+        tallies.insert_or_assign(q.node->index(), fuzzybits::mc::stats::TallyNode{
+                                                      .status = fuzzybits::mc::stats::not_tracked,
                                                       .tally_stats = {},
                                                       .node = q.node,
                                                   });
@@ -383,8 +380,8 @@ Session::Session(ReconstructedPdag reconstructed, const std::string &backend, st
             if (it == nodes.end()) {
                 throw RuntimeError("session: watched index " + std::to_string(index) + " is not in the PDAG");
             }
-            tallies.insert_or_assign(index, scram::mc::stats::TallyNode{
-                                                .status = scram::mc::stats::not_tracked,
+            tallies.insert_or_assign(index, fuzzybits::mc::stats::TallyNode{
+                                                .status = fuzzybits::mc::stats::not_tracked,
                                                 .tally_stats = {},
                                                 .node = it->second,
                                             });
@@ -482,7 +479,7 @@ PassResult Session::step(const std::size_t passes) {
     if (passes == 0) {
         throw RuntimeError("session: passes must be at least 1");
     }
-    scram::mc::stats::TallyNodeMap tallies;
+    fuzzybits::mc::stats::TallyNodeMap tallies;
     try {
         impl_->manager->pass_wait_collect(tallies, passes, 0);
     } catch (const RuntimeError &) {

@@ -45,7 +45,7 @@ thresholds, and XORs as first-class operations.
 ## Important DirectEval Pipeline Observation
 
 `src/mcSCRAM/src/mc/core/preprocessor.cc` currently defines two lambdas in
-`CustomPreprocessor<mc::DirectEval>::Run()`: `result` and `result2`. Only
+`CustomPreprocessor<DirectEval>::Run()`: `result` and `result2`. Only
 `result()` is executed.
 
 That matters because `result2` contains the detailed staged level comments from

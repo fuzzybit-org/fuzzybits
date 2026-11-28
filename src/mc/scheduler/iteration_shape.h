@@ -1,8 +1,8 @@
 #pragma once
-#include "mc/event/node.tpp"
+#include "mc/event/sample_shape.h"
 #include <cstddef>
 
-namespace scram::mc::scheduler {
+namespace fuzzybits::mc::scheduler {
 
 template <typename bitpack_t_> class iteration_shape {
   public:
@@ -51,4 +51,4 @@ template <typename DataT> struct tracked_triplet {
     DataT target{};
     DataT remaining{};
 };
-} // namespace scram::mc::scheduler
+} // namespace fuzzybits::mc::scheduler

@@ -18,14 +18,22 @@ set(MC_HEADERS
         #
         core/direct_eval.h
         #
+        event/basic_event.h
+        event/gate.h
         event/node.h
         event/sample_shape.h
-        event/basic_event.tpp
-        event/gate.tpp
-        event/tally.tpp
+        event/span.h
+        event/tally.h
+        event/usm.h
         #
-        kernel/basic_event.h
+        kernel/sampler/chunked.h
+        kernel/sampler/geometry.h
+        kernel/sampler/lockstep.h
+        kernel/sampler/sampler.h
+        kernel/sampler/strided.h
+        kernel/sampler/vector.h
         kernel/gate.h
+        kernel/op_code.h
         kernel/tally.h
         #
         logger/log_benchmark.h
@@ -39,16 +47,43 @@ set(MC_HEADERS
         logger/log_sample_shaper.h
         logger/csv.h
         #
-        prng/bernoulli.h
+        prng/bernoulli/bernoulli.h
+        prng/bernoulli/chunked.h
+        prng/bernoulli/form.h
+        prng/bernoulli/lockstep.h
+        prng/bernoulli/pass_stream.h
+        prng/bernoulli/sample.h
+        prng/bernoulli/simd.h
+        prng/bernoulli/strided.h
         prng/philox128.h
-        prng/state128.h
+        prng/prng.h
+        prng/stream.h
         #
-        queue/working_set.h
-        queue/layer_manager.h
-        queue/layer_manager.tpp
-        queue/kernel_builder.h
-        queue/sample_shaper.h
-        queue/queueable.h
+        executor/builder/basic_event.h
+        executor/builder/builder.h
+        executor/builder/compat.h
+        executor/builder/dispatch.h
+        executor/builder/gate.h
+        executor/builder/launch.h
+        executor/builder/layer.h
+        executor/builder/op.h
+        executor/builder/program.h
+        executor/builder/state.h
+        executor/builder/tally.h
+        executor/descriptor/descriptor.h
+        executor/descriptor/device.h
+        executor/descriptor/execution_plan.h
+        executor/descriptor/kernel_dag.h
+        executor/descriptor/node.h
+        executor/descriptor/partition.h
+        executor/descriptor/plan.h
+        executor/descriptor/range.h
+        executor/compat.h
+        executor/working_set.h
+        executor/layer_manager.h
+        executor/layer_manager.tpp
+        executor/sample_shaper.h
+        executor/queueable.h
         #
         scheduler/convergence_controller.h
         scheduler/convergence_policy.h
@@ -106,7 +141,7 @@ if(APPLE OR WIN32)
       $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
       $<INSTALL_INTERFACE:include/mc>
   )
-  target_link_libraries(mc INTERFACE scram AdaptiveCpp::acpp-rt Boost::headers)
+  target_link_libraries(mc INTERFACE scram fuzzybits_ir_pc AdaptiveCpp::acpp-rt Boost::headers)
   return()
 endif()
 
@@ -136,9 +171,11 @@ target_include_directories(mc
 set(_MC_LIBS ${LIBS})
 list(REMOVE_ITEM _MC_LIBS Boost::unit_test_framework)
 
+# fuzzybits_ir_pc: the op codes the kernels and the builder name nodes by (kernel/op_code.h).
 target_link_libraries(mc
   PUBLIC
     scram
+    fuzzybits_ir_pc
     ${_MC_LIBS}
     mc_host_stats
 )

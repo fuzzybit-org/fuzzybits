@@ -28,7 +28,7 @@
 
 #include <cstddef>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 /**
  * Shannon entropy H[Beta(α,β)] in natural units (nats).
@@ -79,4 +79,4 @@ class info_gain {
     double last_bits_ = 0.0;
 };
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

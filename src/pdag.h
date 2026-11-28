@@ -1008,7 +1008,7 @@ class Pdag : private boost::noncopyable {
     /// Last assigned node index (0 before the Constant at 1 is created).
     [[nodiscard]] int last_node_index() const { return node_index_; }
 
-    /// Map a Variable index onto a MEF BasicEvent for kernel_builder lookup.
+    /// Map a Variable index onto a MEF BasicEvent, which the layer manager looks up (layer_manager::read_layer).
     /// `variable_index` is the PDAG index (`kVariableStartIndex`-based).
     void SetBasicEvent(int variable_index, const mef::BasicEvent *event);
 

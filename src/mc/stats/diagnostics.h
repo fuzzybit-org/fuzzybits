@@ -6,12 +6,11 @@
 #include <limits>
 #include <ostream>
 
-#include "mc/event/node.tpp"
 #include "mc/stats/ci_utils.h"
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 /* -------------------------------------------------------------------------
  * Accuracy metrics compare the *point estimate* \(\hat p\) coming out of the
@@ -180,4 +179,4 @@ inline std::ostream &operator<<(std::ostream &os, const SamplingDiagnostics &d) 
     return os;
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

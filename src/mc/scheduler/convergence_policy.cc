@@ -11,7 +11,7 @@
 #include <boost/math/policies/policy.hpp>
 #include <boost/math/special_functions/erf.hpp>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 namespace detail {
 
 using math_policy =
@@ -231,4 +231,4 @@ void update_bayes(mc::stats::tally &t, const double rel_margin_error, const doub
 }
 
 } // namespace detail
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

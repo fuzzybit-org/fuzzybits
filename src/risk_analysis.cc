@@ -188,7 +188,7 @@ void RiskAnalysis::RunAnalysis(const mef::Gate &target, Result *result) {
     case Algorithm::kMocus:
         return RunAnalysis<Mocus>(target, result);
     case Algorithm::kDirect:
-        return RunAnalysis<mc::DirectEval>(target, result);
+        return RunAnalysis<DirectEval>(target, result);
     }
 }
 
@@ -208,7 +208,7 @@ template <class Algorithm> void RiskAnalysis::RunAnalysis(const mef::Gate &targe
             RunAnalysis<Algorithm, McubCalculator>(fta.get(), result);
             break;
         case Approximation::kMonteCarlo:
-            RunAnalysis<Algorithm, mc::DirectEval>(fta.get(), result);
+            RunAnalysis<Algorithm, DirectEval>(fta.get(), result);
         }
     }
     result->fault_tree_analysis = std::move(fta);
@@ -218,7 +218,7 @@ template <class Algorithm, class Calculator>
 void RiskAnalysis::RunAnalysis(FaultTreeAnalyzer<Algorithm> *fta, Result *result) {
     auto pa = std::make_unique<ProbabilityAnalyzer<Calculator>>(fta, &model_->mission_time());
 
-    if constexpr (std::is_same_v<Calculator, mc::DirectEval>) {
+    if constexpr (std::is_same_v<Calculator, DirectEval>) {
         // retrieve the set of "watched" nodes, i.e. the nodes the pdag is aware of. These are the ones we need to track
         // in our convergence and/or tallies
 
@@ -252,11 +252,11 @@ void RiskAnalysis::RunAnalysis(FaultTreeAnalyzer<Algorithm> *fta, Result *result
         ua->Analyze();
         result->uncertainty_analysis = std::move(ua);
     } else {
-        if constexpr (std::is_same_v<Calculator, mc::DirectEval>) {
-            const mc::stats::TallyNodeMap &tallies = pa->monitored();
+        if constexpr (std::is_same_v<Calculator, DirectEval>) {
+            const fuzzybits::mc::stats::TallyNodeMap &tallies = pa->monitored();
             const auto &root_idx = pa->graph()->root()->index();
             if (tallies.contains(root_idx)) {
-                const mc::stats::TallyNode &node = tallies.at(root_idx);
+                const fuzzybits::mc::stats::TallyNode &node = tallies.at(root_idx);
                 result->uncertainty_analysis = std::make_unique<UncertaintyAnalysis>(node.tally_stats);
             }
         }
@@ -294,7 +294,7 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
     // 2. Run qualitative analysis (PDAG construction + preprocessing).
     // -----------------------------------------------------------------------
     WatchGuard wg(&watched_for_tallies_and_convergence_);
-    auto fta = std::make_unique<FaultTreeAnalyzer<mc::DirectEval>>(*synthetic_root, Analysis::settings(), model_);
+    auto fta = std::make_unique<FaultTreeAnalyzer<DirectEval>>(*synthetic_root, Analysis::settings(), model_);
     fta->Analyze();
 
     // Inform the probability analyzer which PDAG nodes correspond to the
@@ -305,9 +305,9 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
     // -----------------------------------------------------------------------
     // 3. Quantitative Monte-Carlo analysis on the entire PDAG.
     // -----------------------------------------------------------------------
-    std::unique_ptr<ProbabilityAnalyzer<mc::DirectEval>> pa;
+    std::unique_ptr<ProbabilityAnalyzer<DirectEval>> pa;
     if (Analysis::settings().probability_analysis()) {
-        pa = std::make_unique<ProbabilityAnalyzer<mc::DirectEval>>(fta.get(), &model_->mission_time());
+        pa = std::make_unique<ProbabilityAnalyzer<DirectEval>>(fta.get(), &model_->mission_time());
 
         {
             const auto &root_core_gate = fta->graph()->root_ptr();
@@ -325,19 +325,19 @@ void RiskAnalysis::RunCombinedEtaAnalysis(const mef::InitiatingEvent &initiating
 
     // Keep a reference to tallies before we possibly move the probability
     // analyzer into the first result.
-    const mc::stats::TallyNodeMap *tally_node_map_ptr = pa ? &pa->monitored() : nullptr;
+    const fuzzybits::mc::stats::TallyNodeMap *tally_node_map_ptr = pa ? &pa->monitored() : nullptr;
 
     // -----------------------------------------------------------------------
     // 4. Optional Importance / Uncertainty analysis (computed once).
     // -----------------------------------------------------------------------
-    std::unique_ptr<ImportanceAnalyzer<mc::DirectEval>> ia;
-    std::unique_ptr<UncertaintyAnalyzer<mc::DirectEval>> ua;
+    std::unique_ptr<ImportanceAnalyzer<DirectEval>> ia;
+    std::unique_ptr<UncertaintyAnalyzer<DirectEval>> ua;
     if (pa && Analysis::settings().importance_analysis()) {
-        ia = std::make_unique<ImportanceAnalyzer<mc::DirectEval>>(pa.get());
+        ia = std::make_unique<ImportanceAnalyzer<DirectEval>>(pa.get());
         ia->Analyze();
     }
     if (pa && Analysis::settings().uncertainty_analysis()) {
-        ua = std::make_unique<UncertaintyAnalyzer<mc::DirectEval>>(pa.get());
+        ua = std::make_unique<UncertaintyAnalyzer<DirectEval>>(pa.get());
         ua->Analyze();
     }
 

@@ -5,7 +5,7 @@
 
 #include <boost/math/special_functions/digamma.hpp>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 namespace {
 
 [[nodiscard]] double ln_beta(const double a, const double b) {
@@ -51,4 +51,4 @@ double info_gain::add_batch(const std::size_t successes, const std::size_t failu
     return last_bits_;
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

@@ -1102,7 +1102,7 @@ template <> class CustomPreprocessor<Mocus> : public CustomPreprocessor<Zbdd> {
 };
 
 /// Specialization of preprocessing for DirectEval analysis.
-template <> class CustomPreprocessor<mc::DirectEval> : public Preprocessor {
+template <> class CustomPreprocessor<DirectEval> : public Preprocessor {
   public:
     using Preprocessor::Preprocessor;
 

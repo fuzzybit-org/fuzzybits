@@ -5,16 +5,16 @@
 #include <unordered_map>
 #include <utility>
 
-#include "pdag.h"  // forward declaration of core::Node lives here
+#include "pdag.h"  // forward declaration of scram::core::Node lives here
 #include "tally.h" // tally definition
 
 namespace scram::core {
 class Node; // forward declaration (full type in pdag.h)
 } // namespace scram::core
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
-using mef_type = mef::Gate; // std::variant<mef::Gate, mef::InitiatingEvent>;
+using mef_type = scram::mef::Gate; // std::variant<scram::mef::Gate, scram::mef::InitiatingEvent>;
 
 enum convergence : std::int8_t {
     unknown = -2,
@@ -30,7 +30,7 @@ enum convergence : std::int8_t {
 struct TallyNode {
     convergence status;               ///< State of convergence
     tally tally_stats;                ///< Monte-Carlo statistics
-    std::shared_ptr<core::Node> node; ///< Owning/shared pointer to the PDAG node
+    std::shared_ptr<scram::core::Node> node; ///< Owning/shared pointer to the PDAG node
 };
 
 // ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ struct TallyNode {
 //  All helpers return *views* (no allocations, O(1) adapters) that yield
 //  references into the underlying container, so you can freely mutate the
 //  objects you obtain.  They are intentionally free functions so you can use
-//  ADL or explicit qualification:   for (auto &t : scram::mc::stats::tallies(map)) { … }
+//  ADL or explicit qualification:   for (auto &t : fuzzybits::mc::stats::tallies(map)) { … }
 // ---------------------------------------------------------------------------
 
 /// View of (index, tally) pairs.
@@ -68,4 +68,4 @@ template <class MonitoredMap> inline auto nodes(MonitoredMap &monitored) {
            std::views::transform([](auto &tn) -> std::shared_ptr<scram::core::Node> & { return tn.node; });
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

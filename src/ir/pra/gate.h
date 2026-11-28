@@ -20,6 +20,7 @@ enum class gate_kind : std::uint8_t {
     nand_gate,
     nor_gate,
     xnor_gate,
+    null_gate,
 };
 
 inline constexpr std::size_t gate_kind_count = 8;

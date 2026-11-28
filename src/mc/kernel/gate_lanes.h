@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace scram::mc::kernel {
+namespace fuzzybits::mc::kernel {
 
 /// Order of a gate kernel's work-groups over (gate, block of bitpacks).
 enum class gate_order {
@@ -48,7 +48,7 @@ inline constexpr std::uint32_t kGateCpuLanes = 8;
 
 namespace gate_detail {
 
-// Lanes go by reference and results through out-parameters, as in prng/bernoulli.h: a vector passed by value
+// Lanes go by reference and results through out-parameters, as in prng/bernoulli/simd.h: a vector passed by value
 // would change the host calling convention (-Wpsabi), and 8- and 16-bit bitpacks promote to int in
 // expressions, so every result is assigned back to its lane type.
 
@@ -97,10 +97,8 @@ template <std::uint32_t lanes_, std::size_t work_group_> class gate_geometry {
 
     gate_geometry() = default;
     gate_geometry(const std::size_t gates, const std::size_t bitpacks, const gate_order order)
-        : gates_(static_cast<std::uint32_t>(gates)), bitpacks_(static_cast<std::uint32_t>(bitpacks)),
-          items_per_gate_((bitpacks_ + lanes_ - 1) / lanes_),
-          groups_per_gate_(static_cast<std::uint32_t>((items_per_gate_ + work_group_ - 1) / work_group_)),
-          block_major_(order == gate_order::block_major) {}
+        : gates_(static_cast<std::uint32_t>(gates)), bitpacks_(static_cast<std::uint32_t>(bitpacks)), items_per_gate_((bitpacks_ + lanes_ - 1) / lanes_),
+          groups_per_gate_(static_cast<std::uint32_t>((items_per_gate_ + work_group_ - 1) / work_group_)), block_major_(order == gate_order::block_major) {}
 
     [[nodiscard]] sycl::nd_range<1> range() const {
         return {sycl::range<1>{std::size_t{gates_} * groups_per_gate_ * work_group_}, sycl::range<1>{work_group_}};
@@ -123,4 +121,4 @@ template <std::uint32_t lanes_, std::size_t work_group_> class gate_geometry {
     }
 };
 
-} // namespace scram::mc::kernel
+} // namespace fuzzybits::mc::kernel

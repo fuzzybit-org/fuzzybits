@@ -24,7 +24,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-# Two-sided 95% normal quantile, matching scram::mc::stats::tally::compute_ci.
+# Two-sided 95% normal quantile, matching fuzzybits::mc::stats::tally::compute_ci.
 Z95 = 1.959963984540054
 
 #: Keys every emitted frame has. Values may be ``None`` when the snapshot lacks

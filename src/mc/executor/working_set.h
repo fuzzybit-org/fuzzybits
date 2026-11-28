@@ -22,12 +22,13 @@
 
 #pragma once
 
-#include "mc/event/node.tpp"
+#include "mc/event/sample_shape.h"
+#include "mc/executor/descriptor/device.h"
 
 #include <cstddef>
 #include <sycl/sycl.hpp>
 
-namespace scram::mc {
+namespace fuzzybits::mc {
 
 /**
  * @struct working_set
@@ -245,33 +246,7 @@ template <typename size_type, typename bitpack_type> struct working_set {
      * @return Reference to the output stream for chaining
      */
     friend std::ostream &operator<<(std::ostream &os, const working_set &ws) {
-        os << "device_type: ";
-        switch (ws.device_type) {
-        case sycl::info::device_type::cpu:
-            os << "cpu";
-            break;
-        case sycl::info::device_type::gpu:
-            os << "gpu";
-            break;
-        case sycl::info::device_type::all:
-            os << "all";
-            break;
-        case sycl::info::device_type::custom:
-            os << "custom";
-            break;
-        case sycl::info::device_type::automatic:
-            os << "automatic";
-            break;
-        case sycl::info::device_type::accelerator:
-            os << "accelerator";
-            break;
-        case sycl::info::device_type::host:
-            os << "host";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
+        os << "device_type: " << executor::descriptor::name_of(ws.device_type);
         os << std::endl;
         os << "name: " << ws.name << std::endl
            << "vendor_id: " << ws.vendor_id << std::endl
@@ -314,36 +289,8 @@ template <typename size_type, typename bitpack_type> struct working_set {
            << "global_mem_size: " << ws.global_mem_size << std::endl
            << "global_mem_cache_size: " << ws.global_mem_cache_size << std::endl
            << "global_mem_cache_line_size: " << ws.global_mem_cache_line_size << std::endl
-           << "global_mem_cache_type: ";
-        switch (ws.global_mem_cache_type) {
-        case sycl::info::global_mem_cache_type::none:
-            os << "none";
-            break;
-        case sycl::info::global_mem_cache_type::read_only:
-            os << "read_only";
-            break;
-        case sycl::info::global_mem_cache_type::read_write:
-            os << "read_write";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
-        os << std::endl << "local_mem_type: ";
-        switch (ws.local_mem_type) {
-        case sycl::info::local_mem_type::none:
-            os << "none";
-            break;
-        case sycl::info::local_mem_type::local:
-            os << "local";
-            break;
-        case sycl::info::local_mem_type::global:
-            os << "global";
-            break;
-        default:
-            os << "unknown";
-            break;
-        }
+           << "global_mem_cache_type: " << executor::descriptor::name_of(ws.global_mem_cache_type) << std::endl
+           << "local_mem_type: " << executor::descriptor::name_of(ws.local_mem_type);
         os << std::endl
            << "local_mem_size: " << ws.local_mem_size << std::endl
            << "------------------------------------------------" << std::endl;
@@ -620,4 +567,4 @@ template <typename size_type, typename bitpack_type> struct working_set {
         return local_range;
     }
 };
-} // namespace scram::mc
+} // namespace fuzzybits::mc

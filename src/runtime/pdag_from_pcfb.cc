@@ -376,8 +376,7 @@ void append_arg(const std::shared_ptr<scram::core::Gate> &parent, const TensorBi
 /// op may read one tensor in both polarities (spec §3.1). So an operand whose node the gate already
 /// holds is passed through a NULL gate of its own: AddArg only appends, and the kernels read every
 /// occurrence.
-void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> &parent, const TensorBinding &binding,
-             bool complement) {
+void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> &parent, const TensorBinding &binding, bool complement) {
     if (binding.empty()) {
         throw RuntimeError("pdag_from_circuit: empty tensor binding");
     }
@@ -392,7 +391,8 @@ void add_arg(scram::core::Pdag *graph, const std::shared_ptr<scram::core::Gate> 
 }
 
 /// A pcfb ONES / ZEROS as a gate whose only argument is the PDAG constant (`Gate::MakeConstant`),
-/// which the kernels evaluate (`scram::mc::queue::kernel_connective`). Parents read it like any other
+/// which the executor computes as `ones` or `zeros` (`fuzzybits::mc::executor::compat::op_code_of`): its
+/// bitpacks are written once, by no kernel. Parents read it like any other
 /// gate, so the constant is never an argument beside others: `Gate::AddArg` of the constant is
 /// constant propagation, and is only right on a gate whose other arguments are all present (#259).
 std::shared_ptr<scram::core::Gate> constant_gate(std::shared_ptr<scram::core::Gate> gate, bool value) {
@@ -401,8 +401,7 @@ std::shared_ptr<scram::core::Gate> constant_gate(std::shared_ptr<scram::core::Ga
 }
 
 /// PDAG XOR is binary. Fold n-ary XOR left-to-right.
-std::shared_ptr<scram::core::Gate> xor_fold(scram::core::Pdag *graph,
-                                            const std::vector<std::pair<TensorBinding, bool>> &args) {
+std::shared_ptr<scram::core::Gate> xor_fold(scram::core::Pdag *graph, const std::vector<std::pair<TensorBinding, bool>> &args) {
     if (args.empty()) {
         throw RuntimeError("pdag_from_circuit: XOR with no inputs");
     }
@@ -564,13 +563,11 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
             throw RuntimeError("pdag_from_circuit: event_id 0 is reserved");
         }
         if (!std::isfinite(info.p) || info.p < 0.0 || info.p > 1.0) {
-            throw RuntimeError("pdag_from_circuit: SAMPLE '" + info.name + "' event_id " +
-                               std::to_string(info.event_id) + " has probability outside [0, 1]");
+            throw RuntimeError("pdag_from_circuit: SAMPLE '" + info.name + "' event_id " + std::to_string(info.event_id) + " has probability outside [0, 1]");
         }
         samples.push_back(std::move(info));
     }
-    std::sort(samples.begin(), samples.end(),
-              [](const SampleInfo &a, const SampleInfo &b) { return a.event_id < b.event_id; });
+    std::sort(samples.begin(), samples.end(), [](const SampleInfo &a, const SampleInfo &b) { return a.event_id < b.event_id; });
     for (std::size_t i = 1; i < samples.size(); ++i) {
         if (samples[i].event_id == samples[i - 1].event_id) {
             throw RuntimeError("pdag_from_circuit: duplicate event_id " + std::to_string(samples[i].event_id));
@@ -581,8 +578,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
     // MEF-compiled pcfb uses event_id = PDAG index (>= kVariableStartIndex = 2), so
     // shift stays 0. Nombrilo SAMPLE event_id starts at 1 and is shifted up by 1.
     int event_id_shift = 0;
-    if (!samples.empty() &&
-        samples.front().event_id < static_cast<std::uint32_t>(scram::core::Pdag::kVariableStartIndex)) {
+    if (!samples.empty() && samples.front().event_id < static_cast<std::uint32_t>(scram::core::Pdag::kVariableStartIndex)) {
         event_id_shift = scram::core::Pdag::kVariableStartIndex - static_cast<int>(samples.front().event_id);
     }
     for (const auto &s : samples) {
@@ -600,8 +596,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         const auto expected = pcfb::probability_to_threshold(s.always_true ? 1.0 : s.p);
         if (!s.always_true && expected != s.threshold) {
             // validate() already enforces ±1 ulp; keep a hard check for the runtime.
-            throw RuntimeError("pdag_from_circuit: SampleArgs.threshold does not match p·2^64 for event_id " +
-                               std::to_string(s.event_id));
+            throw RuntimeError("pdag_from_circuit: SampleArgs.threshold does not match p·2^64 for event_id " + std::to_string(s.event_id));
         }
         out.expressions.push_back(std::move(expr));
         out.events.push_back(std::move(event));
@@ -639,8 +634,8 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         return args;
     };
 
-    auto emit_simple = [&](pcfb::OpCode opcode, const std::vector<std::pair<TensorBinding, bool>> &args,
-                           std::uint32_t k, std::uint32_t output) -> std::shared_ptr<scram::core::Gate> {
+    auto emit_simple = [&](pcfb::OpCode opcode, const std::vector<std::pair<TensorBinding, bool>> &args, std::uint32_t k,
+                           std::uint32_t output) -> std::shared_ptr<scram::core::Gate> {
         if (opcode == pcfb::OpCode::BITWISE_XOR || opcode == pcfb::OpCode::BITWISE_XNOR) {
             auto g = xor_fold(graph, args);
             if (opcode == pcfb::OpCode::BITWISE_XNOR) {
@@ -712,8 +707,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
         }
         default: {
             const auto args = collect_args(op);
-            const std::uint32_t k =
-                (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
+            const std::uint32_t k = (op->args_type() == pcfb::OpArgs::KofNArgs && op->args_as_KofNArgs()) ? op->args_as_KofNArgs()->k() : 0;
             TensorBinding b;
             b.gate = emit_simple(op->opcode(), args, k, output);
             attach_origin(b.gate, op, output);
@@ -782,8 +776,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
             stack.push_back(arg.second);
         }
     }
-    const bool all_reachable =
-        std::ranges::all_of(query_gates, [&reachable](auto const &gate) { return reachable.contains(gate->index()); });
+    const bool all_reachable = std::ranges::all_of(query_gates, [&reachable](auto const &gate) { return reachable.contains(gate->index()); });
     if (!all_reachable) {
         root_gate = make_gate(graph, scram::core::kOr);
         for (auto const &gate : query_gates) {
@@ -805,8 +798,7 @@ ReconstructedPdag pdag_from_circuit(const pcfb::ir::Circuit &circuit) {
 
 namespace {
 
-void collect_named_nodes(const std::shared_ptr<scram::core::Gate> &gate,
-                         std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
+void collect_named_nodes(const std::shared_ptr<scram::core::Gate> &gate, std::unordered_map<int, std::shared_ptr<scram::core::Node>> &nodes) {
     if (!gate || !nodes.emplace(gate->index(), gate).second) {
         return;
     }
@@ -818,9 +810,7 @@ void collect_named_nodes(const std::shared_ptr<scram::core::Gate> &gate,
     }
 }
 
-bool origin_matches(std::string_view want, const scram::mef::Id &id) {
-    return id.id() == want || id.name() == want || id.full_path() == want;
-}
+bool origin_matches(std::string_view want, const scram::mef::Id &id) { return id.id() == want || id.name() == want || id.full_path() == want; }
 
 } // namespace
 

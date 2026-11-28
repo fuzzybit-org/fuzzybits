@@ -52,12 +52,12 @@ class UncertaintyAnalysis : public Analysis {
     ///
     /// This overload is used when the Monte-Carlo simulation has already been
     /// performed elsewhere (e.g. on the GPU) and the results are summarized in a
-    /// `scram::mc::stats::TallyNode`. Only a subset of the usual statistics are
+    /// `fuzzybits::mc::stats::TallyNode`. Only a subset of the usual statistics are
     /// populated because this flavor of the object is intended solely for
     /// reporting / logging – no sampling functionality will be invoked.
     ///
     /// @param[in] tally_node  Pre-computed tally statistics gathered during the MC run.
-    explicit UncertaintyAnalysis(const mc::stats::tally &tally);
+    explicit UncertaintyAnalysis(const fuzzybits::mc::stats::tally &tally);
 
     virtual ~UncertaintyAnalysis() = default;
 

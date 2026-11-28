@@ -18,34 +18,28 @@
 
 namespace scram::core {
 
-ProbabilityAnalyzer<mc::DirectEval>::ProbabilityAnalyzer(FaultTreeAnalyzer<mc::DirectEval> *fta,
-                                                         mef::MissionTime *mission_time)
+ProbabilityAnalyzer<DirectEval>::ProbabilityAnalyzer(FaultTreeAnalyzer<DirectEval> *fta, mef::MissionTime *mission_time)
     : ProbabilityAnalyzerBase(fta, mission_time) {}
 
-ProbabilityAnalyzer<mc::DirectEval>::~ProbabilityAnalyzer() = default;
+ProbabilityAnalyzer<DirectEval>::~ProbabilityAnalyzer() = default;
 
-double ProbabilityAnalyzer<mc::DirectEval>::CalculateTotalProbability(const Pdag::IndexMap<double> &) {
+double ProbabilityAnalyzer<DirectEval>::CalculateTotalProbability(const Pdag::IndexMap<double> &) {
     throw std::runtime_error("host-only fzb: ProbabilityAnalyzer<DirectEval> requires libmc");
 }
 
-std::vector<std::pair<double, double>> ProbabilityAnalyzer<mc::DirectEval>::CalculateProbabilityOverTime() {
+std::vector<std::pair<double, double>> ProbabilityAnalyzer<DirectEval>::CalculateProbabilityOverTime() { return {}; }
+
+void ProbabilityAnalyzer<DirectEval>::ComputeTallies(bool) { throw std::runtime_error("host-only fzb: ProbabilityAnalyzer<DirectEval> requires libmc"); }
+
+std::unordered_set<int> ProbabilityAnalyzer<DirectEval>::ObserveNodes(Pdag *, fuzzybits::mc::stats::TallyNodeMap &, const std::unordered_set<index_t> &, bool,
+                                                                      bool) {
     return {};
 }
 
-void ProbabilityAnalyzer<mc::DirectEval>::ComputeTallies(bool) {
-    throw std::runtime_error("host-only fzb: ProbabilityAnalyzer<DirectEval> requires libmc");
-}
+auto ProbabilityAnalyzer<DirectEval>::GatherGates(Pdag *, std::unordered_set<index_t> *) {}
 
-std::unordered_set<int> ProbabilityAnalyzer<mc::DirectEval>::ObserveNodes(Pdag *, mc::stats::TallyNodeMap &,
-                                                                          const std::unordered_set<index_t> &, bool,
-                                                                          bool) {
-    return {};
-}
+std::unordered_set<int> ProbabilityAnalyzer<DirectEval>::GatherGates(Pdag *) { return {}; }
 
-auto ProbabilityAnalyzer<mc::DirectEval>::GatherGates(Pdag *, std::unordered_set<index_t> *) {}
-
-std::unordered_set<int> ProbabilityAnalyzer<mc::DirectEval>::GatherGates(Pdag *) { return {}; }
-
-void ProbabilityAnalyzer<mc::DirectEval>::SanitizeWatchState() {}
+void ProbabilityAnalyzer<DirectEval>::SanitizeWatchState() {}
 
 } // namespace scram::core

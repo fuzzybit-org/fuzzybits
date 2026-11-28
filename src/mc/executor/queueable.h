@@ -35,13 +35,15 @@
 #include <sycl/sycl.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
-namespace scram::mc::queue {
+namespace fuzzybits::mc::executor {
 
 /**
  * @class queueable_base
@@ -69,7 +71,7 @@ namespace scram::mc::queue {
  *         : queueable_base(q, deps) {}
  *
  * protected:
- *     void handle_submission(sycl::handler& cgh) override {
+ *     void handle_submission(sycl::handler& cgh, std::uint32_t pass) override {
  *         // Define kernel execution logic here
  *         cgh.parallel_for(range, kernel);
  *     }
@@ -149,8 +151,7 @@ struct queueable_base {
      * auto independent_queueable = std::make_shared<my_queueable>(queue);
      * @endcode
      */
-    explicit queueable_base(sycl::queue &queue)
-        : queue_(queue), dependencies_(std::vector<std::shared_ptr<queueable_base>>{}) {}
+    explicit queueable_base(sycl::queue &queue) : queue_(queue), dependencies_(std::vector<std::shared_ptr<queueable_base>>{}) {}
 
   protected:
     /**
@@ -162,6 +163,7 @@ struct queueable_base {
      * computational work.
      *
      * @param cgh SYCL command group handler for kernel submission
+     * @param pass the index of the pass the kernel belongs to, from 0 (layer_manager::single_pass)
      *
      * @note This method is called within a SYCL queue submission context
      * @note Dependencies are already resolved when this method is called
@@ -169,7 +171,7 @@ struct queueable_base {
      *
      * @example Implementation pattern:
      * @code
-     * void handle_submission(sycl::handler& cgh) override {
+     * void handle_submission(sycl::handler& cgh, std::uint32_t pass) override {
      *     // Set up accessors, local memory, etc.
      *     auto accessor = buffer.get_access<sycl::access::mode::read_write>(cgh);
      *
@@ -180,7 +182,7 @@ struct queueable_base {
      * }
      * @endcode
      */
-    virtual void handle_submission(sycl::handler &cgh) = 0;
+    virtual void handle_submission(sycl::handler &cgh, std::uint32_t pass) = 0;
 
   public:
     /**
@@ -193,25 +195,27 @@ struct queueable_base {
      * kernel directly to the device instead of through its DAG scheduler, which cost 22-33 us per kernel on a
      * Xeon E5-2697 v2 host, growing with the number of dependency events (#286).
      *
+     * @param pass the index of the pass, from 0, which kernels that sample take as their counter's pass
+     *
      * @note Dependencies must be submitted before this queueable is submitted
      *
      * @example
      * @code
      * // Submit dependencies first
-     * dep1->submit();
-     * dep2->submit();
+     * dep1->submit(pass);
+     * dep2->submit(pass);
      *
      * // Submit this queueable
-     * my_queueable->submit();
+     * my_queueable->submit(pass);
      * @endcode
      */
-    sycl::event submit() {
+    sycl::event submit(const std::uint32_t pass) {
         if (queue_.is_in_order()) {
-            this->queued_event_ = perform_submission({});
+            this->queued_event_ = perform_submission({}, pass);
             return this->queued_event_;
         }
         const std::vector<sycl::event> dependencies = fetch_dependencies();
-        this->queued_event_ = perform_submission(dependencies);
+        this->queued_event_ = perform_submission(dependencies, pass);
         return this->queued_event_;
     }
 
@@ -263,6 +267,7 @@ struct queueable_base {
      * handle_submission(). This method implements the template method pattern.
      *
      * @param dependencies Vector of SYCL events this submission depends on
+     * @param pass the index of the pass, handed to handle_submission
      * @return SYCL event representing the completion of this submission
      *
      * @note This method is called only once during the submission process
@@ -270,18 +275,17 @@ struct queueable_base {
      *
      * @example Internal workflow:
      * @code
-     * sycl::event e = perform_submission(dependency_events);
+     * sycl::event e = perform_submission(dependency_events, pass);
      * // event can now be used by dependent computations
      * @endcode
      */
-    sycl::event perform_submission(const std::vector<sycl::event> &dependencies) {
-        return queue_.submit(
-            [&](sycl::handler &cgh) { // The actual queue submission is done once, here in the base class
-                if (!dependencies.empty()) {
-                    cgh.depends_on(dependencies);
-                }
-                handle_submission(cgh); // Defer to the derived class for the actual commands
-            });
+    sycl::event perform_submission(const std::vector<sycl::event> &dependencies, const std::uint32_t pass) {
+        return queue_.submit([&](sycl::handler &cgh) { // The actual queue submission is done once, here in the base class
+            if (!dependencies.empty()) {
+                cgh.depends_on(dependencies);
+            }
+            handle_submission(cgh, pass); // Defer to the derived class for the actual commands
+        });
     }
 };
 
@@ -301,8 +305,7 @@ inline void check_submission_order(const std::vector<std::shared_ptr<queueable_b
         for (const auto &dependency : queueables[i]->dependencies()) {
             const auto it = position.find(dependency.get());
             if (it == position.end() || it->second >= i) {
-                throw std::logic_error("kernel " + std::to_string(i) +
-                                       " is submitted before, or without, a kernel it depends on");
+                throw std::logic_error("kernel " + std::to_string(i) + " is submitted before, or without, a kernel it depends on");
             }
         }
     }
@@ -334,7 +337,7 @@ inline void check_submission_order(const std::vector<std::shared_ptr<queueable_b
  *         : ranged_kernel(q, k, r) {}
  *
  * protected:
- *     void handle_submission(sycl::handler& cgh) override {
+ *     void handle_submission(sycl::handler& cgh, std::uint32_t pass) override {
  *         // Use this->kernel_ and this->nd_range_
  *     }
  * };
@@ -460,7 +463,7 @@ template <typename kernel_t_, int n_dim_> struct ranged_kernel : queueable_base 
  *
  * // Create and submit queueable
  * auto computation = std::make_shared<queueable<decltype(kernel), 1>>(queue, kernel, range);
- * computation->submit();
+ * computation->submit(pass);
  * @endcode
  *
 
@@ -537,7 +540,7 @@ template <typename kernel_t_, int n_dim_> struct queueable final : ranged_kernel
      * auto kernel = [=](sycl::nd_item<3> item) { * independent computation * };
      * sycl::nd_range<3> range(sycl::range<3>(128, 128, 128), sycl::range<3>(4, 4, 4));
      * auto compute = std::make_shared<queueable<decltype(kernel), 3>>(queue, kernel, range);
-     * compute->submit(); // Can submit immediately
+     * compute->submit(pass); // Can submit immediately
      * @endcode
      */
     queueable(sycl::queue &queue, const kernel_t_ &kernel, const sycl::nd_range<n_dim_> &nd_range)
@@ -558,173 +561,41 @@ template <typename kernel_t_, int n_dim_> struct queueable final : ranged_kernel
      *
      * @example Implementation details:
      * @code
-     * void handle_submission(sycl::handler &cgh) override {
+     * void handle_submission(sycl::handler &cgh, std::uint32_t) override {
      *     // Standard parallel_for execution
      *     cgh.parallel_for(this->nd_range_, this->kernel_);
      * }
      * @endcode
      */
-    void handle_submission(sycl::handler &cgh) override { cgh.parallel_for(this->nd_range_, this->kernel_); }
+    void handle_submission(sycl::handler &cgh, std::uint32_t /*pass*/) override { cgh.parallel_for(this->nd_range_, this->kernel_); }
 };
 
 /**
  * @class iterable_queueable
- * @brief Final concrete implementation for iterative ND-range kernel execution
+ * @brief ND-range kernel that takes the index of the pass it belongs to
  *
- * @details The iterable_queueable class extends the standard queueable to support
- * iterative execution patterns where the kernel needs to track iteration state.
- * Each submission increments an iteration counter that is passed to the kernel,
- * enabling algorithms that require iteration awareness.
+ * @details The kernel is called as kernel(item, pass), with the pass index that layer_manager::single_pass hands to
+ * every submission (from 0). The pass is the only argument that changes between launches; the kernel holds the
+ * rest. The sampling kernels (kernel/sampler/) take it as the pass of their Philox counters (prng/stream.h).
  *
- * This is particularly useful for iterative algorithms, Monte Carlo simulations,
- * or any computation that needs to track how many times it has been executed.
- *
- * @tparam kernel_t_ Type of the kernel functor or lambda (must accept iteration parameter)
+ * @tparam kernel_t_ the kernel: callable as (sycl::nd_item<n_dim_>, std::uint32_t)
  * @tparam n_dim_ Number of dimensions for the ND-range (1, 2, or 3)
- *
- * @note This class is final and cannot be further inherited
- * @note Kernel must accept an iteration parameter as its second argument
- * @note Iteration counter starts at 0 and increments on each submission
- *
- * @example Usage with iterative kernel:
- * @code
- * // Define an iteration-aware kernel
- * auto kernel = [=](sycl::nd_item<1> item, std::uint32_t iteration) {
- *     int idx = item.get_global_id(0);
- *     // Use iteration count in computation
- *     result[idx] += iteration * compute_value(idx);
- * };
- *
- * // Create iterable queueable
- * sycl::nd_range<1> range(sycl::range<1>(1024), sycl::range<1>(256));
- * auto iterative = std::make_shared<iterable_queueable<decltype(kernel), 1>>(queue, kernel, range);
- *
- * // Submit multiple times for iteration
- * iterative->submit(); // iteration = 1
- * iterative->submit(); // iteration = 2
- * iterative->submit(); // iteration = 3
- * @endcode
- *
  */
 template <typename kernel_t_, int n_dim_> struct iterable_queueable final : ranged_kernel<kernel_t_, n_dim_> {
-
-    /// @brief Current iteration counter, incremented on each submission
-    std::uint32_t iteration_ = 0;
-
-    /**
-     * @brief Constructs an iterable queueable with vector-based dependencies
-     *
-     * @details Creates an iterable queueable computation that tracks execution
-     * iterations and passes the iteration count to the kernel. The iteration
-     * counter starts at 0 and increments with each submission.
-     *
-     * @param queue SYCL queue for kernel execution
-     * @param kernel Kernel functor or lambda that accepts iteration parameter
-     * @param nd_range ND-range defining execution dimensions and work-group structure
-     * @param dependencies Vector of queueable objects this computation depends on
-     *
-     * @note Kernel must accept (sycl::nd_item<n_dim_>, std::uint32_t) parameters
-     * @note Iteration counter is local to each queueable instance
-     *
-     * @example
-     * @code
-     * auto kernel = [=](sycl::nd_item<1> item, std::uint32_t iter) {
-     *     // Use iter in computation
-     * };
-     * sycl::nd_range<1> range(sycl::range<1>(1024), sycl::range<1>(64));
-     * std::vector<std::shared_ptr<queueable_base>> deps = {setup_dep};
-     * auto iter_compute = std::make_shared<iterable_queueable<decltype(kernel), 1>>(
-     *     queue, kernel, range, deps);
-     * @endcode
-     */
     iterable_queueable(sycl::queue &queue, const kernel_t_ &kernel, const sycl::nd_range<n_dim_> &nd_range,
                        const std::vector<std::shared_ptr<queueable_base>> &dependencies)
         : ranged_kernel<kernel_t_, n_dim_>(queue, kernel, nd_range, dependencies) {}
 
-    /**
-     * @brief Constructs an iterable queueable with set-based dependencies
-     *
-     * @details Creates an iterable queueable computation with automatic duplicate
-     * dependency elimination and iteration tracking support.
-     *
-     * @param queue SYCL queue for kernel execution
-     * @param kernel Kernel functor or lambda that accepts iteration parameter
-     * @param nd_range ND-range defining execution dimensions and work-group structure
-     * @param dependencies Set of queueable objects this computation depends on
-     *
-     * @note Set interface eliminates duplicate dependencies automatically
-     * @note Iteration counter is independent of dependency structure
-     *
-     * @example
-     * @code
-     * auto kernel = [=](sycl::nd_item<2> item, std::uint32_t iter) {
-     *     // Iteration-aware 2D computation
-     * };
-     * sycl::nd_range<2> range(sycl::range<2>(512, 512), sycl::range<2>(16, 16));
-     * std::set<std::shared_ptr<queueable_base>> deps = {dep1, dep2, dep3};
-     * auto iter_compute = std::make_shared<iterable_queueable<decltype(kernel), 2>>(
-     *     queue, kernel, range, deps);
-     * @endcode
-     */
     iterable_queueable(sycl::queue &queue, const kernel_t_ &kernel, const sycl::nd_range<n_dim_> &nd_range,
                        const std::set<std::shared_ptr<queueable_base>> &dependencies)
         : ranged_kernel<kernel_t_, n_dim_>(queue, kernel, nd_range, dependencies) {}
 
-    /**
-     * @brief Constructs an iterable queueable with no dependencies
-     *
-     * @details Creates an iterable queueable computation that can execute immediately
-     * and tracks iteration state for algorithms requiring iteration awareness.
-     *
-     * @param queue SYCL queue for kernel execution
-     * @param kernel Kernel functor or lambda that accepts iteration parameter
-     * @param nd_range ND-range defining execution dimensions and work-group structure
-     *
-     * @note Can be submitted immediately for iterative execution
-     * @note Each submission increments the iteration counter
-     *
-     * @example
-     * @code
-     * auto kernel = [=](sycl::nd_item<1> item, std::uint32_t iter) {
-     *     // Monte Carlo simulation with iteration tracking
-     *     generate_samples(item.get_global_id(0), iter);
-     * };
-     * sycl::nd_range<1> range(sycl::range<1>(10000), sycl::range<1>(100));
-     * auto monte_carlo = std::make_shared<iterable_queueable<decltype(kernel), 1>>(
-     *     queue, kernel, range);
-     * @endcode
-     */
     iterable_queueable(sycl::queue &queue, const kernel_t_ &kernel, const sycl::nd_range<n_dim_> &nd_range)
         : ranged_kernel<kernel_t_, n_dim_>(queue, kernel, nd_range) {}
 
-    /**
-     * @brief Implements kernel submission with iteration tracking
-     *
-     * @details Submits the kernel for execution with an incremented iteration counter.
-     * The iteration count is captured locally and passed to the kernel, enabling
-     * iteration-aware computations while maintaining thread safety.
-     *
-     * @param cgh SYCL command group handler for kernel submission
-     *
-     * @note Iteration counter is incremented before kernel submission
-     * @note Iteration count is captured by value for thread safety
-     * @note Kernel receives both nd_item and iteration parameters
-     *
-     * @example Implementation details:
-     * @code
-     * void handle_submission(sycl::handler &cgh) override {
-     *     const auto iteration_local = ++iteration_;
-     *     auto kernel = this->kernel_;
-     *     cgh.parallel_for(this->nd_range_, [=](const sycl::nd_item<n_dim_> &item) {
-     *         kernel(item, iteration_local);
-     *     });
-     * }
-     * @endcode
-     */
-    void handle_submission(sycl::handler &cgh) override {
-        const auto iteration_local = ++iteration_;
+    void handle_submission(sycl::handler &cgh, const std::uint32_t pass) override {
         auto kernel = this->kernel_;
-        cgh.parallel_for(this->nd_range_, [=](const sycl::nd_item<n_dim_> &item) { kernel(item, iteration_local); });
+        cgh.parallel_for(this->nd_range_, [=](const sycl::nd_item<n_dim_> &item) { kernel(item, pass); });
     }
 };
-} // namespace scram::mc::queue
+} // namespace fuzzybits::mc::executor

@@ -9,7 +9,7 @@
 
 namespace scram::log::tally {
 
-inline auto csv_pairs(const mc::stats::tally &t) {
+inline auto csv_pairs(const fuzzybits::mc::stats::tally &t) {
     using pair_t = std::pair<std::string, std::string>;
     return std::vector<pair_t>{
         {"one_bits", csv_string(t.num_one_bits)},

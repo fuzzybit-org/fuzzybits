@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <limits>
 
-namespace scram::mc::stats {
+namespace fuzzybits::mc::stats {
 
 static constexpr std::double_t DELTA_EPSILON = 1.0e-12;
 
@@ -135,15 +135,12 @@ inline std::size_t required_trials_log10_from_normal_quantile_two_sided(const do
     return epsilon;
 }
 
-// Add helper functions for tally post-processing ---------------------------------------------------
-// These routines move the statistical post-processing that used to live in the
-// SYCL tally kernel to the host side.  They work directly with the `event::tally`
-// struct which only needs the raw counters (`num_one_bits`, `total_bits`) that
-// the device kernel fills in.
+// Tally post-processing on the host ---------------------------------------------------------------
+// The tally kernel only counts true trials (event::tally::ones); the host knows the trials and derives the
+// estimate. These routines work on any type with the counters `num_one_bits` and `total_bits` and the fields
+// `mean`, `std_err` and `ci`, such as event::tally_estimate.
 
-// Populate the point estimates (mean probability and standard error) for a tally
-// object based only on its raw counters.  The function is templated so that it
-// works with any specialisation of `event::tally<bitpack_t_>`.
+// Populate the point estimates (mean probability and standard error) of a tally from its counters.
 template <typename tally_t_> inline tally_t_ &populate_point_estimates(tally_t_ &tally) {
     if (tally.total_bits == 0) {
         // Avoid division-by-zero – this generally means no samples have been
@@ -179,4 +176,4 @@ template <typename tally_t_> inline tally_t_ &populate_point_estimates(tally_t_ 
     return tally;
 }
 
-} // namespace scram::mc::stats
+} // namespace fuzzybits::mc::stats

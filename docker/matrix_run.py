@@ -97,7 +97,7 @@ def parse_nsys_kernels(out: str) -> dict:
             "kernel::op" in lname
             or "connective" in lname
             or "optype" in lname
-            or "<scram::mc::kernel::op" in lname
+            or "<fuzzybits::mc::kernel::op" in lname
         ):
             gate["total_ns"] += total_ns
             gate["instances"] += inst

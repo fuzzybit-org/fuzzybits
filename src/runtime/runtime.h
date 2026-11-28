@@ -111,7 +111,7 @@ struct OriginRecord {
     std::string full_path;
 };
 
-/// Owns the reconstructed PDAG plus the MEF objects kernel_builder reads
+/// Owns the reconstructed PDAG plus the MEF objects the layer manager reads
 /// through `Pdag::basic_events()`. Special members are out-of-line because
 /// `Pdag` / `BasicEvent` / `ConstantExpression` are incomplete here.
 struct ReconstructedPdag {

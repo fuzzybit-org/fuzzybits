@@ -20,7 +20,7 @@
 
 #define PRECISION_LOG_SCIENTIFIC_DIGITS 3
 
-namespace scram::mc::scheduler {
+namespace fuzzybits::mc::scheduler {
 
 template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename size_t_> class convergence_controller;
 
@@ -42,18 +42,18 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         if (log_to_file) {
             const std::string &filepath = *log_to_file;
             progress_logger_.emplace(filepath);
-            LOG(DEBUG2) << "Progress log in :: " << filepath;
+            LOG(scram::DEBUG2) << "Progress log in :: " << filepath;
         }
 
         // Configure terminal rendering only when explicitly requested and attached to a TTY.
         if (watch_mode && (!isatty(fileno(stdout)) || !isatty(fileno(stderr)))) {
-            LOG(WARNING) << "Disabling progressbar since neither STDOUT nor STDERR are TTYs.";
+            LOG(scram::WARNING) << "Disabling progressbar since neither STDOUT nor STDERR are TTYs.";
             return;
         }
 
         if (!watch_mode) {
             if (!log_to_file && !progress_callback_) {
-                LOG(WARNING) << "Disabling progressbar since watch mode is disabled. Enable with --watch flag";
+                LOG(scram::WARNING) << "Disabling progressbar since watch mode is disabled. Enable with --watch flag";
             }
             return;
         }
@@ -84,7 +84,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
         // Fast path: if we are *not* in watch mode, behave exactly as before.
         if (!watch_mode_) {
             // No terminal attached – fallback to lightweight logging only.
-            LOG(DEBUG2) << controller->current_tally();
+            LOG(scram::DEBUG2) << controller->current_tally();
             return;
         }
 
@@ -171,7 +171,7 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
     void tick_burn_in(const convergence_controller<policy_t_, bitpack_t_, prob_t_, size_t_> &controller) const {
         // If watch mode is disabled we can perform the update synchronously.
         if (!watch_mode_) {
-            LOG(DEBUG2) << controller.current_tally();
+            LOG(scram::DEBUG2) << controller.current_tally();
             return;
         }
 
@@ -803,4 +803,4 @@ template <typename policy_t_, typename bitpack_t_, typename prob_t_, typename si
             indicators::option::ShowElapsedTime{false}, indicators::option::ShowRemainingTime{false});
     }
 };
-} // namespace scram::mc::scheduler
+} // namespace fuzzybits::mc::scheduler

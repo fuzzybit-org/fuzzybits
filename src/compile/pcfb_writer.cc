@@ -806,7 +806,7 @@ pcfb::Result<CompiledGraph> compile_to_graph_impl(const std::vector<std::string>
 
     progress.stage("passes");
     try {
-        scram::core::CustomPreprocessor<scram::mc::DirectEval> preprocessor(graph.get(), settings);
+        scram::core::CustomPreprocessor<scram::core::DirectEval> preprocessor(graph.get(), settings);
         preprocessor();
     } catch (const std::exception &ex) {
         return std::unexpected(compile_error(std::string("preprocessor: ") + ex.what()));
